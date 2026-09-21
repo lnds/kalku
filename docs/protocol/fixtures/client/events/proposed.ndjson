@@ -1,0 +1,1 @@
+{"type":"proposed","id":6,"entry":"lib/my_app/parser.ex  MyApp.Parser.next_token/2  compare  \">=\"  #1   # index is always even here; > and >= agree"}

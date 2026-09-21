@@ -1,0 +1,4 @@
+{"site_id":"c1f37a90e2b4","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.next_token/2","ordinal":1,"span":{"start":{"line":42,"col":7,"byte":1180},"end":{"line":42,"col":9,"byte":1182}},"spell":"compare","original":">=","replacement":">","reload":"module"}
+{"site_id":"5d02be7741aa","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.classify/1","ordinal":2,"span":{"start":{"line":61,"col":5,"byte":1733},"end":{"line":62,"col":1,"byte":1760}},"spell":"arm","original":"{:error, _} -> :skip\n","replacement":"","reload":"dependents"}
+{"site_id":"0e9a4c21d7f3","file":"kalku/cli.kai","span":{"start":{"line":27,"col":3,"byte":702}},"spell":"literal","replacement":"1","reload":"module"}
+{"site_id":"9b1e07c3aa52","file":"lib/my_app/greeting.ex","enclosing":"MyApp.Greeting.hello/1","ordinal":1,"span":{"start":{"line":3,"col":14,"byte":61},"end":{"line":3,"col":22,"byte":72}},"spell":"literal","original":"\"¡ñandú!\"","replacement":"\"\"","reload":"module"}

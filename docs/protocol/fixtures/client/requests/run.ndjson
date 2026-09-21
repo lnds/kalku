@@ -1,0 +1,4 @@
+{"type":"run","id":1,"root":"/home/u/my_app","scope":{"since":"main"},"format":"json"}
+{"type":"run","id":1,"root":"/home/u/my_app","scope":{"all":true},"format":"github","shard":{"index":2,"count":4}}
+{"type":"run","id":1,"root":"/home/u/my_app","scope":{"files":["lib/my_app/parser.ex"]},"format":"agent"}
+{"type":"run","id":1,"root":"/home/u/my_app","scope":{"since":"origin/main"},"format":"human"}

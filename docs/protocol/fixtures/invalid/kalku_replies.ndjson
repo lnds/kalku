@@ -1,0 +1,22 @@
+{"expect":"not_json","line":"not json at all"}
+{"expect":"not_json","line":"{\"type\":\"ready\",\"id\":1"}
+{"expect":"not_object","line":"[\"ready\",1]"}
+{"expect":"missing_type","line":"{\"id\":1,\"protocol\":1}"}
+{"expect":"missing_type","line":"{\"type\":7,\"id\":1}"}
+{"expect":"unknown_type","line":"{\"type\":\"frobnicate\",\"id\":1}"}
+{"expect":"unknown_type","line":"{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":\"/r\",\"reni\":\"/n\",\"worker\":0,\"inline_limit_bytes\":1,\"env\":{}}"}
+{"expect":"missing_id","line":"{\"type\":\"bye\"}"}
+{"expect":"missing_id","line":"{\"type\":\"bye\",\"id\":\"7\"}"}
+{"expect":"bad_field","line":"{\"type\":\"prepared\",\"id\":2,\"duration_ms\":41200}"}
+{"expect":"bad_field","line":"{\"type\":\"prepared\",\"id\":2,\"duration_ms\":\"41200\",\"modules\":312}"}
+{"expect":"bad_field","line":"{\"type\":\"reset_done\",\"id\":10,\"clean\":null,\"duration_ms\":140}"}
+{"expect":"bad_field","line":"{\"type\":\"cast_done\",\"id\":5,\"wekufe\":\"w\",\"outcome\":\"exorcised\",\"duration_ms\":1,\"dirty\":false}"}
+{"expect":"bad_field","line":"{\"type\":\"ready\",\"id\":1,\"protocol\":1,\"language\":\"x\",\"adapter\":\"0\",\"runtime\":\"r\",\"spells\":[\"hex\"],\"capabilities\":[\"cast\"]}"}
+{"expect":"invalid","line":"{\"type\":\"ready\",\"id\":1,\"protocol\":1,\"language\":\"x\",\"adapter\":\"0\",\"runtime\":\"r\",\"spells\":[],\"capabilities\":[\"cast\",\"delegate\"]}"}
+{"expect":"invalid","line":"{\"type\":\"ready\",\"id\":1,\"protocol\":1,\"language\":\"x\",\"adapter\":\"0\",\"runtime\":\"r\",\"spells\":[],\"capabilities\":[\"abort\"]}"}
+{"expect":"invalid","line":"{\"type\":\"cast_done\",\"id\":6,\"wekufe\":\"w\",\"outcome\":\"equivalent\",\"duration_ms\":4,\"dirty\":false}"}
+{"expect":"invalid","line":"{\"type\":\"cast_done\",\"id\":6,\"wekufe\":\"w\",\"outcome\":\"killed\",\"evidence\":\"identical_bytecode\",\"duration_ms\":4,\"dirty\":false}"}
+{"expect":"invalid","line":"{\"type\":\"cast_done\",\"id\":6,\"wekufe\":\"w\",\"outcome\":\"timeout\",\"duration_ms\":4,\"dirty\":false}"}
+{"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"red\",\"duration_ms\":1,\"tests\":[],\"failures\":[]}"}
+{"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage\":[],\"coverage_path\":\"/c\",\"failures\":[]}"}
+{"expect":"invalid","line":"{\"type\":\"delegated\",\"id\":4,\"tool\":\"t\",\"tool_version\":\"1\",\"duration_ms\":1}"}

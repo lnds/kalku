@@ -1,0 +1,2 @@
+{"type":"sites","id":4,"files":["lib/my_app/parser.ex"],"spells":["arm","compare"],"exclude_calls":["Logger.*"]}
+{"type":"sites","id":4,"files":["lib/my_app/parser.ex","lib/my_app/lexer.ex"],"spells":["arm","compare","connect","negate","literal","call"],"exclude_calls":[]}

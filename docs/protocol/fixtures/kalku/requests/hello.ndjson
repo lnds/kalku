@@ -1,0 +1,2 @@
+{"type":"hello","id":1,"protocol":1,"root":"/home/u/my_app","reni":"/home/u/.cache/kalku/9ab2/reni","worker":3,"inline_limit_bytes":1048576,"env":{"MIX_TEST_PARTITION":"3"}}
+{"type":"hello","id":1,"protocol":1,"root":"/home/u/my_app","reni":"/home/u/.cache/kalku/9ab2/reni","worker":0,"inline_limit_bytes":65536,"env":{}}
