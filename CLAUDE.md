@@ -18,6 +18,21 @@ Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 | **reni** | a project's isolated workspace (build artefacts, caches). Wekufe never touch the user's tree. | — |
 | **protocol** | versioned NDJSON between the kaikai side and each kalku, transport-agnostic. | `docs/protocol.md` |
 
+## Layout
+
+```
+main.kai            entry point
+kalku/              the kaikai side; `kalku/<dir>/<file>.kai` imports as `kalku.<dir>.<file>`
+  wire/             protocol types, codec, framing (`protocol` is a kaikai keyword)
+  core/             pure logic
+  orchestrator/     kalku pool, scheduler, server
+tests/              kaikai tests, one `*_test.kai` per module
+adapters/<lang>/    one kalku per language
+tools/              repo scripts (km-gate.sh)
+```
+
+`make ci` runs everything CI runs. `kai fmt .` does not walk the package; use `make fmt` / `make fmt-check`. The kaikai version is pinned in `.kaikai-version`; `cz bump` keeps `VERSION`, `kai.toml`, and `kalku/version.kai` in sync.
+
 ## Vocabulary
 
 Use the glossary in `docs/design.md` consistently in code, docs, and protocol: **kalku** (language worker), **wekufe** (mutant), **spell** (mutation operator), **site**, **reni** (isolated workspace), **summon** / **banish** (start / stop a kalku), **cast** (run one wekufe). Do not mix in synonyms (`mutant`, `operator`, `adapter`, `worker`) where a glossary word exists.
