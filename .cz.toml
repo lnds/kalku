@@ -1,0 +1,14 @@
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.0"
+version_files = ["VERSION"]
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_file = "CHANGELOG.md"
+changelog_incremental = true
+major_version_zero = true
+
+# Keep-a-Changelog section names for the Conventional-Commits types that
+# reach the changelog; docs, chore, ci, test, and build stay out of it.
+change_type_map = { "feat" = "Added", "fix" = "Fixed", "perf" = "Changed", "refactor" = "Changed" }
+change_type_order = ["BREAKING CHANGE", "Added", "Fixed", "Changed", "Removed"]
