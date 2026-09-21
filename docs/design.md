@@ -1,6 +1,6 @@
 # kalku — design
 
-kalku measures how good a test suite is by breaking the code on purpose and checking whether the tests notice. It is **native mutation testing where none exists** — Elixir first — **and one honest gate over the tools that already exist** elsewhere. It is built as a kaikai orchestrator driving small per-language kalku, and it runs on its own sources.
+kalku measures how good a test suite is by breaking the code on purpose and checking whether the tests notice. It is **native mutation testing where none exists** — Elixir first — **and one honest gate over the tools that already exist** elsewhere, built for three kinds of client: **humans, CI, and coding agents**. Agents write tests fast; kalku tells them whether those tests test anything. It is built as a kaikai orchestrator driving small per-language kalku, and it runs on its own sources.
 
 ## Glossary
 
@@ -25,6 +25,7 @@ Outcomes (`killed`, `survived`, `timeout`, …) keep plain technical names: they
 3. **Fast enough to run on every change.** Minutes on a first run, seconds on incremental ones.
 4. **Language-agnostic core.** A new language costs one kalku, not a fork of the orchestrator.
 5. **Self-hosted.** kalku measures its own suite with its own kaikai kalku.
+6. **Agents are first-class clients.** A coding agent can find a survivor, write a test, and learn in seconds whether it killed the wekufe — without being able to hide holes instead of closing them.
 
 ## Non-goals
 
@@ -39,15 +40,15 @@ Outcomes (`killed`, `survived`, `timeout`, …) keep plain technical names: they
   ┌──────────────────────┐      ┌──────────────────────────────┐       ┌──────────────────┐
   │ kalku CLI            │      │ session (one per project)    │       │ kalku[elixir] #1 │
   │ kalku run --watch    │─────►│  ├─ planner                  │──────►│ kalku[elixir] #2 │
-  │ editor / LSP         │ NDJSON│  ├─ scheduler + supervisor  │ NDJSON│ ...              │
-  │ CI                   │◄─────│  ├─ cache                    │◄──────│ kalku[elixir] #N │
+  │ editor / LSP / MCP   │ NDJSON│  ├─ scheduler + supervisor  │ NDJSON│ ...              │
+  │ CI / coding agents   │◄─────│  ├─ cache                    │◄──────│ kalku[elixir] #N │
   └──────────────────────┘      │  └─ scorer + reporter        │       └──────────────────┘
                                 └──────────────────────────────┘               │
                                                │                               ▼
                                                └────────────── reni (per project, isolated)
 ```
 
-- **Clients** speak the client protocol to the server over a Unix socket.
+- **Clients** speak the client protocol to the server over a Unix socket. The MCP server for coding agents is one more client of that protocol, not a parallel path.
 - **The kaikai side** holds one **session** per project root. Planner, scheduler, cache, and scorer are pure logic behind effect rows; only the edges spawn processes or touch the network.
 - **Each kalku** speaks the kalku protocol (`docs/protocol.md`) over stdio. Kalku are supervised actors on the kaikai side and are meant to stay warm: a hung cast is aborted inside the kalku, and a kalku is banished only when it stops answering (see *Timeouts and dirty state*).
 - **The reni** lives under `$XDG_CACHE_HOME/kalku/<project-hash>/`. It holds build artefacts and caches, never source copies: source is read from the working tree, read-only.
@@ -172,7 +173,7 @@ A cast may leave global state behind (ETS tables, registered processes, applicat
 
 ### 8. Report
 
-Outcomes stream to the client as they arrive and are written to the cache. At the end the reporter emits the summary: human text, JSON (`--format json`), and optional GitHub annotations for survivors.
+Outcomes stream to the client as they arrive and are written to the cache. At the end the reporter emits the summary: human text, JSON (`--format json`), agent-oriented JSON (`--format agent`, see *Agents*), and optional GitHub annotations for survivors.
 
 The human report leads with **survivors** — file, line, spell, diff, covering tests — because a survivor is something a reader can act on. The score follows as context and trend, never as the headline.
 
@@ -324,6 +325,8 @@ A full run on every PR does not scale: a medium Elixir project yields thousands 
 
 A PR fails when **a wekufe survives on a line the PR changed**. Gating PRs on the global score punishes whoever touches a file with old debt, and teams switch such tools off. The global score is guarded separately by `[score] threshold` and, with `ratchet = true`, by a stored baseline it may not drop below.
 
+Changes to suppressions are surfaced, never silent: if a PR adds entries to `.kalku/equivalent` or widens `exclude`/`exclude_calls` in `.kalku.toml`, the report and the GitHub summary list them under their own heading. Hiding a hole must be as visible as leaving one.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -379,18 +382,84 @@ Running wekufe is running modified code; serving run requests is remote code exe
 - Every cast has a timeout; every kalku is supervised. Killing a kalku's process is the last step of an escalation, not the first response.
 - Kalku receive an explicit environment, not the server's.
 
+## Agents
+
+Coding agents write tests quickly, and those tests often *cover* without *verifying*: they execute a line and assert nothing that would change if the line were wrong. Coverage cannot tell the difference; a wekufe can. kalku is the oracle an agent uses to learn whether its tests test anything.
+
+An agent differs from the other two clients in rhythm: a person reads one run, CI gates one run per PR, and an agent **iterates**. Write a test, re-cast the wekufe it targets, repeat. Everything in this section serves that loop.
+
+### The loop
+
+```sh
+kalku run --since HEAD --format agent   # survivors, with everything needed to act
+kalku show <wekufe>                      # full detail of one
+kalku cast <wekufe>...                   # re-cast just these: are they dead now?
+```
+
+`kalku cast` re-reads changed files, refreshes the coverage of changed tests, and re-casts only the named wekufe against warm kalku, so the answer takes seconds, not a full run. It works cold too — it then pays for `prepare` and the baseline first.
+
+A kill only counts if the killing test **passes on the original code**. `kalku cast` runs changed tests against the original first; a test that fails there is reported as `test fails on original` and the wekufe stays `survived`. An agent cannot kill a wekufe with a broken test.
+
+### `--format agent`
+
+One JSON object per survivor, complete enough to act on without opening other files, and compact in tokens:
+
+```json
+{"wekufe":"c1f3…","file":"lib/my_app/parser.ex","line":42,"enclosing":"MyApp.Parser.next_token/2",
+ "spell":"compare","original":">=","replacement":">",
+ "context":["defp next_token(s, i) when i >= 0 do","  case String.at(s, i) do"],
+ "covering_tests":["test/my_app/parser_test.exs:18"],
+ "hint":"No test tells i == 0 apart from i > 0. Add a case at the boundary i = 0."}
+```
+
+followed by one summary object (counts, score, suppression changes).
+
+**Hints are fixed templates per spell**, filled from the site, never generated by a model: deterministic, cheap, and honest about what kalku actually knows.
+
+| Spell | Hint template |
+|---|---|
+| `arm` | no test reaches this clause of `<enclosing>`; add a case that takes it |
+| `compare` | no test tells `<a> <op> <b>` apart at the boundary; add a case where they are equal |
+| `connect` | no test has exactly one side of `<op>` true; add one for each side |
+| `negate` | no test takes the other branch of this condition |
+| `literal` | no test depends on the exact value `<original>` |
+| `call` | no test observes the effect of `<call>`; assert what it returns or changes |
+
+### MCP
+
+`kalku serve` also exposes the loop as MCP tools, so agents in Claude Code, Cursor, and similar hosts use it without shelling out:
+
+| Tool | Does |
+|---|---|
+| `kalku_run(scope)` | run and return survivors in the agent format |
+| `kalku_cast(wekufe[])` | re-cast and return outcomes |
+| `kalku_show(wekufe)` | full detail of one |
+| `kalku_propose_equivalent(wekufe, reason)` | write a **proposal** for a person to review; never applied |
+
+The MCP layer is a client of the client protocol, like the CLI. It adds no capability the CLI lacks.
+
+### Guardrails
+
+An agent optimising for dead wekufe can reach the number without closing holes, with no ill intent. kalku makes those shortcuts visible or impossible:
+
+- **Agents never suppress.** `kalku_propose_equivalent` writes to `.kalku/equivalent.proposed`, which kalku reads but never applies. Moving an entry into `.kalku/equivalent` is a human edit.
+- **Suppression changes are loud.** New entries in `.kalku/equivalent` or wider `exclude` / `exclude_calls` in a PR are listed under their own heading in every report format (see *What blocks a PR*). The docs recommend CODEOWNERS on `.kalku/` and `.kalku.toml`.
+- **A kill needs a test that passes on the original** (see *The loop*).
+- **A timeout is not a kill.** A test that makes the wekufe hang does not kill it (see *Outcomes and score*).
+
+Equivalence arguments stay proposals because they cannot be verified; tests that kill are accepted because they can. What can be verified is verified; what cannot stays a human decision.
+
+### `kalku info`
+
+`kalku info [topic] [--json]` documents spells, outcomes, formats, the equivalent-file syntax, and the guardrails, from the binary itself — the same pattern as `kai info`. It is the source of truth an agent consults instead of guessing.
+
+`kalku info agents` prints a snippet ready to paste into a project's `CLAUDE.md` or `AGENTS.md`:
+
+> After writing or changing tests, run `kalku run --since HEAD --format agent` and kill the survivors with tests that pass on the original code. Re-check with `kalku cast <id>`. Never edit `.kalku/equivalent`, `exclude`, or `exclude_calls`; propose equivalents with a reason instead.
+
 ## Later: property synthesis
 
 kaikai synthesises property checks from protocol laws declared in the source. The equivalent for a target language is to derive properties from what the code already states — Elixir `@spec`s, protocol implementations, encode/decode pairs marked as inverses — and emit them as tests in the language's own property framework (StreamData), so they run like any other test and are measured by the same wekufe.
-
-## Later: survivor triage
-
-For hard survivors, a model can be asked for one of two things, and kalku checks the answer:
-
-- **A test that kills it.** Verified mechanically: the test must pass on the original and fail on the wekufe. If it does, the hole is closed with evidence.
-- **An argument that it is equivalent.** Not verifiable, so it stays a proposal: a candidate `.kalku/equivalent` entry for a person to review, never applied automatically.
-
-What can be verified is verified; what cannot stays a human decision.
 
 ## Later: farm mode
 
