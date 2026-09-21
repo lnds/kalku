@@ -31,7 +31,7 @@ adapters/<lang>/    one kalku per language
 tools/              repo scripts (km-gate.sh)
 ```
 
-`make ci` is CI's kaikai-side job and `make test-elixir` its Elixir job; `make check` runs both. `kai fmt .` does not walk the package; use `make fmt` / `make fmt-check`. The kaikai version is pinned in `.kaikai-version`; `cz bump` keeps `VERSION`, `kai.toml`, and `kalku/version.kai` in sync.
+`make ci` is CI's kaikai-side job and `make test-elixir` its Elixir job; `make check` runs both. The kaikai version is pinned in `.kaikai-version`; `cz bump` keeps `VERSION`, `kai.toml`, and `kalku/version.kai` in sync.
 
 ## Vocabulary
 

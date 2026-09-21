@@ -28,14 +28,11 @@ test-elixir:
 	  cd adapters/elixir && mix format --check-formatted && mix test; \
 	else echo "test-elixir: skipped (no adapters/elixir/mix.exs)"; fi
 
-# `kai fmt .` does not walk the package, so files go one by one.
 fmt:
-	@for f in $(KAI_SRC); do $(KAI) fmt $$f; done
+	$(KAI) fmt .
 
 fmt-check:
-	@bad=0; for f in $(KAI_SRC); do \
-	  $(KAI) fmt --check $$f >/dev/null 2>&1 || { echo "unformatted: $$f"; bad=1; }; \
-	done; exit $$bad
+	$(KAI) fmt --check .
 
 lint:
 	$(KAI) lint .
