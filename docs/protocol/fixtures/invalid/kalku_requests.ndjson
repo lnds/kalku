@@ -1,0 +1,10 @@
+{"expect":"not_json","line":""}
+{"expect":"not_object","line":"\"hello\""}
+{"expect":"unknown_type","line":"{\"type\":\"ready\",\"id\":1,\"protocol\":1,\"language\":\"x\",\"adapter\":\"0\",\"runtime\":\"r\",\"spells\":[],\"capabilities\":[\"cast\"]}"}
+{"expect":"missing_id","line":"{\"type\":\"prepare\",\"id\":2.5}"}
+{"expect":"bad_field","line":"{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":\"/r\",\"reni\":\"/n\",\"worker\":0,\"inline_limit_bytes\":1,\"env\":{\"A\":1}}"}
+{"expect":"bad_field","line":"{\"type\":\"sites\",\"id\":4,\"files\":[\"a.ex\"],\"spells\":[\"arm\"]}"}
+{"expect":"bad_field","line":"{\"type\":\"cast\",\"id\":5,\"wekufe\":\"w\",\"site\":{\"site_id\":\"s\",\"file\":\"f\",\"span\":{\"start\":{\"line\":1,\"col\":1,\"byte\":0}},\"spell\":\"arm\",\"replacement\":\"\",\"reload\":\"always\"},\"tests\":[]}"}
+{"expect":"bad_field","line":"{\"type\":\"delegate\",\"id\":4,\"scope\":{}}"}
+{"expect":"bad_field","line":"{\"type\":\"delegate\",\"id\":4,\"scope\":{\"all\":true,\"since\":\"main\"}}"}
+{"expect":"bad_field","line":"{\"type\":\"delegate\",\"id\":4,\"scope\":{\"all\":false}}"}

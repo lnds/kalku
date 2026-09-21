@@ -1,0 +1,3 @@
+{"file":"lib/my_app/parser.ex","line":42,"tests":["test/my_app/parser_test.exs:18"]}
+{"file":"lib/my_app/parser.ex","line":61,"tests":["test/my_app/parser_test.exs:18","test/my_app/parser_test.exs:31"]}
+{"file":"lib/my_app/unused.ex","line":7,"tests":[]}

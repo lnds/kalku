@@ -1,0 +1,5 @@
+{"type":"cast_done","id":5,"wekufe":"c1f37a90e2b4","outcome":"killed","killed_by":"test/my_app/parser_test.exs:18","code_hash":"77e0c3d91f2a","duration_ms":37,"dirty":false}
+{"type":"cast_done","id":5,"wekufe":"c1f37a90e2b4","outcome":"survived","code_hash":"77e0c3d91f2a","duration_ms":52,"dirty":false}
+{"type":"cast_done","id":5,"wekufe":"5d02be7741aa","outcome":"compile_error","message":"lib/my_app/parser.ex:61: undefined function skip/0","duration_ms":210,"dirty":false}
+{"type":"cast_done","id":6,"wekufe":"a4d95e11b7c0","outcome":"equivalent","evidence":"identical_bytecode","code_hash":"19bc40f2d8a1","duration_ms":4,"dirty":false}
+{"type":"cast_done","id":7,"wekufe":"0e9a4c21d7f3","outcome":"killed","duration_ms":1800,"dirty":true}

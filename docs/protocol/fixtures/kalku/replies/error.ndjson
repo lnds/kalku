@@ -1,0 +1,5 @@
+{"type":"error","id":1,"code":"protocol_mismatch","message":"kalku speaks protocol 2, kaikai side speaks 1","fatal":true}
+{"type":"error","id":2,"code":"prepare_failed","message":"** (CompileError) lib/my_app/parser.ex:3: undefined function foo/0","fatal":true}
+{"type":"error","id":5,"code":"unknown_test","message":"no test test/my_app/parser_test.exs:99","fatal":false}
+{"type":"error","id":5,"code":"load_failed","message":"could not restore MyApp.Parser","fatal":true}
+{"type":"error","id":11,"code":"bad_request","message":"unknown_type: frobnicate","fatal":false}

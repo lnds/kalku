@@ -1,0 +1,3 @@
+{"type":"delegate","id":4,"scope":{"since":"main"}}
+{"type":"delegate","id":4,"scope":{"all":true},"spells":["compare","literal"]}
+{"type":"delegate","id":4,"scope":{"files":["src/cart.ts","src/tax.ts"]}}
