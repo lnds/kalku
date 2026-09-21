@@ -1,6 +1,6 @@
 # kalku
 
-Mutation testing (and, later, synthesised property testing) for languages whose ecosystems lack it — Elixir first. The core is written in **kaikai**; each target language contributes a small **kalku** written in that language.
+Native mutation testing where none exists — Elixir first — and one honest gate over the mutation frameworks that already exist elsewhere. Later, synthesised property testing. The core is written in **kaikai**; each target language contributes a small **kalku**. kalku measures its own suite through its kaikai kalku.
 
 Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 
@@ -14,7 +14,7 @@ Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 | Piece | Role | Written in |
 |---|---|---|
 | **kaikai side** | plans which wekufe to cast, schedules them across kalku, caches, selects tests by coverage, enforces timeouts, scores, reports. Runs as a CLI or as a long-lived server — the same code either way. | kaikai |
-| **kalku** | a worker bound to one language: finds sites with the language's own parser, casts a wekufe into a warm runtime, runs the selected tests, reports back. | the target language |
+| **kalku** | a worker bound to one language. **Native** (Elixir, kaikai): finds sites with the language's own tooling, casts a wekufe into a warm runtime, runs the selected tests. **Driver**: runs an existing framework and normalises its statuses. | the target language |
 | **reni** | a project's isolated workspace (build artefacts, caches). Wekufe never touch the user's tree. | — |
 | **protocol** | versioned NDJSON between the kaikai side and each kalku, transport-agnostic. | `docs/protocol.md` |
 
@@ -32,12 +32,12 @@ Higher tier wins on conflict.
 
 1. **Honest results.** A score is only worth something if it can be trusted. A wekufe differs from its parent by one defect alone. A survivor is a real hole with a file, a line, and a diff. Timeouts, compile errors, and crashes are their own categories — never counted as kills. Equivalent-wekufe suppressions carry a written reason or are a hard error.
 2. **Never harm the user's project.** Wekufe are cast in memory or inside the reni, never in the user's working tree. A crash, a `kill -9`, or a hung kalku leaves the repo exactly as it was.
-3. **Speed is the product.** Mutation testing that takes an hour does not get run. Warm kalku, coverage-based test selection, incremental runs, and parallelism are core design, not later optimisation.
+3. **Speed is the product.** Mutation testing that takes an hour does not get run. Warm kalku, coverage-based test selection, incremental runs, and parallelism are core design, not later optimisation. A warm kalku is precious: abort and reset in place; kill a process only when it stops answering.
 
 ### Tier 2 — Aspirational
 
 4. **Language-agnostic core.** Nothing specific to one language lives on the kaikai side. If the core needs to know about Elixir, the protocol is missing a concept.
-5. **Structured output.** Every result is available as stable JSON alongside the human report.
+5. **Survivors first, structured always.** Human reports lead with survivors (file, line, spell, diff); the score is context and trend. Every result is also available as stable JSON.
 6. **Kalku stay thin.** A kalku parses, casts, runs, and reports. Planning, scheduling, caching, and scoring belong to the kaikai side.
 
 ### Tie-breakers
@@ -64,6 +64,9 @@ Topic rules live in `.claude/rules/` and load by path:
 
 ## Things to avoid
 
+- **Do not make kaikai depend on kalku.** kalku is written in kaikai; kaikai's CI keeps its own `kai mutate` driver. The two share the site format, never code, or the bootstrap becomes circular.
+- **Do not work around kaikai gaps here.** If the kaikai kalku needs something from `kaic2` or `kai test`, open an issue on kaikai.
+- **Do not self-host with the binary under test** once a release exists: kalku measures itself with the last release, pinned.
 - **Do not write a parser for a target language in kaikai.** Sites come from the target's own parser, through its kalku.
 - **Do not scan source text for sites.** A regex that mutates a string literal or a comment produces noise, not measurements.
 - **Do not cast spells on test code.** Mutating the oracle is not a measurement of the oracle.

@@ -1,6 +1,6 @@
 # kalku — design
 
-kalku measures how good a test suite is by breaking the code on purpose and checking whether the tests notice. It targets languages whose ecosystems lack mutation testing — Elixir first — and is built as a kaikai orchestrator driving small per-language adapters.
+kalku measures how good a test suite is by breaking the code on purpose and checking whether the tests notice. It is **native mutation testing where none exists** — Elixir first — **and one honest gate over the tools that already exist** elsewhere. It is built as a kaikai orchestrator driving small per-language kalku, and it runs on its own sources.
 
 ## Glossary
 
@@ -20,10 +20,11 @@ Outcomes (`killed`, `survived`, `timeout`, …) keep plain technical names: they
 
 ## Goals
 
-1. **Trustworthy scores.** A wekufe differs from its parent by one defect and nothing else. Only a failing test counts as a kill.
+1. **Trustworthy results.** A wekufe differs from its parent by one defect and nothing else. Only a failing test counts as a kill. Survivors come first; the score is secondary.
 2. **Never harm the user's project.** No wekufe is ever written to the working tree.
 3. **Fast enough to run on every change.** Minutes on a first run, seconds on incremental ones.
-4. **Language-agnostic core.** A new language costs one adapter, not a fork of the orchestrator.
+4. **Language-agnostic core.** A new language costs one kalku, not a fork of the orchestrator.
+5. **Self-hosted.** kalku measures its own suite with its own kaikai kalku.
 
 ## Non-goals
 
@@ -48,12 +49,62 @@ Outcomes (`killed`, `survived`, `timeout`, …) keep plain technical names: they
 
 - **Clients** speak the client protocol to the server over a Unix socket.
 - **The kaikai side** holds one **session** per project root. Planner, scheduler, cache, and scorer are pure logic behind effect rows; only the edges spawn processes or touch the network.
-- **Each kalku** speaks the kalku protocol (`docs/protocol.md`) over stdio. Kalku are supervised actors on the kaikai side: a crashed or hung kalku is banished and a fresh one summoned.
+- **Each kalku** speaks the kalku protocol (`docs/protocol.md`) over stdio. Kalku are supervised actors on the kaikai side and are meant to stay warm: a hung cast is aborted inside the kalku, and a kalku is banished only when it stops answering (see *Timeouts and dirty state*).
 - **The reni** lives under `$XDG_CACHE_HOME/kalku/<project-hash>/`. It holds build artefacts and caches, never source copies: source is read from the working tree, read-only.
 
 ### One binary, two lifetimes
 
 The CLI and the server are the same code. `kalku run` connects to a running server, or starts one. `kalku run --ci` runs the orchestrator in-process for exactly one run and exits. A CLI run is a server whose lifetime is one run, so nothing is written twice.
+
+## Kinds of kalku
+
+Not every language needs kalku to do the mutating. Where a mature mutation framework exists, a kalku can drive it instead. A kalku announces which kind it is through `ready.capabilities`, and the kaikai side offers what that kind allows.
+
+| Kind | For | Who runs the loop | Warm between runs |
+|---|---|---|---|
+| **native** | languages with no framework (Elixir) | the kaikai side: `sites`, `cast`, `reload` | yes: the kalku's runtime stays loaded |
+| **driver, API** | frameworks with a programmatic API (e.g. Stryker's JS API) | the framework, kept alive by the kalku | yes: the kalku keeps the framework alive |
+| **driver, batch** | frameworks that are only a CLI | the framework, one process per run | no: the framework starts and exits each run |
+
+A framework that would help a native kalku — for instance, to reuse its spells — is used as a **library inside** the kalku; the kalku still owns its runtime.
+
+### What a driver keeps and loses
+
+A driver kalku still gets everything that needs only a file and a line: survivors-on-changed-lines gating, the ratchet, `--format github`, `kalku merge`, and one gate and one report across every language in a monorepo — something no single framework offers.
+
+It loses what depends on owning the loop: kalku's coverage-based selection, trivial compiler equivalence, and — when the framework does not expose the enclosing function — the semantic key for declared equivalents, which falls back to a line-based key. The report says so.
+
+### Normalisation
+
+Frameworks count differently: some treat timeouts, or memory errors, as kills. A driver never forwards a framework's score. It maps each individual status to a kalku outcome, keeps the original in `tool_status`, and the kaikai side recomputes the score with its own formula:
+
+| Framework status | kalku outcome |
+|---|---|
+| Killed | `killed` |
+| Survived | `survived` |
+| Timeout | `timeout` (outside the score) |
+| NoCoverage | `no_coverage` |
+| CompileError | `compile_error` |
+| RuntimeError, MemoryError | `crashed` (outside the score) |
+| Ignored | excluded |
+
+kalku's score for a project will therefore often be lower than the framework's own. That is the point, and the docs say it up front.
+
+Where frameworks emit the shared *mutation-testing-report-schema* (from the mutation-testing-elements project), one driver can read all of them. kalku also emits that schema as an output format, so its reports work with existing viewers.
+
+### The kaikai kalku
+
+kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mutate-list-json` catalogues sites from the AST, `kaic2 --mutate-apply <i>` writes the spliced source, and a shell driver owns the run loop. The kaikai kalku is a thin native kalku over those flags:
+
+- `sites` → `--mutate-list-json`;
+- `cast` → `--mutate-apply`, write the wekufe into the reni, build, run the covering tests with `kai test`;
+- `code_hash` → a hash of the emitted code, which is deterministic in kaikai.
+
+kaikai compiles to native code and cannot hot-load, so "warm" here means a warm compiler and build cache, not a warm runtime; the kalku does not announce `hot_load`.
+
+This kalku needs from kaikai: the full site data in `--mutate-list-json` (span, original and replacement text, enclosing declaration, ordinal), and machine-readable results plus test selection in `kai test`. Without the latter it degrades to whole-suite runs with no `killed_by`.
+
+`kai mutate` keeps its own driver for kaikai's CI. kalku is written in kaikai, so kaikai's CI must never depend on kalku: that would make the bootstrap circular. The two share the site format, not code.
 
 ## Lifecycle of a run
 
@@ -107,11 +158,23 @@ For each planned wekufe, the scheduler picks an idle kalku and sends it the site
 5. restores the original modules;
 6. reports the outcome and the hash of the compiled wekufe.
 
-If a wekufe exceeds its timeout, the kaikai side kills the kalku, records `timeout`, and summons a replacement. A kalku also reports when a wekufe may have left global state dirty (ETS, registered processes, application env); the scheduler recycles it before the next cast.
+#### Timeouts and dirty state
+
+A warm kalku is the most expensive thing kalku owns, so killing one is the last resort, never the normal path.
+
+A timeout escalates in three steps:
+
+1. The kaikai side decides the timeout from outside, as always, and sends `abort`.
+2. The kalku stops the cast inside its runtime — for Elixir, `Process.exit(pid, :kill)` on the test processes, since a looping wekufe hangs a process, not the VM — restores the original modules, and answers `aborted`. The outcome is `timeout`; the kalku stays warm.
+3. Only if `aborted` does not arrive within a grace period (a NIF that never returns, a blocked scheduler) is the OS process killed and a fresh kalku summoned.
+
+A cast may leave global state behind (ETS tables, registered processes, application env). The kalku reports `dirty: true`, and the kaikai side escalates the same way: first `reset` — for Elixir, restart the project's applications and clear its ETS tables — and only if the reset fails, recycle the kalku.
 
 ### 8. Report
 
-Outcomes stream to the client as they arrive and are written to the cache. At the end the scorer emits the summary: human text, JSON (`--format json`), and optional GitHub annotations for survivors.
+Outcomes stream to the client as they arrive and are written to the cache. At the end the reporter emits the summary: human text, JSON (`--format json`), and optional GitHub annotations for survivors.
+
+The human report leads with **survivors** — file, line, spell, diff, covering tests — because a survivor is something a reader can act on. The score follows as context and trend, never as the headline.
 
 ### 9. Stay warm
 
@@ -302,12 +365,18 @@ kalku ships as a **standalone native binary** per platform (linux-x64, linux-arm
 
 Each language's kalku travels inside the binary as source and is compiled into the reni on first use with the project's own toolchain (for Elixir, the project's Elixir/OTP versions), so it always matches the runtime it will be loaded into.
 
+## Self-hosting
+
+kalku runs on its own sources through the kaikai kalku, in CI like any other project: survivors on changed lines block a PR.
+
+The kalku that measures kalku is the **last release**, pinned and bumped deliberately, never the binary built from the same commit. A bug in the kalku under test could otherwise hide its own survivors — the same reason a compiler bootstraps from a previous stage. Until the first release exists, self-hosted runs use the freshly built binary and are advisory: they report but do not block.
+
 ## Security
 
 Running wekufe is running modified code; serving run requests is remote code execution by definition.
 
 - The server listens on a Unix socket with `0600` permissions, or `127.0.0.1` plus a per-session token. Never on a public interface by default.
-- Every cast has a timeout; every kalku is supervised.
+- Every cast has a timeout; every kalku is supervised. Killing a kalku's process is the last step of an escalation, not the first response.
 - Kalku receive an explicit environment, not the server's.
 
 ## Later: property synthesis
@@ -329,5 +398,4 @@ What can be verified is verified; what cannot stays a human decision.
 
 ## Open questions
 
-- Second target language, to validate that the protocol is truly language-agnostic.
 - Editor integration: LSP diagnostics for survivors, or a lighter file-based report the editor watches.

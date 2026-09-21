@@ -22,6 +22,14 @@ Every message carries:
 
 Requests flow from the kaikai side to the kalku; a kalku never initiates. Each request gets exactly one response: its success message or `error`.
 
+The one exception to silence between request and response is `progress`, which a kalku may send any number of times while a long request (`prepare`, `baseline`, `delegate`) is running. It is a notification, not a response:
+
+```json
+{"type":"progress","id":3,"done":120,"total":480}
+```
+
+Exactly one request is in flight per kalku at a time, with one exception: `abort` may be sent while a `cast` is running.
+
 Large payloads (coverage maps, test lists) may be written to a file inside the reni and referenced by path (`*_path` fields) instead of inlined. The kaikai side chooses via `hello.inline_limit_bytes`.
 
 ## Versioning
@@ -71,10 +79,23 @@ First message after summoning.
 ```
 
 ```json
-{"type":"ready","id":1,"protocol":1,"language":"elixir","adapter":"0.1.0","runtime":"Elixir 1.18.1 / OTP 27","spells":["arm","compare","connect","negate","literal","call"],"capabilities":["per_test_coverage","hot_load","recompile_dependents"]}
+{"type":"ready","id":1,"protocol":1,"language":"elixir","adapter":"0.1.0","runtime":"Elixir 1.18.1 / OTP 27","spells":["arm","compare","connect","negate","literal","call"],"capabilities":["cast","per_test_coverage","hot_load","recompile_dependents","abort","reset","code_hash"]}
 ```
 
-`capabilities` lets the kaikai side degrade gracefully (e.g. without `per_test_coverage`, every wekufe runs the whole suite).
+`capabilities` tells the kaikai side which kind of kalku this is and lets it degrade gracefully:
+
+| Capability | Meaning | Without it |
+|---|---|---|
+| `cast` | native kalku: answers `sites`, `cast`, `reload` | — |
+| `delegate` | driver kalku: answers `delegate` | — |
+| `per_test_coverage` | `baseline` reports coverage per test | every wekufe runs the whole suite |
+| `hot_load` | a wekufe loads into the running runtime | each cast rebuilds |
+| `recompile_dependents` | sites may carry `reload: "dependents"` | — |
+| `abort` | a running cast can be stopped in place | a timeout kills the process |
+| `reset` | global state can be reset in place | a dirty kalku is recycled |
+| `code_hash` | `cast_done` carries `code_hash` and may prove `equivalent` | no trivial compiler equivalence |
+
+A kalku announces exactly one of `cast` or `delegate`.
 
 ### `prepare` → `prepared`
 
@@ -152,9 +173,37 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 
 `code_hash` identifies the compiled wekufe (present whenever it compiled). The kaikai side uses it to recognise duplicate wekufe reached from different sites.
 
-`timeout` and `crashed` never appear here: the kaikai side detects them from outside (a missing response, a dead process) and records them itself. A kalku does not enforce its own timeout.
+`timeout` and `crashed` never appear here: the kaikai side detects them from outside (a missing response, a dead process) and records them itself. A native kalku does not enforce its own timeout. The only kalku that report them are drivers, relaying what their framework observed.
 
 `dirty: true` means the kalku could not guarantee its runtime is back to the original state (global state was touched). The kaikai side recycles it before the next cast.
+
+### `abort` → `aborted`
+
+Sent while a `cast` is running, when the kaikai side has decided it timed out. The kalku stops the cast's work inside its runtime and restores the original modules.
+
+```json
+{"type":"abort","id":9,"cast":5}
+```
+
+```json
+{"type":"aborted","id":9,"cast":5,"restored":true}
+```
+
+The aborted `cast` gets no `cast_done`; the kaikai side records `timeout`. `restored: false` means the kalku could not restore its runtime; the kaikai side recycles it. If `aborted` does not arrive within the grace period, the kaikai side kills the process.
+
+### `reset` → `reset_done`
+
+Sent after a `cast_done` with `dirty: true`. The kalku resets global state in place (for Elixir: restart the project's applications, clear its ETS tables).
+
+```json
+{"type":"reset","id":10}
+```
+
+```json
+{"type":"reset_done","id":10,"clean":true,"duration_ms":140}
+```
+
+`clean: false` means the reset did not reach a known state; the kaikai side recycles the kalku.
 
 ### `reload` → `reloaded`
 
@@ -167,6 +216,29 @@ Source files changed on disk; recompile and load them.
 ```json
 {"type":"reloaded","id":6,"modules":["MyApp.Parser"],"dependents":["MyApp.Lexer"],"duration_ms":820}
 ```
+
+### `delegate` → `delegated` (driver kalku)
+
+A driver kalku answers `delegate` instead of `sites`/`cast`: it runs the underlying framework over the scope and returns normalised outcomes.
+
+```json
+{"type":"delegate","id":4,"scope":{"since":"main"},"spells":null}
+```
+
+```json
+{"type":"delegated","id":4,"tool":"stryker","tool_version":"8.2.0","outcomes_path":"/home/u/.cache/kalku/9ab2/reni/delegate/4.ndjson","duration_ms":312000}
+```
+
+One outcome per line in `outcomes_path` (or inline in `outcomes`):
+
+```json
+{"file":"src/cart.ts","enclosing":null,"span":Span,"spell":"compare","tool_mutator":"EqualityOperator","original":"<=","replacement":"<","outcome":"timeout","tool_status":"Timeout","killed_by":null}
+```
+
+- `outcome` is the kalku outcome after normalisation (table in `docs/design.md`, *Normalisation*); `tool_status` is the framework's own status, kept for transparency.
+- `spell` is the closest shared spell, or `"foreign"` when none fits; `tool_mutator` always names the framework's operator.
+- `enclosing` is `null` when the framework does not expose it; declared equivalents for such outcomes fall back to a line-based key.
+- A driver never reports a score.
 
 ### `shutdown` → `bye`
 
