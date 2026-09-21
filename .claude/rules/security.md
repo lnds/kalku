@@ -16,5 +16,5 @@ Casting wekufe executes modified code by design. Treat every part that casts or 
 
 ## Kalku
 
-- Kalku are supervised: a crashed or hung kalku is banished and a fresh one summoned; the wekufe it was casting is reported, not lost.
+- Kalku are supervised, and a warm kalku is valuable: a hung cast is first aborted in place (`abort`), dirty state is first reset in place (`reset`). Killing the process is the last step, when the kalku stops answering; the wekufe it was casting is reported, not lost.
 - A kalku's environment is explicit: pass only what the test run needs.
