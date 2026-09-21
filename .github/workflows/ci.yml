@@ -70,10 +70,11 @@ jobs:
         working-directory: adapters/elixir
     steps:
       - uses: actions/checkout@v4
+      # The oldest supported versions: the built-in JSON module needs Elixir 1.18.
       - uses: erlef/setup-beam@v1
         with:
-          version-file: adapters/elixir/.tool-versions
-          version-type: strict
+          elixir-version: '1.18'
+          otp-version: '27'
       - run: mix format --check-formatted
       - run: mix test
 

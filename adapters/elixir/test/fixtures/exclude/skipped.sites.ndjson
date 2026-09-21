@@ -1,0 +1,3 @@
+{"site_id":"483efd737e45","file":"exclude/skipped.ex","enclosing":"Fx.Exclude.go/1","ordinal":1,"span":{"start":{"line":7,"col":5,"byte":196},"end":{"line":7,"col":7,"byte":198}},"spell":"negate","original":"if","replacement":"unless","reload":"module"}
+{"site_id":"ad9a5809ae77","file":"exclude/skipped.ex","enclosing":"Fx.Exclude.go/1","ordinal":1,"span":{"start":{"line":7,"col":10,"byte":201},"end":{"line":7,"col":11,"byte":202}},"spell":"compare","original":">","replacement":">=","reload":"module"}
+{"site_id":"76cda8cc56ba","file":"exclude/skipped.ex","enclosing":"Fx.Exclude.go/1","ordinal":1,"span":{"start":{"line":7,"col":12,"byte":203},"end":{"line":7,"col":13,"byte":204}},"spell":"literal","original":"0","replacement":"1","reload":"module"}
