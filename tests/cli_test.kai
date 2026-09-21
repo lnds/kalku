@@ -1,0 +1,24 @@
+import kalku.cli
+import kalku.version
+
+test "no arguments shows the help" {
+  assert cli.parse_args([]) == ShowHelp
+}
+
+test "help and version flags" {
+  assert cli.parse_args(["help"]) == ShowHelp
+  assert cli.parse_args(["-h"]) == ShowHelp
+  assert cli.parse_args(["--help"]) == ShowHelp
+  assert cli.parse_args(["--version"]) == ShowVersion
+  assert cli.parse_args(["-V"]) == ShowVersion
+}
+
+test "designed commands are pending, others unknown" {
+  assert cli.parse_args(["run", "--since", "main"]) == Pending("run")
+  assert cli.parse_args(["serve"]) == Pending("serve")
+  assert cli.parse_args(["nope"]) == Unknown("nope")
+}
+
+test "the version line carries VERSION" {
+  assert cli.version_line() == "kalku #{version.VERSION}"
+}

@@ -1,0 +1,25 @@
+#[doc("kalku's entry point: parse the arguments, print, and return the exit code.")]
+
+import os.args
+import kalku.cli
+
+fn main() : Int / Stdout + Stderr + Env {
+  match cli.parse_args(args.argv()) {
+    ShowVersion -> {
+      Stdout.print(cli.version_line())
+      0
+    }
+    ShowHelp -> {
+      Stdout.print(cli.help_text())
+      0
+    }
+    Pending(cmd) -> {
+      Stderr.eprint("kalku: `#{cmd}` is not implemented yet")
+      2
+    }
+    Unknown(cmd) -> {
+      Stderr.eprint("kalku: unknown command `#{cmd}`\n#{cli.usage_line()}")
+      2
+    }
+  }
+}

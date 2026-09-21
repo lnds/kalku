@@ -1,7 +1,7 @@
 [tool.commitizen]
 name = "cz_conventional_commits"
 version = "0.0.0"
-version_files = ["VERSION"]
+version_files = ["VERSION", "kai.toml:^version", "kalku/version.kai:VERSION"]
 tag_format = "v$version"
 update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"

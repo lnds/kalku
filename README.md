@@ -80,6 +80,16 @@ kalku info agents                        # a snippet to paste into CLAUDE.md / A
 - [`docs/protocol.md`](docs/protocol.md): the kalku and client protocols.
 - [`CLAUDE.md`](CLAUDE.md) and [`.claude/rules/`](.claude/rules/): project principles and conventions.
 
+## Building
+
+Requires [kaikai](https://github.com/kaikailang-org/kaikai) (version in `.kaikai-version`), plus [`km`](https://github.com/lnds/kimun) and `jq` for the quality gate.
+
+```sh
+make build     # _build/kalku
+make test      # kaikai tests, and the Elixir kalku's once it exists
+make ci        # format check, lint, build, test, km quality gate
+```
+
 ## Contributing
 
 - Code, docs, and commits are in English.

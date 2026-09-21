@@ -1,0 +1,12 @@
+# kaikai
+_build/
+.kai-cache/
+
+# Elixir kalku
+adapters/elixir/_build/
+adapters/elixir/deps/
+*.beam
+erl_crash.dump
+
+# OS
+.DS_Store
