@@ -87,7 +87,8 @@ Requires [kaikai](https://github.com/kaikailang-org/kaikai) (version in `.kaikai
 ```sh
 make build     # _build/kalku
 make test      # kaikai tests, and the Elixir kalku's once it exists
-make ci        # format check, lint, build, test, km quality gate
+make ci        # kaikai side: format check, lint, build, tests, km quality gate
+make check     # everything: `make ci` plus the Elixir kalku's tests
 ```
 
 ## Contributing
