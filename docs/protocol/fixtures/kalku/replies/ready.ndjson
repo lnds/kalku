@@ -1,0 +1,3 @@
+{"type":"ready","id":1,"protocol":1,"language":"elixir","adapter":"0.1.0","runtime":"Elixir 1.18.1 / OTP 27","spells":["arm","compare","connect","negate","literal","call"],"capabilities":["cast","per_test_coverage","hot_load","recompile_dependents","abort","reset","code_hash"]}
+{"type":"ready","id":1,"protocol":1,"language":"kaikai","adapter":"0.1.0","runtime":"kaikai 0.119.0 hanga-roa","spells":["arm","compare","connect","negate","literal","call"],"capabilities":["cast"]}
+{"type":"ready","id":1,"protocol":1,"language":"typescript","adapter":"0.1.0","runtime":"Node 22.4.0, Stryker 8.2.0","spells":["compare","literal","foreign"],"capabilities":["delegate"]}

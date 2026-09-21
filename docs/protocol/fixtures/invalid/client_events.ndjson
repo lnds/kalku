@@ -1,0 +1,4 @@
+{"expect":"unknown_type","line":"{\"type\":\"cast_done\",\"id\":5,\"wekufe\":\"w\",\"outcome\":\"killed\",\"duration_ms\":1,\"dirty\":false}"}
+{"expect":"bad_field","line":"{\"type\":\"phase\",\"id\":1,\"phase\":\"summon\"}"}
+{"expect":"bad_field","line":"{\"type\":\"sessions\",\"id\":2,\"sessions\":[{\"root\":\"/r\",\"state\":\"asleep\",\"kalku\":1,\"idle_s\":0}]}"}
+{"expect":"invalid","line":"{\"type\":\"outcome\",\"id\":1,\"wekufe\":\"w\",\"outcome\":\"survived\"}"}

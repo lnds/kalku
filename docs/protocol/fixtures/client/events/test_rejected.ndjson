@@ -1,0 +1,2 @@
+{"type":"test_rejected","id":4,"test":"test/my_app/parser_test.exs:25","reason":"fails_on_original","message":"expected :ok, got :error"}
+{"type":"test_rejected","id":4,"test":"test/my_app/parser_test.exs:25","reason":"fails_on_original"}
