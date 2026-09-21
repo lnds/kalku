@@ -3,7 +3,7 @@
 Two protocols share one framing:
 
 - **kalku protocol** — the kaikai side ↔ a kalku (language worker). The contract that keeps the core language-agnostic.
-- **client protocol** — a client (CLI, editor, CI) ↔ the server.
+- **client protocol** — a client (CLI, editor, CI, the MCP server for coding agents) ↔ the server.
 
 Terms follow the glossary in `docs/design.md`.
 
@@ -175,7 +175,7 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 
 `timeout` and `crashed` never appear here: the kaikai side detects them from outside (a missing response, a dead process) and records them itself. A native kalku does not enforce its own timeout. The only kalku that report them are drivers, relaying what their framework observed.
 
-`dirty: true` means the kalku could not guarantee its runtime is back to the original state (global state was touched). The kaikai side recycles it before the next cast.
+`dirty: true` means the kalku could not guarantee its runtime is back to the original state (global state was touched). The kaikai side sends `reset` before the next cast, and recycles the kalku only if that fails.
 
 ### `abort` → `aborted`
 
@@ -287,11 +287,47 @@ Events:
 ```json
 {"type":"phase","id":1,"phase":"baseline"}
 {"type":"progress","id":1,"done":120,"total":480}
-{"type":"outcome","id":1,"wekufe":"c1f3…","site":Site,"outcome":"survived","duration_ms":41}
-{"type":"report","id":1,"score":0.83,"counts":{"killed":380,"survived":78,"timeout":6,"no_coverage":14,"compile_error":2,"crashed":0,"equivalent":{"bytecode":9,"declared":5}},"survivors_on_changed_lines":3,"exit":1}
+{"type":"outcome","id":1,"wekufe":"c1f3…","site":Site,"outcome":"survived","covering_tests":["test/my_app/parser_test.exs:18"],"hint":"No test tells i == 0 apart from i > 0. Add a case at the boundary i = 0.","duration_ms":41}
+{"type":"report","id":1,"score":0.83,"counts":{"killed":380,"survived":78,"timeout":6,"no_coverage":14,"compile_error":2,"crashed":0,"equivalent":{"bytecode":9,"declared":5}},"survivors_on_changed_lines":3,"suppression_changes":{"equivalent_added":2,"exclude_added":[],"exclude_calls_added":["MyApp.Metrics.*"]},"exit":1}
 ```
 
 `exit` is the exit code a CLI client should return (see *Running in CI* in `docs/design.md`).
+
+`hint` is present on `survived` outcomes: a fixed template per spell filled from the site (see *Agents* in `docs/design.md`), never model-generated.
+
+`suppression_changes` lists suppressions the scope's diff adds — new `.kalku/equivalent` entries, wider `exclude` or `exclude_calls` — so every client can show them. Empty lists and zero counts when nothing changed.
+
+### `cast`
+
+Re-cast specific wekufe, typically after a test was written to kill them. The server reloads changed files, refreshes coverage for changed tests, and first runs changed tests against the original code.
+
+```json
+{"type":"cast","id":4,"root":"/home/u/my_app","wekufe":["c1f3…","a4d9…"]}
+```
+
+Events: `phase`, one `outcome` per wekufe, then a terminal `report` covering only those wekufe. A changed test that fails on the original is reported and not counted:
+
+```json
+{"type":"test_rejected","id":4,"test":"test/my_app/parser_test.exs:25","reason":"fails_on_original","message":"…"}
+```
+
+An unknown wekufe id (e.g. its site no longer exists after an edit) yields `{"type":"outcome","id":4,"wekufe":"…","outcome":"gone"}`; `gone` is a client-protocol status, not a run outcome, and never enters a score.
+
+### `show`
+
+```json
+{"type":"show","id":5,"root":"/home/u/my_app","wekufe":"c1f3…"}
+{"type":"wekufe","id":5,"wekufe":"c1f3…","site":Site,"outcome":"survived","covering_tests":["…"],"hint":"…","context":["…"],"history":[{"at":"2026-09-21T14:02:11Z","outcome":"survived"}]}
+```
+
+### `propose_equivalent`
+
+Appends a proposal to `.kalku/equivalent.proposed`; never touches `.kalku/equivalent`.
+
+```json
+{"type":"propose_equivalent","id":6,"root":"/home/u/my_app","wekufe":"c1f3…","reason":"index is always even here; > and >= agree"}
+{"type":"proposed","id":6,"entry":"lib/my_app/parser.ex  MyApp.Parser.next_token/2  compare  \">=\"  #1   # index is always even here; > and >= agree"}
+```
 
 ### `status`, `cancel`
 

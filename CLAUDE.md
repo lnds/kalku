@@ -1,6 +1,6 @@
 # kalku
 
-Native mutation testing where none exists — Elixir first — and one honest gate over the mutation frameworks that already exist elsewhere. Later, synthesised property testing. The core is written in **kaikai**; each target language contributes a small **kalku**. kalku measures its own suite through its kaikai kalku.
+Mutation testing for humans, CI, and coding agents: native where none exists — Elixir first — and one honest gate over the mutation frameworks that already exist elsewhere. Later, synthesised property testing. The core is written in **kaikai**; each target language contributes a small **kalku**. kalku measures its own suite through its kaikai kalku.
 
 Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 
@@ -39,6 +39,7 @@ Higher tier wins on conflict.
 4. **Language-agnostic core.** Nothing specific to one language lives on the kaikai side. If the core needs to know about Elixir, the protocol is missing a concept.
 5. **Survivors first, structured always.** Human reports lead with survivors (file, line, spell, diff); the score is context and trend. Every result is also available as stable JSON.
 6. **Kalku stay thin.** A kalku parses, casts, runs, and reports. Planning, scheduling, caching, and scoring belong to the kaikai side.
+7. **Agents are first-class clients.** Coding agents iterate: find a survivor, write a test, re-cast, repeat. Serve that loop (`--format agent`, `kalku cast`, MCP) and never let an agent hide a hole instead of closing it: agents only *propose* equivalents, suppression changes are always loud, and a kill needs a test that passes on the original code.
 
 ### Tie-breakers
 
@@ -70,4 +71,5 @@ Topic rules live in `.claude/rules/` and load by path:
 - **Do not write a parser for a target language in kaikai.** Sites come from the target's own parser, through its kalku.
 - **Do not scan source text for sites.** A regex that mutates a string literal or a comment produces noise, not measurements.
 - **Do not cast spells on test code.** Mutating the oracle is not a measurement of the oracle.
+- **Do not generate hints with a model.** Survivor hints are fixed templates per spell, filled from the site: deterministic and honest about what kalku knows.
 - **Do not reinvent what a target ecosystem already does well** (e.g. StreamData generators in Elixir). kalku adds what is missing.
