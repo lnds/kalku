@@ -1,0 +1,191 @@
+#[doc("""
+The protocol's closed sets and their wire names. Each set is a table of
+`(name, value)` pairs shared by encode and decode, so the two can never
+disagree on a spelling.
+""")]
+
+import core.list as list
+import encoding.json
+
+#[doc("A class of defect a kalku can cast; `Foreign` is a driver framework's own operator.")]
+#[derive(Eq, Show)]
+pub type Spell = Arm | Compare | Connect | Negate | Literal | Call | Foreign
+
+#[doc("What happened to one wekufe.")]
+#[derive(Eq, Show)]
+pub type Outcome = Killed | Survived | Timeout | NoCoverage | CompileError | Crashed | Equivalent
+
+#[doc("Mechanical proof that a wekufe is equivalent to the original.")]
+#[derive(Eq, Show)]
+pub type Evidence = IdenticalBytecode()
+
+#[doc("What a kalku can do. `OtherCapability` keeps a value this version does not know, which the kaikai side ignores.")]
+#[derive(Eq, Show)]
+pub type Capability
+  = CastCap
+  | DelegateCap
+  | PerTestCoverage
+  | HotLoad
+  | RecompileDependents
+  | AbortCap
+  | ResetCap
+  | CodeHash
+  | OtherCapability(String)
+
+#[doc("Whether casting a site reloads only its module or also the modules that depend on it at compile time.")]
+#[derive(Eq, Show)]
+pub type Reload = ModuleOnly | Dependents
+
+#[doc("Result of a baseline run.")]
+#[derive(Eq, Show)]
+pub type BaselineStatus = Green | Red
+
+#[doc("How a client renders a run.")]
+#[derive(Eq, Show)]
+pub type Format = Human | JsonFormat | Github | Agent
+
+#[doc("The stage a run is in.")]
+#[derive(Eq, Show)]
+pub type Phase = Preparing | Baselining | Planning | Casting | Reporting
+
+#[doc("The lifecycle state of a server session.")]
+#[derive(Eq, Show)]
+pub type SessionState = StateCold | StatePreparing | StateBaseline | StateReady | StateRunning | StateFailed | StateClosed
+
+#[doc("A client-protocol outcome: a run outcome, or `Gone` for a wekufe whose site no longer exists.")]
+#[derive(Eq, Show)]
+pub type Status = Is(Outcome) | Gone
+
+# ---- tables -----------------------------------------------------------
+
+fn spells() : [Pair[String, Spell]] = [
+  Pair { fst: "arm", snd: Arm }, Pair { fst: "compare", snd: Compare },
+  Pair { fst: "connect", snd: Connect }, Pair { fst: "negate", snd: Negate },
+  Pair { fst: "literal", snd: Literal }, Pair { fst: "call", snd: Call },
+  Pair { fst: "foreign", snd: Foreign },
+]
+
+fn outcomes() : [Pair[String, Outcome]] = [
+  Pair { fst: "killed", snd: Killed }, Pair { fst: "survived", snd: Survived },
+  Pair { fst: "timeout", snd: Timeout }, Pair { fst: "no_coverage", snd: NoCoverage },
+  Pair { fst: "compile_error", snd: CompileError }, Pair { fst: "crashed", snd: Crashed },
+  Pair { fst: "equivalent", snd: Equivalent },
+]
+
+fn capabilities() : [Pair[String, Capability]] = [
+  Pair { fst: "cast", snd: CastCap }, Pair { fst: "delegate", snd: DelegateCap },
+  Pair { fst: "per_test_coverage", snd: PerTestCoverage }, Pair { fst: "hot_load", snd: HotLoad },
+  Pair { fst: "recompile_dependents", snd: RecompileDependents },
+  Pair { fst: "abort", snd: AbortCap }, Pair { fst: "reset", snd: ResetCap },
+  Pair { fst: "code_hash", snd: CodeHash },
+]
+
+fn formats() : [Pair[String, Format]] = [
+  Pair { fst: "human", snd: Human }, Pair { fst: "json", snd: JsonFormat },
+  Pair { fst: "github", snd: Github }, Pair { fst: "agent", snd: Agent },
+]
+
+fn phases() : [Pair[String, Phase]] = [
+  Pair { fst: "prepare", snd: Preparing }, Pair { fst: "baseline", snd: Baselining },
+  Pair { fst: "plan", snd: Planning }, Pair { fst: "cast", snd: Casting },
+  Pair { fst: "report", snd: Reporting },
+]
+
+fn session_states() : [Pair[String, SessionState]] = [
+  Pair { fst: "cold", snd: StateCold }, Pair { fst: "preparing", snd: StatePreparing },
+  Pair { fst: "baseline", snd: StateBaseline }, Pair { fst: "ready", snd: StateReady },
+  Pair { fst: "running", snd: StateRunning }, Pair { fst: "failed", snd: StateFailed },
+  Pair { fst: "closed", snd: StateClosed },
+]
+
+# ---- table codec ------------------------------------------------------
+
+fn name_of[t : Eq](table: [Pair[String, t]], x: t) : String =
+  match list.find(table, (p) => p.snd == x) {
+    Some(p) -> p.fst
+    None -> ""
+  }
+
+fn value_of[t](table: [Pair[String, t]], v: JsonValue, path: String, what: String) : Result[t, JsonError] =
+  match v {
+    JStr(s) -> match list.find(table, (p) => p.fst == s) {
+      Some(p) -> Ok(p.snd)
+      None -> Err(JsonError { path: path, expected: what, found: "\"#{s}\"" })
+    }
+    _ -> Err(JsonError { path: path, expected: what, found: json_shape_name(v) })
+  }
+
+#[doc("The wire name of a spell.")]
+pub fn spell_name(s: Spell) : String = name_of(spells(), s)
+
+#[doc("The wire name of an outcome.")]
+pub fn outcome_name(o: Outcome) : String = name_of(outcomes(), o)
+
+impl Json for Spell {
+  fn to_json(self: Spell) : JsonValue = JStr(name_of(spells(), self))
+  fn of_json(v: JsonValue, path: String) : Result[Spell, JsonError] = value_of(spells(), v, path, "Spell")
+}
+
+impl Json for Outcome {
+  fn to_json(self: Outcome) : JsonValue = JStr(name_of(outcomes(), self))
+  fn of_json(v: JsonValue, path: String) : Result[Outcome, JsonError] = value_of(outcomes(), v, path, "Outcome")
+}
+
+impl Json for Evidence {
+  fn to_json(self: Evidence) : JsonValue = JStr("identical_bytecode")
+  fn of_json(v: JsonValue, path: String) : Result[Evidence, JsonError] =
+    value_of([Pair { fst: "identical_bytecode", snd: IdenticalBytecode }], v, path, "Evidence")
+}
+
+impl Json for Capability {
+  fn to_json(self: Capability) : JsonValue = match self {
+    OtherCapability(s) -> JStr(s)
+    known -> JStr(name_of(capabilities(), known))
+  }
+  fn of_json(v: JsonValue, path: String) : Result[Capability, JsonError] = match v {
+    JStr(s) -> match list.find(capabilities(), (p) => p.fst == s) {
+      Some(p) -> Ok(p.snd)
+      None -> Ok(OtherCapability(s))
+    }
+    _ -> Err(JsonError { path: path, expected: "Capability", found: json_shape_name(v) })
+  }
+}
+
+impl Json for Reload {
+  fn to_json(self: Reload) : JsonValue = JStr(if self == ModuleOnly { "module" } else { "dependents" })
+  fn of_json(v: JsonValue, path: String) : Result[Reload, JsonError] =
+    value_of([Pair { fst: "module", snd: ModuleOnly }, Pair { fst: "dependents", snd: Dependents }], v, path, "Reload")
+}
+
+impl Json for BaselineStatus {
+  fn to_json(self: BaselineStatus) : JsonValue = JStr(if self == Green { "green" } else { "red" })
+  fn of_json(v: JsonValue, path: String) : Result[BaselineStatus, JsonError] =
+    value_of([Pair { fst: "green", snd: Green }, Pair { fst: "red", snd: Red }], v, path, "BaselineStatus")
+}
+
+impl Json for Format {
+  fn to_json(self: Format) : JsonValue = JStr(name_of(formats(), self))
+  fn of_json(v: JsonValue, path: String) : Result[Format, JsonError] = value_of(formats(), v, path, "Format")
+}
+
+impl Json for Phase {
+  fn to_json(self: Phase) : JsonValue = JStr(name_of(phases(), self))
+  fn of_json(v: JsonValue, path: String) : Result[Phase, JsonError] = value_of(phases(), v, path, "Phase")
+}
+
+impl Json for SessionState {
+  fn to_json(self: SessionState) : JsonValue = JStr(name_of(session_states(), self))
+  fn of_json(v: JsonValue, path: String) : Result[SessionState, JsonError] =
+    value_of(session_states(), v, path, "SessionState")
+}
+
+impl Json for Status {
+  fn to_json(self: Status) : JsonValue = match self {
+    Is(o) -> JStr(name_of(outcomes(), o))
+    Gone -> JStr("gone")
+  }
+  fn of_json(v: JsonValue, path: String) : Result[Status, JsonError] = match v {
+    JStr("gone") -> Ok(Gone)
+    _ -> value_of(outcomes(), v, path, "Outcome or gone").map((o) => Is(o))
+  }
+}

@@ -1,0 +1,134 @@
+#[doc("""
+Messages of the kalku protocol: requests from the kaikai side to a kalku,
+and the kalku's replies. Payload fields are in canonical wire order.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("`hello`: the first request after summoning.")]
+#[derive(Json, Eq, Show)]
+pub type HelloMsg = {
+  #[json(rename = "protocol")] version: Int,
+  root: String,
+  reni: String,
+  worker: Int,
+  inline_limit_bytes: Int,
+  env: StrMap,
+}
+
+#[doc("`sites`: find sites in these files for these spells.")]
+#[derive(Json, Eq, Show)]
+pub type SitesMsg = { files: [String], spells: [Spell], exclude_calls: [String] }
+
+#[doc("`cast`: cast one wekufe and run these tests.")]
+#[derive(Json, Eq, Show)]
+pub type CastMsg = { wekufe: String, site: Site, tests: [String] }
+
+#[doc("`abort`: stop the running cast with this request id.")]
+#[derive(Json, Eq, Show)]
+pub type AbortMsg = { cast: Int }
+
+#[doc("`reload`: these files changed on disk.")]
+#[derive(Json, Eq, Show)]
+pub type ReloadMsg = { files: [String] }
+
+#[doc("`delegate`: run the driver's framework over a scope.")]
+#[derive(Json, Eq, Show)]
+pub type DelegateMsg = { scope: Scope, spells: Option[[Spell]] }
+
+#[doc("A request from the kaikai side to a kalku.")]
+#[derive(Eq, Show)]
+pub type KalkuRequest
+  = Hello(HelloMsg)
+  | Prepare
+  | Baseline
+  | Sites(SitesMsg)
+  | Cast(CastMsg)
+  | Abort(AbortMsg)
+  | Reset
+  | Reload(ReloadMsg)
+  | Delegate(DelegateMsg)
+  | Shutdown
+
+#[doc("`ready`: the kalku's answer to `hello`.")]
+#[derive(Json, Eq, Show)]
+pub type ReadyMsg = {
+  #[json(rename = "protocol")] version: Int,
+  language: String,
+  adapter: String,
+  runtime: String,
+  spells: [Spell],
+  capabilities: [Capability],
+}
+
+#[doc("`prepared`: the project is compiled into the reni.")]
+#[derive(Json, Eq, Show)]
+pub type PreparedMsg = { duration_ms: Int, modules: Int }
+
+#[doc("`baseline_done`: the full suite ran once.")]
+#[derive(Json, Eq, Show)]
+pub type BaselineDoneMsg = {
+  status: BaselineStatus,
+  duration_ms: Int,
+  tests: [TestTiming],
+  coverage: Option[[CoverageEntry]],
+  coverage_path: Option[String],
+  failures: [Failure],
+}
+
+#[doc("`sites_found`: the sites in the requested files.")]
+#[derive(Json, Eq, Show)]
+pub type SitesFoundMsg = { sites: [Site], skipped: [Skipped] }
+
+#[doc("`cast_done`: what one cast observed.")]
+#[derive(Json, Eq, Show)]
+pub type CastDoneMsg = {
+  wekufe: String,
+  outcome: Outcome,
+  killed_by: Option[String],
+  evidence: Option[Evidence],
+  message: Option[String],
+  code_hash: Option[String],
+  duration_ms: Int,
+  dirty: Bool,
+}
+
+#[doc("`aborted`: the cast was stopped in place.")]
+#[derive(Json, Eq, Show)]
+pub type AbortedMsg = { cast: Int, restored: Bool }
+
+#[doc("`reset_done`: global state was reset in place.")]
+#[derive(Json, Eq, Show)]
+pub type ResetDoneMsg = { clean: Bool, duration_ms: Int }
+
+#[doc("`reloaded`: changed files were recompiled and loaded.")]
+#[derive(Json, Eq, Show)]
+pub type ReloadedMsg = { modules: [String], dependents: [String], duration_ms: Int }
+
+#[doc("`delegated`: a driver's framework finished.")]
+#[derive(Json, Eq, Show)]
+pub type DelegatedMsg = {
+  tool: String,
+  tool_version: String,
+  outcomes: Option[[DelegatedOutcome]],
+  outcomes_path: Option[String],
+  duration_ms: Int,
+}
+
+#[doc("A reply or notification from a kalku.")]
+#[derive(Eq, Show)]
+pub type KalkuReply
+  = Ready(ReadyMsg)
+  | Prepared(PreparedMsg)
+  | BaselineDone(BaselineDoneMsg)
+  | Progress(ProgressMsg)
+  | SitesFound(SitesFoundMsg)
+  | CastDone(CastDoneMsg)
+  | Aborted(AbortedMsg)
+  | ResetDone(ResetDoneMsg)
+  | Reloaded(ReloadedMsg)
+  | Delegated(DelegatedMsg)
+  | Bye
+  | KalkuError(ErrorMsg)

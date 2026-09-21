@@ -1,0 +1,87 @@
+#[doc("""
+What every message shares: the `type` + `id` envelope, the protocol error
+kinds, and the canonical encoding (envelope first, absent fields omitted).
+""")]
+
+import core.list as list
+import encoding.json
+
+#[doc("Why a line was not accepted, per *Protocol errors* in docs/protocol.md.")]
+#[derive(Eq, Show)]
+pub type ErrorKind = LineTooLong | NotJson | NotObject | MissingType | UnknownType | MissingId | BadField | Invalid
+
+#[doc("A rejected line: the kind, and a detail naming what was wrong.")]
+#[derive(Eq, Show)]
+pub type ProtocolError = { kind: ErrorKind, detail: String }
+
+#[doc("A decoded message: its request id and its body.")]
+#[derive(Eq, Show)]
+pub type Msg[t] = { id: Int, body: t }
+
+#[doc("A parsed line whose envelope is valid; the body is not decoded yet.")]
+pub type Head = { kind: String, id: Int, value: JsonValue }
+
+#[doc("The wire name of an error kind, as fixtures and diagnostics spell it.")]
+pub fn kind_name(k: ErrorKind) : String {
+  case LineTooLong -> "line_too_long"
+  case NotJson -> "not_json"
+  case NotObject -> "not_object"
+  case MissingType -> "missing_type"
+  case UnknownType -> "unknown_type"
+  case MissingId -> "missing_id"
+  case BadField -> "bad_field"
+  case Invalid -> "invalid"
+}
+
+#[doc("A protocol error of the given kind.")]
+pub fn fail[t](kind: ErrorKind, detail: String) : Result[t, ProtocolError] =
+  Err(ProtocolError { kind: kind, detail: detail })
+
+#[doc("Parse a line and check its envelope: a JSON object with a string `type` and an integer `id`.")]
+pub fn parse_head(line: String) : Result[Head, ProtocolError] = match json_decode(line) {
+  None -> fail(NotJson, "not valid JSON")
+  Some(JObj(fields)) -> head_of(JObj(fields))
+  Some(other) -> fail(NotObject, "expected an object, got #{json_shape_name(other)}")
+}
+
+fn head_of(v: JsonValue) : Result[Head, ProtocolError] = match get(v, "type") {
+  JStr(kind) -> match get(v, "id") {
+    JNum(id) -> Ok(Head { kind: kind, id: id, value: v })
+    other -> fail(MissingId, "id: expected an integer, got #{json_shape_name(other)}")
+  }
+  other -> fail(MissingType, "type: expected a string, got #{json_shape_name(other)}")
+}
+
+#[doc("Turn a body decode result into a protocol result, wrapping the body with `wrap`.")]
+pub fn payload[a, b](r: Result[a, JsonError], wrap: (a) -> b) : Result[b, ProtocolError] = match r {
+  Ok(x) -> Ok(wrap(x))
+  Err(e) -> fail(BadField, json_error_show(e))
+}
+
+#[doc("Fail with `invalid` unless `ok` holds.")]
+pub fn require(ok: Bool, rule: String) : Result[Unit, ProtocolError] =
+  if ok { Ok(()) } else { fail(Invalid, rule) }
+
+#[doc("The unknown-type error for `kind`.")]
+pub fn unknown[t](kind: String) : Result[t, ProtocolError] = fail(UnknownType, "no message `#{kind}` in this direction")
+
+#[doc("Encode a message canonically: `type`, `id`, then the body's fields with absent ones omitted.")]
+pub fn envelope(kind: String, id: Int, fields: JsonValue) : String = {
+  let head = [Pair { fst: "type", snd: JStr(kind) }, Pair { fst: "id", snd: JNum(id) }]
+  let rest = match compact(fields) {
+    JObj(kvs) -> kvs
+    _ -> []
+  }
+  json_encode(JObj(head ++ rest))
+}
+
+#[doc("The empty body of a message without fields.")]
+pub fn no_fields() : JsonValue = JObj([])
+
+# Drops `null` members from objects at every depth: canonical form omits
+# absent optional fields instead of writing them as `null`.
+fn compact(v: JsonValue) : JsonValue = match v {
+  JObj(kvs) -> JObj(list.filter(kvs, (kv) => kv.snd != JNull) | (kv) => Pair { fst: kv.fst, snd: compact(kv.snd) })
+  JArr(xs) -> JArr(xs | compact)
+  other -> other
+}
