@@ -153,7 +153,7 @@ A kalku reports the sites in the files within scope (`--since <ref>` narrows to 
 For each planned wekufe, the scheduler picks an idle kalku and sends it the site plus the covering tests. The kalku:
 
 1. splices the replacement into the module's source in memory;
-2. compiles it; if the compiled code is identical to the original's, stops here and reports `equivalent` with evidence (see *Trivial compiler equivalence*);
+2. compiles it; if the compiled code is identical to the original's, stops here and reports `equivalent` (see *Trivial compiler equivalence*);
 3. loads it into its runtime — or, if the module is a compile-time dependency of others (macros, computed module attributes, `require`/`import`), recompiles the dependents too;
 4. runs only the covering tests, stopping at the first failure;
 5. restores the original modules;
@@ -258,7 +258,7 @@ Each such rule has a fixture in the kalku showing the case it avoids. An `arm` o
 
 ### Trivial compiler equivalence
 
-If a wekufe compiles to the same code as the original, it is equivalent, and that is a proof, not a guess. The kalku already compiles every wekufe during a cast, so the check costs one comparison: for Elixir, the `.beam` code chunks with debug info and line numbers stripped. An identical result ends the cast with outcome `equivalent` and evidence `identical_bytecode`, without running a test.
+If a wekufe compiles to the same code as the original, it is equivalent, and that is a proof, not a guess. The kalku already compiles every wekufe during a cast, so the check costs one comparison: for Elixir, the `.beam` code chunks with debug info and line numbers stripped. An identical result ends the cast with outcome `equivalent`, without running a test.
 
 The kalku also reports a hash of every compiled wekufe. Two wekufe with the same hash are the same program; the cache keys outcomes by that hash too, so a duplicate is cast once.
 
