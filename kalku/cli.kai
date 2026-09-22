@@ -3,7 +3,6 @@ Command-line parsing and the text kalku prints about itself. Pure: `main`
 owns the I/O and the exit code.
 """)]
 
-import core.list as list
 import kalku.version
 
 #[doc("What the command line asks for.")]
@@ -24,7 +23,7 @@ pub fn parse_args(argv: [String]) : Command {
   case ["--help", ...] -> ShowHelp
   case ["--version", ...] -> ShowVersion
   case ["-V", ...] -> ShowVersion
-  case [cmd, ...] -> if list.contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
+  case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
 }
 
 #[doc("The `--version` line.")]

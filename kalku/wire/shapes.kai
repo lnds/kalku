@@ -1,0 +1,162 @@
+#[doc("""
+Shapes shared by several messages of both protocols. Field order is the
+canonical wire order; `Option` fields are omitted from the wire when absent.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+
+#[doc("A place in a source file: 1-based line and column, 0-based byte offset.")]
+#[derive(Json, Eq, Show)]
+pub type Position = { line: Int, col: Int, byte: Int }
+
+#[doc("A half-open source range; `end` is absent only from a kalku that cannot determine it.")]
+#[derive(Json, Eq, Show)]
+pub type Span = { start: Position, end: Option[Position] }
+
+#[doc("A place where a spell applies, and the text it writes there.")]
+#[derive(Json, Eq, Show)]
+pub type Site = {
+  site_id: String,
+  file: String,
+  enclosing: Option[String],
+  ordinal: Option[Int],
+  span: Span,
+  spell: Spell,
+  original: Option[String],
+  replacement: String,
+  reload: Reload
+}
+
+#[doc("One test that ran in a baseline, with its duration.")]
+#[derive(Json, Eq, Show)]
+pub type TestTiming = { #[json(rename = "test")] test_id: String, file: String, duration_ms: Int }
+
+#[doc("The tests that execute one source line.")]
+#[derive(Json, Eq, Show)]
+pub type CoverageEntry = { file: String, line: Int, tests: [String] }
+
+#[doc("A test that failed, and why.")]
+#[derive(Json, Eq, Show)]
+pub type Failure = { #[json(rename = "test")] test_id: String, message: String }
+
+#[doc("A file a kalku could not search for sites.")]
+#[derive(Json, Eq, Show)]
+pub type Skipped = { file: String, reason: String, message: String }
+
+#[doc("One outcome relayed by a driver kalku, normalised to kalku's outcomes.")]
+#[derive(Json, Eq, Show)]
+pub type DelegatedOutcome = {
+  file: String,
+  enclosing: Option[String],
+  span: Span,
+  spell: Spell,
+  tool_mutator: String,
+  original: Option[String],
+  replacement: Option[String],
+  outcome: Outcome,
+  tool_status: String,
+  killed_by: Option[String]
+}
+
+#[doc("A deterministic partition of a run: shard `index` (1-based) of `count`.")]
+#[derive(Json, Eq, Show)]
+pub type Shard = { index: Int, count: Int }
+
+#[doc("Equivalent wekufe split by how they were established.")]
+#[derive(Json, Eq, Show)]
+pub type EquivalentCounts = { bytecode: Int, declared: Int }
+
+#[doc("Outcome totals of a run.")]
+#[derive(Json, Eq, Show)]
+pub type Counts = {
+  killed: Int,
+  survived: Int,
+  timeout: Int,
+  no_coverage: Int,
+  compile_error: Int,
+  crashed: Int,
+  equivalent: EquivalentCounts
+}
+
+#[doc("Suppressions a change adds, surfaced so hiding a hole is as visible as leaving one.")]
+#[derive(Json, Eq, Show)]
+pub type SuppressionChanges = {
+  equivalent_added: Int,
+  exclude_added: [String],
+  exclude_calls_added: [String]
+}
+
+#[doc("A server session, as `status` reports it.")]
+#[derive(Json, Eq, Show)]
+pub type SessionInfo = { root: String, state: SessionState, kalku: Int, idle_s: Int }
+
+#[doc("One past outcome of a wekufe; `at` is an RFC 3339 UTC timestamp.")]
+#[derive(Json, Eq, Show)]
+pub type HistoryEntry = { at: String, outcome: Outcome }
+
+#[doc("A long request's progress; a notification in the kalku protocol, an event in the client protocol.")]
+#[derive(Json, Eq, Show)]
+pub type ProgressMsg = { done: Int, total: Int }
+
+#[doc("A failed request.")]
+#[derive(Json, Eq, Show)]
+pub type ErrorMsg = { code: String, message: String, fatal: Bool }
+
+# ---- hand-written shapes ----------------------------------------------
+
+#[doc("What a run covers: the whole project, the lines changed since a git ref, or listed files.")]
+#[derive(Eq, Show)]
+pub type Scope = All | Since(String) | Files([String])
+
+impl Json for Scope {
+  fn to_json(self: Scope) : JsonValue = match self {
+    All -> JObj([("all", JBool(true))])
+    Since(r) -> JObj([("since", JStr(r))])
+    Files(fs) -> JObj([("files", JArr(fs | (f => JStr(f))))])
+  }
+  fn of_json(v: JsonValue, path: String) : Result[Scope, JsonError] = match v {
+    JObj([("all", JBool(true))]) -> Ok(All)
+    JObj([("since", JStr(r))]) -> Ok(Since(r))
+    JObj([("files", fs)]) ->
+      json_bind_list(fs, json_path_field(path, "files"), json_bind_string).map(xs => Files(xs))
+    _ -> Err(JsonError {
+      path: path,
+      expected: "exactly one of all: true, since, files",
+      found: json_shape_name(v)
+    })
+  }
+}
+
+#[doc("A JSON object of string values, in wire order.")]
+pub type StrMap = { entries: [(String, String)] }
+
+impl Eq for StrMap {
+  fn eq(a: StrMap, b: StrMap) : Bool =
+    (a.entries | (.fst)) == (b.entries | (.fst))
+      and (a.entries | (.snd)) == (b.entries | (.snd))
+}
+
+impl Show for StrMap {
+  fn show(x: StrMap) : String = json_encode(to_json(x))
+}
+
+impl Json for StrMap {
+  fn to_json(self: StrMap) : JsonValue =
+    JObj(self.entries | (e => (e.fst, JStr(e.snd))))
+  fn of_json(v: JsonValue, path: String) : Result[StrMap, JsonError] = match v {
+    JObj(kvs) -> collect(kvs | (kv => str_entry(kv, path))).map(es => StrMap { entries: es })
+    _ -> Err(JsonError { path: path, expected: "Object", found: json_shape_name(v) })
+  }
+}
+
+# One member of a string map: the value must be a string.
+fn str_entry(kv: (String, JsonValue), path: String) : Result[(String, String), JsonError] =
+  match kv.snd {
+    JStr(s) -> Ok((kv.fst, s))
+    other -> Err(JsonError {
+      path: json_path_field(path, kv.fst),
+      expected: "String",
+      found: json_shape_name(other)
+    })
+  }

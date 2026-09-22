@@ -1,0 +1,110 @@
+#[doc("""
+Messages of the client protocol: requests from a client (CLI, editor, CI,
+the MCP server) to the server, and the server's events. Payload fields are
+in canonical wire order.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("`run`: cast wekufe over a scope.")]
+#[derive(Json, Eq, Show)]
+pub type RunMsg = { root: String, scope: Scope, format: Format, shard: Option[Shard] }
+
+#[doc("`cast`: re-cast chosen wekufe.")]
+#[derive(Json, Eq, Show)]
+pub type RecastMsg = { root: String, wekufe: [String] }
+
+#[doc("`show`: one wekufe in full.")]
+#[derive(Json, Eq, Show)]
+pub type ShowMsg = { root: String, wekufe: String }
+
+#[doc("`propose_equivalent`: write a proposal for a person to review.")]
+#[derive(Json, Eq, Show)]
+pub type ProposeMsg = { root: String, wekufe: String, reason: String }
+
+#[doc("`cancel`: stop the run with this request id.")]
+#[derive(Json, Eq, Show)]
+pub type CancelMsg = { run: Int }
+
+#[doc("A request from a client to the server.")]
+#[derive(Eq, Show)]
+pub type ClientRequest
+  = RunReq(RunMsg)
+  | RecastReq(RecastMsg)
+  | ShowReq(ShowMsg)
+  | ProposeReq(ProposeMsg)
+  | StatusReq
+  | CancelReq(CancelMsg)
+
+#[doc("`phase`: the stage a run entered.")]
+#[derive(Json, Eq, Show)]
+pub type PhaseMsg = { phase: Phase }
+
+#[doc("`outcome`: what happened to one wekufe.")]
+#[derive(Json, Eq, Show)]
+pub type OutcomeMsg = {
+  wekufe: String,
+  site: Option[Site],
+  outcome: Status,
+  covering_tests: Option[[String]],
+  hint: Option[String],
+  duration_ms: Option[Int]
+}
+
+#[doc("`test_rejected`: a changed test that fails on the original code, so it kills nothing.")]
+#[derive(Json, Eq, Show)]
+pub type TestRejectedMsg = {
+  #[json(rename = "test")] test_id: String,
+  reason: String,
+  message: Option[String]
+}
+
+#[doc("`report`: a run's terminal summary.")]
+#[derive(Json, Eq, Show)]
+pub type ReportMsg = {
+  score: Option[Real],
+  counts: Counts,
+  survivors_on_changed_lines: Int,
+  suppression_changes: SuppressionChanges,
+  exit: Int
+}
+
+#[doc("`wekufe`: one wekufe in full, the answer to `show`.")]
+#[derive(Json, Eq, Show)]
+pub type WekufeMsg = {
+  wekufe: String,
+  site: Site,
+  outcome: Outcome,
+  covering_tests: [String],
+  hint: Option[String],
+  context: [String],
+  history: [HistoryEntry]
+}
+
+#[doc("`proposed`: the equivalent entry written for review.")]
+#[derive(Json, Eq, Show)]
+pub type ProposedMsg = { entry: String }
+
+#[doc("`sessions`: the server's sessions, the answer to `status`.")]
+#[derive(Json, Eq, Show)]
+pub type SessionsMsg = { sessions: [SessionInfo] }
+
+#[doc("`cancelled`: the run stopped.")]
+#[derive(Json, Eq, Show)]
+pub type CancelledMsg = { run: Int }
+
+#[doc("An event from the server to a client.")]
+#[derive(Eq, Show)]
+pub type ServerEvent
+  = PhaseEv(PhaseMsg)
+  | ProgressEv(ProgressMsg)
+  | OutcomeEv(OutcomeMsg)
+  | TestRejectedEv(TestRejectedMsg)
+  | ReportEv(ReportMsg)
+  | WekufeEv(WekufeMsg)
+  | ProposedEv(ProposedMsg)
+  | SessionsEv(SessionsMsg)
+  | CancelledEv(CancelledMsg)
+  | ErrorEv(ErrorMsg)
