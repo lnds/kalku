@@ -1,0 +1,65 @@
+import fs.dir
+import fs.file
+import kalku.wire.envelope
+import kalku.wire.kalku_codec
+
+const FIXTURES : String = "docs/protocol/fixtures"
+
+fn fixture_files(sub: String) : [String] / File =
+  sort(dir.list_dir("#{FIXTURES}/#{sub}")) | (f => "#{FIXTURES}/#{sub}/#{f}")
+
+fn lines_in(path: String) : [String] / File = lines(file.read(path))
+
+# A valid line must decode and re-encode to itself, byte for byte.
+fn request_problem(line: String) : Option[String] = match decode_request(line) {
+  Err(e) -> Some("#{kind_name(e.kind)}: #{e.detail}\n  #{line}")
+  Ok(m) -> {
+    let again = encode_request(m.id, m.body)
+    if again == line {
+      None
+    } else {
+      Some("re-encodes differently\n  in:  #{line}\n  out: #{again}")
+    }
+  }
+}
+
+fn reply_problem(line: String) : Option[String] = match decode_reply(line) {
+  Err(e) -> Some("#{kind_name(e.kind)}: #{e.detail}\n  #{line}")
+  Ok(m) -> {
+    let again = encode_reply(m.id, m.body)
+    if again == line {
+      None
+    } else {
+      Some("re-encodes differently\n  in:  #{line}\n  out: #{again}")
+    }
+  }
+}
+
+fn problems(sub: String, judge: (String) -> Option[String]) : [String] / File =
+  flat_map(
+    fixture_files(sub),
+    path => flat_map(lines_in(path), l => tagged(path, judge(l)))
+  )
+
+fn tagged(path: String, p: Option[String]) : [String] = match p {
+  Some(msg) -> ["#{path}: #{msg}"]
+  None -> []
+}
+
+fn report(ps: [String]) : Bool / Stdout {
+  ps |> each(p => print(p))
+  ps == []
+}
+
+test "every kalku request fixture round-trips byte for byte" {
+  assert report(problems("kalku/requests", request_problem))
+}
+
+test "every kalku reply fixture round-trips byte for byte" {
+  assert report(problems("kalku/replies", reply_problem))
+}
+
+test "there is a fixture file for every kalku message type" {
+  assert length(fixture_files("kalku/requests")) == 10
+  assert length(fixture_files("kalku/replies")) == 12
+}

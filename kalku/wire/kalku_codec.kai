@@ -1,0 +1,127 @@
+#[doc("""
+Encoding and decoding of the kalku protocol, both directions, plus the
+rules a well-formed message must still satisfy (`invalid` errors).
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.envelope
+import kalku.wire.kalku_msg
+
+# ---- requests: kaikai side -> kalku -------------------------------------
+
+#[doc("Encode a request to a kalku as one canonical line (no trailing newline).")]
+pub fn encode_request(id: Int, r: KalkuRequest) : String = match r {
+  Hello(m) -> envelope("hello", id, to_json(m))
+  Prepare -> envelope("prepare", id, no_fields())
+  Baseline -> envelope("baseline", id, no_fields())
+  Sites(m) -> envelope("sites", id, to_json(m))
+  Cast(m) -> envelope("cast", id, to_json(m))
+  Abort(m) -> envelope("abort", id, to_json(m))
+  Reset -> envelope("reset", id, no_fields())
+  Reload(m) -> envelope("reload", id, to_json(m))
+  Delegate(m) -> envelope("delegate", id, to_json(m))
+  Shutdown -> envelope("shutdown", id, no_fields())
+}
+
+#[doc("Decode one line as a request to a kalku.")]
+pub fn decode_request(line: String) : Result[Msg[KalkuRequest], ProtocolError] {
+  let h = parse_head(line)!
+  let r = request_body(h.kind, h.value)!
+  Ok(Msg { id: h.id, body: r })
+}
+
+fn request_body(kind: String, v: JsonValue) : Result[KalkuRequest, ProtocolError] = match kind {
+  "hello" -> body(hellomsg_of_json(v, ""), m => Hello(m))
+  "prepare" -> Ok(Prepare)
+  "baseline" -> Ok(Baseline)
+  "sites" -> body(sitesmsg_of_json(v, ""), m => Sites(m))
+  "cast" -> body(castmsg_of_json(v, ""), m => Cast(m))
+  "abort" -> body(abortmsg_of_json(v, ""), m => Abort(m))
+  "reset" -> Ok(Reset)
+  "reload" -> body(reloadmsg_of_json(v, ""), m => Reload(m))
+  "delegate" -> body(delegatemsg_of_json(v, ""), m => Delegate(m))
+  "shutdown" -> Ok(Shutdown)
+  _ -> unknown(kind)
+}
+
+# ---- replies: kalku -> kaikai side --------------------------------------
+
+#[doc("Encode a kalku's reply as one canonical line (no trailing newline).")]
+pub fn encode_reply(id: Int, r: KalkuReply) : String = match r {
+  Ready(m) -> envelope("ready", id, to_json(m))
+  Prepared(m) -> envelope("prepared", id, to_json(m))
+  BaselineDone(m) -> envelope("baseline_done", id, to_json(m))
+  Progress(m) -> envelope("progress", id, to_json(m))
+  SitesFound(m) -> envelope("sites_found", id, to_json(m))
+  CastDone(m) -> envelope("cast_done", id, to_json(m))
+  Aborted(m) -> envelope("aborted", id, to_json(m))
+  ResetDone(m) -> envelope("reset_done", id, to_json(m))
+  Reloaded(m) -> envelope("reloaded", id, to_json(m))
+  Delegated(m) -> envelope("delegated", id, to_json(m))
+  Bye -> envelope("bye", id, no_fields())
+  KalkuError(m) -> envelope("error", id, to_json(m))
+}
+
+#[doc("Decode one line as a kalku's reply, checking the rules a reply must satisfy.")]
+pub fn decode_reply(line: String) : Result[Msg[KalkuReply], ProtocolError] {
+  let h = parse_head(line)!
+  let r = reply_body(h.kind, h.value)!
+  check_reply(r)!
+  Ok(Msg { id: h.id, body: r })
+}
+
+fn reply_body(kind: String, v: JsonValue) : Result[KalkuReply, ProtocolError] = match kind {
+  "ready" -> body(readymsg_of_json(v, ""), m => Ready(m))
+  "prepared" -> body(preparedmsg_of_json(v, ""), m => Prepared(m))
+  "baseline_done" -> body(baselinedonemsg_of_json(v, ""), m => BaselineDone(m))
+  "progress" -> body(progressmsg_of_json(v, ""), m => Progress(m))
+  "sites_found" -> body(sitesfoundmsg_of_json(v, ""), m => SitesFound(m))
+  "cast_done" -> body(castdonemsg_of_json(v, ""), m => CastDone(m))
+  "aborted" -> body(abortedmsg_of_json(v, ""), m => Aborted(m))
+  "reset_done" -> body(resetdonemsg_of_json(v, ""), m => ResetDone(m))
+  "reloaded" -> body(reloadedmsg_of_json(v, ""), m => Reloaded(m))
+  "delegated" -> body(delegatedmsg_of_json(v, ""), m => Delegated(m))
+  "bye" -> Ok(Bye)
+  "error" -> body(errormsg_of_json(v, ""), m => KalkuError(m))
+  _ -> unknown(kind)
+}
+
+# ---- rules --------------------------------------------------------------
+
+fn check_reply(r: KalkuReply) : Result[Unit, ProtocolError] = match r {
+  Ready(m) -> check_ready(m)
+  BaselineDone(m) -> check_baseline(m)
+  CastDone(m) -> check_cast_done(m)
+  Delegated(m) -> check_delegated(m)
+  _ -> Ok(())
+}
+
+fn check_ready(m: ReadyMsg) : Result[Unit, ProtocolError] {
+  let native = contains(m.capabilities, CastCap)
+  let driver = contains(m.capabilities, DelegateCap)
+  require(native != driver, "ready: capabilities must include exactly one of cast, delegate")
+}
+
+fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
+  require(
+    not (is_some(m.coverage) and is_some(m.coverage_path)),
+    "baseline_done: at most one of coverage, coverage_path"
+  )!
+  require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
+}
+
+fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
+  let allowed = [Killed, Survived, CompileError, Equivalent]
+  require(
+    contains(allowed, m.outcome),
+    "cast_done: outcome must be killed, survived, compile_error, or equivalent"
+  )
+}
+
+fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] =
+  require(
+    is_some(m.outcomes) != is_some(m.outcomes_path),
+    "delegated: exactly one of outcomes, outcomes_path"
+  )

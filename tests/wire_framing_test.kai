@@ -1,0 +1,87 @@
+import encoding.json
+import fs.file
+import kalku.wire.framing
+import kalku.wire.version
+
+# Feeds `input` in chunks of `size` bytes and collects every frame.
+fn frames_of(input: String, max: Int, size: Int) : [Frame] =
+  feed_all(framer(max), chunks(input, size), [])
+
+fn feed_all(f: Framer, cs: [String], acc: [Frame]) : [Frame] = match cs {
+  [] -> acc
+  [c, ...rest] -> {
+    let fed = feed(f, c)
+    feed_all(fed.framer, rest, acc ++ fed.frames)
+  }
+}
+
+fn chunks(s: String, size: Int) : [String] =
+  if length(s) <= size {
+    [s]
+  } else {
+    match byte_slice(s, 0, size) {
+      Some(head) -> match byte_slice(s, size, length(s) - size) {
+        Some(tail) -> [head, ...chunks(tail, size)]
+        None -> [s]
+      }
+      None -> [s]
+    }
+  }
+
+test "lines survive any chunking" {
+  let input = "{\"type\":\"bye\",\"id\":7}\n{\"type\":\"bye\",\"id\":8}\n"
+  let expected = [Line("{\"type\":\"bye\",\"id\":7}"), Line("{\"type\":\"bye\",\"id\":8}")]
+  assert all([1, 2, 3, 7, 22, 23, 100], n => frames_of(input, 64, n) == expected)
+}
+
+test "an unfinished line is held until its newline arrives" {
+  let fed = feed(framer(64), "{\"type\":")
+  assert fed.frames == []
+  assert feed(fed.framer, "\"bye\",\"id\":1}\n").frames == [Line("{\"type\":\"bye\",\"id\":1}")]
+}
+
+test "an over-long line surfaces once as TooLong and the next line is intact" {
+  let input = "0123456789abcdef-over-the-limit\nshort\n"
+  assert all([1, 4, 16, 64], n => frames_of(input, 16, n) == [TooLong, Line("short")])
+}
+
+test "an over-long line is not buffered while it grows" {
+  let fed = feed(framer(8), "0123456789")
+  assert fed.framer.pending == ""
+  assert fed.framer.skipping
+}
+
+test "the framing fixtures hold" {
+  let cases = lines(file.read("docs/protocol/fixtures/invalid/framing.ndjson"))
+  assert all(cases, fixture_holds)
+}
+
+fn fixture_holds(raw: String) : Bool = match json_decode(raw) {
+  Some(v) -> match as_string(get(v, "expect")) {
+    Some(expect) -> match as_int(get(v, "max")) {
+      Some(max) -> match as_string(get(v, "input")) {
+        Some(input) -> matches(expect, frames_of(input, max, 5))
+        None -> false
+      }
+      None -> false
+    }
+    None -> false
+  }
+  None -> false
+}
+
+fn matches(expect: String, frames: [Frame]) : Bool = match frames {
+  [TooLong, Line(_)] -> expect == "line_too_long"
+  [Line(_), Line(_)] -> expect == "ok"
+  _ -> false
+}
+
+test "a message goes on the wire with its newline" {
+  assert frame("{\"type\":\"bye\",\"id\":7}") == "{\"type\":\"bye\",\"id\":7}\n"
+}
+
+test "only the same protocol version is compatible" {
+  assert compatible(PROTOCOL_VERSION)
+  assert not compatible(PROTOCOL_VERSION + 1)
+  assert not compatible(0)
+}
