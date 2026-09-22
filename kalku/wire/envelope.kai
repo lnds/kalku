@@ -8,7 +8,15 @@ import encoding.json
 
 #[doc("Why a line was not accepted, per *Protocol errors* in docs/protocol.md.")]
 #[derive(Eq, Show)]
-pub type ErrorKind = LineTooLong | NotJson | NotObject | MissingType | UnknownType | MissingId | BadField | Invalid
+pub type ErrorKind
+  = LineTooLong
+  | NotJson
+  | NotObject
+  | MissingType
+  | UnknownType
+  | MissingId
+  | BadField
+  | Invalid
 
 #[doc("A rejected line: the kind, and a detail naming what was wrong.")]
 #[derive(Eq, Show)]
@@ -63,10 +71,11 @@ pub fn require(ok: Bool, rule: String) : Result[Unit, ProtocolError] =
   if ok { Ok(()) } else { fail(Invalid, rule) }
 
 #[doc("The unknown-type error for `kind`.")]
-pub fn unknown[t](kind: String) : Result[t, ProtocolError] = fail(UnknownType, "no message `#{kind}` in this direction")
+pub fn unknown[t](kind: String) : Result[t, ProtocolError] =
+  fail(UnknownType, "no message `#{kind}` in this direction")
 
 #[doc("Encode a message canonically: `type`, `id`, then the body's fields with absent ones omitted.")]
-pub fn envelope(kind: String, id: Int, fields: JsonValue) : String = {
+pub fn envelope(kind: String, id: Int, fields: JsonValue) : String {
   let head = [Pair { fst: "type", snd: JStr(kind) }, Pair { fst: "id", snd: JNum(id) }]
   let rest = match compact(fields) {
     JObj(kvs) -> kvs
@@ -75,13 +84,18 @@ pub fn envelope(kind: String, id: Int, fields: JsonValue) : String = {
   json_encode(JObj(head ++ rest))
 }
 
+#[doc("Encode any value canonically: absent fields omitted at every depth, no whitespace.")]
+pub fn encode_value(v: JsonValue) : String = json_encode(compact(v))
+
 #[doc("The empty body of a message without fields.")]
 pub fn no_fields() : JsonValue = JObj([])
 
 # Drops `null` members from objects at every depth: canonical form omits
 # absent optional fields instead of writing them as `null`.
 fn compact(v: JsonValue) : JsonValue = match v {
-  JObj(kvs) -> JObj(list.filter(kvs, (kv) => kv.snd != JNull) | (kv) => Pair { fst: kv.fst, snd: compact(kv.snd) })
+  JObj(kvs) -> JObj(
+    list.filter(kvs, kv => kv.snd != JNull) | (kv => Pair { fst: kv.fst, snd: compact(kv.snd) })
+  )
   JArr(xs) -> JArr(xs | compact)
   other -> other
 }

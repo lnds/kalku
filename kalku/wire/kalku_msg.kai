@@ -15,7 +15,7 @@ pub type HelloMsg = {
   reni: String,
   worker: Int,
   inline_limit_bytes: Int,
-  env: StrMap,
+  env: StrMap
 }
 
 #[doc("`sites`: find sites in these files for these spells.")]
@@ -60,7 +60,7 @@ pub type ReadyMsg = {
   adapter: String,
   runtime: String,
   spells: [Spell],
-  capabilities: [Capability],
+  capabilities: [Capability]
 }
 
 #[doc("`prepared`: the project is compiled into the reni.")]
@@ -75,7 +75,7 @@ pub type BaselineDoneMsg = {
   tests: [TestTiming],
   coverage: Option[[CoverageEntry]],
   coverage_path: Option[String],
-  failures: [Failure],
+  failures: [Failure]
 }
 
 #[doc("`sites_found`: the sites in the requested files.")]
@@ -92,7 +92,7 @@ pub type CastDoneMsg = {
   message: Option[String],
   code_hash: Option[String],
   duration_ms: Int,
-  dirty: Bool,
+  dirty: Bool
 }
 
 #[doc("`aborted`: the cast was stopped in place.")]
@@ -114,7 +114,7 @@ pub type DelegatedMsg = {
   tool_version: String,
   outcomes: Option[[DelegatedOutcome]],
   outcomes_path: Option[String],
-  duration_ms: Int,
+  duration_ms: Int
 }
 
 #[doc("A reply or notification from a kalku.")]

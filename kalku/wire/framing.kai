@@ -1,0 +1,57 @@
+#[doc("""
+Newline-delimited framing, pure: bytes arrive in chunks of any size and
+leave as whole lines. A line longer than the limit is never buffered: its
+bytes are dropped up to the next newline and it surfaces as `TooLong`.
+""")]
+
+import core.list as list
+import core.string as string
+
+#[doc("Longest accepted line, in bytes, excluding the newline.")]
+pub const MAX_LINE_BYTES : Int = 4194304
+
+#[doc("One framed line, or the marker for a line that exceeded the limit.")]
+#[derive(Eq, Show)]
+pub type Frame = Line(String) | TooLong
+
+#[doc("Framing state: the bytes of an unfinished line, or whether the current line is being skipped.")]
+#[derive(Eq, Show)]
+pub type Framer = { pending: String, max: Int, skipping: Bool }
+
+#[doc("What feeding a chunk yields: the new state and the lines it completed.")]
+#[derive(Eq, Show)]
+pub type Fed = { framer: Framer, frames: [Frame] }
+
+#[doc("A framer that accepts lines up to `max` bytes.")]
+pub fn framer(max: Int) : Framer = Framer { pending: "", max: max, skipping: false }
+
+#[doc("Feed a chunk; returns the lines it completes, in order.")]
+pub fn feed(f: Framer, chunk: String) : Fed = split(f, f.pending ++ chunk, [])
+
+#[doc("A message as it goes on the wire: the line plus its newline.")]
+pub fn frame(line: String) : String = line ++ "\n"
+
+fn split(f: Framer, data: String, acc: [Frame]) : Fed = match string.index_of(data, "\n") {
+  Some(i) -> {
+    let line = cut(data, 0, i)
+    let rest = cut(data, i + 1, string.length(data) - i - 1)
+    let done = if f.skipping or string.length(line) > f.max { TooLong } else { Line(line) }
+    split(Framer { pending: "", max: f.max, skipping: false }, rest, [done, ...acc])
+  }
+  None -> Fed { framer: hold(f, data), frames: list.reverse(acc) }
+}
+
+# An unfinished line is kept only while it fits; past the limit it is
+# dropped and the rest of it skipped.
+fn hold(f: Framer, data: String) : Framer =
+  if f.skipping or string.length(data) > f.max {
+    Framer { pending: "", max: f.max, skipping: true }
+  } else {
+    Framer { pending: data, max: f.max, skipping: false }
+  }
+
+# Cuts at a newline or at the end, which are always character boundaries.
+fn cut(s: String, from: Int, len: Int) : String = match string.byte_slice(s, from, len) {
+  Some(part) -> part
+  None -> ""
+}

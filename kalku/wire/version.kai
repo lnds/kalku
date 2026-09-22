@@ -1,0 +1,7 @@
+#[doc("The protocol version this build speaks, and the handshake's compatibility rule.")]
+
+#[doc("Protocol version carried by `hello` and `ready`.")]
+pub const PROTOCOL_VERSION : Int = 1
+
+#[doc("True when a peer speaking `theirs` can talk to this build: versions must match exactly.")]
+pub fn compatible(theirs: Int) : Bool = theirs == PROTOCOL_VERSION

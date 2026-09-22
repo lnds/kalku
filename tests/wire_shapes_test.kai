@@ -1,0 +1,40 @@
+import core.list as list
+import core.string as string
+import encoding.json
+import fs.file
+import kalku.wire.envelope
+import kalku.wire.shapes
+
+const SHAPES : String = "docs/protocol/fixtures/shapes"
+
+fn lines_in(name: String) : [String] / File = string.lines(file.read("#{SHAPES}/#{name}.ndjson"))
+
+# A shape line must decode and re-encode to itself, byte for byte.
+fn round_trips[t: Json](line: String, decode: (JsonValue, String) -> Result[t, JsonError]) : Bool =
+  match json_decode(line) {
+    Some(v) -> match decode(v, "") {
+      Ok(x) -> encode_value(to_json(x)) == line
+      Err(_) -> false
+    }
+    None -> false
+  }
+
+fn failures(name: String, ok: (String) -> Bool) : [String] / File =
+  list.filter(lines_in(name), l => not ok(l))
+
+fn report(ps: [String]) : Bool / Stdout {
+  list.foreach(ps, p => Stdout.print(p))
+  ps == []
+}
+
+test "site fixtures round-trip" {
+  assert report(failures("site", l => round_trips(l, site_of_json)))
+}
+
+test "coverage fixtures round-trip" {
+  assert report(failures("coverage", l => round_trips(l, coverageentry_of_json)))
+}
+
+test "delegated outcome fixtures round-trip" {
+  assert report(failures("delegated_outcome", l => round_trips(l, delegatedoutcome_of_json)))
+}

@@ -50,7 +50,14 @@ pub type Phase = Preparing | Baselining | Planning | Casting | Reporting
 
 #[doc("The lifecycle state of a server session.")]
 #[derive(Eq, Show)]
-pub type SessionState = StateCold | StatePreparing | StateBaseline | StateReady | StateRunning | StateFailed | StateClosed
+pub type SessionState
+  = StateCold
+  | StatePreparing
+  | StateBaseline
+  | StateReady
+  | StateRunning
+  | StateFailed
+  | StateClosed
 
 #[doc("A client-protocol outcome: a run outcome, or `Gone` for a wekufe whose site no longer exists.")]
 #[derive(Eq, Show)]
@@ -59,56 +66,75 @@ pub type Status = Is(Outcome) | Gone
 # ---- tables -----------------------------------------------------------
 
 fn spells() : [Pair[String, Spell]] = [
-  Pair { fst: "arm", snd: Arm }, Pair { fst: "compare", snd: Compare },
-  Pair { fst: "connect", snd: Connect }, Pair { fst: "negate", snd: Negate },
-  Pair { fst: "literal", snd: Literal }, Pair { fst: "call", snd: Call },
-  Pair { fst: "foreign", snd: Foreign },
+  Pair { fst: "arm", snd: Arm },
+  Pair { fst: "compare", snd: Compare },
+  Pair { fst: "connect", snd: Connect },
+  Pair { fst: "negate", snd: Negate },
+  Pair { fst: "literal", snd: Literal },
+  Pair { fst: "call", snd: Call },
+  Pair { fst: "foreign", snd: Foreign }
 ]
 
 fn outcomes() : [Pair[String, Outcome]] = [
-  Pair { fst: "killed", snd: Killed }, Pair { fst: "survived", snd: Survived },
-  Pair { fst: "timeout", snd: Timeout }, Pair { fst: "no_coverage", snd: NoCoverage },
-  Pair { fst: "compile_error", snd: CompileError }, Pair { fst: "crashed", snd: Crashed },
-  Pair { fst: "equivalent", snd: Equivalent },
+  Pair { fst: "killed", snd: Killed },
+  Pair { fst: "survived", snd: Survived },
+  Pair { fst: "timeout", snd: Timeout },
+  Pair { fst: "no_coverage", snd: NoCoverage },
+  Pair { fst: "compile_error", snd: CompileError },
+  Pair { fst: "crashed", snd: Crashed },
+  Pair { fst: "equivalent", snd: Equivalent }
 ]
 
 fn capabilities() : [Pair[String, Capability]] = [
-  Pair { fst: "cast", snd: CastCap }, Pair { fst: "delegate", snd: DelegateCap },
-  Pair { fst: "per_test_coverage", snd: PerTestCoverage }, Pair { fst: "hot_load", snd: HotLoad },
+  Pair { fst: "cast", snd: CastCap },
+  Pair { fst: "delegate", snd: DelegateCap },
+  Pair { fst: "per_test_coverage", snd: PerTestCoverage },
+  Pair { fst: "hot_load", snd: HotLoad },
   Pair { fst: "recompile_dependents", snd: RecompileDependents },
-  Pair { fst: "abort", snd: AbortCap }, Pair { fst: "reset", snd: ResetCap },
-  Pair { fst: "code_hash", snd: CodeHash },
+  Pair { fst: "abort", snd: AbortCap },
+  Pair { fst: "reset", snd: ResetCap },
+  Pair { fst: "code_hash", snd: CodeHash }
 ]
 
 fn formats() : [Pair[String, Format]] = [
-  Pair { fst: "human", snd: Human }, Pair { fst: "json", snd: JsonFormat },
-  Pair { fst: "github", snd: Github }, Pair { fst: "agent", snd: Agent },
+  Pair { fst: "human", snd: Human },
+  Pair { fst: "json", snd: JsonFormat },
+  Pair { fst: "github", snd: Github },
+  Pair { fst: "agent", snd: Agent }
 ]
 
 fn phases() : [Pair[String, Phase]] = [
-  Pair { fst: "prepare", snd: Preparing }, Pair { fst: "baseline", snd: Baselining },
-  Pair { fst: "plan", snd: Planning }, Pair { fst: "cast", snd: Casting },
-  Pair { fst: "report", snd: Reporting },
+  Pair { fst: "prepare", snd: Preparing },
+  Pair { fst: "baseline", snd: Baselining },
+  Pair { fst: "plan", snd: Planning },
+  Pair { fst: "cast", snd: Casting },
+  Pair { fst: "report", snd: Reporting }
 ]
 
 fn session_states() : [Pair[String, SessionState]] = [
-  Pair { fst: "cold", snd: StateCold }, Pair { fst: "preparing", snd: StatePreparing },
-  Pair { fst: "baseline", snd: StateBaseline }, Pair { fst: "ready", snd: StateReady },
-  Pair { fst: "running", snd: StateRunning }, Pair { fst: "failed", snd: StateFailed },
-  Pair { fst: "closed", snd: StateClosed },
+  Pair { fst: "cold", snd: StateCold },
+  Pair { fst: "preparing", snd: StatePreparing },
+  Pair { fst: "baseline", snd: StateBaseline },
+  Pair { fst: "ready", snd: StateReady },
+  Pair { fst: "running", snd: StateRunning },
+  Pair { fst: "failed", snd: StateFailed },
+  Pair { fst: "closed", snd: StateClosed }
 ]
 
 # ---- table codec ------------------------------------------------------
 
-fn name_of[t : Eq](table: [Pair[String, t]], x: t) : String =
-  match list.find(table, (p) => p.snd == x) {
+fn name_of[t: Eq](table: [Pair[String, t]], x: t) : String =
+  match list.find(table, p => p.snd == x) {
     Some(p) -> p.fst
     None -> ""
   }
 
-fn value_of[t](table: [Pair[String, t]], v: JsonValue, path: String, what: String) : Result[t, JsonError] =
+fn value_of[t](table: [Pair[String, t]], v: JsonValue, path: String, what: String) : Result[
+  t,
+  JsonError
+] =
   match v {
-    JStr(s) -> match list.find(table, (p) => p.fst == s) {
+    JStr(s) -> match list.find(table, p => p.fst == s) {
       Some(p) -> Ok(p.snd)
       None -> Err(JsonError { path: path, expected: what, found: "\"#{s}\"" })
     }
@@ -123,12 +149,14 @@ pub fn outcome_name(o: Outcome) : String = name_of(outcomes(), o)
 
 impl Json for Spell {
   fn to_json(self: Spell) : JsonValue = JStr(name_of(spells(), self))
-  fn of_json(v: JsonValue, path: String) : Result[Spell, JsonError] = value_of(spells(), v, path, "Spell")
+  fn of_json(v: JsonValue, path: String) : Result[Spell, JsonError] =
+    value_of(spells(), v, path, "Spell")
 }
 
 impl Json for Outcome {
   fn to_json(self: Outcome) : JsonValue = JStr(name_of(outcomes(), self))
-  fn of_json(v: JsonValue, path: String) : Result[Outcome, JsonError] = value_of(outcomes(), v, path, "Outcome")
+  fn of_json(v: JsonValue, path: String) : Result[Outcome, JsonError] =
+    value_of(outcomes(), v, path, "Outcome")
 }
 
 impl Json for Evidence {
@@ -143,7 +171,7 @@ impl Json for Capability {
     known -> JStr(name_of(capabilities(), known))
   }
   fn of_json(v: JsonValue, path: String) : Result[Capability, JsonError] = match v {
-    JStr(s) -> match list.find(capabilities(), (p) => p.fst == s) {
+    JStr(s) -> match list.find(capabilities(), p => p.fst == s) {
       Some(p) -> Ok(p.snd)
       None -> Ok(OtherCapability(s))
     }
@@ -152,25 +180,38 @@ impl Json for Capability {
 }
 
 impl Json for Reload {
-  fn to_json(self: Reload) : JsonValue = JStr(if self == ModuleOnly { "module" } else { "dependents" })
+  fn to_json(self: Reload) : JsonValue =
+    JStr(if self == ModuleOnly { "module" } else { "dependents" })
   fn of_json(v: JsonValue, path: String) : Result[Reload, JsonError] =
-    value_of([Pair { fst: "module", snd: ModuleOnly }, Pair { fst: "dependents", snd: Dependents }], v, path, "Reload")
+    value_of(
+      [Pair { fst: "module", snd: ModuleOnly }, Pair { fst: "dependents", snd: Dependents }],
+      v,
+      path,
+      "Reload"
+    )
 }
 
 impl Json for BaselineStatus {
   fn to_json(self: BaselineStatus) : JsonValue = JStr(if self == Green { "green" } else { "red" })
   fn of_json(v: JsonValue, path: String) : Result[BaselineStatus, JsonError] =
-    value_of([Pair { fst: "green", snd: Green }, Pair { fst: "red", snd: Red }], v, path, "BaselineStatus")
+    value_of(
+      [Pair { fst: "green", snd: Green }, Pair { fst: "red", snd: Red }],
+      v,
+      path,
+      "BaselineStatus"
+    )
 }
 
 impl Json for Format {
   fn to_json(self: Format) : JsonValue = JStr(name_of(formats(), self))
-  fn of_json(v: JsonValue, path: String) : Result[Format, JsonError] = value_of(formats(), v, path, "Format")
+  fn of_json(v: JsonValue, path: String) : Result[Format, JsonError] =
+    value_of(formats(), v, path, "Format")
 }
 
 impl Json for Phase {
   fn to_json(self: Phase) : JsonValue = JStr(name_of(phases(), self))
-  fn of_json(v: JsonValue, path: String) : Result[Phase, JsonError] = value_of(phases(), v, path, "Phase")
+  fn of_json(v: JsonValue, path: String) : Result[Phase, JsonError] =
+    value_of(phases(), v, path, "Phase")
 }
 
 impl Json for SessionState {
@@ -186,6 +227,6 @@ impl Json for Status {
   }
   fn of_json(v: JsonValue, path: String) : Result[Status, JsonError] = match v {
     JStr("gone") -> Ok(Gone)
-    _ -> value_of(outcomes(), v, path, "Outcome or gone").map((o) => Is(o))
+    _ -> value_of(outcomes(), v, path, "Outcome or gone").map(o => Is(o))
   }
 }

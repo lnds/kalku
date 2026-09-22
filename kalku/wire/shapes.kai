@@ -26,7 +26,7 @@ pub type Site = {
   spell: Spell,
   original: Option[String],
   replacement: String,
-  reload: Reload,
+  reload: Reload
 }
 
 #[doc("One test that ran in a baseline, with its duration.")]
@@ -57,7 +57,7 @@ pub type DelegatedOutcome = {
   replacement: Option[String],
   outcome: Outcome,
   tool_status: String,
-  killed_by: Option[String],
+  killed_by: Option[String]
 }
 
 #[doc("A deterministic partition of a run: shard `index` (1-based) of `count`.")]
@@ -77,12 +77,16 @@ pub type Counts = {
   no_coverage: Int,
   compile_error: Int,
   crashed: Int,
-  equivalent: EquivalentCounts,
+  equivalent: EquivalentCounts
 }
 
 #[doc("Suppressions a change adds, surfaced so hiding a hole is as visible as leaving one.")]
 #[derive(Json, Eq, Show)]
-pub type SuppressionChanges = { equivalent_added: Int, exclude_added: [String], exclude_calls_added: [String] }
+pub type SuppressionChanges = {
+  equivalent_added: Int,
+  exclude_added: [String],
+  exclude_calls_added: [String]
+}
 
 #[doc("A server session, as `status` reports it.")]
 #[derive(Json, Eq, Show)]
@@ -110,14 +114,18 @@ impl Json for Scope {
   fn to_json(self: Scope) : JsonValue = match self {
     All -> JObj([Pair { fst: "all", snd: JBool(true) }])
     Since(r) -> JObj([Pair { fst: "since", snd: JStr(r) }])
-    Files(fs) -> JObj([Pair { fst: "files", snd: JArr(fs | (f) => JStr(f)) }])
+    Files(fs) -> JObj([Pair { fst: "files", snd: JArr(fs | (f => JStr(f))) }])
   }
   fn of_json(v: JsonValue, path: String) : Result[Scope, JsonError] = match v {
     JObj([Pair { fst: "all", snd: JBool(true) }]) -> Ok(All)
     JObj([Pair { fst: "since", snd: JStr(r) }]) -> Ok(Since(r))
     JObj([Pair { fst: "files", snd: fs }]) ->
-      json_bind_list(fs, json_path_field(path, "files"), json_bind_string).map((xs) => Files(xs))
-    _ -> Err(JsonError { path: path, expected: "exactly one of all: true, since, files", found: json_shape_name(v) })
+      json_bind_list(fs, json_path_field(path, "files"), json_bind_string).map(xs => Files(xs))
+    _ -> Err(JsonError {
+      path: path,
+      expected: "exactly one of all: true, since, files",
+      found: json_shape_name(v)
+    })
   }
 }
 
@@ -126,7 +134,8 @@ pub type StrMap = { entries: [Pair[String, String]] }
 
 impl Eq for StrMap {
   fn eq(a: StrMap, b: StrMap) : Bool =
-    (a.entries | (e) => e.fst) == (b.entries | (e) => e.fst) and (a.entries | (e) => e.snd) == (b.entries | (e) => e.snd)
+    (a.entries | (e => e.fst)) == (b.entries | (e => e.fst))
+      and (a.entries | (e => e.snd)) == (b.entries | (e => e.snd))
 }
 
 impl Show for StrMap {
@@ -134,21 +143,29 @@ impl Show for StrMap {
 }
 
 impl Json for StrMap {
-  fn to_json(self: StrMap) : JsonValue = JObj(self.entries | (e) => Pair { fst: e.fst, snd: JStr(e.snd) })
+  fn to_json(self: StrMap) : JsonValue =
+    JObj(self.entries | (e => Pair { fst: e.fst, snd: JStr(e.snd) }))
   fn of_json(v: JsonValue, path: String) : Result[StrMap, JsonError] = match v {
     JObj(kvs) -> {
       let built = list.foldl(kvs, Ok(StrMap { entries: [] }), (acc, kv) => str_entry(acc, kv, path))
-      built.map((m) => StrMap { entries: list.reverse(m.entries) })
+      built.map(m => StrMap { entries: list.reverse(m.entries) })
     }
     _ -> Err(JsonError { path: path, expected: "Object", found: json_shape_name(v) })
   }
 }
 
-fn str_entry(acc: Result[StrMap, JsonError], kv: Pair[String, JsonValue], path: String) : Result[StrMap, JsonError] =
+fn str_entry(acc: Result[StrMap, JsonError], kv: Pair[String, JsonValue], path: String) : Result[
+  StrMap,
+  JsonError
+] =
   match acc {
     Err(e) -> Err(e)
     Ok(m) -> match kv.snd {
       JStr(s) -> Ok(StrMap { entries: [Pair { fst: kv.fst, snd: s }, ...m.entries] })
-      other -> Err(JsonError { path: json_path_field(path, kv.fst), expected: "String", found: json_shape_name(other) })
+      other -> Err(JsonError {
+        path: json_path_field(path, kv.fst),
+        expected: "String",
+        found: json_shape_name(other)
+      })
     }
   }

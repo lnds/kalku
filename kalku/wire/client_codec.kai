@@ -1,0 +1,104 @@
+#[doc("""
+Encoding and decoding of the client protocol, both directions, plus the
+rules a well-formed message must still satisfy (`invalid` errors).
+""")]
+
+import core.string as string
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.envelope
+import kalku.wire.client_msg
+
+# ---- requests: client -> server -----------------------------------------
+
+#[doc("Encode a client request as one canonical line (no trailing newline).")]
+pub fn encode_client_request(id: Int, r: ClientRequest) : String = match r {
+  RunReq(m) -> envelope("run", id, to_json(m))
+  RecastReq(m) -> envelope("cast", id, to_json(m))
+  ShowReq(m) -> envelope("show", id, to_json(m))
+  ProposeReq(m) -> envelope("propose_equivalent", id, to_json(m))
+  StatusReq -> envelope("status", id, no_fields())
+  CancelReq(m) -> envelope("cancel", id, to_json(m))
+}
+
+#[doc("Decode one line as a client request, checking the rules a request must satisfy.")]
+pub fn decode_client_request(line: String) : Result[Msg[ClientRequest], ProtocolError] {
+  let h = parse_head(line)!
+  let r = client_request_body(h.kind, h.value)!
+  check_client_request(r)!
+  Ok(Msg { id: h.id, body: r })
+}
+
+fn client_request_body(kind: String, v: JsonValue) : Result[ClientRequest, ProtocolError] =
+  match kind {
+    "run" -> payload(runmsg_of_json(v, ""), m => RunReq(m))
+    "cast" -> payload(recastmsg_of_json(v, ""), m => RecastReq(m))
+    "show" -> payload(showmsg_of_json(v, ""), m => ShowReq(m))
+    "propose_equivalent" -> payload(proposemsg_of_json(v, ""), m => ProposeReq(m))
+    "status" -> Ok(StatusReq)
+    "cancel" -> payload(cancelmsg_of_json(v, ""), m => CancelReq(m))
+    _ -> unknown(kind)
+  }
+
+fn check_client_request(r: ClientRequest) : Result[Unit, ProtocolError] = match r {
+  RunReq(m) -> match m.shard {
+    Some(s) ->
+      require(s.index >= 1 and s.index <= s.count, "run: shard index must be within 1..count")
+    None -> Ok(())
+  }
+  ProposeReq(m) -> require(
+    not string.is_empty(string.trim(m.reason)),
+    "propose_equivalent: reason must not be empty"
+  )
+  _ -> Ok(())
+}
+
+# ---- events: server -> client -------------------------------------------
+
+#[doc("Encode a server event as one canonical line (no trailing newline).")]
+pub fn encode_event(id: Int, e: ServerEvent) : String = match e {
+  PhaseEv(m) -> envelope("phase", id, to_json(m))
+  ProgressEv(m) -> envelope("progress", id, to_json(m))
+  OutcomeEv(m) -> envelope("outcome", id, to_json(m))
+  TestRejectedEv(m) -> envelope("test_rejected", id, to_json(m))
+  ReportEv(m) -> envelope("report", id, to_json(m))
+  WekufeEv(m) -> envelope("wekufe", id, to_json(m))
+  ProposedEv(m) -> envelope("proposed", id, to_json(m))
+  SessionsEv(m) -> envelope("sessions", id, to_json(m))
+  CancelledEv(m) -> envelope("cancelled", id, to_json(m))
+  ErrorEv(m) -> envelope("error", id, to_json(m))
+}
+
+#[doc("Decode one line as a server event, checking the rules an event must satisfy.")]
+pub fn decode_event(line: String) : Result[Msg[ServerEvent], ProtocolError] {
+  let h = parse_head(line)!
+  let e = event_body(h.kind, h.value)!
+  check_event(e)!
+  Ok(Msg { id: h.id, body: e })
+}
+
+fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] = match kind {
+  "phase" -> payload(phasemsg_of_json(v, ""), m => PhaseEv(m))
+  "progress" -> payload(progressmsg_of_json(v, ""), m => ProgressEv(m))
+  "outcome" -> payload(outcomemsg_of_json(v, ""), m => OutcomeEv(m))
+  "test_rejected" -> payload(testrejectedmsg_of_json(v, ""), m => TestRejectedEv(m))
+  "report" -> payload(reportmsg_of_json(v, ""), m => ReportEv(m))
+  "wekufe" -> payload(wekufemsg_of_json(v, ""), m => WekufeEv(m))
+  "proposed" -> payload(proposedmsg_of_json(v, ""), m => ProposedEv(m))
+  "sessions" -> payload(sessionsmsg_of_json(v, ""), m => SessionsEv(m))
+  "cancelled" -> payload(cancelledmsg_of_json(v, ""), m => CancelledEv(m))
+  "error" -> payload(errormsg_of_json(v, ""), m => ErrorEv(m))
+  _ -> unknown(kind)
+}
+
+# A site is absent exactly when the wekufe is gone.
+fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
+  OutcomeEv(m) -> {
+    let has_site = match m.site {
+      Some(_) -> true
+      None -> false
+    }
+    require(has_site != (m.outcome == Gone), "outcome: site goes with every outcome but gone")
+  }
+  _ -> Ok(())
+}

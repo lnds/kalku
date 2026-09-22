@@ -1,0 +1,63 @@
+import core.list as list
+import core.string as string
+import encoding.json
+import fs.file
+import kalku.wire.envelope
+import kalku.wire.kalku_codec
+import kalku.wire.client_codec
+
+const INVALID : String = "docs/protocol/fixtures/invalid"
+
+# Each fixture line pairs a raw line with the protocol error kind it must produce.
+fn entries(name: String) : [Pair[String, String]] / File =
+  list.flat_map(string.lines(file.read("#{INVALID}/#{name}.ndjson")), entry)
+
+fn entry(raw: String) : [Pair[String, String]] = match json_decode(raw) {
+  Some(v) -> match as_string(get(v, "expect")) {
+    Some(kind) -> match as_string(get(v, "line")) {
+      Some(line) -> [Pair { fst: kind, snd: line }]
+      None -> []
+    }
+    None -> []
+  }
+  None -> []
+}
+
+fn kind_of[t](r: Result[t, ProtocolError]) : String = match r {
+  Ok(_) -> "accepted"
+  Err(e) -> kind_name(e.kind)
+}
+
+fn mismatches(name: String, decode: (String) -> String) : [String] / File =
+  list.flat_map(entries(name), e => {
+    let got = decode(e.snd)
+    if got == e.fst { [] } else { ["#{name}: expected #{e.fst}, got #{got}\n  #{e.snd}"] }
+  })
+
+fn report(ps: [String]) : Bool / Stdout {
+  list.foreach(ps, p => Stdout.print(p))
+  ps == []
+}
+
+test "invalid kalku requests fail with the kind their fixture names" {
+  assert report(mismatches("kalku_requests", l => kind_of(decode_request(l))))
+}
+
+test "invalid kalku replies fail with the kind their fixture names" {
+  assert report(mismatches("kalku_replies", l => kind_of(decode_reply(l))))
+}
+
+test "invalid client requests fail with the kind their fixture names" {
+  assert report(mismatches("client_requests", l => kind_of(decode_client_request(l))))
+}
+
+test "invalid server events fail with the kind their fixture names" {
+  assert report(mismatches("client_events", l => kind_of(decode_event(l))))
+}
+
+test "every invalid fixture file has entries" {
+  assert list.all(
+    ["kalku_requests", "kalku_replies", "client_requests", "client_events"],
+    n => entries(n) != []
+  )
+}
