@@ -1,0 +1,48 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.verdict
+
+fn run() : [Verdict] = [
+  Cast(Killed),
+  Cast(Killed),
+  Cast(Survived),
+  Cast(Timeout),
+  Cast(NoCoverage),
+  Cast(CompileError),
+  Cast(Crashed),
+  EquivalentBy(Bytecode),
+  EquivalentBy(Declared),
+  EquivalentBy(Declared)
+]
+
+test "a verdict reports its protocol outcome" {
+  assert outcome_of(Cast(Killed)) == Killed
+  assert outcome_of(EquivalentBy(Declared)) == Equivalent
+  assert outcome_of(EquivalentBy(Bytecode)) == Equivalent
+}
+
+test "a tally counts every outcome, equivalents split by origin" {
+  let c = tally(run())
+  assert c.killed == 2
+  assert c.survived == 1
+  assert c.timeout == 1
+  assert c.no_coverage == 1
+  assert c.compile_error == 1
+  assert c.crashed == 1
+  assert c.equivalent.bytecode == 1
+  assert c.equivalent.declared == 2
+  assert total(c) == length(run())
+}
+
+test "an empty run tallies to zero" {
+  assert tally([]) == empty()
+  assert total(empty()) == 0
+}
+
+# A kalku that proves equivalence reports the plain outcome; the origin is
+# bytecode, since that is the only proof a kalku may report.
+test "a bare equivalent outcome counts as proven by bytecode" {
+  let c = tally([Cast(Equivalent)])
+  assert c.equivalent.bytecode == 1
+  assert c.equivalent.declared == 0
+}

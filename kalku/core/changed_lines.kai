@@ -1,0 +1,76 @@
+#[doc("""
+The lines a change touched, read from `git diff -U0 <ref>`.
+
+Only the new side matters: a wekufe is cast on code that exists now, so a
+pure deletion contributes nothing and a deleted file contributes nothing.
+Running git is an edge; this module only reads what it printed.
+""")]
+
+#[doc("A run of touched lines in one file, both ends included.")]
+#[derive(Eq, Show)]
+pub type LineRange = { from: Int, to: Int }
+
+#[doc("The lines a change touched in one file.")]
+#[derive(Eq, Show)]
+pub type FileChange = { file: String, ranges: [LineRange] }
+
+#[doc("Read `git diff -U0` output: the files it touched and where.")]
+pub fn parse(diff: String) : [FileChange] = gather(lines(diff), "", [], [])
+
+#[doc("True when the change touched this line of this file.")]
+pub fn touches(changes: [FileChange], file: String, line: Int) : Bool =
+  any(changes, c => c.file == file and any(c.ranges, r => line >= r.from and line <= r.to))
+
+#[doc("The files the change touched, in the order the diff named them.")]
+pub fn files(changes: [FileChange]) : [String] = changes | (.file)
+
+# A `+++ b/<path>` line opens a file; `@@ … +start,count @@` adds a range to
+# the file that is open. `/dev/null` closes one: the file is gone, so none of
+# its lines exist to cast.
+fn gather(rest: [String], file: String, ranges: [LineRange], done: [FileChange]) : [FileChange] =
+  match rest {
+    [] -> flush(file, ranges, done)
+    [line, ...more] ->
+      if starts_with(line, "+++ ") {
+        gather(more, target_of(line), [], flush(file, ranges, done))
+      } else if starts_with(line, "@@") {
+        gather(more, file, ranges ++ hunk_range(line), done)
+      } else {
+        gather(more, file, ranges, done)
+      }
+  }
+
+fn flush(file: String, ranges: [LineRange], done: [FileChange]) : [FileChange] =
+  if is_empty(file) or is_empty(ranges) {
+    done
+  } else {
+    done ++ [FileChange { file: file, ranges: ranges }]
+  }
+
+# `+++ b/lib/a.ex` names the file; `+++ /dev/null` means it was deleted.
+fn target_of(line: String) : String {
+  let path = trim(drop_bytes(line, 4))
+  if path == "/dev/null" { "" } else { drop_prefix(path, "b/").unwrap_or(path) }
+}
+
+# `@@ -12,0 +13,2 @@ context` — the new side is what a wekufe can be cast on.
+fn hunk_range(line: String) : [LineRange] = match find(words(line), w => starts_with(w, "+")) {
+  None -> []
+  Some(token) -> range_of(drop_bytes(token, 1))
+}
+
+fn range_of(spec: String) : [LineRange] {
+  let parts = split(spec, ",")
+  let start = to_int(nth_or(parts, 0))
+  let count = if length(parts) > 1 { to_int(nth_or(parts, 1)) } else { Some(1) }
+  match (start, count) {
+    (Some(from), Some(n)) -> if n <= 0 { [] } else { [LineRange { from: from, to: from + n - 1 }] }
+    _ -> []
+  }
+}
+
+fn nth_or(xs: [String], i: Int) : String = nth(xs, i).unwrap_or("")
+
+fn words(text: String) : [String] = filter(split(text, " "), w => not is_empty(w))
+
+fn drop_bytes(s: String, n: Int) : String = byte_slice(s, n, length(s) - n).unwrap_or("")

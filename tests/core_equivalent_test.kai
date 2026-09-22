@@ -1,0 +1,158 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.equivalent
+
+fn site_at(
+  file: String,
+  enclosing: Option[String],
+  spell: Spell,
+  original: Option[String],
+  ordinal: Option[Int],
+  line: Int
+) : Site =
+  Site {
+    site_id: "id-#{file}-#{line}",
+    file: file,
+    enclosing: enclosing,
+    ordinal: ordinal,
+    span: Span { start: Position { line: line, col: 1, byte: 0 }, end: None },
+    spell: spell,
+    original: original,
+    replacement: "",
+    reload: ModuleOnly
+  }
+
+fn parser_site() : Site =
+  site_at(
+    "lib/my_app/parser.ex",
+    Some("MyApp.Parser.next_token/2"),
+    Compare,
+    Some(">="),
+    Some(1),
+    42
+  )
+
+fn driver_site() : Site = site_at("src/cart.ts", None, Compare, None, None, 12)
+
+fn entries_of(text: String) : [Entry] = match parse(text) {
+  Ok(es) -> es
+  Err(_) -> []
+}
+
+fn problems_of(text: String) : [String] = match parse(text) {
+  Ok(_) -> []
+  Err(ps) -> map(ps, p => "#{p.at}: #{p.message}")
+}
+
+fn first_problem(text: String) : String = head(problems_of(text)).unwrap_or("accepted")
+
+fn first_entry(text: String) : Option[Entry] = head(entries_of(text))
+
+fn semantic_in(text: String) : Option[SemanticKey] = match first_entry(text) {
+  Some(e) -> match e.key {
+    Semantic(k) -> Some(k)
+    LineKey(_) -> None
+  }
+  None -> None
+}
+
+fn line_ref_in(text: String) : Option[LineRef] = match first_entry(text) {
+  Some(e) -> match e.key {
+    LineKey(k) -> Some(k)
+    Semantic(_) -> None
+  }
+  None -> None
+}
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+fn ids(sites: [Site]) : [String] = sites | (.site_id)
+
+const SEMANTIC : String =
+  "lib/my_app/parser.ex  MyApp.Parser.next_token/2  compare  \">=\"  #1   # index is always even here"
+
+test "a semantic entry keeps every part of its key and its reason" {
+  assert semantic_in("#{SEMANTIC}\n")
+    == Some(SemanticKey {
+      file: "lib/my_app/parser.ex",
+      enclosing: "MyApp.Parser.next_token/2",
+      spell: Compare,
+      original: ">=",
+      ordinal: 1
+    })
+  assert map(entries_of("#{SEMANTIC}\n"), e => e.reason) == ["index is always even here"]
+  assert map(entries_of("#{SEMANTIC}\n"), e => e.at) == [1]
+}
+
+test "an original may hold spaces, quotes, and a hash" {
+  let text = "lib/a.ex  A.f/1  arm  \"{:error, _} -> :skip # done\"  #2   # unreachable arm\n"
+  assert semantic_in(text)
+    == Some(SemanticKey {
+      file: "lib/a.ex",
+      enclosing: "A.f/1",
+      spell: Arm,
+      original: "{:error, _} -> :skip # done",
+      ordinal: 2
+    })
+}
+
+test "a line key is the fallback for a kalku with no enclosing declaration" {
+  assert line_ref_in("src/cart.ts:12:compare  # the framework gives no function\n")
+    == Some(LineRef { file: "src/cart.ts", line: 12, spell: Compare })
+}
+
+test "blank lines and whole-line comments carry nothing" {
+  let text = "# a heading\n\n   \n#{SEMANTIC}\n"
+  assert length(entries_of(text)) == 1
+  assert problems_of(text) == []
+}
+
+test "an entry without a reason is an error, not a suppression" {
+  assert has(first_problem("lib/a.ex  A.f/1  compare  \">=\"  #1\n"), "no reason")
+  assert has(first_problem("lib/a.ex  A.f/1  compare  \">=\"  #1   #   \n"), "empty reason")
+}
+
+test "every malformed part names itself" {
+  assert has(first_problem("lib/a.ex  A.f/1  hex  \">=\"  #1   # why\n"), "unknown spell `hex`")
+  assert has(first_problem("lib/a.ex  A.f/1  compare  >=  #1   # why\n"), "must be a JSON string")
+  assert has(first_problem("lib/a.ex  A.f/1  compare  \">=\"  1   # why\n"), "ordinal must be")
+  assert has(first_problem("lib/a.ex  A.f/1  compare  # why\n"), "no original text")
+  assert has(first_problem("src/cart.ts:ten:compare  # why\n"), "is not a number")
+  assert has(first_problem("src/cart.ts:compare  # why\n"), "malformed line key")
+}
+
+test "a problem carries the line number of the line that has it" {
+  let text = "#{SEMANTIC}\nlib/a.ex  A.f/1  hex  \">=\"  #1   # why\n"
+  assert has(first_problem(text), "2: ")
+}
+
+test "a repeated entry is an error, naming the line it repeats" {
+  let problems = problems_of("#{SEMANTIC}\n#{SEMANTIC}\n")
+  assert length(problems) == 1
+  assert has(first_problem("#{SEMANTIC}\n#{SEMANTIC}\n"), "2: duplicate of the entry on line 1")
+}
+
+test "entries suppress the sites they name" {
+  let m = match_sites(entries_of("#{SEMANTIC}\n"), [parser_site(), driver_site()])
+  assert ids(m.suppressed) == ids([parser_site()])
+  assert m.orphans == []
+}
+
+test "an entry that names no site is an orphan, never a silent suppression" {
+  let text = "lib/my_app/parser.ex  MyApp.Parser.next_token/2  compare  \"<=\"  #1   # moved\n"
+  let m = match_sites(entries_of(text), [parser_site()])
+  assert m.suppressed == []
+  assert length(m.orphans) == 1
+}
+
+test "a line key suppresses by file, line, and spell" {
+  let entries = entries_of("src/cart.ts:12:compare  # no function here\n")
+  let m = match_sites(entries, [parser_site(), driver_site()])
+  assert ids(m.suppressed) == ids([driver_site()])
+}
+
+test "an entry renders the way the file spells it, so it round-trips" {
+  let rendered = map(entries_of("#{SEMANTIC}\n"), show_entry)
+  assert rendered == [SEMANTIC]
+  assert entries_of("#{SEMANTIC}\n") == entries_of("#{head(rendered).unwrap_or("")}\n")
+}

@@ -1,0 +1,40 @@
+import kalku.core.shard
+
+fn ids() : [String] = [1..200] | (n => "site-#{n}")
+
+fn owned_by(index: Int, count: Int) : [String] = keep(ids(), index, count)
+
+test "one shard owns everything" {
+  assert owned_by(1, 1) == ids()
+  assert shard_of("anything", 1) == 1
+}
+
+test "shards are disjoint and together cover the plan" {
+  let parts = [1..4] | (i => owned_by(i, 4))
+  assert length(concat(parts)) == length(ids())
+  assert all(ids(), id => length(filter(concat(parts), other => other == id)) == 1)
+}
+
+test "the shard of a wekufe depends on its id, not on its place in the plan" {
+  assert shard_of("site-7", 4) == shard_of("site-7", 4)
+  assert sort(owned_by(2, 4)) == sort(keep(reverse(ids()), 2, 4))
+}
+
+test "a shard index is 1-based and within the count" {
+  assert all(ids(), id => shard_of(id, 4) >= 1 and shard_of(id, 4) <= 4)
+  assert valid(1, 4)
+  assert valid(4, 4)
+  assert not valid(0, 4)
+  assert not valid(5, 4)
+  assert not valid(1, 0)
+}
+
+test "the partition is even enough to be worth sharding" {
+  let sizes = [1..4] | (i => length(owned_by(i, 4)))
+  assert all(sizes, n => n > 25)
+}
+
+test "owns agrees with shard_of" {
+  assert all(ids(), id => owns(id, shard_of(id, 3), 3))
+  assert not any(ids(), id => owns(id, shard_of(id, 3) % 3 + 1, 3))
+}
