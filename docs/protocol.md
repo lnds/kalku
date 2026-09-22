@@ -121,7 +121,6 @@ Half-open `[start, end)`.
 |---|---|
 | Spell | `arm` `compare` `connect` `negate` `literal` `call` `foreign` (drivers only) |
 | Outcome | `killed` `survived` `timeout` `no_coverage` `compile_error` `crashed` `equivalent` |
-| Evidence | `identical_bytecode` |
 | Capability | `cast` `delegate` `per_test_coverage` `hot_load` `recompile_dependents` `abort` `reset` `code_hash` — unknown values ignored |
 | Format | `human` `json` `github` `agent` |
 | Phase | `prepare` `baseline` `plan` `cast` `report` |
@@ -264,20 +263,21 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 | `wekufe` | string | |
 | `outcome` | `killed` \| `survived` \| `compile_error` \| `equivalent` | |
 | `killed_by`? | test id | the failing test, when known |
-| `evidence`? | Evidence | required with `equivalent`, forbidden otherwise |
 | `message`? | string | compiler diagnostic for `compile_error` |
 | `code_hash`? | string | hash of the compiled wekufe, whenever it compiled and the kalku has `code_hash` |
 | `duration_ms` | int | |
 | `dirty` | bool | the runtime may not be back to its original state |
 
-`timeout` and `crashed` never appear here: the kaikai side detects them from outside (a missing response, a dead process). A native kalku does not enforce its own timeout. Any other outcome, or the `evidence` rule broken, is `invalid`.
+`timeout` and `crashed` never appear here: the kaikai side detects them from outside (a missing response, a dead process). A native kalku does not enforce its own timeout. Any other outcome is `invalid`.
+
+`equivalent` means the wekufe compiled to the same code as the original, so no test ran: identical compiled code is the only mechanical evidence of equivalence, and a kalku never reports equivalence on any other ground. Should another kind of evidence appear, it arrives as a new optional field.
 
 `dirty: true` makes the kaikai side send `reset` before the next cast, and recycle the kalku only if that fails.
 
 ```json
 {"type":"cast","id":5,"wekufe":"c1f37a90e2b4","site":{"site_id":"c1f37a90e2b4","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.next_token/2","ordinal":1,"span":{"start":{"line":42,"col":7,"byte":1180},"end":{"line":42,"col":9,"byte":1182}},"spell":"compare","original":">=","replacement":">","reload":"module"},"tests":["test/my_app/parser_test.exs:18"]}
 {"type":"cast_done","id":5,"wekufe":"c1f37a90e2b4","outcome":"killed","killed_by":"test/my_app/parser_test.exs:18","code_hash":"77e0c3d91f2a","duration_ms":37,"dirty":false}
-{"type":"cast_done","id":6,"wekufe":"a4d95e11b7c0","outcome":"equivalent","evidence":"identical_bytecode","code_hash":"19bc40f2d8a1","duration_ms":4,"dirty":false}
+{"type":"cast_done","id":6,"wekufe":"a4d95e11b7c0","outcome":"equivalent","code_hash":"19bc40f2d8a1","duration_ms":4,"dirty":false}
 ```
 
 ### `abort` → `aborted`

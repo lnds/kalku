@@ -14,8 +14,6 @@
 {"expect":"bad_field","line":"{\"type\":\"ready\",\"id\":1,\"protocol\":1,\"language\":\"x\",\"adapter\":\"0\",\"runtime\":\"r\",\"spells\":[\"hex\"],\"capabilities\":[\"cast\"]}"}
 {"expect":"invalid","line":"{\"type\":\"ready\",\"id\":1,\"protocol\":1,\"language\":\"x\",\"adapter\":\"0\",\"runtime\":\"r\",\"spells\":[],\"capabilities\":[\"cast\",\"delegate\"]}"}
 {"expect":"invalid","line":"{\"type\":\"ready\",\"id\":1,\"protocol\":1,\"language\":\"x\",\"adapter\":\"0\",\"runtime\":\"r\",\"spells\":[],\"capabilities\":[\"abort\"]}"}
-{"expect":"invalid","line":"{\"type\":\"cast_done\",\"id\":6,\"wekufe\":\"w\",\"outcome\":\"equivalent\",\"duration_ms\":4,\"dirty\":false}"}
-{"expect":"invalid","line":"{\"type\":\"cast_done\",\"id\":6,\"wekufe\":\"w\",\"outcome\":\"killed\",\"evidence\":\"identical_bytecode\",\"duration_ms\":4,\"dirty\":false}"}
 {"expect":"invalid","line":"{\"type\":\"cast_done\",\"id\":6,\"wekufe\":\"w\",\"outcome\":\"timeout\",\"duration_ms\":4,\"dirty\":false}"}
 {"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"red\",\"duration_ms\":1,\"tests\":[],\"failures\":[]}"}
 {"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage\":[],\"coverage_path\":\"/c\",\"failures\":[]}"}

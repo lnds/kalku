@@ -11,7 +11,6 @@ defmodule Kalku.Schema do
     spell: @spells,
     outcome: @outcomes,
     cast_outcome: ~w(killed survived compile_error equivalent),
-    evidence: ~w(identical_bytecode),
     reload: ~w(module dependents),
     baseline_status: ~w(green red)
   }
@@ -96,7 +95,6 @@ defmodule Kalku.Schema do
       wekufe: :string,
       outcome: {:enum, :cast_outcome},
       killed_by: {:opt, :string},
-      evidence: {:opt, {:enum, :evidence}},
       message: {:opt, :string},
       code_hash: {:opt, :string},
       duration_ms: :int,
