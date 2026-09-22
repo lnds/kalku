@@ -102,27 +102,22 @@ fn check_reply(r: KalkuReply) : Result[Unit, ProtocolError] = match r {
 fn check_ready(m: ReadyMsg) : Result[Unit, ProtocolError] = {
   let native = list.contains(m.capabilities, CastCap)
   let driver = list.contains(m.capabilities, DelegateCap)
-  let exactly_one = native != driver
-  require(exactly_one, "ready: capabilities must include exactly one of cast, delegate")
+  require(native != driver, "ready: capabilities must include exactly one of cast, delegate")
 }
 
 fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] = {
   require(not (is_some(m.coverage) and is_some(m.coverage_path)), "baseline_done: at most one of coverage, coverage_path")!
-  let consistent = (m.status == Red) == (m.failures != [])
-  require(consistent, "baseline_done: red needs failures, green none")
+  require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
 }
 
 fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] = {
   let allowed = [Killed, Survived, CompileError, Equivalent]
   require(list.contains(allowed, m.outcome), "cast_done: outcome must be killed, survived, compile_error, or equivalent")!
-  let paired = (m.outcome == Equivalent) == is_some(m.evidence)
-  require(paired, "cast_done: evidence goes with equivalent, and only with it")
+  require((m.outcome == Equivalent) == is_some(m.evidence), "cast_done: evidence goes with equivalent, and only with it")
 }
 
-fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] = {
-  let exactly_one = is_some(m.outcomes) != is_some(m.outcomes_path)
-  require(exactly_one, "delegated: exactly one of outcomes, outcomes_path")
-}
+fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] =
+  require(is_some(m.outcomes) != is_some(m.outcomes_path), "delegated: exactly one of outcomes, outcomes_path")
 
 fn is_some[t](o: Option[t]) : Bool = match o {
   Some(_) -> true
