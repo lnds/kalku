@@ -3,7 +3,6 @@ Encoding and decoding of the client protocol, both directions, plus the
 rules a well-formed message must still satisfy (`invalid` errors).
 """)]
 
-import core.option as option
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.envelope
@@ -95,7 +94,7 @@ fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] =
 fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
   OutcomeEv(m) ->
     require(
-      option.is_some(m.site) != (m.outcome == Gone),
+      is_some(m.site) != (m.outcome == Gone),
       "outcome: site goes with every outcome but gone"
     )
   _ -> Ok(())

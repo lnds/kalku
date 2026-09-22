@@ -3,8 +3,6 @@ Encoding and decoding of the kalku protocol, both directions, plus the
 rules a well-formed message must still satisfy (`invalid` errors).
 """)]
 
-import core.list as list
-import core.option as option
 import encoding.json
 import kalku.wire.enums
 import kalku.wire.shapes
@@ -101,14 +99,14 @@ fn check_reply(r: KalkuReply) : Result[Unit, ProtocolError] = match r {
 }
 
 fn check_ready(m: ReadyMsg) : Result[Unit, ProtocolError] {
-  let native = list.contains(m.capabilities, CastCap)
-  let driver = list.contains(m.capabilities, DelegateCap)
+  let native = contains(m.capabilities, CastCap)
+  let driver = contains(m.capabilities, DelegateCap)
   require(native != driver, "ready: capabilities must include exactly one of cast, delegate")
 }
 
 fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
   require(
-    not (option.is_some(m.coverage) and option.is_some(m.coverage_path)),
+    not (is_some(m.coverage) and is_some(m.coverage_path)),
     "baseline_done: at most one of coverage, coverage_path"
   )!
   require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
@@ -117,13 +115,13 @@ fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
 fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
   let allowed = [Killed, Survived, CompileError, Equivalent]
   require(
-    list.contains(allowed, m.outcome),
+    contains(allowed, m.outcome),
     "cast_done: outcome must be killed, survived, compile_error, or equivalent"
   )
 }
 
 fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] =
   require(
-    option.is_some(m.outcomes) != option.is_some(m.outcomes_path),
+    is_some(m.outcomes) != is_some(m.outcomes_path),
     "delegated: exactly one of outcomes, outcomes_path"
   )

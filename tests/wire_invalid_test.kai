@@ -1,5 +1,3 @@
-import core.list as list
-import core.string as string
 import encoding.json
 import fs.file
 import kalku.wire.envelope
@@ -10,7 +8,7 @@ const INVALID : String = "docs/protocol/fixtures/invalid"
 
 # Each fixture line pairs a raw line with the protocol error kind it must produce.
 fn entries(name: String) : [(String, String)] / File =
-  list.flat_map(string.lines(file.read("#{INVALID}/#{name}.ndjson")), entry)
+  flat_map(lines(file.read("#{INVALID}/#{name}.ndjson")), entry)
 
 fn entry(raw: String) : [(String, String)] = match json_decode(raw) {
   Some(v) -> match as_string(get(v, "expect")) {
@@ -29,7 +27,7 @@ fn kind_of[t](r: Result[t, ProtocolError]) : String = match r {
 }
 
 fn mismatches(name: String, decode: (String) -> String) : [String] / File =
-  list.flat_map(entries(name), e => {
+  flat_map(entries(name), e => {
     let (expected, line) = e
     let got = decode(line)
     if got == expected { [] } else { ["#{name}: expected #{expected}, got #{got}\n  #{line}"] }
@@ -57,7 +55,7 @@ test "invalid server events fail with the kind their fixture names" {
 }
 
 test "every invalid fixture file has entries" {
-  assert list.all(
+  assert all(
     ["kalku_requests", "kalku_replies", "client_requests", "client_events"],
     n => entries(n) != []
   )

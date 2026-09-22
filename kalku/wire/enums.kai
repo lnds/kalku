@@ -4,7 +4,6 @@ The protocol's closed sets and their wire names. Each set is a table of
 disagree on a spelling.
 """)]
 
-import core.list as list
 import encoding.json
 
 #[doc("A class of defect a kalku can cast; `Foreign` is a driver framework's own operator.")]
@@ -120,7 +119,7 @@ fn session_states() : [(String, SessionState)] = [
 # ---- table codec ------------------------------------------------------
 
 fn name_of[t: Eq](table: [(String, t)], x: t) : String =
-  match list.find(table, p => p.snd == x) {
+  match find(table, p => p.snd == x) {
     Some(p) -> p.fst
     None -> ""
   }
@@ -130,7 +129,7 @@ fn value_of[t](table: [(String, t)], v: JsonValue, path: String, what: String) :
   JsonError
 ] =
   match v {
-    JStr(s) -> match list.find(table, p => p.fst == s) {
+    JStr(s) -> match find(table, p => p.fst == s) {
       Some(p) -> Ok(p.snd)
       None -> Err(JsonError { path: path, expected: what, found: "\"#{s}\"" })
     }
@@ -161,7 +160,7 @@ impl Json for Capability {
     known -> JStr(name_of(capabilities(), known))
   }
   fn of_json(v: JsonValue, path: String) : Result[Capability, JsonError] = match v {
-    JStr(s) -> match list.find(capabilities(), p => p.fst == s) {
+    JStr(s) -> match find(capabilities(), p => p.fst == s) {
       Some(p) -> Ok(p.snd)
       None -> Ok(OtherCapability(s))
     }

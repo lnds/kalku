@@ -4,10 +4,6 @@ leave as whole lines. A line longer than the limit is never buffered: its
 bytes are dropped up to the next newline and it surfaces as `TooLong`.
 """)]
 
-import core.list as list
-import core.option as option
-import core.string as string
-
 #[doc("Longest accepted line, in bytes, excluding the newline.")]
 pub const MAX_LINE_BYTES : Int = 4194304
 
@@ -32,20 +28,20 @@ pub fn feed(f: Framer, chunk: String) : Fed = split(f, f.pending ++ chunk, [])
 #[doc("A message as it goes on the wire: the line plus its newline.")]
 pub fn frame(line: String) : String = line ++ "\n"
 
-fn split(f: Framer, data: String, acc: [Frame]) : Fed = match string.index_of(data, "\n") {
+fn split(f: Framer, data: String, acc: [Frame]) : Fed = match index_of(data, "\n") {
   Some(i) -> {
     let line = cut(data, 0, i)
-    let rest = cut(data, i + 1, string.length(data) - i - 1)
-    let done = if f.skipping or string.length(line) > f.max { TooLong } else { Line(line) }
+    let rest = cut(data, i + 1, length(data) - i - 1)
+    let done = if f.skipping or length(line) > f.max { TooLong } else { Line(line) }
     split(Framer { pending: "", max: f.max, skipping: false }, rest, [done, ...acc])
   }
-  None -> Fed { framer: hold(f, data), frames: list.reverse(acc) }
+  None -> Fed { framer: hold(f, data), frames: reverse(acc) }
 }
 
 # An unfinished line is kept only while it fits; past the limit it is
 # dropped and the rest of it skipped.
 fn hold(f: Framer, data: String) : Framer =
-  if f.skipping or string.length(data) > f.max {
+  if f.skipping or length(data) > f.max {
     Framer { pending: "", max: f.max, skipping: true }
   } else {
     Framer { pending: data, max: f.max, skipping: false }
@@ -53,4 +49,4 @@ fn hold(f: Framer, data: String) : Framer =
 
 # Cuts at a newline or at the end, which are always character boundaries.
 fn cut(s: String, from: Int, len: Int) : String =
-  option.unwrap_or(string.byte_slice(s, from, len), "")
+  unwrap_or(byte_slice(s, from, len), "")

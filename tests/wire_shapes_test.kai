@@ -1,5 +1,3 @@
-import core.list as list
-import core.string as string
 import encoding.json
 import fs.file
 import kalku.wire.envelope
@@ -7,7 +5,7 @@ import kalku.wire.shapes
 
 const SHAPES : String = "docs/protocol/fixtures/shapes"
 
-fn lines_in(name: String) : [String] / File = string.lines(file.read("#{SHAPES}/#{name}.ndjson"))
+fn lines_in(name: String) : [String] / File = lines(file.read("#{SHAPES}/#{name}.ndjson"))
 
 # A shape line must decode and re-encode to itself, byte for byte.
 fn round_trips[t: Json](line: String, decode: (JsonValue, String) -> Result[t, JsonError]) : Bool =
@@ -20,7 +18,7 @@ fn round_trips[t: Json](line: String, decode: (JsonValue, String) -> Result[t, J
   }
 
 fn failures(name: String, ok: (String) -> Bool) : [String] / File =
-  list.filter(lines_in(name), l => not ok(l))
+  filter(lines_in(name), l => not ok(l))
 
 fn report(ps: [String]) : Bool / Stdout {
   ps |> each(p => Stdout.print(p))

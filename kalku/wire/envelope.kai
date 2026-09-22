@@ -3,7 +3,6 @@ What every message shares: the `type` + `id` envelope, the protocol error
 kinds, and the canonical encoding (envelope first, absent fields omitted).
 """)]
 
-import core.list as list
 import encoding.json
 
 #[doc("Why a line was not accepted, per *Protocol errors* in docs/protocol.md.")]
@@ -94,7 +93,7 @@ pub fn no_fields() : JsonValue = JObj([])
 # absent optional fields instead of writing them as `null`.
 fn compact(v: JsonValue) : JsonValue = match v {
   JObj(kvs) -> JObj(
-    list.filter(kvs, kv => kv.snd != JNull) | (kv => (kv.fst, compact(kv.snd)))
+    filter(kvs, kv => kv.snd != JNull) | (kv => (kv.fst, compact(kv.snd)))
   )
   JArr(xs) -> JArr(xs | compact)
   other -> other

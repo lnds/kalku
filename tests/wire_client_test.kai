@@ -1,5 +1,3 @@
-import core.list as list
-import core.string as string
 import fs.dir
 import fs.file
 import kalku.wire.envelope
@@ -8,9 +6,9 @@ import kalku.wire.client_codec
 const FIXTURES : String = "docs/protocol/fixtures"
 
 fn fixture_files(sub: String) : [String] / File =
-  list.sort(dir.list_dir("#{FIXTURES}/#{sub}")) | (f => "#{FIXTURES}/#{sub}/#{f}")
+  sort(dir.list_dir("#{FIXTURES}/#{sub}")) | (f => "#{FIXTURES}/#{sub}/#{f}")
 
-fn lines_in(path: String) : [String] / File = string.lines(file.read(path))
+fn lines_in(path: String) : [String] / File = lines(file.read(path))
 
 # A valid line must decode and re-encode to itself, byte for byte.
 fn request_problem(line: String) : Option[String] = match decode_client_request(line) {
@@ -38,9 +36,9 @@ fn event_problem(line: String) : Option[String] = match decode_event(line) {
 }
 
 fn problems(sub: String, judge: (String) -> Option[String]) : [String] / File =
-  list.flat_map(
+  flat_map(
     fixture_files(sub),
-    path => list.flat_map(lines_in(path), l => tagged(path, judge(l)))
+    path => flat_map(lines_in(path), l => tagged(path, judge(l)))
   )
 
 fn tagged(path: String, p: Option[String]) : [String] = match p {
@@ -62,6 +60,6 @@ test "every server event fixture round-trips byte for byte" {
 }
 
 test "there is a fixture file for every client message type" {
-  assert list.length(fixture_files("client/requests")) == 6
-  assert list.length(fixture_files("client/events")) == 10
+  assert length(fixture_files("client/requests")) == 6
+  assert length(fixture_files("client/events")) == 10
 }

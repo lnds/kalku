@@ -3,7 +3,6 @@ Shapes shared by several messages of both protocols. Field order is the
 canonical wire order; `Option` fields are omitted from the wire when absent.
 """)]
 
-import core.list as list
 import encoding.json
 import kalku.wire.enums
 
@@ -146,26 +145,18 @@ impl Json for StrMap {
   fn to_json(self: StrMap) : JsonValue =
     JObj(self.entries | (e => (e.fst, JStr(e.snd))))
   fn of_json(v: JsonValue, path: String) : Result[StrMap, JsonError] = match v {
-    JObj(kvs) -> {
-      let built = list.foldl(kvs, Ok(StrMap { entries: [] }), (acc, kv) => str_entry(acc, kv, path))
-      built.map(m => StrMap { entries: list.reverse(m.entries) })
-    }
+    JObj(kvs) -> collect(kvs | (kv => str_entry(kv, path))).map(es => StrMap { entries: es })
     _ -> Err(JsonError { path: path, expected: "Object", found: json_shape_name(v) })
   }
 }
 
-fn str_entry(acc: Result[StrMap, JsonError], kv: (String, JsonValue), path: String) : Result[
-  StrMap,
-  JsonError
-] =
-  match acc {
-    Err(e) -> Err(e)
-    Ok(m) -> match kv.snd {
-      JStr(s) -> Ok(StrMap { entries: [(kv.fst, s), ...m.entries] })
-      other -> Err(JsonError {
-        path: json_path_field(path, kv.fst),
-        expected: "String",
-        found: json_shape_name(other)
-      })
-    }
+# One member of a string map: the value must be a string.
+fn str_entry(kv: (String, JsonValue), path: String) : Result[(String, String), JsonError] =
+  match kv.snd {
+    JStr(s) -> Ok((kv.fst, s))
+    other -> Err(JsonError {
+      path: json_path_field(path, kv.fst),
+      expected: "String",
+      found: json_shape_name(other)
+    })
   }
