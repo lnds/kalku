@@ -1,0 +1,80 @@
+#[doc("""
+What blocks a change, and the exit code that says so.
+
+"Your tests have holes" and "kalku could not measure" are different
+failures, so they get different codes: 1 for a hole, 2 for a run that
+could not produce a number. A survivor on a line the change touched is
+what blocks a pull request; the global score is guarded separately, so
+old debt in a file you touched does not block new work.
+""")]
+
+import kalku.wire.shapes
+import kalku.core.score
+
+#[doc("What a run is held to: an optional floor, and the score it may not fall below.")]
+#[derive(Eq, Show)]
+pub type Policy = { threshold: Option[Real], baseline: Option[Real] }
+
+#[doc("A reason a run does not pass.")]
+#[derive(Eq, Show)]
+pub type Blocker
+  = SurvivorsOnChangedLines(Int)
+  | BelowThreshold(Real, Real)
+  | BelowBaseline(Real, Real)
+  | CouldNotMeasure(String)
+
+#[doc("A policy that holds a run to nothing.")]
+pub fn no_policy() : Policy = Policy { threshold: None, baseline: None }
+
+#[doc("""
+Everything that blocks this run: survivors on changed lines first, then
+the score floors. `trouble` is why the run could not measure at all — a
+red baseline, a failed prepare, an orphan suppression, a bad config.
+""")]
+pub fn blockers(
+  counts: Counts,
+  survivors_on_changed_lines: Int,
+  policy: Policy,
+  trouble: Option[String]
+) : [Blocker] =
+  match trouble {
+    Some(why) -> [CouldNotMeasure(why)]
+    None -> holes(survivors_on_changed_lines) ++ floors(score(counts), policy)
+  }
+
+#[doc("The exit code for a set of blockers: 2 when nothing could be measured, 1 when something blocks, 0 otherwise.")]
+pub fn exit_code(bs: [Blocker]) : Int =
+  if any(bs, unmeasured) { 2 } else if is_empty(bs) { 0 } else { 1 }
+
+#[doc("One line a reader can act on.")]
+pub fn explain(b: Blocker) : String {
+  case SurvivorsOnChangedLines(n) ->
+    "#{n} wekufe survived on lines this change touched"
+  case BelowThreshold(got, limit) ->
+    "score #{pct(got)} is below the threshold #{pct(limit)}"
+  case BelowBaseline(got, was) ->
+    "score #{pct(got)} is below the stored baseline #{pct(was)}"
+  case CouldNotMeasure(why) -> "could not measure: #{why}"
+}
+
+fn holes(n: Int) : [Blocker] = if n > 0 { [SurvivorsOnChangedLines(n)] } else { [] }
+
+# A score that does not exist cannot be below anything: a run with nothing
+# to kill is not a failure, it is a run with nothing to say.
+fn floors(s: Option[Real], policy: Policy) : [Blocker] = match s {
+  None -> []
+  Some(got) -> below(got, policy.threshold, limit => BelowThreshold(got, limit))
+    ++ below(got, policy.baseline, was => BelowBaseline(got, was))
+}
+
+fn below(got: Real, limit: Option[Real], blocker: (Real) -> Blocker) : [Blocker] = match limit {
+  None -> []
+  Some(l) -> if got < l { [blocker(l)] } else { [] }
+}
+
+fn unmeasured(b: Blocker) : Bool {
+  case CouldNotMeasure(_) -> true
+  case _ -> false
+}
+
+fn pct(x: Real) : String = "#{real_to_string(x * 100.0)}%"

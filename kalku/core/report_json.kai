@@ -1,0 +1,50 @@
+#[doc("""
+The report as stable JSON: what `--format json` writes and what
+`kalku merge` reads back when shards are combined.
+
+Absent fields are omitted, never written as `null`, exactly as the
+protocol encodes: one canonical form, so two runs of the same shape
+produce the same bytes.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.envelope
+import kalku.core.score
+import kalku.core.gate
+import kalku.core.report
+
+#[doc("The whole report as one canonical JSON object.")]
+pub fn json(r: Report, exit: Int) : String = encode_value(
+  JObj(
+    optional("score", score(r.counts).map(s => JReal(s)))
+      ++ [
+        ("counts", to_json(r.counts)),
+        ("survivors", JArr(r.survivors | survivor)),
+        ("survivors_on_changed_lines", JNum(r.on_changed_lines)),
+        ("suppression_changes", to_json(r.suppressions)),
+        ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
+        ("exit", JNum(exit))
+      ]
+  )
+)
+
+fn survivor(s: Survivor) : JsonValue = JObj(
+  [("wekufe", JStr(s.site.site_id)), ("file", JStr(s.site.file))]
+    ++ optional("enclosing", s.site.enclosing.map(e => JStr(e)))
+    ++ [
+      ("line", JNum(s.site.span.start.line)),
+      ("spell", JStr(spell_name(s.site.spell)))
+    ]
+    ++ optional("original", s.site.original.map(o => JStr(o)))
+    ++ [
+      ("replacement", JStr(s.site.replacement)),
+      ("covering_tests", JArr(s.tests | (t => JStr(t))))
+    ]
+)
+
+fn optional(key: String, value: Option[JsonValue]) : [(String, JsonValue)] = match value {
+  Some(v) -> [(key, v)]
+  None -> []
+}

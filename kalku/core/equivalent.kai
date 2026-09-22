@@ -1,5 +1,5 @@
 #[doc("""
-`.kalku/equivalent`: the wekufe a person declared equivalent, and why.
+What a declared equivalent points at, and which sites it suppresses.
 
     lib/my_app/parser.ex  MyApp.Parser.next_token/2  compare  ">="  #1   # reason
 
@@ -8,9 +8,9 @@ and which occurrence — so an entry survives edits elsewhere in the file.
 A kalku that cannot report an enclosing declaration falls back to a line
 key, `<file>:<line>:<spell>`.
 
-The file suppresses; it does not excuse. An entry without a reason is an
-error, and so is one that matches no site: a suppression nobody can point
-at is indistinguishable from a hole somebody hid.
+The file suppresses; it does not excuse: an entry that matches no site is
+an orphan, because a suppression nobody can point at is indistinguishable
+from a hole somebody hid. Reading the file is `kalku.core.equivalent_parse`.
 """)]
 
 import encoding.json
@@ -47,13 +47,6 @@ pub type Problem = { at: Int, message: String }
 #[derive(Eq, Show)]
 pub type Matched = { suppressed: [Site], orphans: [Entry] }
 
-#[doc("Parse the file's text. Every problem is reported, not just the first.")]
-pub fn parse(text: String) : Result[[Entry], [Problem]] {
-  let parsed = lines(text) |> enumerate |> map(numbered)
-  let problems = flat_map(parsed, only_problem) ++ duplicates(flat_map(parsed, only_entry))
-  if is_empty(problems) { Ok(flat_map(parsed, only_entry)) } else { Err(problems) }
-}
-
 #[doc("Which sites the entries suppress, and which entries match no site at all.")]
 pub fn match_sites(entries: [Entry], sites: [Site]) : Matched = Matched {
   suppressed: filter(sites, s => any(entries, e => covers(e.key, s))),
@@ -78,207 +71,4 @@ pub fn show_entry(e: Entry) : String = match e.key {
   LineKey(lk) -> "#{lk.file}:#{lk.line}:#{spell_name(lk.spell)}  # #{e.reason}"
 }
 
-# ---- one line ----------------------------------------------------------
-
-fn numbered(p: (Int, String)) : Result[Option[Entry], Problem] = read_entry(p.fst + 1, p.snd)
-
-fn only_entry(r: Result[Option[Entry], Problem]) : [Entry] = match r {
-  Ok(Some(e)) -> [e]
-  _ -> []
-}
-
-fn only_problem(r: Result[Option[Entry], Problem]) : [Problem] = match r {
-  Err(p) -> [p]
-  _ -> []
-}
-
-# Blank lines and whole-line comments carry nothing. Every other line is
-# read structurally — fields, then the original as a JSON string, then the
-# ordinal, then the reason — because the original may itself hold a `#`.
-fn read_entry(at: Int, raw: String) : Result[Option[Entry], Problem] {
-  let line = trim(raw)
-  if is_empty(line) or starts_with(line, "#") {
-    Ok(None)
-  } else if is_line_form(line) {
-    line_entry(at, line)
-  } else {
-    semantic_entry(at, line)
-  }
-}
-
-# A line key is one token of `<file>:<line>:<spell>` followed by the reason;
-# anything else is read as a semantic entry, so its errors name its parts.
-fn is_line_form(line: String) : Bool {
-  let ws = words(line)
-  is_some(index_of(nth_or(ws, 0), ":")) and starts_with(nth_or(ws, 1), "#")
-}
-
-fn semantic_entry(at: Int, line: String) : Result[Option[Entry], Problem] {
-  let fields = words(line)
-  let after_quote = split_quoted(at, skip_fields(line, 3))!
-  let ordinal_text = first_token(after_quote.snd)
-  let key = semantic_of(
-    at,
-    nth_or(fields, 0),
-    nth_or(fields, 1),
-    nth_or(fields, 2),
-    after_quote.fst,
-    ordinal_text
-  )!
-  reason_of(at, drop_token(trim(after_quote.snd))).map(
-    r => Some(Entry { key: key, reason: r, at: at })
-  )
-}
-
-fn line_entry(at: Int, line: String) : Result[Option[Entry], Problem] {
-  let key = line_key(at, first_token(line))!
-  reason_of(at, drop_token(line)).map(r => Some(Entry { key: key, reason: r, at: at }))
-}
-
-# What follows the ordinal is the reason, introduced by `#`.
-fn reason_of(at: Int, rest: String) : Result[String, Problem] {
-  let marked = trim(rest)
-  if not starts_with(marked, "#") {
-    Err(Problem { at: at, message: "no reason: an entry ends with ` # why this is equivalent`" })
-  } else {
-    let reason = trim(drop_bytes(marked, 1))
-    if is_empty(reason) { Err(Problem { at: at, message: "empty reason" }) } else { Ok(reason) }
-  }
-}
-
-# The original is a JSON string, so it ends at the first unescaped quote.
-fn split_quoted(at: Int, rest: String) : Result[(String, String), Problem] =
-  if is_empty(trim(rest)) or starts_with(trim(rest), "#") {
-    Err(Problem {
-      at: at,
-      message: "no original text: an entry needs \"<original>\" before its ordinal"
-    })
-  } else if not starts_with(rest, "\"") {
-    Err(Problem {
-      at: at,
-      message: "original text must be a JSON string, got `#{first_token(rest)}`"
-    })
-  } else {
-    match quoted_end(rest, 1, false) {
-      None -> Err(Problem { at: at, message: "original text is missing its closing quote" })
-      Some(i) -> Ok((take_bytes(rest, i + 1), drop_bytes(rest, i + 1)))
-    }
-  }
-
-fn quoted_end(s: String, i: Int, escaped: Bool) : Option[Int] =
-  if i >= length(s) {
-    None
-  } else {
-    let c = byte_slice(s, i, 1).unwrap_or("")
-    if escaped {
-      quoted_end(s, i + 1, false)
-    } else if c == "\\" {
-      quoted_end(s, i + 1, true)
-    } else if c == "\"" {
-      Some(i)
-    } else {
-      quoted_end(s, i + 1, false)
-    }
-  }
-
-fn first_token(s: String) : String = nth_or(words(s), 0)
-
-# `<file>:<line>:<spell>` — the fallback for a kalku with no enclosing
-# declaration. The file may hold colons, so the last two decide.
-fn line_key(at: Int, text: String) : Result[Key, Problem] {
-  let parts = split(text, ":")
-  if length(parts) < 3 {
-    Err(Problem { at: at, message: "malformed line key: expected <file>:<line>:<spell>" })
-  } else {
-    let spell_text = last_of(parts)
-    let line_text = nth_from_end(parts, 1)
-    let file = join(take(parts, length(parts) - 2), ":")
-    match (to_int(line_text), spell_of(spell_text)) {
-      (Some(line), Some(spell)) -> Ok(LineKey(LineRef { file: file, line: line, spell: spell }))
-      (None, _) -> Err(Problem { at: at, message: "line `#{line_text}` is not a number" })
-      (_, None) -> Err(Problem { at: at, message: "unknown spell `#{spell_text}`" })
-    }
-  }
-}
-
-fn semantic_of(
-  at: Int,
-  file: String,
-  enclosing: String,
-  spell_text: String,
-  original_text: String,
-  ordinal_text: String
-) : Result[Key, Problem] =
-  match (spell_of(spell_text), unquote(original_text), ordinal_of(ordinal_text)) {
-    (Some(spell), Some(original), Some(ordinal)) ->
-      Ok(
-        Semantic(SemanticKey {
-          file: file,
-          enclosing: enclosing,
-          spell: spell,
-          original: original,
-          ordinal: ordinal
-        })
-      )
-    (None, _, _) -> Err(Problem { at: at, message: "unknown spell `#{spell_text}`" })
-    (_, None, _) -> Err(Problem {
-      at: at,
-      message: "original text must be a JSON string, got `#{original_text}`"
-    })
-    (_, _, None) ->
-      Err(Problem { at: at, message: "ordinal must be `#<n>`, got `#{ordinal_text}`" })
-  }
-
-# ---- pieces ------------------------------------------------------------
-
-fn duplicates(entries: [Entry]) : [Problem] =
-  flat_map(entries, e => {
-    let earlier = filter(entries, other => other.key == e.key and other.at < e.at)
-    if is_empty(earlier) {
-      []
-    } else {
-      [Problem { at: e.at, message: "duplicate of the entry on line #{nth_or_zero(earlier)}" }]
-    }
-  })
-
-fn spell_of(text: String) : Option[Spell] =
-  find(all_spells(), s => spell_name(s) == text)
-
-fn all_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call, Foreign]
-
-fn ordinal_of(text: String) : Option[Int] =
-  if starts_with(text, "#") { to_int(drop_bytes(text, 1)) } else { None }
-
-fn unquote(text: String) : Option[String] = match json_decode(text) {
-  Some(JStr(s)) -> Some(s)
-  _ -> None
-}
-
 fn quote(text: String) : String = json_encode(JStr(text))
-
-fn skip_fields(text: String, n: Int) : String {
-  let rest = trim(text)
-  if n <= 0 { rest } else { skip_fields(drop_token(rest), n - 1) }
-}
-
-fn drop_token(s: String) : String = match index_of(s, " ") {
-  None -> ""
-  Some(i) -> drop_bytes(s, i)
-}
-
-fn words(text: String) : [String] = filter(split(text, " "), w => not is_empty(w))
-
-fn take_bytes(s: String, n: Int) : String = byte_slice(s, 0, n).unwrap_or("")
-
-fn drop_bytes(s: String, n: Int) : String = byte_slice(s, n, length(s) - n).unwrap_or("")
-
-fn nth_or(xs: [String], i: Int) : String = nth(xs, i).unwrap_or("")
-
-fn last_of(xs: [String]) : String = last(xs).unwrap_or("")
-
-fn nth_from_end(xs: [String], back: Int) : String = nth_or(xs, length(xs) - 1 - back)
-
-fn nth_or_zero(es: [Entry]) : Int = match head(es) {
-  Some(e) -> e.at
-  None -> 0
-}
