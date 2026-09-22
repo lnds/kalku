@@ -61,7 +61,7 @@ fn head_of(v: JsonValue) : Result[Head, ProtocolError] = match get(v, "type") {
 }
 
 #[doc("Turn a body decode result into a protocol result, wrapping the body with `wrap`.")]
-pub fn payload[a, b](r: Result[a, JsonError], wrap: (a) -> b) : Result[b, ProtocolError] = match r {
+pub fn body[a, b](r: Result[a, JsonError], wrap: (a) -> b) : Result[b, ProtocolError] = match r {
   Ok(x) -> Ok(wrap(x))
   Err(e) -> fail(BadField, json_error_show(e))
 }

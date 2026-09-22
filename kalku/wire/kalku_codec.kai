@@ -34,15 +34,15 @@ pub fn decode_request(line: String) : Result[Msg[KalkuRequest], ProtocolError] {
 }
 
 fn request_body(kind: String, v: JsonValue) : Result[KalkuRequest, ProtocolError] = match kind {
-  "hello" -> payload(hellomsg_of_json(v, ""), m => Hello(m))
+  "hello" -> body(hellomsg_of_json(v, ""), m => Hello(m))
   "prepare" -> Ok(Prepare)
   "baseline" -> Ok(Baseline)
-  "sites" -> payload(sitesmsg_of_json(v, ""), m => Sites(m))
-  "cast" -> payload(castmsg_of_json(v, ""), m => Cast(m))
-  "abort" -> payload(abortmsg_of_json(v, ""), m => Abort(m))
+  "sites" -> body(sitesmsg_of_json(v, ""), m => Sites(m))
+  "cast" -> body(castmsg_of_json(v, ""), m => Cast(m))
+  "abort" -> body(abortmsg_of_json(v, ""), m => Abort(m))
   "reset" -> Ok(Reset)
-  "reload" -> payload(reloadmsg_of_json(v, ""), m => Reload(m))
-  "delegate" -> payload(delegatemsg_of_json(v, ""), m => Delegate(m))
+  "reload" -> body(reloadmsg_of_json(v, ""), m => Reload(m))
+  "delegate" -> body(delegatemsg_of_json(v, ""), m => Delegate(m))
   "shutdown" -> Ok(Shutdown)
   _ -> unknown(kind)
 }
@@ -74,18 +74,18 @@ pub fn decode_reply(line: String) : Result[Msg[KalkuReply], ProtocolError] {
 }
 
 fn reply_body(kind: String, v: JsonValue) : Result[KalkuReply, ProtocolError] = match kind {
-  "ready" -> payload(readymsg_of_json(v, ""), m => Ready(m))
-  "prepared" -> payload(preparedmsg_of_json(v, ""), m => Prepared(m))
-  "baseline_done" -> payload(baselinedonemsg_of_json(v, ""), m => BaselineDone(m))
-  "progress" -> payload(progressmsg_of_json(v, ""), m => Progress(m))
-  "sites_found" -> payload(sitesfoundmsg_of_json(v, ""), m => SitesFound(m))
-  "cast_done" -> payload(castdonemsg_of_json(v, ""), m => CastDone(m))
-  "aborted" -> payload(abortedmsg_of_json(v, ""), m => Aborted(m))
-  "reset_done" -> payload(resetdonemsg_of_json(v, ""), m => ResetDone(m))
-  "reloaded" -> payload(reloadedmsg_of_json(v, ""), m => Reloaded(m))
-  "delegated" -> payload(delegatedmsg_of_json(v, ""), m => Delegated(m))
+  "ready" -> body(readymsg_of_json(v, ""), m => Ready(m))
+  "prepared" -> body(preparedmsg_of_json(v, ""), m => Prepared(m))
+  "baseline_done" -> body(baselinedonemsg_of_json(v, ""), m => BaselineDone(m))
+  "progress" -> body(progressmsg_of_json(v, ""), m => Progress(m))
+  "sites_found" -> body(sitesfoundmsg_of_json(v, ""), m => SitesFound(m))
+  "cast_done" -> body(castdonemsg_of_json(v, ""), m => CastDone(m))
+  "aborted" -> body(abortedmsg_of_json(v, ""), m => Aborted(m))
+  "reset_done" -> body(resetdonemsg_of_json(v, ""), m => ResetDone(m))
+  "reloaded" -> body(reloadedmsg_of_json(v, ""), m => Reloaded(m))
+  "delegated" -> body(delegatedmsg_of_json(v, ""), m => Delegated(m))
   "bye" -> Ok(Bye)
-  "error" -> payload(errormsg_of_json(v, ""), m => KalkuError(m))
+  "error" -> body(errormsg_of_json(v, ""), m => KalkuError(m))
   _ -> unknown(kind)
 }
 

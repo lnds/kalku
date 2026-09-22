@@ -31,12 +31,12 @@ pub fn decode_client_request(line: String) : Result[Msg[ClientRequest], Protocol
 
 fn client_request_body(kind: String, v: JsonValue) : Result[ClientRequest, ProtocolError] =
   match kind {
-    "run" -> payload(runmsg_of_json(v, ""), m => RunReq(m))
-    "cast" -> payload(recastmsg_of_json(v, ""), m => RecastReq(m))
-    "show" -> payload(showmsg_of_json(v, ""), m => ShowReq(m))
-    "propose_equivalent" -> payload(proposemsg_of_json(v, ""), m => ProposeReq(m))
+    "run" -> body(runmsg_of_json(v, ""), m => RunReq(m))
+    "cast" -> body(recastmsg_of_json(v, ""), m => RecastReq(m))
+    "show" -> body(showmsg_of_json(v, ""), m => ShowReq(m))
+    "propose_equivalent" -> body(proposemsg_of_json(v, ""), m => ProposeReq(m))
     "status" -> Ok(StatusReq)
-    "cancel" -> payload(cancelmsg_of_json(v, ""), m => CancelReq(m))
+    "cancel" -> body(cancelmsg_of_json(v, ""), m => CancelReq(m))
     _ -> unknown(kind)
   }
 
@@ -78,16 +78,16 @@ pub fn decode_event(line: String) : Result[Msg[ServerEvent], ProtocolError] {
 }
 
 fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] = match kind {
-  "phase" -> payload(phasemsg_of_json(v, ""), m => PhaseEv(m))
-  "progress" -> payload(progressmsg_of_json(v, ""), m => ProgressEv(m))
-  "outcome" -> payload(outcomemsg_of_json(v, ""), m => OutcomeEv(m))
-  "test_rejected" -> payload(testrejectedmsg_of_json(v, ""), m => TestRejectedEv(m))
-  "report" -> payload(reportmsg_of_json(v, ""), m => ReportEv(m))
-  "wekufe" -> payload(wekufemsg_of_json(v, ""), m => WekufeEv(m))
-  "proposed" -> payload(proposedmsg_of_json(v, ""), m => ProposedEv(m))
-  "sessions" -> payload(sessionsmsg_of_json(v, ""), m => SessionsEv(m))
-  "cancelled" -> payload(cancelledmsg_of_json(v, ""), m => CancelledEv(m))
-  "error" -> payload(errormsg_of_json(v, ""), m => ErrorEv(m))
+  "phase" -> body(phasemsg_of_json(v, ""), m => PhaseEv(m))
+  "progress" -> body(progressmsg_of_json(v, ""), m => ProgressEv(m))
+  "outcome" -> body(outcomemsg_of_json(v, ""), m => OutcomeEv(m))
+  "test_rejected" -> body(testrejectedmsg_of_json(v, ""), m => TestRejectedEv(m))
+  "report" -> body(reportmsg_of_json(v, ""), m => ReportEv(m))
+  "wekufe" -> body(wekufemsg_of_json(v, ""), m => WekufeEv(m))
+  "proposed" -> body(proposedmsg_of_json(v, ""), m => ProposedEv(m))
+  "sessions" -> body(sessionsmsg_of_json(v, ""), m => SessionsEv(m))
+  "cancelled" -> body(cancelledmsg_of_json(v, ""), m => CancelledEv(m))
+  "error" -> body(errormsg_of_json(v, ""), m => ErrorEv(m))
   _ -> unknown(kind)
 }
 
