@@ -76,7 +76,7 @@ pub fn unknown[t](kind: String) : Result[t, ProtocolError] =
 
 #[doc("Encode a message canonically: `type`, `id`, then the body's fields with absent ones omitted.")]
 pub fn envelope(kind: String, id: Int, fields: JsonValue) : String {
-  let head = [Pair { fst: "type", snd: JStr(kind) }, Pair { fst: "id", snd: JNum(id) }]
+  let head = [("type", JStr(kind)), ("id", JNum(id))]
   let rest = match compact(fields) {
     JObj(kvs) -> kvs
     _ -> []
@@ -94,7 +94,7 @@ pub fn no_fields() : JsonValue = JObj([])
 # absent optional fields instead of writing them as `null`.
 fn compact(v: JsonValue) : JsonValue = match v {
   JObj(kvs) -> JObj(
-    list.filter(kvs, kv => kv.snd != JNull) | (kv => Pair { fst: kv.fst, snd: compact(kv.snd) })
+    list.filter(kvs, kv => kv.snd != JNull) | (kv => (kv.fst, compact(kv.snd)))
   )
   JArr(xs) -> JArr(xs | compact)
   other -> other

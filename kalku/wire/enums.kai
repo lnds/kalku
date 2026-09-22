@@ -61,71 +61,71 @@ pub type Status = Is(Outcome) | Gone
 
 # ---- tables -----------------------------------------------------------
 
-fn spells() : [Pair[String, Spell]] = [
-  Pair { fst: "arm", snd: Arm },
-  Pair { fst: "compare", snd: Compare },
-  Pair { fst: "connect", snd: Connect },
-  Pair { fst: "negate", snd: Negate },
-  Pair { fst: "literal", snd: Literal },
-  Pair { fst: "call", snd: Call },
-  Pair { fst: "foreign", snd: Foreign }
+fn spells() : [(String, Spell)] = [
+  ("arm", Arm),
+  ("compare", Compare),
+  ("connect", Connect),
+  ("negate", Negate),
+  ("literal", Literal),
+  ("call", Call),
+  ("foreign", Foreign)
 ]
 
-fn outcomes() : [Pair[String, Outcome]] = [
-  Pair { fst: "killed", snd: Killed },
-  Pair { fst: "survived", snd: Survived },
-  Pair { fst: "timeout", snd: Timeout },
-  Pair { fst: "no_coverage", snd: NoCoverage },
-  Pair { fst: "compile_error", snd: CompileError },
-  Pair { fst: "crashed", snd: Crashed },
-  Pair { fst: "equivalent", snd: Equivalent }
+fn outcomes() : [(String, Outcome)] = [
+  ("killed", Killed),
+  ("survived", Survived),
+  ("timeout", Timeout),
+  ("no_coverage", NoCoverage),
+  ("compile_error", CompileError),
+  ("crashed", Crashed),
+  ("equivalent", Equivalent)
 ]
 
-fn capabilities() : [Pair[String, Capability]] = [
-  Pair { fst: "cast", snd: CastCap },
-  Pair { fst: "delegate", snd: DelegateCap },
-  Pair { fst: "per_test_coverage", snd: PerTestCoverage },
-  Pair { fst: "hot_load", snd: HotLoad },
-  Pair { fst: "recompile_dependents", snd: RecompileDependents },
-  Pair { fst: "abort", snd: AbortCap },
-  Pair { fst: "reset", snd: ResetCap },
-  Pair { fst: "code_hash", snd: CodeHash }
+fn capabilities() : [(String, Capability)] = [
+  ("cast", CastCap),
+  ("delegate", DelegateCap),
+  ("per_test_coverage", PerTestCoverage),
+  ("hot_load", HotLoad),
+  ("recompile_dependents", RecompileDependents),
+  ("abort", AbortCap),
+  ("reset", ResetCap),
+  ("code_hash", CodeHash)
 ]
 
-fn formats() : [Pair[String, Format]] = [
-  Pair { fst: "human", snd: Human },
-  Pair { fst: "json", snd: JsonFormat },
-  Pair { fst: "github", snd: Github },
-  Pair { fst: "agent", snd: Agent }
+fn formats() : [(String, Format)] = [
+  ("human", Human),
+  ("json", JsonFormat),
+  ("github", Github),
+  ("agent", Agent)
 ]
 
-fn phases() : [Pair[String, Phase]] = [
-  Pair { fst: "prepare", snd: Preparing },
-  Pair { fst: "baseline", snd: Baselining },
-  Pair { fst: "plan", snd: Planning },
-  Pair { fst: "cast", snd: Casting },
-  Pair { fst: "report", snd: Reporting }
+fn phases() : [(String, Phase)] = [
+  ("prepare", Preparing),
+  ("baseline", Baselining),
+  ("plan", Planning),
+  ("cast", Casting),
+  ("report", Reporting)
 ]
 
-fn session_states() : [Pair[String, SessionState]] = [
-  Pair { fst: "cold", snd: StateCold },
-  Pair { fst: "preparing", snd: StatePreparing },
-  Pair { fst: "baseline", snd: StateBaseline },
-  Pair { fst: "ready", snd: StateReady },
-  Pair { fst: "running", snd: StateRunning },
-  Pair { fst: "failed", snd: StateFailed },
-  Pair { fst: "closed", snd: StateClosed }
+fn session_states() : [(String, SessionState)] = [
+  ("cold", StateCold),
+  ("preparing", StatePreparing),
+  ("baseline", StateBaseline),
+  ("ready", StateReady),
+  ("running", StateRunning),
+  ("failed", StateFailed),
+  ("closed", StateClosed)
 ]
 
 # ---- table codec ------------------------------------------------------
 
-fn name_of[t: Eq](table: [Pair[String, t]], x: t) : String =
+fn name_of[t: Eq](table: [(String, t)], x: t) : String =
   match list.find(table, p => p.snd == x) {
     Some(p) -> p.fst
     None -> ""
   }
 
-fn value_of[t](table: [Pair[String, t]], v: JsonValue, path: String, what: String) : Result[
+fn value_of[t](table: [(String, t)], v: JsonValue, path: String, what: String) : Result[
   t,
   JsonError
 ] =
@@ -170,11 +170,13 @@ impl Json for Capability {
 }
 
 impl Json for Reload {
-  fn to_json(self: Reload) : JsonValue =
-    JStr(if self == ModuleOnly { "module" } else { "dependents" })
+  fn to_json(self: Reload) : JsonValue = match self {
+    ModuleOnly -> JStr("module")
+    Dependents -> JStr("dependents")
+  }
   fn of_json(v: JsonValue, path: String) : Result[Reload, JsonError] =
     value_of(
-      [Pair { fst: "module", snd: ModuleOnly }, Pair { fst: "dependents", snd: Dependents }],
+      [("module", ModuleOnly), ("dependents", Dependents)],
       v,
       path,
       "Reload"
@@ -182,10 +184,13 @@ impl Json for Reload {
 }
 
 impl Json for BaselineStatus {
-  fn to_json(self: BaselineStatus) : JsonValue = JStr(if self == Green { "green" } else { "red" })
+  fn to_json(self: BaselineStatus) : JsonValue = match self {
+    Green -> JStr("green")
+    Red -> JStr("red")
+  }
   fn of_json(v: JsonValue, path: String) : Result[BaselineStatus, JsonError] =
     value_of(
-      [Pair { fst: "green", snd: Green }, Pair { fst: "red", snd: Red }],
+      [("green", Green), ("red", Red)],
       v,
       path,
       "BaselineStatus"

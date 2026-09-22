@@ -112,14 +112,14 @@ pub type Scope = All | Since(String) | Files([String])
 
 impl Json for Scope {
   fn to_json(self: Scope) : JsonValue = match self {
-    All -> JObj([Pair { fst: "all", snd: JBool(true) }])
-    Since(r) -> JObj([Pair { fst: "since", snd: JStr(r) }])
-    Files(fs) -> JObj([Pair { fst: "files", snd: JArr(fs | (f => JStr(f))) }])
+    All -> JObj([("all", JBool(true))])
+    Since(r) -> JObj([("since", JStr(r))])
+    Files(fs) -> JObj([("files", JArr(fs | (f => JStr(f))))])
   }
   fn of_json(v: JsonValue, path: String) : Result[Scope, JsonError] = match v {
-    JObj([Pair { fst: "all", snd: JBool(true) }]) -> Ok(All)
-    JObj([Pair { fst: "since", snd: JStr(r) }]) -> Ok(Since(r))
-    JObj([Pair { fst: "files", snd: fs }]) ->
+    JObj([("all", JBool(true))]) -> Ok(All)
+    JObj([("since", JStr(r))]) -> Ok(Since(r))
+    JObj([("files", fs)]) ->
       json_bind_list(fs, json_path_field(path, "files"), json_bind_string).map(xs => Files(xs))
     _ -> Err(JsonError {
       path: path,
@@ -130,12 +130,12 @@ impl Json for Scope {
 }
 
 #[doc("A JSON object of string values, in wire order.")]
-pub type StrMap = { entries: [Pair[String, String]] }
+pub type StrMap = { entries: [(String, String)] }
 
 impl Eq for StrMap {
   fn eq(a: StrMap, b: StrMap) : Bool =
-    (a.entries | (e => e.fst)) == (b.entries | (e => e.fst))
-      and (a.entries | (e => e.snd)) == (b.entries | (e => e.snd))
+    (a.entries | (.fst)) == (b.entries | (.fst))
+      and (a.entries | (.snd)) == (b.entries | (.snd))
 }
 
 impl Show for StrMap {
@@ -144,7 +144,7 @@ impl Show for StrMap {
 
 impl Json for StrMap {
   fn to_json(self: StrMap) : JsonValue =
-    JObj(self.entries | (e => Pair { fst: e.fst, snd: JStr(e.snd) }))
+    JObj(self.entries | (e => (e.fst, JStr(e.snd))))
   fn of_json(v: JsonValue, path: String) : Result[StrMap, JsonError] = match v {
     JObj(kvs) -> {
       let built = list.foldl(kvs, Ok(StrMap { entries: [] }), (acc, kv) => str_entry(acc, kv, path))
@@ -154,14 +154,14 @@ impl Json for StrMap {
   }
 }
 
-fn str_entry(acc: Result[StrMap, JsonError], kv: Pair[String, JsonValue], path: String) : Result[
+fn str_entry(acc: Result[StrMap, JsonError], kv: (String, JsonValue), path: String) : Result[
   StrMap,
   JsonError
 ] =
   match acc {
     Err(e) -> Err(e)
     Ok(m) -> match kv.snd {
-      JStr(s) -> Ok(StrMap { entries: [Pair { fst: kv.fst, snd: s }, ...m.entries] })
+      JStr(s) -> Ok(StrMap { entries: [(kv.fst, s), ...m.entries] })
       other -> Err(JsonError {
         path: json_path_field(path, kv.fst),
         expected: "String",

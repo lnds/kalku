@@ -5,6 +5,7 @@ bytes are dropped up to the next newline and it surfaces as `TooLong`.
 """)]
 
 import core.list as list
+import core.option as option
 import core.string as string
 
 #[doc("Longest accepted line, in bytes, excluding the newline.")]
@@ -51,7 +52,5 @@ fn hold(f: Framer, data: String) : Framer =
   }
 
 # Cuts at a newline or at the end, which are always character boundaries.
-fn cut(s: String, from: Int, len: Int) : String = match string.byte_slice(s, from, len) {
-  Some(part) -> part
-  None -> ""
-}
+fn cut(s: String, from: Int, len: Int) : String =
+  option.unwrap_or(string.byte_slice(s, from, len), "")

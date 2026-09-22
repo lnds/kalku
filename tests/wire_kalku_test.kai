@@ -49,7 +49,7 @@ fn tagged(path: String, p: Option[String]) : [String] = match p {
 }
 
 fn report(ps: [String]) : Bool / Stdout {
-  list.foreach(ps, p => print(p))
+  ps |> each(p => print(p))
   ps == []
 }
 

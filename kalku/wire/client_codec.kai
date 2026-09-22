@@ -3,7 +3,7 @@ Encoding and decoding of the client protocol, both directions, plus the
 rules a well-formed message must still satisfy (`invalid` errors).
 """)]
 
-import core.string as string
+import core.option as option
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.envelope
@@ -47,7 +47,7 @@ fn check_client_request(r: ClientRequest) : Result[Unit, ProtocolError] = match 
     None -> Ok(())
   }
   ProposeReq(m) -> require(
-    not string.is_empty(string.trim(m.reason)),
+    not m.reason.trim().is_empty(),
     "propose_equivalent: reason must not be empty"
   )
   _ -> Ok(())
@@ -93,12 +93,10 @@ fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] =
 
 # A site is absent exactly when the wekufe is gone.
 fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
-  OutcomeEv(m) -> {
-    let has_site = match m.site {
-      Some(_) -> true
-      None -> false
-    }
-    require(has_site != (m.outcome == Gone), "outcome: site goes with every outcome but gone")
-  }
+  OutcomeEv(m) ->
+    require(
+      option.is_some(m.site) != (m.outcome == Gone),
+      "outcome: site goes with every outcome but gone"
+    )
   _ -> Ok(())
 }

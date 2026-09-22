@@ -23,7 +23,7 @@ fn failures(name: String, ok: (String) -> Bool) : [String] / File =
   list.filter(lines_in(name), l => not ok(l))
 
 fn report(ps: [String]) : Bool / Stdout {
-  list.foreach(ps, p => Stdout.print(p))
+  ps |> each(p => Stdout.print(p))
   ps == []
 }
 

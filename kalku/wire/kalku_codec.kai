@@ -4,6 +4,7 @@ rules a well-formed message must still satisfy (`invalid` errors).
 """)]
 
 import core.list as list
+import core.option as option
 import encoding.json
 import kalku.wire.enums
 import kalku.wire.shapes
@@ -107,7 +108,7 @@ fn check_ready(m: ReadyMsg) : Result[Unit, ProtocolError] {
 
 fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
   require(
-    not (is_some(m.coverage) and is_some(m.coverage_path)),
+    not (option.is_some(m.coverage) and option.is_some(m.coverage_path)),
     "baseline_done: at most one of coverage, coverage_path"
   )!
   require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
@@ -123,11 +124,6 @@ fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
 
 fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] =
   require(
-    is_some(m.outcomes) != is_some(m.outcomes_path),
+    option.is_some(m.outcomes) != option.is_some(m.outcomes_path),
     "delegated: exactly one of outcomes, outcomes_path"
   )
-
-fn is_some[t](o: Option[t]) : Bool = match o {
-  Some(_) -> true
-  None -> false
-}

@@ -9,13 +9,13 @@ import kalku.wire.client_codec
 const INVALID : String = "docs/protocol/fixtures/invalid"
 
 # Each fixture line pairs a raw line with the protocol error kind it must produce.
-fn entries(name: String) : [Pair[String, String]] / File =
+fn entries(name: String) : [(String, String)] / File =
   list.flat_map(string.lines(file.read("#{INVALID}/#{name}.ndjson")), entry)
 
-fn entry(raw: String) : [Pair[String, String]] = match json_decode(raw) {
+fn entry(raw: String) : [(String, String)] = match json_decode(raw) {
   Some(v) -> match as_string(get(v, "expect")) {
     Some(kind) -> match as_string(get(v, "line")) {
-      Some(line) -> [Pair { fst: kind, snd: line }]
+      Some(line) -> [(kind, line)]
       None -> []
     }
     None -> []
@@ -30,12 +30,13 @@ fn kind_of[t](r: Result[t, ProtocolError]) : String = match r {
 
 fn mismatches(name: String, decode: (String) -> String) : [String] / File =
   list.flat_map(entries(name), e => {
-    let got = decode(e.snd)
-    if got == e.fst { [] } else { ["#{name}: expected #{e.fst}, got #{got}\n  #{e.snd}"] }
+    let (expected, line) = e
+    let got = decode(line)
+    if got == expected { [] } else { ["#{name}: expected #{expected}, got #{got}\n  #{line}"] }
   })
 
 fn report(ps: [String]) : Bool / Stdout {
-  list.foreach(ps, p => Stdout.print(p))
+  ps |> each(p => Stdout.print(p))
   ps == []
 }
 
