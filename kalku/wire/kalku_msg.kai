@@ -88,7 +88,6 @@ pub type CastDoneMsg = {
   wekufe: String,
   outcome: Outcome,
   killed_by: Option[String],
-  evidence: Option[Evidence],
   message: Option[String],
   code_hash: Option[String],
   duration_ms: Int,

@@ -15,10 +15,6 @@ pub type Spell = Arm | Compare | Connect | Negate | Literal | Call | Foreign
 #[derive(Eq, Show)]
 pub type Outcome = Killed | Survived | Timeout | NoCoverage | CompileError | Crashed | Equivalent
 
-#[doc("Mechanical proof that a wekufe is equivalent to the original.")]
-#[derive(Eq, Show)]
-pub type Evidence = IdenticalBytecode()
-
 #[doc("What a kalku can do. `OtherCapability` keeps a value this version does not know, which the kaikai side ignores.")]
 #[derive(Eq, Show)]
 pub type Capability
@@ -157,12 +153,6 @@ impl Json for Outcome {
   fn to_json(self: Outcome) : JsonValue = JStr(name_of(outcomes(), self))
   fn of_json(v: JsonValue, path: String) : Result[Outcome, JsonError] =
     value_of(outcomes(), v, path, "Outcome")
-}
-
-impl Json for Evidence {
-  fn to_json(self: Evidence) : JsonValue = JStr("identical_bytecode")
-  fn of_json(v: JsonValue, path: String) : Result[Evidence, JsonError] =
-    value_of([Pair { fst: "identical_bytecode", snd: IdenticalBytecode }], v, path, "Evidence")
 }
 
 impl Json for Capability {

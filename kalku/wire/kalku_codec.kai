@@ -118,10 +118,6 @@ fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
   require(
     list.contains(allowed, m.outcome),
     "cast_done: outcome must be killed, survived, compile_error, or equivalent"
-  )!
-  require(
-    (m.outcome == Equivalent) == is_some(m.evidence),
-    "cast_done: evidence goes with equivalent, and only with it"
   )
 }
 
