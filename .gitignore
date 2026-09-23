@@ -10,3 +10,6 @@ erl_crash.dump
 
 # OS
 .DS_Store
+
+# built by `make test-kaikai`
+tests/fake_kalku/fake_kalku

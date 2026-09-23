@@ -1,0 +1,78 @@
+#[doc("""
+A fake kalku's script: one step per NDJSON line, in the order the steps
+are expected to be served.
+
+A step names the request it expects and what to do about it. Misbehaviour
+is a directive, so a test asks for a hang, a crash, or a garbage line the
+same way it asks for a reply.
+
+The script is read with the dynamic JSON tree, never through
+`kalku/wire`: a fake that encoded its replies with the code under test
+would agree with a broken codec instead of catching it.
+""")]
+
+import encoding.json
+
+#[doc("One scripted step: the request it expects, and what the fake does about it.")]
+pub type Step = {
+  expect: String,
+  reply: Option[JsonValue],
+  delay_ms: Int,
+  hang: Bool,
+  ignore_abort: Bool,
+  crash: Bool,
+  garbage: Bool,
+  stderr: Option[String],
+  repeat: Int
+}
+
+#[doc("Read a script; `Err` names the line that is not a JSON object.")]
+pub fn parse_script(text: String) : Result[[Step], String] =
+  fold_steps(numbered(lines(text)), [])
+
+#[doc("The reply a step carries, as the text the fake would write; empty when it stays silent.")]
+pub fn reply_text(s: Step) : String = match s.reply {
+  Some(r) -> json_encode(r)
+  None -> ""
+}
+
+#[doc("True when a step serves any request, not one named type.")]
+pub fn is_wildcard(s: Step) : Bool = s.expect == "*"
+
+#[doc("The same step with one use spent, or nothing left when it was the last.")]
+pub fn spend(s: Step) : [Step] = if s.repeat > 1 { [Step { ...s, repeat: s.repeat - 1 }] } else { [] }
+
+# ---- reading -----------------------------------------------------------
+
+fn numbered(ls: [String]) : [(Int, String)] = enumerate(ls) | (l => (l.fst + 1, l.snd))
+
+fn fold_steps(rest: [(Int, String)], acc: [Step]) : Result[[Step], String] = match rest {
+  [] -> Ok(acc)
+  [l, ...more] -> if is_empty(trim(l.snd)) {
+    fold_steps(more, acc)
+  } else {
+    fold_steps(more, acc ++ [step_of(l.snd, l.fst)!])
+  }
+}
+
+fn step_of(line: String, no: Int) : Result[Step, String] = match json_decode(line) {
+  Some(JObj(fields)) -> Ok(read_step(JObj(fields)))
+  _ -> Err("line #{no}: not a JSON object")
+}
+
+fn read_step(v: JsonValue) : Step = Step {
+  expect: as_string(get(v, "expect")).unwrap_or("*"),
+  reply: value_at(v, "reply"),
+  delay_ms: as_int(get(v, "delay_ms")).unwrap_or(0),
+  hang: as_bool(get(v, "hang")).unwrap_or(false),
+  ignore_abort: as_bool(get(v, "ignore_abort")).unwrap_or(false),
+  crash: as_bool(get(v, "crash")).unwrap_or(false),
+  garbage: as_bool(get(v, "garbage")).unwrap_or(false),
+  stderr: as_string(get(v, "stderr")),
+  repeat: as_int(get(v, "repeat")).unwrap_or(1)
+}
+
+fn value_at(v: JsonValue, key: String) : Option[JsonValue] = match get(v, key) {
+  JNull -> None
+  found -> Some(found)
+}
