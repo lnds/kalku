@@ -1,0 +1,46 @@
+#[doc("""
+The mutation score and the two rates that sit beside it.
+
+`killed / (killed + survived)` and nothing else: a timeout is not a failing
+assertion, a crash is not a kill, an uncovered line was never asked, and an
+equivalent wekufe could not have died. Folding any of them in would inflate
+the number, so they are reported alongside it instead.
+""")]
+
+import math.real as real
+import kalku.wire.shapes
+import kalku.core.verdict
+
+#[doc("The mutation score, or `None` when nothing could have been killed.")]
+pub fn score(c: Counts) : Option[Real] {
+  let asked = c.killed + c.survived
+  if asked == 0 { None } else { Some(int_to_real(c.killed) / int_to_real(asked)) }
+}
+
+#[doc("The score as a percentage rounded to one decimal — `75%`, `66.7%` — or `n/a` when there is none.")]
+pub fn score_text(c: Counts) : String = match score(c) {
+  None -> "n/a"
+  Some(s) -> "#{real_to_string(round_to(s * 100.0, 1))}%"
+}
+
+#[doc("Share of cast wekufe that did not compile; 0 when nothing was cast.")]
+pub fn compile_error_rate(c: Counts) : Real {
+  let cast = total(c) - c.no_coverage
+  if cast == 0 { 0.0 } else { int_to_real(c.compile_error) / int_to_real(cast) }
+}
+
+#[doc("""
+True when so many wekufe fail to compile that a spell is proposing nonsense
+for this language, rather than the suite having holes.
+""")]
+pub fn spells_look_wrong(c: Counts, limit: Real) : Bool = compile_error_rate(c) > limit
+
+#[doc("The default share of compile errors above which the spells, not the suite, are the suspect.")]
+pub const COMPILE_ERROR_LIMIT : Real = 0.2
+
+fn round_to(x: Real, places: Int) : Real {
+  let scale = int_to_real(pow_int(10, places))
+  real.round(x * scale) / scale
+}
+
+fn pow_int(base: Int, n: Int) : Int = if n <= 0 { 1 } else { base * pow_int(base, n - 1) }

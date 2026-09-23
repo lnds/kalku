@@ -1,0 +1,106 @@
+#[doc("""
+What a run produced, and how it reads to a person.
+
+Survivors come first, each with a file, a line, and the diff that made it:
+a survivor is something a reader can act on. The score follows as context
+and trend, never as the headline, and what a change suppressed is listed
+where nobody can miss it.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.score
+import kalku.core.gate
+
+#[doc("A wekufe that lived, and the tests that ran without noticing.")]
+#[derive(Eq, Show)]
+pub type Survivor = { site: Site, tests: [String] }
+
+#[doc("Everything a run has to say.")]
+#[derive(Eq, Show)]
+pub type Report = {
+  counts: Counts,
+  survivors: [Survivor],
+  on_changed_lines: Int,
+  suppressions: SuppressionChanges,
+  blockers: [Blocker]
+}
+
+#[doc("The whole report as a person reads it: survivors, then the summary, then what was suppressed.")]
+pub fn human(r: Report) : String =
+  join(survivor_blocks(r) ++ [summary_line(r)] ++ suppression_block(r) ++ blocker_block(r), "\n")
+
+#[doc("Where a survivor lives, which spell made it, and in which declaration.")]
+pub fn location(s: Survivor) : String {
+  let at = "#{s.site.file}:#{s.site.span.start.line}"
+  match s.site.enclosing {
+    Some(decl) -> "#{at}  #{spell_name(s.site.spell)}  #{decl}"
+    None -> "#{at}  #{spell_name(s.site.spell)}"
+  }
+}
+
+#[doc("The change that made a wekufe, as a two-line diff; a deletion shows only what it removed.")]
+pub fn diff_of(site: Site) : [String] {
+  let removed = match site.original {
+    Some(text) -> ["- #{text}"]
+    None -> []
+  }
+  let added = if is_empty(site.replacement) { [] } else { ["+ #{site.replacement}"] }
+  removed ++ added
+}
+
+#[doc("The one line that carries the score and everything reported beside it.")]
+pub fn summary_line(r: Report) : String {
+  let c = r.counts
+  join(
+    ["score #{score_text(c)}", "#{c.killed} killed", "#{c.survived} survived"]
+      ++ aside("timeout", c.timeout)
+      ++ aside("no coverage", c.no_coverage)
+      ++ aside("compile error", c.compile_error)
+      ++ aside("crashed", c.crashed)
+      ++ equivalents(c.equivalent),
+    " · "
+  )
+}
+
+# ---- blocks ------------------------------------------------------------
+
+fn survivor_blocks(r: Report) : [String] =
+  if is_empty(r.survivors) { [] } else { flat_map(r.survivors, block) ++ [""] }
+
+fn block(s: Survivor) : [String] =
+  [location(s)] ++ (diff_of(s.site) | (line => "  #{line}")) ++ [covered_by(s), ""]
+
+fn covered_by(s: Survivor) : String =
+  if is_empty(s.tests) {
+    "  no test covers it"
+  } else {
+    "  covered by #{join(s.tests, ", ")}"
+  }
+
+# Suppressions a change adds are as loud as the holes it leaves.
+fn suppression_block(r: Report) : [String] {
+  let added = r.suppressions.equivalent_added
+  let wider = r.suppressions.exclude_added ++ r.suppressions.exclude_calls_added
+  if added == 0 and is_empty(wider) {
+    []
+  } else {
+    ["", "Suppressions added in this change:"]
+      ++ (if added > 0 { ["  #{added} declared equivalent"] } else { [] })
+      ++ (wider | (p => "  wider exclusion: #{p}"))
+  }
+}
+
+fn blocker_block(r: Report) : [String] =
+  if is_empty(r.blockers) { [] } else { [""] ++ (r.blockers | (b => "blocked: #{explain(b)}")) }
+
+fn aside(name: String, n: Int) : [String] = if n == 0 { [] } else { ["#{n} #{name}"] }
+
+fn equivalents(e: EquivalentCounts) : [String] {
+  let total = e.bytecode + e.declared
+  if total == 0 {
+    []
+  } else {
+    ["#{total} equivalent (#{e.bytecode} bytecode, #{e.declared} declared)"]
+  }
+}

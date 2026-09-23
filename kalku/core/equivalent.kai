@@ -1,0 +1,74 @@
+#[doc("""
+What a declared equivalent points at, and which sites it suppresses.
+
+    lib/my_app/parser.ex  MyApp.Parser.next_token/2  compare  ">="  #1   # reason
+
+The key is semantic — file, enclosing declaration, spell, original text,
+and which occurrence — so an entry survives edits elsewhere in the file.
+A kalku that cannot report an enclosing declaration falls back to a line
+key, `<file>:<line>:<spell>`.
+
+The file suppresses; it does not excuse: an entry that matches no site is
+an orphan, because a suppression nobody can point at is indistinguishable
+from a hole somebody hid. Reading the file is `kalku.core.equivalent_parse`.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("A site's semantic key: what an entry points at when the kalku reports an enclosing declaration.")]
+#[derive(Eq, Show)]
+pub type SemanticKey = {
+  file: String,
+  enclosing: String,
+  spell: Spell,
+  original: String,
+  ordinal: Int
+}
+
+#[doc("A file and line: what an entry points at when the kalku has no enclosing declaration to give.")]
+#[derive(Eq, Show)]
+pub type LineRef = { file: String, line: Int, spell: Spell }
+
+#[doc("What an entry points at.")]
+#[derive(Eq, Show)]
+pub type Key = Semantic(SemanticKey) | LineKey(LineRef)
+
+#[doc("One declared equivalent: what it suppresses, why, and the line it was written on.")]
+#[derive(Eq, Show)]
+pub type Entry = { key: Key, reason: String, at: Int }
+
+#[doc("A line that is not a usable entry, with the line number to fix.")]
+#[derive(Eq, Show)]
+pub type Problem = { at: Int, message: String }
+
+#[doc("Entries matched against the sites of a run: what they suppress, and which point at nothing.")]
+#[derive(Eq, Show)]
+pub type Matched = { suppressed: [Site], orphans: [Entry] }
+
+#[doc("Which sites the entries suppress, and which entries match no site at all.")]
+pub fn match_sites(entries: [Entry], sites: [Site]) : Matched = Matched {
+  suppressed: filter(sites, s => any(entries, e => covers(e.key, s))),
+  orphans: filter(entries, e => not any(sites, s => covers(e.key, s)))
+}
+
+#[doc("True when an entry's key names this site.")]
+pub fn covers(k: Key, s: Site) : Bool {
+  case Semantic(sem), s ->
+    sem.file == s.file
+      and Some(sem.enclosing) == s.enclosing
+      and sem.spell == s.spell
+      and Some(sem.original) == s.original
+      and Some(sem.ordinal) == s.ordinal
+  case LineKey(lk), s -> lk.file == s.file and lk.line == s.span.start.line and lk.spell == s.spell
+}
+
+#[doc("Render an entry the way the file spells it, so a proposal and a hand-written line look the same.")]
+pub fn show_entry(e: Entry) : String = match e.key {
+  Semantic(sem) ->
+    "#{sem.file}  #{sem.enclosing}  #{spell_name(sem.spell)}  #{quote(sem.original)}  ##{sem.ordinal}   # #{e.reason}"
+  LineKey(lk) -> "#{lk.file}:#{lk.line}:#{spell_name(lk.spell)}  # #{e.reason}"
+}
+
+fn quote(text: String) : String = json_encode(JStr(text))

@@ -1,0 +1,61 @@
+import kalku.core.changed_lines as changed
+
+const ADDED : String =
+  "diff --git a/lib/a.ex b/lib/a.ex\nindex 83db48f..bf269f4 100644\n--- a/lib/a.ex\n+++ b/lib/a.ex\n@@ -12,0 +13,2 @@ defp foo do\n+  one\n+  two\n"
+
+const EDITED : String =
+  "diff --git a/lib/b.ex b/lib/b.ex\n--- a/lib/b.ex\n+++ b/lib/b.ex\n@@ -20 +22 @@\n-old\n+new\n"
+
+const DELETED : String =
+  "diff --git a/lib/gone.ex b/lib/gone.ex\ndeleted file mode 100644\n--- a/lib/gone.ex\n+++ /dev/null\n@@ -1,5 +0,0 @@\n-one\n"
+
+const REMOVED_LINES : String =
+  "diff --git a/lib/c.ex b/lib/c.ex\n--- a/lib/c.ex\n+++ b/lib/c.ex\n@@ -30,3 +29,0 @@\n-gone\n-gone\n-gone\n"
+
+const BINARY : String =
+  "diff --git a/logo.png b/logo.png\nindex 1..2 100644\nBinary files a/logo.png and b/logo.png differ\n"
+
+const RENAMED : String =
+  "diff --git a/lib/old.ex b/lib/new.ex\nsimilarity index 90%\nrename from lib/old.ex\nrename to lib/new.ex\n--- a/lib/old.ex\n+++ b/lib/new.ex\n@@ -4 +4 @@\n-old\n+new\n"
+
+test "an added hunk becomes the range of lines it added" {
+  assert changed.parse(ADDED)
+    == [FileChange { file: "lib/a.ex", ranges: [LineRange { from: 13, to: 14 }] }]
+}
+
+test "a one-line hunk has no count and covers one line" {
+  assert changed.parse(EDITED)
+    == [FileChange { file: "lib/b.ex", ranges: [LineRange { from: 22, to: 22 }] }]
+}
+
+test "a deleted file and a pure deletion touch nothing that can be cast" {
+  assert changed.parse(DELETED) == []
+  assert changed.parse(REMOVED_LINES) == []
+}
+
+test "a binary file is not source" {
+  assert changed.parse(BINARY) == []
+}
+
+test "a rename is read under the name the file has now" {
+  assert changed.files(changed.parse(RENAMED)) == ["lib/new.ex"]
+}
+
+test "several files keep the order the diff named them" {
+  assert changed.files(changed.parse("#{ADDED}#{EDITED}")) == ["lib/a.ex", "lib/b.ex"]
+}
+
+test "touches answers for the lines in range and nothing else" {
+  let cs = changed.parse("#{ADDED}#{EDITED}")
+  assert changed.touches(cs, "lib/a.ex", 13)
+  assert changed.touches(cs, "lib/a.ex", 14)
+  assert not changed.touches(cs, "lib/a.ex", 12)
+  assert not changed.touches(cs, "lib/a.ex", 15)
+  assert changed.touches(cs, "lib/b.ex", 22)
+  assert not changed.touches(cs, "lib/nope.ex", 22)
+}
+
+test "an empty diff touched nothing" {
+  assert changed.parse("") == []
+  assert not changed.touches(changed.parse(""), "lib/a.ex", 1)
+}

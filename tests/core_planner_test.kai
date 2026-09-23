@@ -1,0 +1,132 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.changed_lines
+import kalku.core.planner
+
+fn site_of(id: String, file: String, line: Int, reload: Reload) : Site =
+  Site {
+    site_id: id,
+    file: file,
+    enclosing: None,
+    ordinal: None,
+    span: Span { start: Position { line: line, col: 1, byte: 0 }, end: None },
+    spell: Compare,
+    original: Some(">="),
+    replacement: ">",
+    reload: reload
+  }
+
+fn covers(file: String, line: Int, tests: [String]) : CoverageEntry =
+  CoverageEntry { file: file, line: line, tests: tests }
+
+fn inputs_of(sites: [Site], coverage: Option[[CoverageEntry]]) : Inputs =
+  Inputs {
+    sites: sites,
+    coverage: coverage,
+    all_tests: ["whole/suite_test.exs:1"],
+    durations: [("t1", 10), ("t2", 40), ("t3", 1000)],
+    suppressed_ids: [],
+    exclude: [],
+    reach: Everything,
+    timeout_floor_ms: 500
+  }
+
+fn nothing_cached(id: String) : Option[Outcome] = None
+
+fn ids_cast(p: Plan) : [String] = p.to_cast | (c => c.site.site_id)
+
+const A : Site = site_of("a", "lib/a.ex", 3, ModuleOnly)
+
+const B : Site = site_of("b", "lib/b.ex", 7, ModuleOnly)
+
+const C : Site = site_of("c", "lib/c.ex", 9, ModuleOnly)
+
+test "every site lands in exactly one bucket" {
+  let inputs = Inputs {
+    ...inputs_of([A, B, C], Some([covers("lib/a.ex", 3, ["t1"]), covers("lib/b.ex", 7, ["t2"])])),
+    suppressed_ids: ["c"]
+  }
+  let p = plan(inputs, nothing_cached)
+  assert ids_cast(p) == ["a", "b"]
+  assert p.no_coverage == []
+  assert p.suppressed == [C]
+  assert p.cached == []
+}
+
+test "a site no test executes is reported, not cast" {
+  let p = plan(inputs_of([A, B], Some([covers("lib/a.ex", 3, ["t1"])])), nothing_cached)
+  assert ids_cast(p) == ["a"]
+  assert p.no_coverage == [B]
+}
+
+test "without coverage per test, every wekufe runs the whole suite" {
+  let p = plan(inputs_of([A, B], None), nothing_cached)
+  assert ids_cast(p) == ["a", "b"]
+  assert p.no_coverage == []
+  assert map(p.to_cast, c => c.tests) == [["whole/suite_test.exs:1"], ["whole/suite_test.exs:1"]]
+}
+
+test "an outcome an earlier run already knows is not cast again" {
+  let remembered = (id: String) => if id == "a" { Some(Killed) } else { None }
+  let p = plan(
+    inputs_of([A, B], Some([covers("lib/a.ex", 3, ["t1"]), covers("lib/b.ex", 7, ["t2"])])),
+    remembered
+  )
+  assert ids_cast(p) == ["b"]
+  assert p.cached == [Known { site: A, outcome: Killed }]
+}
+
+test "fewest covering tests first, then the cheapest, then the id" {
+  let coverage = Some([
+    covers("lib/a.ex", 3, ["t3"]),
+    covers("lib/b.ex", 7, ["t1", "t2"]),
+    covers("lib/c.ex", 9, ["t1"])
+  ])
+  let p = plan(inputs_of([A, B, C], coverage), nothing_cached)
+  assert ids_cast(p) == ["c", "a", "b"]
+}
+
+test "the same inputs always give the same plan" {
+  let coverage = Some([covers("lib/a.ex", 3, ["t1"]), covers("lib/b.ex", 7, ["t1"])])
+  let forward = plan(inputs_of([A, B], coverage), nothing_cached)
+  let backward = plan(inputs_of([B, A], coverage), nothing_cached)
+  assert ids_cast(forward) == ids_cast(backward)
+}
+
+test "a wekufe may take a multiple of its tests, never less than the floor" {
+  let cheap = plan(inputs_of([A], Some([covers("lib/a.ex", 3, ["t1"])])), nothing_cached)
+  let slow = plan(inputs_of([A], Some([covers("lib/a.ex", 3, ["t3"])])), nothing_cached)
+  assert map(cheap.to_cast, c => c.timeout_ms) == [500]
+  assert map(slow.to_cast, c => c.timeout_ms) == [3000]
+}
+
+test "a site whose dependents rebuild gets the time for that" {
+  let deep = site_of("d", "lib/d.ex", 1, Dependents)
+  let p = plan(inputs_of([deep], Some([covers("lib/d.ex", 1, ["t3"])])), nothing_cached)
+  assert map(p.to_cast, c => c.timeout_ms) == [6000]
+}
+
+test "changed lines narrow a run to what the change touched" {
+  let diff = "+++ b/lib/a.ex\n@@ -1,0 +3,1 @@\n+  touched\n"
+  let inputs = Inputs { ...inputs_of([A, B], None), reach: Touched(changed_lines.parse(diff)) }
+  assert ids_cast(plan(inputs, nothing_cached)) == ["a"]
+}
+
+test "a file list narrows a run to those files" {
+  let inputs = Inputs { ...inputs_of([A, B], None), reach: Listed(["lib/b.ex"]) }
+  assert ids_cast(plan(inputs, nothing_cached)) == ["b"]
+}
+
+test "excluded paths yield no sites at all, in any bucket" {
+  let inputs = Inputs { ...inputs_of([A, B, C], None), exclude: ["lib/a.ex", "lib/*.ex"] }
+  let p = plan(inputs, nothing_cached)
+  assert p.to_cast == []
+  assert p.no_coverage == []
+  assert p.suppressed == []
+}
+
+test "a glob matches by its pieces, in order" {
+  let web = site_of("w", "lib/my_app_web/telemetry.ex", 1, ModuleOnly)
+  let inputs = Inputs { ...inputs_of([A, web], None), exclude: ["lib/my_app_web/*"] }
+  assert ids_cast(plan(inputs, nothing_cached)) == ["a"]
+}

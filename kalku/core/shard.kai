@@ -1,0 +1,32 @@
+#[doc("""
+Splitting a run across CI jobs.
+
+A shard is decided by hashing the wekufe's id, never by position in the
+plan, so every machine agrees on which shard owns which wekufe and a rerun
+lands the same way. Shards are disjoint and together cover the plan.
+""")]
+
+#[doc("The shard a wekufe belongs to, 1-based, of `count` shards.")]
+pub fn shard_of(site_id: String, count: Int) : Int =
+  if count <= 1 { 1 } else { hash(site_id) % count + 1 }
+
+#[doc("True when this shard owns the wekufe: `index` is 1-based, of `count`.")]
+pub fn owns(site_id: String, index: Int, count: Int) : Bool = shard_of(site_id, count) == index
+
+#[doc("The wekufe ids this shard owns, in the order they were planned.")]
+pub fn keep(site_ids: [String], index: Int, count: Int) : [String] =
+  filter(site_ids, id => owns(id, index, count))
+
+#[doc("True when the shard is one of `count` shards, counting from 1.")]
+pub fn valid(index: Int, count: Int) : Bool = count >= 1 and index >= 1 and index <= count
+
+# FNV-1a over the id's bytes: a few lines, no dependencies, and the same
+# answer on every machine — which is all a partition needs.
+fn hash(s: String) : Int = foldl(bytes(s) | (b => byte_to_int(b)), 2166136261, mix)
+
+fn mix(acc: Int, byte: Int) : Int = wrap32(bit_xor(acc, byte) * 16777619)
+
+fn wrap32(n: Int) : Int {
+  let m = n % 4294967296
+  if m < 0 { m + 4294967296 } else { m }
+}

@@ -1,0 +1,168 @@
+#[doc("""
+What to cast, in what order, and how long to wait for each.
+
+The planner decides three things and nothing else: which sites are in
+reach, which of those have a test that would notice, and the order that
+finds holes soonest — fewest covering tests first, then the cheapest, then
+the id, so the same inputs always yield the same plan.
+
+A kalku that cannot report coverage per test gets the whole suite for
+every wekufe; nothing is silently skipped for lack of knowing.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.changed_lines
+
+#[doc("How far a run reaches: the whole project, the lines a change touched, or listed files.")]
+#[derive(Eq, Show)]
+pub type Reach = Everything | Touched([FileChange]) | Listed([String])
+
+#[doc("One wekufe to cast: the site, the tests that would notice, and its timeout.")]
+#[derive(Eq, Show)]
+pub type Cast = { site: Site, tests: [String], timeout_ms: Int }
+
+#[doc("A site whose outcome is already known, and the outcome.")]
+#[derive(Eq, Show)]
+pub type Known = { site: Site, outcome: Outcome }
+
+#[doc("What a run will do, and what it will not: every site lands in exactly one bucket.")]
+#[derive(Eq, Show)]
+pub type Plan = { to_cast: [Cast], no_coverage: [Site], suppressed: [Site], cached: [Known] }
+
+#[doc("""
+What the planner needs. `coverage` is absent when the kalku cannot report
+it, and then every wekufe runs `all_tests`.
+""")]
+pub type Inputs = {
+  sites: [Site],
+  coverage: Option[[CoverageEntry]],
+  all_tests: [String],
+  durations: [(String, Int)],
+  suppressed_ids: [String],
+  exclude: [String],
+  reach: Reach,
+  timeout_floor_ms: Int
+}
+
+#[doc("A site whose module others depend on at compile time pays for their rebuild too.")]
+pub const DEPENDENTS_FACTOR : Int = 2
+
+#[doc("How many times a test's own duration a wekufe may take before it is a timeout.")]
+pub const TIMEOUT_FACTOR : Int = 3
+
+#[doc("Plan a run. `cached` answers with a wekufe's outcome when an earlier run already cast it.")]
+pub fn plan(inputs: Inputs, cached: (String) -> Option[Outcome]) : Plan {
+  let reachable =
+    filter(inputs.sites, s => in_reach(s, inputs.reach) and (not excluded(s, inputs.exclude)))
+  let suppressed = filter(reachable, s => contains(inputs.suppressed_ids, s.site_id))
+  let live = filter(reachable, s => not contains(inputs.suppressed_ids, s.site_id))
+  let known = flat_map(live, s => remembered(s, cached))
+  let fresh = filter(live, s => is_empty(remembered(s, cached)))
+  Plan {
+    to_cast: order(flat_map(fresh, s => castable(s, inputs))),
+    no_coverage: filter(fresh, s => is_empty(covering(s, inputs))),
+    suppressed: suppressed,
+    cached: known
+  }
+}
+
+#[doc("The tests that execute a site's line, or the whole suite when coverage is unknown.")]
+pub fn covering(site: Site, inputs: Inputs) : [String] = match inputs.coverage {
+  None -> inputs.all_tests
+  Some(entries) ->
+    concat(entries |? (e => e.file == site.file and e.line == site.span.start.line) | (.tests))
+}
+
+#[doc("How long a wekufe may run: a multiple of what its tests cost, never below the floor.")]
+pub fn timeout_for(site: Site, tests: [String], inputs: Inputs) : Int {
+  let budget = TIMEOUT_FACTOR * sum(tests | (t => duration_of(t, inputs.durations)))
+  let floor = max_int(budget, inputs.timeout_floor_ms)
+  match site.reload {
+    Dependents -> floor * DEPENDENTS_FACTOR
+    ModuleOnly -> floor
+  }
+}
+
+# ---- buckets -----------------------------------------------------------
+
+fn castable(site: Site, inputs: Inputs) : [Cast] {
+  let tests = covering(site, inputs)
+  if is_empty(tests) {
+    []
+  } else {
+    [Cast { site: site, tests: tests, timeout_ms: timeout_for(site, tests, inputs) }]
+  }
+}
+
+fn remembered(site: Site, cached: (String) -> Option[Outcome]) : [Known] = match cached(
+  site.site_id
+) {
+  Some(o) -> [Known { site: site, outcome: o }]
+  None -> []
+}
+
+# ---- reach -------------------------------------------------------------
+
+fn in_reach(site: Site, reach: Reach) : Bool {
+  case _, Everything -> true
+  case s, Touched(changes) -> changed_lines.touches(changes, s.file, s.span.start.line)
+  case s, Listed(files) -> contains(files, s.file)
+}
+
+fn excluded(site: Site, patterns: [String]) : Bool = any(patterns, p => matches(site.file, p))
+
+# `lib/**/*.ex`, `lib/my_app_web/telemetry.ex`: `*` stands for any run of
+# characters, and the pieces between the stars must appear in order.
+fn matches(path: String, pattern: String) : Bool {
+  let parts = split(pattern, "*")
+  if length(parts) == 1 {
+    path == pattern
+  } else {
+    consume(path, parts, true)
+  }
+}
+
+fn consume(rest: String, parts: [String], first: Bool) : Bool = match parts {
+  [] -> true
+  [part] -> if is_empty(part) { true } else { ends_with(rest, part) }
+  [part, ...more] -> match index_of(rest, part) {
+    None -> false
+    Some(at) ->
+      if first and at != 0 {
+        false
+      } else {
+        consume(drop_bytes(rest, at + length(part)), more, false)
+      }
+  }
+}
+
+# ---- order -------------------------------------------------------------
+
+# Fewest covering tests first, then the cheapest, then the id: a hole shows
+# up sooner, and the same inputs always give the same plan.
+fn order(casts: [Cast]) : [Cast] = sort_by(casts, compare_casts)
+
+fn compare_casts(a: Cast, b: Cast) : Int {
+  let by_tests = length(a.tests) - length(b.tests)
+  let by_budget = a.timeout_ms - b.timeout_ms
+  if by_tests != 0 {
+    by_tests
+  } else if by_budget != 0 {
+    by_budget
+  } else {
+    compare_text(a.site.site_id, b.site.site_id)
+  }
+}
+
+fn compare_text(a: String, b: String) : Int = if a == b { 0 } else if a < b { 0 - 1 } else { 1 }
+
+fn duration_of(test_id: String, durations: [(String, Int)]) : Int =
+  match find(durations, d => d.fst == test_id) {
+    Some(d) -> d.snd
+    None -> 0
+  }
+
+fn max_int(a: Int, b: Int) : Int = if a > b { a } else { b }
+
+fn drop_bytes(s: String, n: Int) : String = byte_slice(s, n, length(s) - n).unwrap_or("")

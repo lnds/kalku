@@ -1,0 +1,55 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.verdict
+import kalku.core.gate
+
+fn counts_of(killed: Int, survived: Int) : Counts =
+  tally(repeat(Cast(Killed), killed) ++ repeat(Cast(Survived), survived))
+
+fn clean() : Counts = counts_of(9, 1)
+
+test "a clean run passes" {
+  assert blockers(clean(), 0, no_policy(), None) == []
+  assert exit_code([]) == 0
+}
+
+test "a survivor on a changed line blocks the change" {
+  let bs = blockers(clean(), 3, no_policy(), None)
+  assert bs == [SurvivorsOnChangedLines(3)]
+  assert exit_code(bs) == 1
+  assert explain(SurvivorsOnChangedLines(3)) == "3 wekufe survived on lines this change touched"
+}
+
+test "the global score is guarded apart from the change" {
+  let policy = Policy { threshold: Some(0.95), baseline: None }
+  let bs = blockers(clean(), 0, policy, None)
+  assert bs == [BelowThreshold(0.9, 0.95)]
+  assert exit_code(bs) == 1
+}
+
+test "the ratchet blocks a score that fell below the stored baseline" {
+  let policy = Policy { threshold: None, baseline: Some(0.95) }
+  assert blockers(clean(), 0, policy, None) == [BelowBaseline(0.9, 0.95)]
+  assert blockers(clean(), 0, Policy { threshold: None, baseline: Some(0.5) }, None) == []
+}
+
+# "your tests have holes" and "kalku could not measure" are different failures.
+test "a run that could not measure exits 2, and says so first" {
+  let bs =
+    blockers(clean(), 3, Policy { threshold: Some(0.99), baseline: None }, Some("the suite is red"))
+  assert bs == [CouldNotMeasure("the suite is red")]
+  assert exit_code(bs) == 2
+  assert explain(CouldNotMeasure("the suite is red")) == "could not measure: the suite is red"
+}
+
+test "a run with nothing to kill is not below any floor" {
+  let policy = Policy { threshold: Some(0.9), baseline: Some(0.9) }
+  assert blockers(tally([Cast(Timeout)]), 0, policy, None) == []
+}
+
+test "every floor that is broken is reported, not only the first" {
+  let policy = Policy { threshold: Some(0.95), baseline: Some(0.99) }
+  let bs = blockers(clean(), 2, policy, None)
+  assert length(bs) == 3
+  assert exit_code(bs) == 1
+}

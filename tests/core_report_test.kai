@@ -1,0 +1,142 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.verdict
+import kalku.core.gate
+import kalku.core.report
+import kalku.core.report_json
+import kalku.core.report_github
+
+fn site_of(
+  file: String,
+  line: Int,
+  enclosing: Option[String],
+  original: Option[String],
+  replacement: String
+) : Site =
+  Site {
+    site_id: "id-#{file}-#{line}",
+    file: file,
+    enclosing: enclosing,
+    ordinal: Some(1),
+    span: Span { start: Position { line: line, col: 7, byte: 0 }, end: None },
+    spell: Compare,
+    original: original,
+    replacement: replacement,
+    reload: ModuleOnly
+  }
+
+fn compare_site() : Site = site_of("lib/a.ex", 42, Some("A.f/1"), Some(">="), ">")
+
+fn arm_site() : Site = site_of("lib/b.ex", 7, None, Some("  nil -> :eof"), "")
+
+fn no_suppressions() : SuppressionChanges =
+  SuppressionChanges { equivalent_added: 0, exclude_added: [], exclude_calls_added: [] }
+
+fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Report =
+  Report {
+    counts: counts,
+    survivors: survivors,
+    on_changed_lines: length(blockers),
+    suppressions: no_suppressions(),
+    blockers: blockers
+  }
+
+fn plain() : Report =
+  report_of(
+    [Survivor { site: compare_site(), tests: ["test/a_test.exs:18"] }],
+    tally([Cast(Killed), Cast(Survived)]),
+    []
+  )
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+test "a survivor reads as a place, a spell, and the change that made it" {
+  let s = Survivor { site: compare_site(), tests: ["test/a_test.exs:18"] }
+  assert location(s) == "lib/a.ex:42  compare  A.f/1"
+  assert diff_of(compare_site()) == ["- >=", "+ >"]
+}
+
+test "a deletion shows only what it removed" {
+  assert diff_of(arm_site()) == ["-   nil -> :eof"]
+}
+
+test "the human report leads with survivors and closes with the summary" {
+  let text = human(plain())
+  assert starts_with(
+    text,
+    "lib/a.ex:42  compare  A.f/1\n  - >=\n  + >\n  covered by test/a_test.exs:18"
+  )
+  assert has(text, "score 50% · 1 killed · 1 survived")
+}
+
+test "a survivor no test covers says so" {
+  let lonely = Survivor { site: arm_site(), tests: [] }
+  assert has(human(report_of([lonely], tally([Cast(Survived)]), [])), "no test covers it")
+}
+
+test "the summary reports apart what never entered the score" {
+  let counts = tally([
+    Cast(Killed),
+    Cast(Survived),
+    Cast(Timeout),
+    Cast(NoCoverage),
+    Cast(CompileError),
+    Cast(Crashed),
+    EquivalentBy(Bytecode),
+    EquivalentBy(Declared)
+  ])
+  assert summary_line(report_of([], counts, []))
+    == "score 50% · 1 killed · 1 survived · 1 timeout · 1 no coverage · 1 compile error · 1 crashed · 2 equivalent (1 bytecode, 1 declared)"
+}
+
+test "a run with nothing to kill says n/a, never 100%" {
+  assert has(summary_line(report_of([], tally([Cast(Timeout)]), [])), "score n/a")
+}
+
+test "suppressions a change adds are as loud as the holes it leaves" {
+  let noisy = Report {
+    ...plain(),
+    suppressions: SuppressionChanges {
+      equivalent_added: 2,
+      exclude_added: ["lib/gen/**"],
+      exclude_calls_added: ["Logger.*"]
+    }
+  }
+  let text = human(noisy)
+  assert has(text, "Suppressions added in this change:")
+  assert has(text, "2 declared equivalent")
+  assert has(text, "wider exclusion: lib/gen/**")
+  assert has(text, "wider exclusion: Logger.*")
+}
+
+test "what blocks the run is stated, not implied" {
+  let blocked = report_of([], tally([Cast(Killed)]), [SurvivorsOnChangedLines(2)])
+  assert has(human(blocked), "blocked: 2 wekufe survived on lines this change touched")
+}
+
+test "the json report carries the score, the counts, and every survivor" {
+  let text = json(plain(), 1)
+  assert has(text, "\"score\":0.5")
+  assert has(
+    text,
+    "\"survivors\":[{\"wekufe\":\"id-lib/a.ex-42\",\"file\":\"lib/a.ex\",\"enclosing\":\"A.f/1\",\"line\":42,\"spell\":\"compare\",\"original\":\">=\",\"replacement\":\">\",\"covering_tests\":[\"test/a_test.exs:18\"]}]"
+  )
+  assert has(text, "\"exit\":1")
+}
+
+test "the json report omits a score that does not exist" {
+  let text = json(report_of([], tally([Cast(Timeout)]), []), 0)
+  assert not has(text, "\"score\"")
+  assert has(text, "\"timeout\":1")
+}
+
+test "a github annotation points at the line that survived" {
+  assert annotations(plain()) == "::warning file=lib/a.ex,line=42,title=survived: compare::- >= + >"
+}
+
+test "the step summary tables the survivors" {
+  let text = step_summary(plain())
+  assert starts_with(text, "## kalku")
+  assert has(text, "| `lib/a.ex:42` | compare | `- >= + >` |")
+  assert has(step_summary(report_of([], tally([Cast(Killed)]), [])), "No survivors.")
+}
