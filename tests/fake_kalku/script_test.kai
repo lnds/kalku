@@ -1,0 +1,62 @@
+import encoding.json
+import fake_kalku.script
+
+fn steps_of(text: String) : [Step] = match parse_script(text) {
+  Ok(steps) -> steps
+  Err(_) -> []
+}
+
+fn problem_of(text: String) : String = match parse_script(text) {
+  Ok(_) -> "accepted"
+  Err(e) -> e
+}
+
+test "a step says what it expects and what to reply" {
+  let steps = steps_of("{\"expect\":\"hello\",\"reply\":{\"type\":\"ready\"},\"delay_ms\":20}\n")
+  assert length(steps) == 1
+  assert head(steps).unwrap_or(no_step()).expect == "hello"
+  assert head(steps).unwrap_or(no_step()).delay_ms == 20
+  assert reply_text(head(steps).unwrap_or(no_step())) == "{\"type\":\"ready\"}"
+}
+
+test "a step that says nothing else does nothing else" {
+  let s = head(steps_of("{\"expect\":\"cast\"}\n")).unwrap_or(no_step())
+  assert not s.hang
+  assert not s.crash
+  assert not s.garbage
+  assert not s.ignore_abort
+  assert s.delay_ms == 0
+  assert s.repeat == 1
+  assert reply_text(s) == ""
+}
+
+# A step with no `expect` serves whatever arrives, which is what a load
+# test wants: one line for a hundred casts.
+test "a step with no expectation serves any request" {
+  let s = head(steps_of("{\"reply\":{\"type\":\"cast_done\"},\"repeat\":100}\n")).unwrap_or(no_step())
+  assert is_wildcard(s)
+  assert s.repeat == 100
+}
+
+test "a repeated step is spent one use at a time" {
+  let s = head(steps_of("{\"expect\":\"cast\",\"repeat\":3}\n")).unwrap_or(no_step())
+  assert (spend(s) | (.repeat)) == [2]
+  assert spend(Step { ...s, repeat: 1 }) == []
+}
+
+test "blank lines are skipped, and a line that is not an object is named" {
+  assert length(steps_of("\n{\"expect\":\"hello\"}\n\n{\"expect\":\"cast\"}\n")) == 2
+  assert problem_of("{\"expect\":\"hello\"}\nnot json\n") == "line 2: not a JSON object"
+}
+
+fn no_step() : Step = Step {
+  expect: "",
+  reply: None,
+  delay_ms: 0,
+  hang: false,
+  ignore_abort: false,
+  crash: false,
+  garbage: false,
+  stderr: None,
+  repeat: 0
+}

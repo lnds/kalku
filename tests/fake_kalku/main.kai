@@ -1,0 +1,95 @@
+#[doc("""
+A kalku that does what a script tells it, so the orchestrator's failure
+modes — a hang, a crash, a garbage line, a kalku deaf to `abort` — are
+reproducible tests rather than accidents of timing.
+
+    fake_kalku <script.ndjson>
+
+A request the script did not expect is the fake's own failure: it says so
+on stderr and exits 3, so an orchestrator bug surfaces as a failed test
+instead of a hung one.
+""")]
+
+import os.args
+import os.process as proc
+import encoding.json
+import time
+import fake_kalku.script
+
+const SCRIPT_EXIT : Int = 3
+const CRASH_EXIT : Int = 7
+
+fn main() : Int / Stdin + Stdout + Stderr + File + Clock + Process + Env = match args.argv() {
+  [path] -> match File.read_file(path) {
+    Err(e) -> die("cannot read the script: #{e}")
+    Ok(text) -> match parse_script(text) {
+      Err(e) -> die(e)
+      Ok(steps) -> serve(steps, false)
+    }
+  }
+  _ -> die("usage: fake_kalku <script.ndjson>")
+}
+
+# The fake stays in lockstep with its script: one request, one step.
+fn serve(steps: [Step], deaf: Bool) : Int / Stdin + Stdout + Stderr + Clock + Process =
+  match Stdin.read_line() {
+    None -> 0
+    Some(line) -> {
+      let req = head_of(line)
+      if deaf and req.fst == "abort" { serve(steps, deaf) } else { dispatch(steps, deaf, req) }
+    }
+  }
+
+fn dispatch(steps: [Step], deaf: Bool, req: (String, Int)) : Int / Stdin + Stdout + Stderr + Clock + Process = match steps {
+  [] -> die("no step left for `#{req.fst}`")
+  [s, ...rest] -> if is_wildcard(s) or s.expect == req.fst {
+    {
+      act(s, req.snd)
+      serve(spend(s) ++ rest, deaf or s.ignore_abort)
+    }
+  } else {
+    die("expected `#{s.expect}`, got `#{req.fst}`")
+  }
+}
+
+fn act(s: Step, id: Int) : Unit / Stdout + Stderr + Clock + Process {
+  match s.stderr {
+    Some(t) -> Stderr.eprint(t)
+    None -> ()
+  }
+  if s.crash { let _ = proc.exit(CRASH_EXIT); () } else { () }
+  if s.delay_ms > 0 { sleep(millis(s.delay_ms)) } else { () }
+  if s.garbage { Stdout.print("} not json {") } else { () }
+  if s.hang { () } else { say(s.reply, id) }
+}
+
+fn say(reply: Option[JsonValue], id: Int) : Unit / Stdout = match reply {
+  Some(r) -> Stdout.print(json_encode(with_id(r, id)))
+  None -> ()
+}
+
+# ---- the envelope ------------------------------------------------------
+
+# Only `type` and `id` are read: the fake relays whatever the script says,
+# including a reply the protocol would reject.
+fn head_of(line: String) : (String, Int) = match json_decode(line) {
+  Some(v) -> (as_string(get(v, "type")).unwrap_or(""), as_int(get(v, "id")).unwrap_or(0))
+  None -> ("", 0)
+}
+
+fn with_id(reply: JsonValue, id: Int) : JsonValue = match reply {
+  JObj(fields) -> JObj(keep_type_first(fields, id))
+  other -> other
+}
+
+fn keep_type_first(fields: [(String, JsonValue)], id: Int) : [(String, JsonValue)] {
+  let rest = filter(fields, f => f.fst != "id" and f.fst != "type")
+  let kind = filter(fields, f => f.fst == "type")
+  kind ++ [("id", JNum(id))] ++ rest
+}
+
+fn die(message: String) : Int / Stderr + Process {
+  Stderr.eprint("fake kalku: #{message}")
+  let _ = proc.exit(SCRIPT_EXIT)
+  SCRIPT_EXIT
+}
