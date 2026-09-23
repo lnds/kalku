@@ -7,6 +7,10 @@ BUILD := _build
 
 KAI_SRC := main.kai $(shell find kalku -name '*.kai') $(wildcard tests/*.kai)
 
+# The scripted kalku the orchestrator tests talk to, built as its own package.
+FAKE     := tests/fake_kalku/fake_kalku
+FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
+
 .PHONY: all build test test-kaikai test-elixir fmt fmt-check lint km ci check clean
 
 all: build
@@ -19,8 +23,12 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 
 test: test-kaikai test-elixir
 
-test-kaikai:
+test-kaikai: $(FAKE)
 	$(KAI) test
+	$(KAI) test ./tests/fake_kalku
+
+$(FAKE): $(FAKE_SRC)
+	$(KAI) build ./tests/fake_kalku
 
 # The Elixir kalku joins once its mix project exists.
 test-elixir:
@@ -46,3 +54,4 @@ check: ci test-elixir
 
 clean:
 	rm -rf $(BUILD) .kai-cache
+	rm -f $(FAKE)

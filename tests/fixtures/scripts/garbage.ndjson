@@ -1,0 +1,2 @@
+{"expect":"hello","reply":{"type":"ready","protocol":1,"language":"fake","adapter":"fake_kalku 0.1","runtime":"none","spells":["arm"],"capabilities":["cast"]}}
+{"expect":"cast","garbage":true}

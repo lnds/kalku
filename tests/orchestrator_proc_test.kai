@@ -1,0 +1,191 @@
+import actor
+import time
+import kalku.wire.enums
+import kalku.wire.envelope
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.orchestrator.kalku_proc
+
+# Every test here talks to a real child process, so every wait has a
+# deadline: a broken orchestrator fails the suite instead of hanging it.
+const PATIENCE : Duration = seconds(5)
+
+# What a kalku that is never going to answer is given before we say so.
+const BRIEF : Duration = millis(300)
+
+const FAKE : String = "./tests/fake_kalku/fake_kalku"
+
+fn spec(script: String) : KalkuSpec =
+  KalkuSpec { worker: 0, command: FAKE, args: ["tests/fixtures/scripts/#{script}"] }
+
+fn hello() : KalkuRequest = Hello(HelloMsg {
+  version: 1,
+  root: ".",
+  reni: ".kalku",
+  worker: 0,
+  inline_limit_bytes: 65536,
+  env: StrMap { entries: [] }
+})
+
+fn a_cast(wekufe: String) : KalkuRequest =
+  Cast(CastMsg { wekufe: wekufe, site: a_site(), tests: ["test/arm_test.kai"] })
+
+fn a_site() : Site = Site {
+  site_id: "s1",
+  file: "lib/a.kai",
+  enclosing: Some("add"),
+  ordinal: None,
+  span: Span { start: Position { line: 12, col: 5, byte: 0 }, end: None },
+  spell: Arm,
+  original: Some("+"),
+  replacement: "-",
+  reload: ModuleOnly
+}
+
+# Whatever the kalku did next, as one line a test can assert on: a reply,
+# a protocol error, a closed pipe, or silence.
+fn next_within(patience: Duration) : String / Actor[OrchMsg] + Clock =
+  match receive_timeout(patience) {
+    None -> "silence"
+    Some(Wire(_, Said(line))) -> match heard(line) {
+      Ok(m) -> tell(m.body)
+      Err(e) -> "protocol error: #{kind_name(e.kind)}"
+    }
+    Some(Wire(_, Closed)) -> "closed"
+    Some(Wire(_, Unreadable(_))) -> "unreadable"
+  }
+
+fn next() : String / Actor[OrchMsg] + Clock = next_within(PATIENCE)
+
+fn tell(r: KalkuReply) : String {
+  case Ready(m) -> "ready #{m.language} protocol #{m.version}"
+  case CastDone(m) -> "cast_done #{outcome_name(m.outcome)}"
+  case Bye -> "bye"
+  case other -> "#{other}"
+}
+
+fn listen_to(k: Kalku) : Unit / Process + Spawn + Actor[OrchMsg] {
+  let me = Actor.self()
+  let _reader = spawn_actor(() => read_loop(k, me))
+  ()
+}
+
+fn ready_of(r: String) : Option[ReadyMsg] = match json_ready(r) {
+  Ok(m) -> Some(m)
+  Err(_) -> None
+}
+
+fn json_ready(line: String) : Result[ReadyMsg, ProtocolError] = match heard(line) {
+  Ok(m) -> match m.body {
+    Ready(r) -> Ok(r)
+    _ -> fail(Invalid, "not a ready")
+  }
+  Err(e) -> Err(e)
+}
+
+test "a kalku is summoned, answers, and leaves of its own accord" {
+  let told = with_mailbox {
+    match summon(spec("one_cast.ndjson")) {
+      Err(e) -> [e]
+      Ok(k) -> {
+        listen_to(k)
+        let _h = ask(k, 1, hello())
+        let ready = next()
+        let _c = ask(k, 2, a_cast("w1"))
+        let outcome = next()
+        let _s = ask(k, 3, Shutdown)
+        let farewell = next()
+        [ready, outcome, farewell, ending(reap(k))]
+      }
+    }
+  }
+  assert told == ["ready fake protocol 1", "cast_done killed", "bye", "exited 0"]
+}
+
+# A version this side cannot speak is refused by name: guessing at what a
+# message means would produce numbers nobody can trust.
+test "a kalku that speaks another protocol version is refused" {
+  let told = with_mailbox {
+    match summon(spec("protocol_mismatch.ndjson")) {
+      Err(e) -> [e]
+      Ok(k) -> {
+        listen_to(k)
+        let _h = ask(k, 1, hello())
+        let line = match receive_timeout(PATIENCE) {
+          Some(Wire(_, Said(l))) -> l
+          other -> "#{other}"
+        }
+        let refusal = match ready_of(line) {
+          Some(m) -> ready_refused(m).unwrap_or("accepted")
+          None -> "undecodable"
+        }
+        kill_now(k)
+        [refusal]
+      }
+    }
+  }
+  assert told == ["speaks protocol 99, this kalku speaks 1"]
+}
+
+# Garbage on stdout is a protocol error naming the line, not a silent skip:
+# a kalku that writes noise is not one whose results can be believed.
+test "a line that is not JSON is a protocol error, and the kalku is still reapable" {
+  let told = with_mailbox {
+    match summon(spec("garbage.ndjson")) {
+      Err(e) -> [e]
+      Ok(k) -> {
+        listen_to(k)
+        let _h = ask(k, 1, hello())
+        let ready = next()
+        let _c = ask(k, 2, a_cast("w1"))
+        let noise = next()
+        kill_now(k)
+        [ready, noise]
+      }
+    }
+  }
+  assert told == ["ready fake protocol 1", "protocol error: not_json"]
+}
+
+# A kalku that dies mid-cast closes its pipe; the wekufe it was casting is
+# reported by the caller, never lost, and the exit status says what happened.
+test "a kalku that crashes mid-cast closes its pipe and reaps with its code" {
+  let told = with_mailbox {
+    match summon(spec("crash_mid_cast.ndjson")) {
+      Err(e) -> [e]
+      Ok(k) -> {
+        listen_to(k)
+        let _h = ask(k, 1, hello())
+        let ready = next()
+        let _c = ask(k, 2, a_cast("w1"))
+        let end = next()
+        [ready, end, ending(reap(k))]
+      }
+    }
+  }
+  assert told == ["ready fake protocol 1", "closed", "exited 7"]
+}
+
+# The last step of the escalation: a kalku deaf to `abort` answers nothing,
+# so the deadline passes and the kill is what ends it.
+test "a kalku that never answers is killed, and killing it leaves nothing behind" {
+  let told = with_mailbox {
+    match summon(spec("deaf.ndjson")) {
+      Err(e) -> [e]
+      Ok(k) -> {
+        listen_to(k)
+        let _h = ask(k, 1, hello())
+        let ready = next()
+        let _c = ask(k, 2, a_cast("w1"))
+        let hung = next_within(BRIEF)
+        let _a = ask(k, 3, Abort(AbortMsg { cast: 2 }))
+        let still_hung = next_within(BRIEF)
+        kill_now(k)
+        # Reaped by the kill, the pipe is gone rather than at end of input.
+        [ready, hung, still_hung, next_within(BRIEF)]
+      }
+    }
+  }
+
+  assert told == ["ready fake protocol 1", "silence", "silence", "unreadable"]
+}
