@@ -1,0 +1,47 @@
+#[doc("""
+The rules a well-formed kalku message must satisfy beyond its shape: the
+combinations the field tables cannot express, which decode reports as
+`invalid`.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.envelope
+import kalku.wire.kalku_msg
+
+#[doc("Check a reply's rules; `Ok` when it has none to break.")]
+pub fn check_reply(r: KalkuReply) : Result[Unit, ProtocolError] {
+  case Ready(m) -> check_ready(m)
+  case BaselineDone(m) -> check_baseline(m)
+  case CastDone(m) -> check_cast_done(m)
+  case Delegated(m) -> check_delegated(m)
+  case _ -> Ok(())
+}
+
+fn check_ready(m: ReadyMsg) : Result[Unit, ProtocolError] {
+  let native = contains(m.capabilities, CastCap)
+  let driver = contains(m.capabilities, DelegateCap)
+  require(native != driver, "ready: capabilities must include exactly one of cast, delegate")
+}
+
+fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
+  require(
+    not (is_some(m.coverage) and is_some(m.coverage_path)),
+    "baseline_done: at most one of coverage, coverage_path"
+  )!
+  require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
+}
+
+fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
+  let allowed = [Killed, Survived, CompileError, Equivalent]
+  require(
+    contains(allowed, m.outcome),
+    "cast_done: outcome must be killed, survived, compile_error, or equivalent"
+  )
+}
+
+fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] =
+  require(
+    is_some(m.outcomes) != is_some(m.outcomes_path),
+    "delegated: exactly one of outcomes, outcomes_path"
+  )
