@@ -1,0 +1,181 @@
+#[doc("""
+`.kalku.toml`: what a project asks of a run.
+
+Every key is optional and every default lives here, so a project that
+writes nothing still gets a sane run. A key that is present but wrong is
+an error that names the key — a config nobody can trust is worse than no
+config at all.
+
+A table named after a language is not kalku's business: it is handed to
+that kalku as it stands.
+""")]
+
+import encoding.toml
+import kalku.wire.enums
+import kalku.core.gate
+
+#[doc("What a project asked for, with kalku's defaults filled in.")]
+#[derive(Eq, Show)]
+pub type Config = {
+  workers: Option[Int],
+  spells: [Spell],
+  exclude: [String],
+  exclude_calls: [String],
+  timeout_floor_ms: Int,
+  policy: Policy,
+  ratchet: Bool
+}
+
+#[doc("A key the config got wrong, and what was wrong with it.")]
+#[derive(Eq, Show)]
+pub type ConfigProblem = { key: String, message: String }
+
+#[doc("Every spell, which is what a run casts when the config names none.")]
+pub fn all_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call]
+
+#[doc("What a run does when `.kalku.toml` is absent or empty: every spell, nothing excluded, no floor to meet.")]
+pub fn defaults() : Config = Config {
+  workers: None,
+  spells: all_spells(),
+  exclude: [],
+  exclude_calls: [],
+  timeout_floor_ms: 500,
+  policy: no_policy(),
+  ratchet: false
+}
+
+#[doc("Read `.kalku.toml`. Every problem is reported, not just the first.")]
+pub fn parse(text: String) : Result[Config, [ConfigProblem]] =
+  if is_empty(trim(text)) {
+    Ok(defaults())
+  } else {
+    match toml.decode_report(text) {
+      Err(e) -> Err([ConfigProblem { key: e.key, message: "line #{e.line}: #{e.reason}" }])
+      Ok(root) -> of_toml(root)
+    }
+  }
+
+#[doc("""
+The tables kalku does not own, each with its name: a kalku's own settings
+travel to it untouched, so a language may take options kalku knows nothing
+about.
+""")]
+pub fn language_tables(text: String) : [(String, TomlValue)] = match toml.decode(text) {
+  None -> []
+  Some(root) -> filter(pairs_of(root), t => not contains(["run", "score"], t.fst))
+}
+
+# ---- reading -----------------------------------------------------------
+
+fn of_toml(root: TomlValue) : Result[Config, [ConfigProblem]] {
+  let run = table_at(root, "run")
+  let score = table_at(root, "score")
+  let spells = read_spells(run)
+  let config = Config {
+    workers: int_at(run, "workers"),
+    spells: spells.snd,
+    exclude: strings_at(run, "exclude"),
+    exclude_calls: strings_at(run, "exclude_calls"),
+    timeout_floor_ms: int_at(run, "timeout_floor_ms").unwrap_or(defaults().timeout_floor_ms),
+    policy: Policy { threshold: real_at(score, "threshold"), baseline: None },
+    ratchet: bool_at(score, "ratchet").unwrap_or(false)
+  }
+  let problems =
+    spells.fst ++ check_workers(config) ++ check_threshold(config) ++ check_floor(config)
+  if is_empty(problems) { Ok(config) } else { Err(problems) }
+}
+
+# An unknown spell is a typo the run would silently honour, so it is an
+# error; naming none at all means all of them.
+fn read_spells(run: TomlValue) : ([ConfigProblem], [Spell]) = match value_at(run, "spells") {
+  None -> ([], all_spells())
+  Some(TArr(items)) -> {
+    let names = flat_map(items, as_string)
+    let unknown = filter(names, n => is_none(spell_of(n)))
+    (
+      unknown | (n => ConfigProblem { key: "run.spells", message: "unknown spell `#{n}`" }),
+      flat_map(names, spell_list)
+    )
+  }
+  Some(_) ->
+    ([ConfigProblem { key: "run.spells", message: "expected a list of spell names" }], all_spells())
+}
+
+fn check_workers(c: Config) : [ConfigProblem] = match c.workers {
+  Some(n) -> if n < 1 {
+    [ConfigProblem { key: "run.workers", message: "must be at least 1, got #{n}" }]
+  } else {
+    []
+  }
+  None -> []
+}
+
+fn check_threshold(c: Config) : [ConfigProblem] = match c.policy.threshold {
+  Some(t) ->
+    if t < 0.0 or t > 1.0 {
+      [
+        ConfigProblem {
+          key: "score.threshold",
+          message: "must be a ratio between 0 and 1, got #{real_to_string(t)}"
+        }
+      ]
+    } else {
+      []
+    }
+  None -> []
+}
+
+fn check_floor(c: Config) : [ConfigProblem] =
+  if c.timeout_floor_ms < 0 {
+    [ConfigProblem { key: "run.timeout_floor_ms", message: "must not be negative" }]
+  } else {
+    []
+  }
+
+# ---- toml pieces -------------------------------------------------------
+
+fn pairs_of(v: TomlValue) : [(String, TomlValue)] = match v {
+  TTbl(pairs) -> pairs
+  _ -> []
+}
+
+fn table_at(root: TomlValue, name: String) : TomlValue =
+  value_at(root, name).unwrap_or(TTbl([]))
+
+fn value_at(table: TomlValue, key: String) : Option[TomlValue] =
+  toml.pairs_get(pairs_of(table), key)
+
+fn int_at(table: TomlValue, key: String) : Option[Int] = match value_at(table, key) {
+  Some(TInt(n)) -> Some(n)
+  _ -> None
+}
+
+fn real_at(table: TomlValue, key: String) : Option[Real] = match value_at(table, key) {
+  Some(TReal(x)) -> Some(x)
+  Some(TInt(n)) -> Some(int_to_real(n))
+  _ -> None
+}
+
+fn bool_at(table: TomlValue, key: String) : Option[Bool] = match value_at(table, key) {
+  Some(TBool(b)) -> Some(b)
+  _ -> None
+}
+
+fn strings_at(table: TomlValue, key: String) : [String] = match value_at(table, key) {
+  Some(TArr(items)) -> flat_map(items, as_string)
+  _ -> []
+}
+
+fn as_string(v: TomlValue) : [String] = match v {
+  TStr(s) -> [s]
+  _ -> []
+}
+
+fn spell_of(name: String) : Option[Spell] = find(all_spells(), s => spell_name(s) == name)
+
+fn spell_list(name: String) : [Spell] = match spell_of(name) {
+  Some(s) -> [s]
+  None -> []
+}
+
+fn is_none[t](o: Option[t]) : Bool = not is_some(o)
