@@ -1,0 +1,129 @@
+#[doc("""
+One kalku as a process: summon it, talk to it, banish it.
+
+A kalku's stdout is a stream of bytes, not of messages, so a reader actor
+turns chunks into lines and hands them to whoever owns the mailbox. That
+actor is the only fiber that blocks on the child, which is what keeps the
+scheduler's deadlines honest.
+
+Banishing is the polite path first: `shutdown`, wait for `bye`, and only
+then the signal. A kalku that stops answering is killed, never left
+behind.
+""")]
+
+import os.process as proc
+import kalku.wire.enums
+import kalku.wire.envelope
+import kalku.wire.kalku_msg
+import kalku.wire.kalku_codec
+import kalku.wire.framing
+import kalku.wire.version
+
+#[doc("What a kalku's reader saw on stdout.")]
+#[derive(Eq, Show)]
+pub type FromKalku = Said(String) | Closed | Unreadable(String)
+
+#[doc("A message to the fiber that owns the kalku: which worker, and what it did.")]
+#[derive(Eq, Show)]
+pub type OrchMsg = Wire(Int, FromKalku)
+
+#[doc("How to summon a kalku: the command, and the environment it may see.")]
+#[derive(Eq, Show)]
+pub type KalkuSpec = { worker: Int, command: String, args: [String] }
+
+#[doc("A summoned kalku: its process and the worker slot it fills.")]
+pub type Kalku = { worker: Int, child: Child }
+
+#[doc("The longest line a kalku may write before it is cut off.")]
+pub const MAX_LINE : Int = 1048576
+
+#[doc("Summon a kalku with pipes on its stdin and stdout.")]
+pub fn summon(spec: KalkuSpec) : Result[Kalku, String] / Process =
+  match proc.start_piped(spec.command, spec.args) {
+    Err(e) -> Err("cannot summon worker #{spec.worker}: #{e}")
+    Ok(child) -> Ok(Kalku { worker: spec.worker, child: child })
+  }
+
+#[doc("""
+Read the kalku's stdout for as long as it speaks, sending one message per
+line to `parent`.
+
+Runs as its own actor: it blocks on the child, so nothing else should.
+""")]
+pub fn read_loop(k: Kalku, parent: Pid[OrchMsg]) : Unit / Process + Actor[OrchMsg] =
+  pump(k, parent, framer(MAX_LINE))
+
+#[doc("Send one request to the kalku.")]
+pub fn ask(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Process =
+  match proc.write_stdin(k.child, frame(encode_request(id, request))) {
+    Err(e) -> Err("worker #{k.worker} is not listening: #{e}")
+    Ok(_) -> Ok(())
+  }
+
+#[doc("Decode one line a kalku said.")]
+pub fn heard(line: String) : Result[Msg[KalkuReply], ProtocolError] = decode_reply(line)
+
+#[doc("""
+Why a `ready` was not accepted, or `None` when it was.
+
+A version kalku cannot speak is fatal: a run that guessed at the meaning
+of a message would report numbers nobody can trust.
+""")]
+pub fn ready_refused(m: ReadyMsg) : Option[String] =
+  if not compatible(m.version) {
+    Some("speaks protocol #{m.version}, this kalku speaks #{PROTOCOL_VERSION}")
+  } else {
+    None
+  }
+
+#[doc("True when the kalku said it can do this.")]
+pub fn can(m: ReadyMsg, c: Capability) : Bool = contains(m.capabilities, c)
+
+#[doc("""
+Kill the kalku and reap it, so no child outlives the run.
+
+The polite `shutdown` belongs to the caller, who can wait for `bye`; this
+is what happens when politeness runs out.
+""")]
+pub fn kill_now(k: Kalku) : Unit / Process {
+  let _ = proc.kill(k.child, SIGKILL)
+  let _ = proc.wait(k.child)
+  ()
+}
+
+#[doc("Reap a kalku that is expected to be leaving of its own accord.")]
+pub fn reap(k: Kalku) : Option[Exit] / Process = match proc.wait(k.child) {
+  Ok(status) -> Some(status)
+  Err(_) -> None
+}
+
+#[doc("How a kalku ended, in the words a diagnostic uses.")]
+pub fn ending(e: Option[Exit]) : String = match e {
+  Some(Exited(code)) -> "exited #{code}"
+  Some(Signaled(signo)) -> "killed by signal #{signo}"
+  None -> "ended without a status"
+}
+
+const SIGKILL : Int = 9
+
+fn pump(k: Kalku, parent: Pid[OrchMsg], f: Framer) : Unit / Process + Actor[OrchMsg] =
+  match proc.read_stdout(k.child) {
+    Err(e) -> Actor.send(parent, Wire(k.worker, Unreadable(e)))
+    Ok(chunk) -> if is_empty(chunk) {
+      Actor.send(parent, Wire(k.worker, Closed))
+    } else {
+      pump(k, parent, deliver(k.worker, parent, feed(f, chunk)))
+    }
+  }
+
+fn deliver(worker: Int, parent: Pid[OrchMsg], fed: Fed) : Framer / Actor[OrchMsg] {
+  each(fed.frames, fr => Actor.send(parent, Wire(worker, said(fr))))
+  fed.framer
+}
+
+# A line past the limit is not truncated into a message that looks
+# well-formed: the kalku is unreadable from here on.
+fn said(f: Frame) : FromKalku {
+  case Line(l) -> Said(l)
+  case TooLong -> Unreadable("a line longer than #{MAX_LINE} bytes")
+}
