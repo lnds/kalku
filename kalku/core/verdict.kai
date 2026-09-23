@@ -1,0 +1,71 @@
+#[doc("""
+What kalku concluded about one wekufe, and how those conclusions add up.
+
+The protocol's `Outcome` says what happened; a verdict adds the one thing
+the wire leaves implicit — how an equivalence was established — because a
+report must show proven and declared equivalents apart.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("How a wekufe was established as equivalent: proven by identical compiled code, or declared with a reason.")]
+#[derive(Eq, Show)]
+pub type Origin = Bytecode | Declared
+
+#[doc("kalku's conclusion about one wekufe.")]
+#[derive(Eq, Show)]
+pub type Verdict = Cast(Outcome) | EquivalentBy(Origin)
+
+#[doc("The protocol outcome a verdict reports.")]
+pub fn outcome_of(v: Verdict) : Outcome {
+  case Cast(o) -> o
+  case EquivalentBy(_) -> Equivalent
+}
+
+#[doc("Totals of a run, with equivalents split by origin.")]
+pub fn tally(vs: [Verdict]) : Counts = foldl(vs, empty(), add)
+
+#[doc("The zero of a tally: a run with nothing cast.")]
+pub fn empty() : Counts = Counts {
+  killed: 0,
+  survived: 0,
+  timeout: 0,
+  no_coverage: 0,
+  compile_error: 0,
+  crashed: 0,
+  equivalent: EquivalentCounts { bytecode: 0, declared: 0 }
+}
+
+#[doc("How many wekufe a tally covers.")]
+pub fn total(c: Counts) : Int =
+  c.killed
+    + c.survived
+    + c.timeout
+    + c.no_coverage
+    + c.compile_error
+    + c.crashed
+    + c.equivalent.bytecode
+    + c.equivalent.declared
+
+fn add(c: Counts, v: Verdict) : Counts {
+  case c, Cast(Killed) -> Counts { ...c, killed: c.killed + 1 }
+  case c, Cast(Survived) -> Counts { ...c, survived: c.survived + 1 }
+  case c, Cast(Timeout) -> Counts { ...c, timeout: c.timeout + 1 }
+  case c, Cast(NoCoverage) -> Counts { ...c, no_coverage: c.no_coverage + 1 }
+  case c, Cast(CompileError) -> Counts { ...c, compile_error: c.compile_error + 1 }
+  case c, Cast(Crashed) -> Counts { ...c, crashed: c.crashed + 1 }
+  case c, Cast(Equivalent) -> bump_equivalent(c, Bytecode)
+  case c, EquivalentBy(o) -> bump_equivalent(c, o)
+}
+
+fn bump_equivalent(c: Counts, o: Origin) : Counts = match o {
+  Bytecode -> Counts {
+    ...c,
+    equivalent: EquivalentCounts { ...c.equivalent, bytecode: c.equivalent.bytecode + 1 }
+  }
+  Declared -> Counts {
+    ...c,
+    equivalent: EquivalentCounts { ...c.equivalent, declared: c.equivalent.declared + 1 }
+  }
+}

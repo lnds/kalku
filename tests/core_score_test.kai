@@ -1,0 +1,59 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.verdict
+import kalku.core.score
+
+fn tally_of(vs: [Verdict]) : Counts = tally(vs)
+
+fn repeat_verdict(v: Verdict, n: Int) : [Verdict] = repeat(v, n)
+
+test "the score is killed over killed plus survived" {
+  let c = tally_of(repeat_verdict(Cast(Killed), 3) ++ [Cast(Survived)])
+  assert score(c) == Some(0.75)
+  assert score_text(c) == "75%"
+}
+
+test "nothing that could have been killed means no score, never 100%" {
+  assert score(tally_of([])) == None
+  assert score_text(tally_of([])) == "n/a"
+
+  let only_timeouts = tally_of([Cast(Timeout), Cast(Timeout)])
+  assert score(only_timeouts) == None
+  assert score_text(only_timeouts) == "n/a"
+}
+
+# Tier 1, honest results: a timeout is not a failing assertion, a crash is
+# not a kill, an uncovered line was never asked, an equivalent could not die.
+test "timeouts, crashes, missing coverage, and equivalents stay out of the score" {
+  let bare = tally_of([Cast(Killed), Cast(Survived)])
+  let noisy = tally_of([
+    Cast(Killed),
+    Cast(Survived),
+    Cast(Timeout),
+    Cast(Crashed),
+    Cast(NoCoverage),
+    EquivalentBy(Bytecode),
+    EquivalentBy(Declared)
+  ])
+  assert score(noisy) == score(bare)
+  assert score(noisy) == Some(0.5)
+}
+
+test "the score rounds to one decimal for reading, not for arithmetic" {
+  let c = tally_of(repeat_verdict(Cast(Killed), 2) ++ [Cast(Survived)])
+  assert score_text(c) == "66.7%"
+  assert score(c) != Some(0.667)
+}
+
+test "compile errors are measured against what was cast, not what was planned" {
+  let c = tally_of([Cast(Killed), Cast(CompileError), Cast(NoCoverage)])
+  assert compile_error_rate(c) == 0.5
+  assert compile_error_rate(tally_of([])) == 0.0
+}
+
+test "too many compile errors accuse the spells, not the suite" {
+  let noisy = tally_of([Cast(CompileError), Cast(CompileError), Cast(Killed)])
+  let calm = tally_of([Cast(CompileError)] ++ repeat_verdict(Cast(Killed), 9))
+  assert spells_look_wrong(noisy, COMPILE_ERROR_LIMIT)
+  assert not spells_look_wrong(calm, COMPILE_ERROR_LIMIT)
+}

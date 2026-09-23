@@ -1,0 +1,61 @@
+#[doc("""
+The report as GitHub Actions reads it: one annotation per survivor, on the
+line that survived, plus the markdown that goes to the step summary.
+
+An annotation is the shortest useful thing a reviewer can act on without
+opening the log, so it carries the spell and the diff.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.gate
+import kalku.core.report
+
+#[doc("Annotations for every survivor, one per line of output.")]
+pub fn annotations(r: Report) : String = join(r.survivors | annotation, "\n")
+
+#[doc("The markdown for `$GITHUB_STEP_SUMMARY`.")]
+pub fn step_summary(r: Report) : String =
+  join(
+    ["## kalku", "", summary_line(r), ""]
+      ++ survivor_table(r)
+      ++ suppressions(r)
+      ++ blocked(r),
+    "\n"
+  )
+
+fn annotation(s: Survivor) : String {
+  let at = "file=#{s.site.file},line=#{s.site.span.start.line}"
+  let title = "survived: #{spell_name(s.site.spell)}"
+  "::warning #{at},title=#{title}::#{join(diff_of(s.site), " ")}"
+}
+
+fn survivor_table(r: Report) : [String] =
+  if is_empty(r.survivors) {
+    ["No survivors.", ""]
+  } else {
+    ["| Survivor | Spell | Change |", "|---|---|---|"] ++ (r.survivors | row) ++ [""]
+  }
+
+fn row(s: Survivor) : String =
+  "| `#{s.site.file}:#{s.site.span.start.line}` | #{spell_name(s.site.spell)} | `#{join(diff_of(s.site), " ")}` |"
+
+fn suppressions(r: Report) : [String] {
+  let added = r.suppressions.equivalent_added
+  let wider = r.suppressions.exclude_added ++ r.suppressions.exclude_calls_added
+  if added == 0 and is_empty(wider) {
+    []
+  } else {
+    ["### Suppressions added in this change", ""]
+      ++ (if added > 0 { ["- #{added} declared equivalent"] } else { [] })
+      ++ (wider | (p => "- wider exclusion: `#{p}`"))
+      ++ [""]
+  }
+}
+
+fn blocked(r: Report) : [String] =
+  if is_empty(r.blockers) {
+    []
+  } else {
+    ["### Blocked", ""] ++ (r.blockers | (b => "- #{explain(b)}"))
+  }
