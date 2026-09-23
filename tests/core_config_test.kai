@@ -1,0 +1,91 @@
+import kalku.wire.enums
+import kalku.core.gate
+import kalku.core.config
+
+const FULL : String =
+  "[run]\nworkers = 8\nspells = [\"arm\", \"compare\"]\nexclude = [\"lib/my_app_web/telemetry.ex\"]\nexclude_calls = [\"Logger.*\", \":telemetry.execute\"]\ntimeout_floor_ms = 250\n\n[score]\nthreshold = 0.80\nratchet = true\n\n[elixir]\npartition_env = \"MIX_TEST_PARTITION\"\n"
+
+fn config_of(text: String) : Config = match parse(text) {
+  Ok(c) -> c
+  Err(_) -> defaults()
+}
+
+fn problems_of(text: String) : [String] = match parse(text) {
+  Ok(_) -> []
+  Err(ps) -> ps | (p => "#{p.key}: #{p.message}")
+}
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+fn first_problem(text: String) : String = head(problems_of(text)).unwrap_or("accepted")
+
+test "a project that writes nothing still gets a sane run" {
+  assert parse("") == Ok(defaults())
+  assert parse("   \n\n") == Ok(defaults())
+  assert defaults().spells == all_spells()
+  assert defaults().policy == no_policy()
+}
+
+test "every key is read" {
+  let c = config_of(FULL)
+  assert c.workers == Some(8)
+  assert c.spells == [Arm, Compare]
+  assert c.exclude == ["lib/my_app_web/telemetry.ex"]
+  assert c.exclude_calls == ["Logger.*", ":telemetry.execute"]
+  assert c.timeout_floor_ms == 250
+  assert c.policy.threshold == Some(0.8)
+  assert c.ratchet
+}
+
+# The test that proves lnds/kaikai#2056 is fixed: a float used to reject
+# the whole file, so a threshold could not be written as a ratio.
+test "a threshold is a ratio, decimals and all" {
+  assert config_of("[score]\nthreshold = 0.85\n").policy.threshold == Some(0.85)
+  assert config_of("[score]\nthreshold = 1\n").policy.threshold == Some(1.0)
+  assert config_of("[score]\nthreshold = 0\n").policy.threshold == Some(0.0)
+}
+
+test "a key nobody wrote keeps its default" {
+  let c = config_of("[run]\nworkers = 2\n")
+  assert c.workers == Some(2)
+  assert c.spells == all_spells()
+  assert c.timeout_floor_ms == defaults().timeout_floor_ms
+  assert c.policy.threshold == None
+  assert not c.ratchet
+}
+
+test "a table kalku does not own travels to its kalku untouched" {
+  assert (language_tables(FULL) | (.fst)) == ["elixir"]
+  assert language_tables("[run]\nworkers = 1\n") == []
+}
+
+test "a spell nobody has is a typo, and typos are errors" {
+  assert has(
+    first_problem("[run]\nspells = [\"arm\", \"hex\"]\n"),
+    "run.spells: unknown spell `hex`"
+  )
+  assert has(first_problem("[run]\nspells = \"arm\"\n"), "expected a list of spell names")
+}
+
+test "a threshold outside zero to one is an error that names the key" {
+  assert has(first_problem("[score]\nthreshold = 1.5\n"), "score.threshold: must be a ratio")
+  assert has(first_problem("[score]\nthreshold = -0.5\n"), "score.threshold: must be a ratio")
+}
+
+test "a run needs at least one worker, and a floor that is not negative" {
+  assert has(first_problem("[run]\nworkers = 0\n"), "run.workers: must be at least 1, got 0")
+  assert has(
+    first_problem("[run]\ntimeout_floor_ms = -1\n"),
+    "run.timeout_floor_ms: must not be negative"
+  )
+}
+
+test "every problem is reported, not just the first" {
+  let problems = problems_of("[run]\nworkers = 0\nspells = [\"hex\"]\n\n[score]\nthreshold = 2.0\n")
+  assert length(problems) == 3
+}
+
+test "a file that is not TOML says where it stopped" {
+  let problem = first_problem("[run\nworkers = 8\n")
+  assert has(problem, "line 1")
+}
