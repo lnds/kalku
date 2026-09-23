@@ -11,13 +11,13 @@ import kalku.wire.client_msg
 # ---- requests: client -> server -----------------------------------------
 
 #[doc("Encode a client request as one canonical line (no trailing newline).")]
-pub fn encode_client_request(id: Int, r: ClientRequest) : String = match r {
-  RunReq(m) -> envelope("run", id, to_json(m))
-  RecastReq(m) -> envelope("cast", id, to_json(m))
-  ShowReq(m) -> envelope("show", id, to_json(m))
-  ProposeReq(m) -> envelope("propose_equivalent", id, to_json(m))
-  StatusReq -> envelope("status", id, no_fields())
-  CancelReq(m) -> envelope("cancel", id, to_json(m))
+pub fn encode_client_request(id: Int, r: ClientRequest) : String {
+  case id, RunReq(m) -> envelope("run", id, to_json(m))
+  case id, RecastReq(m) -> envelope("cast", id, to_json(m))
+  case id, ShowReq(m) -> envelope("show", id, to_json(m))
+  case id, ProposeReq(m) -> envelope("propose_equivalent", id, to_json(m))
+  case id, StatusReq -> envelope("status", id, no_fields())
+  case id, CancelReq(m) -> envelope("cancel", id, to_json(m))
 }
 
 #[doc("Decode one line as a client request, checking the rules a request must satisfy.")]
@@ -55,17 +55,17 @@ fn check_client_request(r: ClientRequest) : Result[Unit, ProtocolError] = match 
 # ---- events: server -> client -------------------------------------------
 
 #[doc("Encode a server event as one canonical line (no trailing newline).")]
-pub fn encode_event(id: Int, e: ServerEvent) : String = match e {
-  PhaseEv(m) -> envelope("phase", id, to_json(m))
-  ProgressEv(m) -> envelope("progress", id, to_json(m))
-  OutcomeEv(m) -> envelope("outcome", id, to_json(m))
-  TestRejectedEv(m) -> envelope("test_rejected", id, to_json(m))
-  ReportEv(m) -> envelope("report", id, to_json(m))
-  WekufeEv(m) -> envelope("wekufe", id, to_json(m))
-  ProposedEv(m) -> envelope("proposed", id, to_json(m))
-  SessionsEv(m) -> envelope("sessions", id, to_json(m))
-  CancelledEv(m) -> envelope("cancelled", id, to_json(m))
-  ErrorEv(m) -> envelope("error", id, to_json(m))
+pub fn encode_event(id: Int, e: ServerEvent) : String {
+  case id, PhaseEv(m) -> envelope("phase", id, to_json(m))
+  case id, ProgressEv(m) -> envelope("progress", id, to_json(m))
+  case id, OutcomeEv(m) -> envelope("outcome", id, to_json(m))
+  case id, TestRejectedEv(m) -> envelope("test_rejected", id, to_json(m))
+  case id, ReportEv(m) -> envelope("report", id, to_json(m))
+  case id, WekufeEv(m) -> envelope("wekufe", id, to_json(m))
+  case id, ProposedEv(m) -> envelope("proposed", id, to_json(m))
+  case id, SessionsEv(m) -> envelope("sessions", id, to_json(m))
+  case id, CancelledEv(m) -> envelope("cancelled", id, to_json(m))
+  case id, ErrorEv(m) -> envelope("error", id, to_json(m))
 }
 
 #[doc("Decode one line as a server event, checking the rules an event must satisfy.")]

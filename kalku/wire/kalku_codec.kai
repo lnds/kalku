@@ -8,21 +8,22 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.envelope
 import kalku.wire.kalku_msg
+import kalku.wire.kalku_rules
 
 # ---- requests: kaikai side -> kalku -------------------------------------
 
 #[doc("Encode a request to a kalku as one canonical line (no trailing newline).")]
-pub fn encode_request(id: Int, r: KalkuRequest) : String = match r {
-  Hello(m) -> envelope("hello", id, to_json(m))
-  Prepare -> envelope("prepare", id, no_fields())
-  Baseline -> envelope("baseline", id, no_fields())
-  Sites(m) -> envelope("sites", id, to_json(m))
-  Cast(m) -> envelope("cast", id, to_json(m))
-  Abort(m) -> envelope("abort", id, to_json(m))
-  Reset -> envelope("reset", id, no_fields())
-  Reload(m) -> envelope("reload", id, to_json(m))
-  Delegate(m) -> envelope("delegate", id, to_json(m))
-  Shutdown -> envelope("shutdown", id, no_fields())
+pub fn encode_request(id: Int, r: KalkuRequest) : String {
+  case id, Hello(m) -> envelope("hello", id, to_json(m))
+  case id, Prepare -> envelope("prepare", id, no_fields())
+  case id, Baseline -> envelope("baseline", id, no_fields())
+  case id, Sites(m) -> envelope("sites", id, to_json(m))
+  case id, Cast(m) -> envelope("cast", id, to_json(m))
+  case id, Abort(m) -> envelope("abort", id, to_json(m))
+  case id, Reset -> envelope("reset", id, no_fields())
+  case id, Reload(m) -> envelope("reload", id, to_json(m))
+  case id, Delegate(m) -> envelope("delegate", id, to_json(m))
+  case id, Shutdown -> envelope("shutdown", id, no_fields())
 }
 
 #[doc("Decode one line as a request to a kalku.")]
@@ -49,19 +50,19 @@ fn request_body(kind: String, v: JsonValue) : Result[KalkuRequest, ProtocolError
 # ---- replies: kalku -> kaikai side --------------------------------------
 
 #[doc("Encode a kalku's reply as one canonical line (no trailing newline).")]
-pub fn encode_reply(id: Int, r: KalkuReply) : String = match r {
-  Ready(m) -> envelope("ready", id, to_json(m))
-  Prepared(m) -> envelope("prepared", id, to_json(m))
-  BaselineDone(m) -> envelope("baseline_done", id, to_json(m))
-  Progress(m) -> envelope("progress", id, to_json(m))
-  SitesFound(m) -> envelope("sites_found", id, to_json(m))
-  CastDone(m) -> envelope("cast_done", id, to_json(m))
-  Aborted(m) -> envelope("aborted", id, to_json(m))
-  ResetDone(m) -> envelope("reset_done", id, to_json(m))
-  Reloaded(m) -> envelope("reloaded", id, to_json(m))
-  Delegated(m) -> envelope("delegated", id, to_json(m))
-  Bye -> envelope("bye", id, no_fields())
-  KalkuError(m) -> envelope("error", id, to_json(m))
+pub fn encode_reply(id: Int, r: KalkuReply) : String {
+  case id, Ready(m) -> envelope("ready", id, to_json(m))
+  case id, Prepared(m) -> envelope("prepared", id, to_json(m))
+  case id, BaselineDone(m) -> envelope("baseline_done", id, to_json(m))
+  case id, Progress(m) -> envelope("progress", id, to_json(m))
+  case id, SitesFound(m) -> envelope("sites_found", id, to_json(m))
+  case id, CastDone(m) -> envelope("cast_done", id, to_json(m))
+  case id, Aborted(m) -> envelope("aborted", id, to_json(m))
+  case id, ResetDone(m) -> envelope("reset_done", id, to_json(m))
+  case id, Reloaded(m) -> envelope("reloaded", id, to_json(m))
+  case id, Delegated(m) -> envelope("delegated", id, to_json(m))
+  case id, Bye -> envelope("bye", id, no_fields())
+  case id, KalkuError(m) -> envelope("error", id, to_json(m))
 }
 
 #[doc("Decode one line as a kalku's reply, checking the rules a reply must satisfy.")]
@@ -87,41 +88,3 @@ fn reply_body(kind: String, v: JsonValue) : Result[KalkuReply, ProtocolError] = 
   "error" -> body(errormsg_of_json(v, ""), m => KalkuError(m))
   _ -> unknown(kind)
 }
-
-# ---- rules --------------------------------------------------------------
-
-fn check_reply(r: KalkuReply) : Result[Unit, ProtocolError] = match r {
-  Ready(m) -> check_ready(m)
-  BaselineDone(m) -> check_baseline(m)
-  CastDone(m) -> check_cast_done(m)
-  Delegated(m) -> check_delegated(m)
-  _ -> Ok(())
-}
-
-fn check_ready(m: ReadyMsg) : Result[Unit, ProtocolError] {
-  let native = contains(m.capabilities, CastCap)
-  let driver = contains(m.capabilities, DelegateCap)
-  require(native != driver, "ready: capabilities must include exactly one of cast, delegate")
-}
-
-fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
-  require(
-    not (is_some(m.coverage) and is_some(m.coverage_path)),
-    "baseline_done: at most one of coverage, coverage_path"
-  )!
-  require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
-}
-
-fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
-  let allowed = [Killed, Survived, CompileError, Equivalent]
-  require(
-    contains(allowed, m.outcome),
-    "cast_done: outcome must be killed, survived, compile_error, or equivalent"
-  )
-}
-
-fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] =
-  require(
-    is_some(m.outcomes) != is_some(m.outcomes_path),
-    "delegated: exactly one of outcomes, outcomes_path"
-  )
