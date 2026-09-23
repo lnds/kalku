@@ -30,7 +30,8 @@ pub type Slot = {
   kalku: Option[Kalku],
   caps: [Capability],
   doing: Doing,
-  summons: Int
+  summons: Int,
+  wrote: String
 }
 
 #[doc("How to fill the pool: the command, what every kalku is told, and how often one may be replaced.")]
@@ -122,11 +123,31 @@ pub fn is_gone(s: Slot) : Bool = match s.doing {
   _ -> false
 }
 
+#[doc("""
+Keep what a kalku wrote about itself, up to a limit.
+
+A kalku that fails to start says why on stderr, and that sentence is the
+whole diagnostic a run can offer. It is bounded because a kalku in a
+crash loop can write without end.
+""")]
+pub fn noted(slot: Slot, chunk: String) : Slot =
+  Slot { ...slot, wrote: last_of(slot.wrote ++ chunk, KEPT_STDERR) }
+
+#[doc("The most of a kalku's own words a run keeps.")]
+pub const KEPT_STDERR : Int = 4096
+
+#[doc("What a kalku said about itself, trimmed, or nothing when it was silent.")]
+pub fn own_words(slot: Slot) : Option[String] = if is_empty(trim(slot.wrote)) {
+  None
+} else {
+  Some(trim(slot.wrote))
+}
+
 #[doc("Why each abandoned slot was abandoned.")]
 pub fn epitaphs(slots: [Slot]) : [String] = flat_map(
   slots,
   s => match s.doing {
-    Lost(why) -> ["worker #{s.worker}: #{why}"]
+    Lost(why) -> ["worker #{s.worker}: #{why}#{quoted(own_words(s))}"]
     _ -> []
   }
 )
@@ -146,13 +167,21 @@ pub fn greeting(spec: PoolSpec, worker: Int) : KalkuRequest = Hello(HelloMsg {
 fn summon_slot(spec: PoolSpec, worker: Int, summons: Int) : Slot / Process + Spawn + Clock + Actor[
   OrchMsg
 ] {
-  let empty = Slot { worker: worker, kalku: None, caps: [], doing: Lost(""), summons: summons }
+  let empty = Slot {
+    worker: worker,
+    kalku: None,
+    caps: [],
+    doing: Lost(""),
+    summons: summons,
+    wrote: ""
+  }
   let life = Life { worker: worker, summons: summons }
   match summon(KalkuSpec { life: life, command: spec.command, args: spec.args }) {
     Err(e) -> Slot { ...empty, doing: Lost(e) }
     Ok(k) -> {
       let me = Actor.self()
       let _reader = spawn_actor(() => read_loop(k, me))
+      let _errs = spawn_actor(() => read_errs_loop(k, me))
       let _hello = ask(k, greeting_id(worker), greeting(spec, worker))
       Slot { ...empty, kalku: Some(k), doing: Greeting(deadline_in(millis(spec.greeting_ms))) }
     }
@@ -161,6 +190,18 @@ fn summon_slot(spec: PoolSpec, worker: Int, summons: Int) : Slot / Process + Spa
 
 #[doc("The request id a slot's greeting carries, which is how its `ready` is recognised.")]
 pub fn greeting_id(worker: Int) : Int = 0 - (worker + 1)
+
+# A kalku's own words are quoted rather than paraphrased.
+fn quoted(words: Option[String]) : String = match words {
+  Some(w) -> "; it wrote: #{w}"
+  None -> ""
+}
+
+fn last_of(s: String, n: Int) : String = if length(s) <= n {
+  s
+} else {
+  slice(s, length(s) - n, length(s))
+}
 
 fn out_of_budget(spec: PoolSpec, slot: Slot, why: String) : String =
   "#{why}; summoned #{slot.summons} time(s), the most this run allows is #{spec.summons_allowed}"

@@ -96,8 +96,9 @@ fn wait_out(lives: [Life], until: Instant) : Unit / Clock + Actor[OrchMsg] =
   }
 
 fn spoke_last(what: FromKalku) : Bool = match what {
-  Said(_) -> false
-  _ -> true
+  Closed -> true
+  Unreadable(_) -> true
+  _ -> false
 }
 
 fn living(slots: [Slot]) : [Life] =
@@ -170,6 +171,7 @@ fn heard_from(run: Run, slot: Slot, what: FromKalku) : Run / Process + Spawn + C
     Ok(m) -> said(run, slot, m.body)
     Err(e) -> react(run, slot, on_noise(awaiting_of(slot), kind_name(e.kind)))
   }
+  case run, slot, Wrote(chunk) -> Run { ...run, slots: put(run.slots, noted(slot, chunk)) }
   case run, slot, Closed -> react(run, slot, on_death(awaiting_of(slot), "closed its pipe"))
   case run, slot, Unreadable(why) -> react(run, slot, on_death(awaiting_of(slot), why))
 }
