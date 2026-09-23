@@ -1,0 +1,1 @@
+{"expect":"hello","stderr":"fake: the project does not compile","crash":true}

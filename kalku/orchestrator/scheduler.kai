@@ -1,0 +1,286 @@
+#[doc("""
+Casting a plan across a pool: hand each wekufe to a kalku that is free,
+collect what comes back, and hold every kalku to its deadline.
+
+The scheduler owns the mailbox and is the only fiber that decides
+anything; the reader actors only speak when spoken to by the child. What
+to do about a slow or broken kalku is decided in `escalation`, so the
+loop here is plumbing rather than judgement.
+
+Every wekufe dispatched is accounted for: a kalku that dies takes its
+outcome with it as `crashed`, and one that runs long ends as `timeout`.
+Nothing is silently dropped, because a hole nobody hears about is worse
+than a hole with a name.
+""")]
+
+import actor
+import time
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.core.planner
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.escalation
+
+#[doc("What one wekufe came to.")]
+#[derive(Eq, Show)]
+pub type Verdict = { wekufe: String, outcome: Outcome }
+
+#[doc("""
+What a run produced: every wekufe that was dispatched, and why the run
+stopped early if it did.
+
+`failure` is for the run itself — no kalku left, or a kalku this side
+cannot speak to. The verdicts collected before that are still reported:
+they were measured.
+""")]
+#[derive(Eq, Show)]
+pub type Casting = { verdicts: [Verdict], failure: Option[String], cancelled: Bool }
+
+#[doc("How long a kalku is given to answer `abort` or `reset` before it is killed.")]
+pub const GRACE_MS : Int = 2000
+
+#[doc("""
+Cast a plan and return what every wekufe came to.
+
+Returns when the plan is done, when the run is cancelled, or when no
+kalku is left to carry it.
+""")]
+pub fn cast_all(
+  spec: PoolSpec,
+  casts: [Cast]
+) : Casting / Process + Spawn + Clock + Actor[OrchMsg] {
+  let slots = fill(spec)
+  let done = turn(Run {
+    spec: spec,
+    slots: slots,
+    queue: casts,
+    verdicts: [],
+    next_id: 1,
+    failure: None,
+    cancelled: false
+  })
+  dismiss_all(done.slots, 0)
+  banish_all(done.slots)
+  hear_last_words(living(done.slots))
+  Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled }
+}
+
+#[doc("How long the run waits for its readers to notice that their kalku is gone.")]
+pub const LAST_WORDS_MS : Int = 2000
+
+# A reader outlives the kalku it was reading: killing the child makes the
+# read fail, and the reader says so once before it ends. The run waits for
+# that word from each of them, so it leaves no fiber talking to a mailbox
+# that is no longer there.
+fn hear_last_words(lives: [Life]) : Unit / Clock + Actor[OrchMsg] =
+  wait_out(lives, deadline_in(millis(LAST_WORDS_MS)))
+
+fn wait_out(lives: [Life], until: Instant) : Unit / Clock + Actor[OrchMsg] =
+  if is_empty(lives) or (not instant_lt(monotonic(), until)) {
+    ()
+  } else {
+    match receive_timeout(elapsed_since(monotonic(), until)) {
+      None -> ()
+      Some(Cancel) -> wait_out(lives, until)
+      Some(Wire(life, what)) -> wait_out(
+        if spoke_last(what) {
+          filter(lives, l => l != life)
+        } else {
+          lives
+        },
+        until
+      )
+    }
+  }
+
+fn spoke_last(what: FromKalku) : Bool = match what {
+  Said(_) -> false
+  _ -> true
+}
+
+fn living(slots: [Slot]) : [Life] =
+  flat_map(
+    slots,
+    s => match s.kalku {
+      Some(k) -> [k.life]
+      None -> []
+    }
+  )
+
+# ---- the run ------------------------------------------------------------
+
+type Run = {
+  spec: PoolSpec,
+  slots: [Slot],
+  queue: [Cast],
+  verdicts: [Verdict],
+  next_id: Int,
+  failure: Option[String],
+  cancelled: Bool
+}
+
+fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] {
+  let busy = dispatch(run)
+  if over(busy) { busy } else { turn(listen(busy)) }
+}
+
+# A run is over when nothing is left to cast and nobody is still working,
+# or when there is no kalku left to cast with.
+fn over(run: Run) : Bool =
+  is_some(run.failure) or waiting_on(run.slots) == 0 and (run.cancelled or is_empty(run.queue))
+
+fn listen(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] =
+  match receive_timeout(patience(run)) {
+    None -> expire(run)
+    Some(Cancel) -> Run { ...run, cancelled: true, queue: [] }
+    Some(Wire(life, what)) -> match slot_living(run.slots, life) {
+      None -> run
+      Some(slot) -> heard_from(run, slot, what)
+    }
+  }
+
+# ---- dispatch -----------------------------------------------------------
+
+fn dispatch(run: Run) : Run / Process + Clock = match (run.queue, idle(run.slots)) {
+  ([], _) -> run
+  (_, []) -> run
+  ([c, ...rest], [slot, ..._]) -> dispatch(hand(Run { ...run, queue: rest }, slot, c))
+}
+
+fn hand(run: Run, slot: Slot, c: Cast) : Run / Process + Clock {
+  let id = run.next_id
+  tell(slot, id, Cast(CastMsg { wekufe: c.site.site_id, site: c.site, tests: c.tests }))
+  let job = Job {
+    id: id,
+    wekufe: c.site.site_id,
+    deadline: deadline_in(millis(c.timeout_ms)),
+    awaiting: AwaitingCast
+  }
+  Run { ...run, slots: put(run.slots, Slot { ...slot, doing: Working(job) }), next_id: id + 1 }
+}
+
+# ---- what a kalku said --------------------------------------------------
+
+fn heard_from(run: Run, slot: Slot, what: FromKalku) : Run / Process + Spawn + Clock + Actor[
+  OrchMsg
+] {
+  case run, slot, Said(line) -> match heard(line) {
+    Ok(m) -> said(run, slot, m.body)
+    Err(e) -> react(run, slot, on_noise(awaiting_of(slot), kind_name(e.kind)))
+  }
+  case run, slot, Closed -> react(run, slot, on_death(awaiting_of(slot), "closed its pipe"))
+  case run, slot, Unreadable(why) -> react(run, slot, on_death(awaiting_of(slot), why))
+}
+
+fn said(run: Run, slot: Slot, reply: KalkuReply) : Run / Process + Spawn + Clock + Actor[OrchMsg] =
+  match reply {
+    Ready(m) -> greeted(run, slot, m)
+    other -> react(run, slot, on_reply(other, slot.caps))
+  }
+
+# A kalku whose protocol this side cannot speak ends the run rather than
+# the kalku: a second one would say the same thing.
+fn greeted(run: Run, slot: Slot, m: ReadyMsg) : Run = match ready_refused(m) {
+  Some(why) -> Run { ...run, failure: Some("worker #{slot.worker} #{why}") }
+  None -> Run { ...run, slots: put(run.slots, Slot { ...slot, caps: m.capabilities, doing: Idle }) }
+}
+
+# ---- deadlines ----------------------------------------------------------
+
+fn expire(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] = match overdue(run) {
+  None -> run
+  Some(slot) -> expire(react(run, slot, due_reaction(slot)))
+}
+
+fn due_reaction(slot: Slot) : Reaction = on_deadline(awaiting_of(slot), slot.caps)
+
+fn overdue(run: Run) : Option[Slot] / Clock {
+  let now = monotonic()
+  find(
+    run.slots,
+    s => match due_at(s) {
+      Some(at) -> not instant_lt(now, at)
+      None -> false
+    }
+  )
+}
+
+fn due_at(s: Slot) : Option[Instant] = match s.doing {
+  Working(job) -> Some(job.deadline)
+  Greeting(at) -> Some(at)
+  _ -> None
+}
+
+# How long to wait before looking at the clock again: until the nearest
+# deadline, or a blink when something is already overdue.
+fn patience(run: Run) : Duration / Clock {
+  let now = monotonic()
+  let waits = flat_map(
+    run.slots,
+    s => match due_at(s) {
+      Some(at) -> if instant_lt(now, at) { [elapsed_since(now, at)] } else { [millis(0)] }
+      None -> []
+    }
+  )
+  foldl(waits, seconds(1), (shortest, d) => if duration_lt(d, shortest) { d } else { shortest })
+}
+
+# ---- carrying a decision out --------------------------------------------
+
+fn react(run: Run, slot: Slot, r: Reaction) : Run / Process + Spawn + Clock + Actor[OrchMsg] {
+  let recorded = record(run, slot, r.outcome)
+  match r.next {
+    Keep -> recorded
+    Free -> Run { ...recorded, slots: put(recorded.slots, Slot { ...slot, doing: Idle }) }
+    AskAbort -> chase(recorded, slot, Abort(AbortMsg { cast: job_id(slot) }), AwaitingAbort)
+    AskReset -> chase(recorded, slot, Reset, AwaitingReset)
+    Recycle(why) -> recycle(recorded, slot, why)
+  }
+}
+
+fn record(run: Run, slot: Slot, outcome: Option[Outcome]) : Run = match (outcome, slot.doing) {
+  (Some(o), Working(job)) ->
+    Run { ...run, verdicts: run.verdicts ++ [Verdict { wekufe: job.wekufe, outcome: o }] }
+  _ -> run
+}
+
+# Chasing keeps the job so the wekufe still has a name if the chase fails.
+fn chase(run: Run, slot: Slot, request: KalkuRequest, awaiting: Awaiting) : Run / Process + Clock {
+  tell(slot, next_chase_id(run), request)
+  let waiting = match slot.doing {
+    Working(job) ->
+      Working(Job { ...job, deadline: deadline_in(millis(GRACE_MS)), awaiting: awaiting })
+    other -> other
+  }
+  Run { ...run, slots: put(run.slots, Slot { ...slot, doing: waiting }), next_id: run.next_id + 1 }
+}
+
+fn recycle(run: Run, slot: Slot, why: String) : Run / Process + Spawn + Clock + Actor[OrchMsg] {
+  banish(slot)
+  let fresh = refill(run.spec, slot, why)
+  let slots = put(run.slots, fresh)
+  if all_gone(slots) {
+    Run { ...run, slots: slots, failure: Some(join(epitaphs(slots), "; ")) }
+  } else {
+    Run { ...run, slots: slots }
+  }
+}
+
+# ---- reading a slot -----------------------------------------------------
+
+fn awaiting_of(slot: Slot) : Awaiting = match slot.doing {
+  Working(job) -> job.awaiting
+  Greeting(_) -> AwaitingReady
+  _ -> AwaitingReset
+}
+
+fn job_id(slot: Slot) : Int = match slot.doing {
+  Working(job) -> job.id
+  _ -> 0
+}
+
+fn next_chase_id(run: Run) : Int = run.next_id
+
+fn waiting_on(slots: [Slot]) : Int = length(filter(slots, s => is_some(due_at(s))))
