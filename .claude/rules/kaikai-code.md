@@ -76,23 +76,53 @@ real processes. Logic that decides *what* to do stays free of
 ### A handler is how effectful code is tested
 
 There is no mocking in kaikai and none is needed: the nearest `handle …
-with Eff` wins over an effect's default handler, including for the
-builtins (book ch. 12.4, 12.11). A `Process` handler that answers from a
-script tests the scheduler's state machine with no child processes, no
-pipes and no clock — deterministic, and as fast as the pure tests:
+with Eff` wins over an effect's default, including for the builtins (book
+ch. 12.4, 12.11). Records the runtime hands out are ordinary values, so a
+fake `Child` is `Child { pid: 1 }`.
+
+Three facts decide what that buys, and each of them cost an experiment
+here. Get them in this order.
+
+**A handler reaches its own fiber, and no further.** A fiber does not
+inherit its parent's handlers — the compiler says so outright, and §12.9
+says the same of a capability, which cannot be carried into a `spawn`. So
+a fake installed around a call covers what that call does itself, and
+none of what it spawns. Installing a fake `Process` around the scheduler
+covers `summon` and `kill_now`, while every reader actor falls through to
+the default and dies on a pipe that was never opened.
+
+**The mailbox is a handler, and replacing it buys virtual time.**
+`Actor[Msg]` is an effect, `receive_timeout` is one of its ops, and
+`with_mailbox` is an ordinary stdlib handler. A test can install its own
+and answer every receive from a script — including letting a deadline
+expire with no time passing:
 
 ```kaikai
-handle { cast_all(spec, casts) } with Process {
-  start_piped(cmd, args, si, so, se, resume) -> resume(Ok(Child { pid: 1 }))
-  read_stdout(c, resume) -> resume(Ok(next_scripted_line()))
+handle {
+  gather([])
+} with Actor[Msg]([Some(Tick(1)), Some(Tick(2)), None]) {
+  receive_timeout(ns, resume) -> match state {
+    [] -> resume(Some(Done), [])
+    [next, ...rest] -> resume(next, rest)
+  }
+  return(x) -> x
 }
 ```
 
-`Child` is a plain record (`{ pid: Int }`), so a fake one is `Child { pid: 1 }`.
+Five seconds of deadline, 0 ms of waiting. This is the lever for anything
+built on a mailbox: everything such a loop observes arrives through it, so
+controlling it controls the message order and the moment a deadline fires
+— the two things a test otherwise leaves to the scheduler. Reach for it
+before reaching for a fake of whatever is on the other end.
 
-Testing against a real process is still worth doing — it is the only
-thing that proves the protocol works over a real pipe — but it is the
-outer ring, not the only ring.
+**A fake cannot block.** A handler clause has to return, and
+`read_stdout` already spells EOF as `Ok("")`, so a scripted pipe cannot
+say *nothing yet, wait* — only *the kalku is gone*. Replacing a mailbox
+works because a mailbox **is** the thing that waits; replacing a pipe does
+not. Where the boundary with the OS is what is under test — chunking,
+blocking, EOF, a child that dies — a real subprocess is the instrument,
+and the scripted fake kalku is that instrument, not a placeholder for
+something better.
 
 ### A resource that must be released belongs in a bracket
 
