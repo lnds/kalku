@@ -89,3 +89,11 @@ test "a file that is not TOML says where it stopped" {
   let problem = first_problem("[run\nworkers = 8\n")
   assert has(problem, "line 1")
 }
+
+# Zero is a floor like any other: it means "no floor", and a project that
+# writes it is asking for something legal.
+test "a timeout floor of zero is accepted, and a negative one is not" {
+  assert config_of("[run]\ntimeout_floor_ms = 0\n").timeout_floor_ms == 0
+  assert problems_of("[run]\ntimeout_floor_ms = 0\n") == []
+  assert has(first_problem("[run]\ntimeout_floor_ms = -1\n"), "must not be negative")
+}

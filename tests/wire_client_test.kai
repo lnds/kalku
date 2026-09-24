@@ -1,6 +1,9 @@
 import fs.dir
 import fs.file
 import kalku.wire.envelope
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.client_msg
 import kalku.wire.client_codec
 
 const FIXTURES : String = "docs/protocol/fixtures"
@@ -62,4 +65,27 @@ test "every server event fixture round-trips byte for byte" {
 test "there is a fixture file for every client message type" {
   assert length(fixture_files("client/requests")) == 6
   assert length(fixture_files("client/events")) == 10
+}
+
+fn run_with(shard: Option[Shard]) : Result[Unit, ProtocolError] = match decode_client_request(
+  encode_client_request(1, RunReq(RunMsg { root: ".", scope: All, format: Human, shard: shard }))
+) {
+  Ok(_) -> Ok(())
+  Err(e) -> Err(e)
+}
+
+fn refused(shard: Option[Shard]) : Bool = match run_with(shard) {
+  Ok(_) -> false
+  Err(_) -> true
+}
+
+# `3/3` is the last shard of a sharded run and the one a CI matrix always
+# has, so a bound that excluded it would refuse a third of every run.
+test "a shard index at either end of its range is accepted" {
+  assert run_with(Some(Shard { index: 1, count: 1 })) == Ok(())
+  assert run_with(Some(Shard { index: 3, count: 3 })) == Ok(())
+  assert run_with(Some(Shard { index: 1, count: 3 })) == Ok(())
+  assert run_with(None) == Ok(())
+  assert refused(Some(Shard { index: 0, count: 3 }))
+  assert refused(Some(Shard { index: 4, count: 3 }))
 }

@@ -109,6 +109,24 @@ test "suppressions a change adds are as loud as the holes it leaves" {
   assert has(text, "wider exclusion: Logger.*")
 }
 
+# A change that suppressed nothing says nothing: "0 declared equivalent"
+# under a "suppressions added" heading reads as a suppression that was
+# added, which is exactly the thing this section exists to make loud.
+test "a change that added no equivalents does not list them" {
+  let only_excludes = Report {
+    ...plain(),
+    suppressions: SuppressionChanges {
+      equivalent_added: 0,
+      exclude_added: ["lib/gen/**"],
+      exclude_calls_added: []
+    }
+  }
+  let text = human(only_excludes)
+  assert has(text, "wider exclusion: lib/gen/**")
+  assert not has(text, "declared equivalent")
+  assert not has(step_summary(only_excludes), "declared equivalent")
+}
+
 test "what blocks the run is stated, not implied" {
   let blocked = report_of([], tally([Cast(Killed)]), [SurvivorsOnChangedLines(2)])
   assert has(human(blocked), "blocked: 2 wekufe survived on lines this change touched")

@@ -152,3 +152,26 @@ test "a cancelled run stops dispatching and returns what it had" {
   assert done.verdicts == []
   assert done.failure == None
 }
+
+# A pool of no workers has nobody to answer and no deadline to expire, so
+# a run that waited for one would wait forever. It says so instead.
+test "a run with no kalku at all fails instead of waiting" {
+  let done = with_mailbox { cast_all(pool_of("pool_happy.ndjson", 0, 1), casts(3, 5000)) }
+  assert done.verdicts == []
+  assert done.failure == Some("a run needs at least one kalku, and this pool was asked for none")
+}
+
+test "a pool of no workers with nothing to cast is simply an empty run" {
+  let done = with_mailbox { cast_all(pool_of("pool_happy.ndjson", 0, 1), []) }
+  assert done.verdicts == []
+  assert done.failure == None
+}
+
+# The budget is spent, not exceeded: `summoned 2 time(s)` is the whole
+# point of a budget of 2.
+test "a kalku that dies at birth is summoned exactly as often as allowed" {
+  let done = with_mailbox {
+    cast_all(pool_of("pool_dies_at_birth.ndjson", 1, 2), casts(1, 5000))
+  }
+  assert is_some(index_of(done.failure.unwrap_or(""), "summoned 2 time(s)"))
+}

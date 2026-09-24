@@ -1,0 +1,30 @@
+import kalku.wire.enums
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+
+fn a_slot() : Slot =
+  Slot { worker: 0, kalku: None, caps: [], doing: Idle, summons: 1, wrote: "" }
+
+fn xs(n: Int) : String = repeat("x", n)
+
+# What a kalku writes about itself is the whole diagnostic a failed run
+# can offer, so the boundary decides whether the last thing it said —
+# which is the part that matters — is the part that is kept.
+test "a kalku's own words are kept up to the limit, and trimmed from the front past it" {
+  let at_limit = noted(a_slot(), xs(KEPT_STDERR))
+  assert length(at_limit.wrote) == KEPT_STDERR
+  let over = noted(a_slot(), xs(KEPT_STDERR) ++ "the last thing it said")
+  assert length(over.wrote) == KEPT_STDERR
+  assert is_some(index_of(over.wrote, "the last thing it said"))
+}
+
+test "a kalku that wrote nothing has nothing quoted" {
+  assert own_words(a_slot()) == None
+  assert own_words(noted(a_slot(), "   \n ")) == None
+  assert own_words(noted(a_slot(), "  boom\n")) == Some("boom")
+}
+
+test "a chunk arriving in pieces reads as one message" {
+  let slot = noted(noted(a_slot(), "the project "), "does not compile")
+  assert own_words(slot) == Some("the project does not compile")
+}
