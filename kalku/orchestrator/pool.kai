@@ -1,0 +1,209 @@
+#[doc("""
+A pool of kalku: how many there are, how they are summoned, and what
+happens when one has to be replaced.
+
+Every kalku in the pool is a slot. A slot that is waiting to be greeted,
+working, or gone is still a slot, so the scheduler never has to ask how
+many kalku exist — only what each one is doing.
+
+Replacements are budgeted. A kalku that dies on startup would otherwise
+be summoned forever, turning a broken project into an infinite run.
+""")]
+
+import actor
+import time
+import kalku.wire.enums
+import kalku.wire.kalku_msg
+import kalku.wire.version
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.escalation
+
+#[doc("One cast a kalku is working on, and when its patience runs out.")]
+pub type Job = { id: Int, wekufe: String, deadline: Instant, awaiting: Awaiting }
+
+#[doc("What a slot is doing.")]
+pub type Doing = Greeting(Instant) | Idle | Working(Job) | Lost(String)
+
+#[doc("One kalku's place in the pool, filled or not.")]
+pub type Slot = {
+  worker: Int,
+  kalku: Option[Kalku],
+  caps: [Capability],
+  doing: Doing,
+  summons: Int,
+  wrote: String
+}
+
+#[doc("How to fill the pool: the command, what every kalku is told, and how often one may be replaced.")]
+#[derive(Eq, Show)]
+pub type PoolSpec = {
+  command: String,
+  args: [String],
+  workers: Int,
+  root: String,
+  reni: String,
+  inline_limit_bytes: Int,
+  env: StrMap,
+  greeting_ms: Int,
+  summons_allowed: Int
+}
+
+#[doc("Summon every kalku in the pool and greet each one.")]
+pub fn fill(spec: PoolSpec) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] =
+  counting(spec.workers) | (w => summon_slot(spec, w, 1))
+
+#[doc("""
+Summon a replacement for a slot, unless it has used up its summons.
+
+A slot that is out of budget is `Lost` with the reason, which is what
+turns a kalku that dies on startup into a failed run instead of an
+endless one.
+""")]
+pub fn refill(spec: PoolSpec, slot: Slot, why: String) : Slot / Process + Spawn + Clock + Actor[
+  OrchMsg
+] =
+  if slot.summons >= spec.summons_allowed {
+    Slot { ...slot, kalku: None, caps: [], doing: Lost(out_of_budget(spec, slot, why)) }
+  } else {
+    summon_slot(spec, slot.worker, slot.summons + 1)
+  }
+
+#[doc("Stop a kalku where it stands and reap it, so nothing outlives the run.")]
+pub fn banish(slot: Slot) : Unit / Process = match slot.kalku {
+  Some(k) -> kill_now(k)
+  None -> ()
+}
+
+#[doc("Ask politely first: `shutdown` to every kalku that is still there.")]
+pub fn dismiss_all(slots: [Slot], id: Int) : Unit / Process =
+  each(slots, s => tell(s, id, Shutdown))
+
+#[doc("Stop every kalku in the pool.")]
+pub fn banish_all(slots: [Slot]) : Unit / Process = each(slots, s => banish(s))
+
+#[doc("Send one request to a slot's kalku, if it still has one.")]
+pub fn tell(slot: Slot, id: Int, request: KalkuRequest) : Unit / Process = match slot.kalku {
+  Some(k) -> {
+    let _ = ask(k, id, request)
+    ()
+  }
+  None -> ()
+}
+
+#[doc("""
+The slot living this life, or nothing when the kalku that sent the
+message has already been replaced.
+
+A ghost's last words are not the replacement's: a reader actor outlives
+the kalku it was reading, and what it says then is about a kalku nobody
+is waiting for.
+""")]
+pub fn slot_living(slots: [Slot], life: Life) : Option[Slot] =
+  find(slots, s => s.worker == life.worker and s.summons == life.summons)
+
+#[doc("The pool with one slot replaced by this one.")]
+pub fn put(slots: [Slot], slot: Slot) : [Slot] =
+  slots | (s => if s.worker == slot.worker { slot } else { s })
+
+#[doc("The slots that could take a cast right now.")]
+pub fn idle(slots: [Slot]) : [Slot] = filter(slots, s => is_idle(s))
+
+#[doc("True when the slot is waiting for work.")]
+pub fn is_idle(s: Slot) : Bool = match s.doing {
+  Idle -> true
+  _ -> false
+}
+
+#[doc("True when no kalku is left to do anything, so a run cannot go on.")]
+pub fn all_gone(slots: [Slot]) : Bool = is_empty(filter(slots, s => not is_gone(s)))
+
+#[doc("True when the slot has been given up on.")]
+pub fn is_gone(s: Slot) : Bool = match s.doing {
+  Lost(_) -> true
+  _ -> false
+}
+
+#[doc("""
+Keep what a kalku wrote about itself, up to a limit.
+
+A kalku that fails to start says why on stderr, and that sentence is the
+whole diagnostic a run can offer. It is bounded because a kalku in a
+crash loop can write without end.
+""")]
+pub fn noted(slot: Slot, chunk: String) : Slot =
+  Slot { ...slot, wrote: last_of(slot.wrote ++ chunk, KEPT_STDERR) }
+
+#[doc("The most of a kalku's own words a run keeps.")]
+pub const KEPT_STDERR : Int = 4096
+
+#[doc("What a kalku said about itself, trimmed, or nothing when it was silent.")]
+pub fn own_words(slot: Slot) : Option[String] = if is_empty(trim(slot.wrote)) {
+  None
+} else {
+  Some(trim(slot.wrote))
+}
+
+#[doc("Why each abandoned slot was abandoned.")]
+pub fn epitaphs(slots: [Slot]) : [String] = flat_map(
+  slots,
+  s => match s.doing {
+    Lost(why) -> ["worker #{s.worker}: #{why}#{quoted(own_words(s))}"]
+    _ -> []
+  }
+)
+
+#[doc("What is asked of every kalku the moment it is summoned.")]
+pub fn greeting(spec: PoolSpec, worker: Int) : KalkuRequest = Hello(HelloMsg {
+  version: PROTOCOL_VERSION,
+  root: spec.root,
+  reni: spec.reni,
+  worker: worker,
+  inline_limit_bytes: spec.inline_limit_bytes,
+  env: spec.env
+})
+
+# A greeting has its own deadline: a kalku that never says `ready` is as
+# useless as one that never finishes a cast, and far cheaper to catch.
+fn summon_slot(spec: PoolSpec, worker: Int, summons: Int) : Slot / Process + Spawn + Clock + Actor[
+  OrchMsg
+] {
+  let empty = Slot {
+    worker: worker,
+    kalku: None,
+    caps: [],
+    doing: Lost(""),
+    summons: summons,
+    wrote: ""
+  }
+  let life = Life { worker: worker, summons: summons }
+  match summon(KalkuSpec { life: life, command: spec.command, args: spec.args }) {
+    Err(e) -> Slot { ...empty, doing: Lost(e) }
+    Ok(k) -> {
+      let me = Actor.self()
+      let _reader = spawn_actor(() => read_loop(k, me))
+      let _errs = spawn_actor(() => read_errs_loop(k, me))
+      let _hello = ask(k, greeting_id(worker), greeting(spec, worker))
+      Slot { ...empty, kalku: Some(k), doing: Greeting(deadline_in(millis(spec.greeting_ms))) }
+    }
+  }
+}
+
+#[doc("The request id a slot's greeting carries, which is how its `ready` is recognised.")]
+pub fn greeting_id(worker: Int) : Int = 0 - (worker + 1)
+
+# A kalku's own words are quoted rather than paraphrased.
+fn quoted(words: Option[String]) : String = match words {
+  Some(w) -> "; it wrote: #{w}"
+  None -> ""
+}
+
+fn last_of(s: String, n: Int) : String = if length(s) <= n {
+  s
+} else {
+  slice(s, length(s) - n, length(s))
+}
+
+fn out_of_budget(spec: PoolSpec, slot: Slot, why: String) : String =
+  "#{why}; summoned #{slot.summons} time(s), the most this run allows is #{spec.summons_allowed}"
+
+fn counting(n: Int) : [Int] = if n <= 0 { [] } else { enumerate(repeat(0, n)) | (.fst) }

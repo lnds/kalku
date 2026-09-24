@@ -16,7 +16,11 @@ const BRIEF : Duration = millis(300)
 const FAKE : String = "./tests/fake_kalku/fake_kalku"
 
 fn spec(script: String) : KalkuSpec =
-  KalkuSpec { worker: 0, command: FAKE, args: ["tests/fixtures/scripts/#{script}"] }
+  KalkuSpec {
+    life: Life { worker: 0, summons: 1 },
+    command: FAKE,
+    args: ["tests/fixtures/scripts/#{script}"]
+  }
 
 fn hello() : KalkuRequest = Hello(HelloMsg {
   version: 1,

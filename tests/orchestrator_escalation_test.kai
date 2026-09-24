@@ -1,0 +1,102 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.orchestrator.escalation
+
+fn warm() : [Capability] = [CastCap, AbortCap, ResetCap]
+
+fn cast_done(outcome: Outcome, dirty: Bool) : KalkuReply = CastDone(CastDoneMsg {
+  wekufe: "w1",
+  outcome: outcome,
+  killed_by: None,
+  message: None,
+  code_hash: None,
+  duration_ms: 12,
+  dirty: dirty
+})
+
+fn reacting(reply: KalkuReply, caps: [Capability]) : Reaction = on_reply(reply, caps)
+
+test "a cast that answers cleanly frees the kalku, outcome and all" {
+  let r = reacting(cast_done(Killed, false), warm())
+  assert r == Reaction { outcome: Some(Killed), next: Free }
+  assert reacting(cast_done(Survived, false), warm()).outcome == Some(Survived)
+}
+
+# A cast that runs long is a `timeout`, never a kill: counting an infinite
+# loop as a failing assertion inflates the score.
+test "a cast past its deadline is aborted in place, and the kalku stays warm" {
+  assert on_deadline(AwaitingCast, warm()) == Reaction { outcome: None, next: AskAbort }
+  assert on_reply(Aborted(AbortedMsg { cast: 7, restored: true }), warm())
+    == Reaction { outcome: Some(Timeout), next: Free }
+}
+
+test "a kalku that cannot abort is killed on the deadline, and the wekufe is still reported" {
+  let r = on_deadline(AwaitingCast, [CastCap])
+  assert r.outcome == Some(Timeout)
+  assert recycling(r) == Some("ran past its deadline and cannot abort")
+}
+
+test "a kalku that does not answer `abort` is killed, and the wekufe is still reported" {
+  let r = on_deadline(AwaitingAbort, warm())
+  assert r.outcome == Some(Timeout)
+  assert is_some(recycling(r))
+}
+
+test "a kalku that cannot restore itself after aborting is recycled" {
+  let r = on_reply(Aborted(AbortedMsg { cast: 7, restored: false }), warm())
+  assert r.outcome == Some(Timeout)
+  assert recycling(r) == Some("could not restore itself after aborting")
+}
+
+# State left behind by one wekufe is a result attributed to another, so a
+# dirty kalku never runs the next cast as it is.
+test "a dirty cast is reset in place before the kalku serves again" {
+  let r = reacting(cast_done(Survived, true), warm())
+  assert r == Reaction { outcome: Some(Survived), next: AskReset }
+  assert on_reply(ResetDone(ResetDoneMsg { clean: true, duration_ms: 4 }), warm())
+    == Reaction { outcome: None, next: Free }
+}
+
+test "a reset that is not clean recycles the kalku, and so does having no reset at all" {
+  assert recycling(on_reply(ResetDone(ResetDoneMsg { clean: false, duration_ms: 4 }), warm()))
+    == Some("could not reset its global state")
+  assert recycling(reacting(cast_done(Killed, true), [CastCap]))
+    == Some("left global state behind and cannot reset")
+}
+
+# A hole nobody hears about is worse than a hole with a name.
+test "a kalku that dies mid-cast loses the kalku, never the wekufe" {
+  let r = on_death(AwaitingCast, "closed its pipe")
+  assert r.outcome == Some(Crashed)
+  assert recycling(r) == Some("closed its pipe")
+  assert on_death(AwaitingReset, "closed its pipe").outcome == None
+}
+
+test "a line this side cannot read ends that kalku, with the reason quoted" {
+  let r = on_noise(AwaitingCast, "not_json")
+  assert r.outcome == Some(Crashed)
+  assert recycling(r) == Some("wrote a line this side cannot read: not_json")
+}
+
+# `progress` says the kalku is alive, not that it is done.
+test "progress is not an answer" {
+  let ticking = Progress(ProgressMsg { done: 3, total: 10 })
+  assert on_reply(ticking, warm()) == Reaction { outcome: None, next: Keep }
+}
+
+test "a fatal error from the kalku is a crash; a survivable one is not" {
+  let fatal = ErrorMsg { code: "internal", message: "the runtime is gone", fatal: true }
+  let passing = ErrorMsg { code: "bad_field", message: "tests: expected a list", fatal: false }
+  assert on_reply(KalkuError(fatal), warm()).outcome == Some(Crashed)
+  assert on_reply(KalkuError(passing), warm()) == Reaction { outcome: None, next: Keep }
+}
+
+# A kalku that never says `ready` is as useless as one that never finishes
+# a cast, and there is no wekufe to report for it.
+test "a kalku that does not answer `hello` is given up on, with nothing to report" {
+  let r = on_deadline(AwaitingReady, [])
+  assert r.outcome == None
+  assert recycling(r) == Some("did not answer `hello`")
+  assert on_death(AwaitingReady, "closed its pipe").outcome == None
+}

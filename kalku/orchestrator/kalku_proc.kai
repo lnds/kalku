@@ -19,29 +19,57 @@ import kalku.wire.kalku_codec
 import kalku.wire.framing
 import kalku.wire.version
 
-#[doc("What a kalku's reader saw on stdout.")]
-#[derive(Eq, Show)]
-pub type FromKalku = Said(String) | Closed | Unreadable(String)
+#[doc("""
+What a kalku's readers saw.
 
-#[doc("A message to the fiber that owns the kalku: which worker, and what it did.")]
+`Said` is a line of protocol on stdout; `Wrote` is a kalku's own
+diagnostics on stderr, which is how a kalku that dies gets to say why in
+its own words.
+""")]
 #[derive(Eq, Show)]
-pub type OrchMsg = Wire(Int, FromKalku)
+pub type FromKalku = Said(String) | Wrote(String) | Closed | Unreadable(String)
 
-#[doc("How to summon a kalku: the command, and the environment it may see.")]
+#[doc("""
+A message to the fiber that owns the kalku: which kalku, and what it did.
+
+`Cancel` is the one message that comes from outside: whoever asked for the
+run wants it stopped, and the outcomes recorded so far are kept.
+""")]
 #[derive(Eq, Show)]
-pub type KalkuSpec = { worker: Int, command: String, args: [String] }
+pub type OrchMsg = Wire(Life, FromKalku) | Cancel
 
-#[doc("A summoned kalku: its process and the worker slot it fills.")]
-pub type Kalku = { worker: Int, child: Child }
+#[doc("""
+Which summoning of which worker: a kalku's identity for as long as it
+lives.
+
+A worker number alone would not do. A kalku that has been killed still
+has a reader actor that will say so, and that message must not be read as
+the death of the replacement filling the same slot.
+""")]
+#[derive(Eq, Show)]
+pub type Life = { worker: Int, summons: Int }
+
+#[doc("How to summon a kalku: whose life it is, and the command that starts it.")]
+#[derive(Eq, Show)]
+pub type KalkuSpec = { life: Life, command: String, args: [String] }
+
+#[doc("A summoned kalku: its process, and the life it is living.")]
+pub type Kalku = { life: Life, child: Child }
 
 #[doc("The longest line a kalku may write before it is cut off.")]
 pub const MAX_LINE : Int = 1048576
 
-#[doc("Summon a kalku with pipes on its stdin and stdout.")]
+#[doc("""
+Summon a kalku with all three of its streams piped.
+
+stderr is piped rather than inherited so a kalku that fails to start can
+be quoted rather than paraphrased: the reason a project will not compile
+belongs in the run's diagnostic, not interleaved into kalku's own output.
+""")]
 pub fn summon(spec: KalkuSpec) : Result[Kalku, String] / Process =
-  match proc.start_piped(spec.command, spec.args) {
-    Err(e) -> Err("cannot summon worker #{spec.worker}: #{e}")
-    Ok(child) -> Ok(Kalku { worker: spec.worker, child: child })
+  match Process.start_piped(spec.command, spec.args, true, true, true) {
+    Err(e) -> Err("cannot summon worker #{spec.life.worker}: #{e}")
+    Ok(child) -> Ok(Kalku { life: spec.life, child: child })
   }
 
 #[doc("""
@@ -53,10 +81,30 @@ Runs as its own actor: it blocks on the child, so nothing else should.
 pub fn read_loop(k: Kalku, parent: Pid[OrchMsg]) : Unit / Process + Actor[OrchMsg] =
   pump(k, parent, framer(MAX_LINE))
 
+#[doc("""
+Read the kalku's stderr for as long as it writes, sending each chunk on
+as it arrives.
+
+Its own actor, like the stdout reader: a child that fills one pipe while
+the parent drains the other deadlocks, so neither may wait on the other.
+""")]
+pub fn read_errs_loop(k: Kalku, parent: Pid[OrchMsg]) : Unit / Process + Actor[OrchMsg] =
+  match proc.read_stderr(k.child) {
+    Err(_) -> ()
+    Ok(chunk) -> if is_empty(chunk) {
+      ()
+    } else {
+      {
+        Actor.send(parent, Wire(k.life, Wrote(chunk)))
+        read_errs_loop(k, parent)
+      }
+    }
+  }
+
 #[doc("Send one request to the kalku.")]
 pub fn ask(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Process =
   match proc.write_stdin(k.child, frame(encode_request(id, request))) {
-    Err(e) -> Err("worker #{k.worker} is not listening: #{e}")
+    Err(e) -> Err("worker #{k.life.worker} is not listening: #{e}")
     Ok(_) -> Ok(())
   }
 
@@ -108,16 +156,16 @@ const SIGKILL : Int = 9
 
 fn pump(k: Kalku, parent: Pid[OrchMsg], f: Framer) : Unit / Process + Actor[OrchMsg] =
   match proc.read_stdout(k.child) {
-    Err(e) -> Actor.send(parent, Wire(k.worker, Unreadable(e)))
+    Err(e) -> Actor.send(parent, Wire(k.life, Unreadable(e)))
     Ok(chunk) -> if is_empty(chunk) {
-      Actor.send(parent, Wire(k.worker, Closed))
+      Actor.send(parent, Wire(k.life, Closed))
     } else {
-      pump(k, parent, deliver(k.worker, parent, feed(f, chunk)))
+      pump(k, parent, deliver(k.life, parent, feed(f, chunk)))
     }
   }
 
-fn deliver(worker: Int, parent: Pid[OrchMsg], fed: Fed) : Framer / Actor[OrchMsg] {
-  each(fed.frames, fr => Actor.send(parent, Wire(worker, said(fr))))
+fn deliver(life: Life, parent: Pid[OrchMsg], fed: Fed) : Framer / Actor[OrchMsg] {
+  each(fed.frames, fr => Actor.send(parent, Wire(life, said(fr))))
   fed.framer
 }
 
