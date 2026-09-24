@@ -19,9 +19,15 @@ import kalku.wire.kalku_codec
 import kalku.wire.framing
 import kalku.wire.version
 
-#[doc("What a kalku's reader saw on stdout.")]
+#[doc("""
+What a kalku's readers saw.
+
+`Said` is a line of protocol on stdout; `Wrote` is a kalku's own
+diagnostics on stderr, which is how a kalku that dies gets to say why in
+its own words.
+""")]
 #[derive(Eq, Show)]
-pub type FromKalku = Said(String) | Closed | Unreadable(String)
+pub type FromKalku = Said(String) | Wrote(String) | Closed | Unreadable(String)
 
 #[doc("""
 A message to the fiber that owns the kalku: which kalku, and what it did.
@@ -53,9 +59,15 @@ pub type Kalku = { life: Life, child: Child }
 #[doc("The longest line a kalku may write before it is cut off.")]
 pub const MAX_LINE : Int = 1048576
 
-#[doc("Summon a kalku with pipes on its stdin and stdout.")]
+#[doc("""
+Summon a kalku with all three of its streams piped.
+
+stderr is piped rather than inherited so a kalku that fails to start can
+be quoted rather than paraphrased: the reason a project will not compile
+belongs in the run's diagnostic, not interleaved into kalku's own output.
+""")]
 pub fn summon(spec: KalkuSpec) : Result[Kalku, String] / Process =
-  match proc.start_piped(spec.command, spec.args) {
+  match Process.start_piped(spec.command, spec.args, true, true, true) {
     Err(e) -> Err("cannot summon worker #{spec.life.worker}: #{e}")
     Ok(child) -> Ok(Kalku { life: spec.life, child: child })
   }
@@ -68,6 +80,26 @@ Runs as its own actor: it blocks on the child, so nothing else should.
 """)]
 pub fn read_loop(k: Kalku, parent: Pid[OrchMsg]) : Unit / Process + Actor[OrchMsg] =
   pump(k, parent, framer(MAX_LINE))
+
+#[doc("""
+Read the kalku's stderr for as long as it writes, sending each chunk on
+as it arrives.
+
+Its own actor, like the stdout reader: a child that fills one pipe while
+the parent drains the other deadlocks, so neither may wait on the other.
+""")]
+pub fn read_errs_loop(k: Kalku, parent: Pid[OrchMsg]) : Unit / Process + Actor[OrchMsg] =
+  match proc.read_stderr(k.child) {
+    Err(_) -> ()
+    Ok(chunk) -> if is_empty(chunk) {
+      ()
+    } else {
+      {
+        Actor.send(parent, Wire(k.life, Wrote(chunk)))
+        read_errs_loop(k, parent)
+      }
+    }
+  }
 
 #[doc("Send one request to the kalku.")]
 pub fn ask(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Process =

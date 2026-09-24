@@ -1,0 +1,4 @@
+{"expect":"hello","reply":{"type":"ready","protocol":1,"language":"fake","adapter":"fake_kalku 0.1","runtime":"none","spells":["arm"],"capabilities":["cast","abort","reset"]}}
+{"expect":"cast","hang":true}
+{"expect":"abort","reply":{"type":"aborted","cast":1,"restored":true}}
+{"expect":"*","reply":{"type":"cast_done","wekufe":"w","outcome":"survived","duration_ms":1,"dirty":false},"repeat":400}
