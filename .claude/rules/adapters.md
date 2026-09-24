@@ -22,11 +22,9 @@ The kaikai kalku is native but thin: it drives `kaic2 --mutate-list-json` / `--m
 
 stdout carries the protocol, so a single line of build-system chatter makes the kaikai side banish the worker for writing nonsense — and it does it before the kalku can explain itself.
 
-A kalku can only keep quiet once it is running. Whatever its toolchain prints on the way up was printed before the kalku existed, so the **summoning command** is part of the kalku's contract, not an afterthought: it sends the build's output to stderr and only then execs the loop. For Elixir that is
+A kalku can only keep quiet once it is running. Whatever its toolchain prints on the way up was printed before the kalku existed, so the **summoning command** is part of the kalku's contract, not an afterthought: it sends the build's output to stderr and only then execs the loop.
 
-```sh
-mix deps.compile >&2 && exec mix kalku.serve
-```
+Ship it as an executable in the adapter rather than as a line in a README — a contract nothing enforces is a contract someone will get wrong, and the one who gets it wrong sees a worker banished for writing nonsense. Elixir's is `adapters/elixir/bin/kalku-elixir`, and it refuses to start without a build path inside the reni.
 
 Two rules follow, and they hold for any language:
 
