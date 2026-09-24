@@ -1,0 +1,118 @@
+#[doc("""
+What to do about a kalku, decided without touching one.
+
+A warm kalku is the most expensive thing kalku owns, so every failure
+escalates instead of reaching for the signal: a cast that runs long is
+aborted in place, a kalku that dirtied global state is reset in place,
+and only a kalku that stops answering is recycled.
+
+Nothing here performs an effect. The scheduler carries these decisions
+out; keeping them apart is what lets every rule in *Timeouts and dirty
+state* be a test rather than a race.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+
+#[doc("Which answer the orchestrator is waiting for from a kalku.")]
+#[derive(Eq, Show)]
+pub type Awaiting = AwaitingReady | AwaitingCast | AwaitingAbort | AwaitingReset
+
+#[doc("What happens to the kalku next.")]
+#[derive(Eq, Show)]
+pub type Next
+  = Keep
+  | Free
+  | AskAbort
+  | AskReset
+  | Recycle(String)
+
+#[doc("A decision: what the wekufe in flight came to, and what happens to the kalku.")]
+#[derive(Eq, Show)]
+pub type Reaction = { outcome: Option[Outcome], next: Next }
+
+#[doc("""
+What a kalku's reply means for the cast in flight.
+
+`progress` is not an answer: it says the kalku is alive, not that it is
+done, so the kalku is kept rather than freed.
+""")]
+pub fn on_reply(reply: KalkuReply, caps: [Capability]) : Reaction {
+  case CastDone(m), caps -> after_cast(m, caps)
+  case Aborted(m), _ -> if m.restored {
+    stopped(Timeout, Free)
+  } else {
+    stopped(Timeout, Recycle("could not restore itself after aborting"))
+  }
+  case ResetDone(m), _ -> if m.clean {
+    carry_on(Free)
+  } else {
+    carry_on(Recycle("could not reset its global state"))
+  }
+  case KalkuError(e), _ -> if e.fatal {
+    stopped(Crashed, Recycle("reported a fatal error: #{e.message}"))
+  } else {
+    carry_on(Keep)
+  }
+  case _, _ -> carry_on(Keep)
+}
+
+#[doc("""
+What a deadline means, given what the kalku is in the middle of and what
+it said it can do.
+
+A cast that runs long is a `timeout`, never a kill: an infinite loop is
+not a failing assertion, and counting it as one inflates the score.
+""")]
+pub fn on_deadline(awaiting: Awaiting, caps: [Capability]) : Reaction {
+  case AwaitingCast, caps -> if can_abort(caps) {
+    carry_on(AskAbort)
+  } else {
+    stopped(Timeout, Recycle("ran past its deadline and cannot abort"))
+  }
+  case AwaitingReady, _ -> carry_on(Recycle("did not answer `hello`"))
+  case AwaitingAbort, _ -> stopped(Timeout, Recycle("did not answer `abort`"))
+  case AwaitingReset, _ -> carry_on(Recycle("did not answer `reset`"))
+}
+
+#[doc("""
+What a closed or unreadable pipe means.
+
+The wekufe it was casting is reported as `crashed`, never lost: a hole
+nobody hears about is worse than a hole with a name.
+""")]
+pub fn on_death(awaiting: Awaiting, why: String) : Reaction = match awaiting {
+  AwaitingCast -> stopped(Crashed, Recycle(why))
+  _ -> carry_on(Recycle(why))
+}
+
+#[doc("A line a kalku wrote that this side cannot read: that kalku is done talking.")]
+pub fn on_noise(awaiting: Awaiting, detail: String) : Reaction =
+  on_death(awaiting, "wrote a line this side cannot read: #{detail}")
+
+#[doc("True when the kalku said it can stop a cast in place.")]
+pub fn can_abort(caps: [Capability]) : Bool = contains(caps, AbortCap)
+
+#[doc("True when the kalku said it can clear its global state in place.")]
+pub fn can_reset(caps: [Capability]) : Bool = contains(caps, ResetCap)
+
+#[doc("Why a kalku is being recycled, or nothing when it is staying.")]
+pub fn recycling(r: Reaction) : Option[String] = match r.next {
+  Recycle(why) -> Some(why)
+  _ -> None
+}
+
+# A cast that dirtied global state is not trusted to run the next one:
+# state left behind by one wekufe is a result attributed to another.
+fn after_cast(m: CastDoneMsg, caps: [Capability]) : Reaction = if not m.dirty {
+  stopped(m.outcome, Free)
+} else if can_reset(caps) {
+  stopped(m.outcome, AskReset)
+} else {
+  stopped(m.outcome, Recycle("left global state behind and cannot reset"))
+}
+
+fn stopped(o: Outcome, next: Next) : Reaction = Reaction { outcome: Some(o), next: next }
+
+fn carry_on(next: Next) : Reaction = Reaction { outcome: None, next: next }
