@@ -17,6 +17,7 @@ import kalku.wire.kalku_msg
 import kalku.wire.version
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.escalation
+import kalku.orchestrator.ward
 
 #[doc("One cast a kalku is working on, and when its patience runs out.")]
 pub type Job = { id: Int, wekufe: String, deadline: Instant, awaiting: Awaiting }
@@ -49,7 +50,7 @@ pub type PoolSpec = {
 }
 
 #[doc("Summon every kalku in the pool and greet each one.")]
-pub fn fill(spec: PoolSpec) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] =
+pub fn fill(spec: PoolSpec) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
   counting(spec.workers) | (w => summon_slot(spec, w, 1))
 
 #[doc("""
@@ -61,7 +62,7 @@ endless one.
 """)]
 pub fn refill(spec: PoolSpec, slot: Slot, why: String) : Slot / Process + Spawn + Clock + Actor[
   OrchMsg
-] =
+] + Ward =
   if slot.summons >= spec.summons_allowed {
     Slot { ...slot, kalku: None, caps: [], doing: Lost(out_of_budget(spec, slot, why)) }
   } else {
@@ -69,8 +70,11 @@ pub fn refill(spec: PoolSpec, slot: Slot, why: String) : Slot / Process + Spawn 
   }
 
 #[doc("Stop a kalku where it stands and reap it, so nothing outlives the run.")]
-pub fn banish(slot: Slot) : Unit / Process = match slot.kalku {
-  Some(k) -> kill_now(k)
+pub fn banish(slot: Slot) : Unit / Process + Ward = match slot.kalku {
+  Some(k) -> {
+    kill_now(k)
+    Ward.release(k)
+  }
   None -> ()
 }
 
@@ -79,7 +83,7 @@ pub fn dismiss_all(slots: [Slot], id: Int) : Unit / Process =
   each(slots, s => tell(s, id, Shutdown))
 
 #[doc("Stop every kalku in the pool.")]
-pub fn banish_all(slots: [Slot]) : Unit / Process = each(slots, s => banish(s))
+pub fn banish_all(slots: [Slot]) : Unit / Process + Ward = each(slots, s => banish(s))
 
 #[doc("Send one request to a slot's kalku, if it still has one.")]
 pub fn tell(slot: Slot, id: Int, request: KalkuRequest) : Unit / Process = match slot.kalku {
@@ -166,7 +170,7 @@ pub fn greeting(spec: PoolSpec, worker: Int) : KalkuRequest = Hello(HelloMsg {
 # useless as one that never finishes a cast, and far cheaper to catch.
 fn summon_slot(spec: PoolSpec, worker: Int, summons: Int) : Slot / Process + Spawn + Clock + Actor[
   OrchMsg
-] {
+] + Ward {
   let empty = Slot {
     worker: worker,
     kalku: None,
@@ -180,6 +184,7 @@ fn summon_slot(spec: PoolSpec, worker: Int, summons: Int) : Slot / Process + Spa
     Err(e) -> Slot { ...empty, doing: Lost(e) }
     Ok(k) -> {
       let me = Actor.self()
+      Ward.watch(k)
       let _reader = spawn_actor(() => read_loop(k, me))
       let _errs = spawn_actor(() => read_errs_loop(k, me))
       let _hello = ask(k, greeting_id(worker), greeting(spec, worker))
