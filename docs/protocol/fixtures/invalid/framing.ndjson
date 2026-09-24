@@ -1,2 +1,4 @@
 {"expect":"line_too_long","max":32,"input":"{\"type\":\"bye\",\"id\":7,\"padding\":\"xxxxxxxxxxxxxxxx\"}\n{\"type\":\"bye\",\"id\":8}\n"}
 {"expect":"ok","max":32,"input":"{\"type\":\"bye\",\"id\":7}\n{\"type\":\"bye\",\"id\":8}\n"}
+{"expect":"ok","max":32,"input":"{\"type\":\"bye\",\"id\":7,\"pad\":\"xx\"}\n{\"type\":\"bye\",\"id\":8}\n"}
+{"expect":"line_too_long","max":32,"input":"{\"type\":\"bye\",\"id\":7,\"pad\":\"xxx\"}\n{\"type\":\"bye\",\"id\":8}\n"}

@@ -45,6 +45,22 @@ test "an over-long line surfaces once as TooLong and the next line is intact" {
   assert all([1, 4, 16, 64], n => frames_of(input, 16, n) == [TooLong, Line("short")])
 }
 
+# The limit is a boundary, and a boundary is only tested at the boundary:
+# the spec counts the line's bytes excluding its newline, so a line of
+# exactly the limit is accepted and one byte more is not.
+test "a line of exactly the limit is accepted, and one byte more is not" {
+  let at_limit = xs(16)
+  let over_limit = xs(17)
+  assert frames_of("#{at_limit}\nshort\n", 16, 5) == [Line(at_limit), Line("short")]
+  assert frames_of("#{over_limit}\nshort\n", 16, 5) == [TooLong, Line("short")]
+}
+
+# The orchestrator reads what the protocol allows: a limit of its own
+# would silently refuse messages a kalku is entitled to send.
+test "the framing limit is the one the protocol states" {
+  assert MAX_LINE_BYTES == 4194304
+}
+
 test "an over-long line is not buffered while it grows" {
   let fed = feed(framer(8), "0123456789")
   assert fed.framer.pending == ""
@@ -75,6 +91,8 @@ fn matches(expect: String, frames: [Frame]) : Bool = match frames {
   [Line(_), Line(_)] -> expect == "ok"
   _ -> false
 }
+
+fn xs(n: Int) : String = repeat("x", n)
 
 test "a message goes on the wire with its newline" {
   assert frame("{\"type\":\"bye\",\"id\":7}") == "{\"type\":\"bye\",\"id\":7}\n"
