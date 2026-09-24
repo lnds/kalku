@@ -8,8 +8,9 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 |---|---|
 | `hello` → `ready` | yes |
 | `sites` → `sites_found` | yes, all six spells |
+| `prepare` → `prepared` | yes |
 | `shutdown` → `bye` | yes |
-| `prepare`, `baseline`, `cast`, `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
+| `baseline`, `cast`, `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
 
 `ready` announces only `cast` (the native kind); no capability is claimed before it works.
 
@@ -21,9 +22,30 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 ## Running
 
 ```sh
-mix compile            # first, so compiler output never reaches stdout
-mix kalku.serve        # protocol on stdin/stdout, diagnostics on stderr
+MIX_ENV=test MIX_BUILD_PATH=<reni>/build \
+  sh -c 'mix deps.compile >&2 && exec mix kalku.serve'
 ```
+
+Every part of that line is load-bearing:
+
+- **`MIX_BUILD_PATH` inside the reni** is how a run leaves the project's own `_build` untouched. `prepare` checks it and refuses to compile anything if the build would land anywhere else — compiling a user's project into their tree, with mutated code, is the one thing a kalku must never do.
+- **`MIX_ENV=test`**, because the suite is the oracle.
+- **`mix deps.compile >&2` first**, because mix writes what it compiles to stdout, and stdout is the protocol. Starting the loop does not compile; one line of `==> kalku_elixir` on stdout is enough for the kaikai side to banish the worker for writing nonsense.
+- **`exec`**, so the kalku is the process that receives a signal, with no shell in between.
+
+## Preparing
+
+`prepare` compiles the project into the reni with protocol consolidation **off** — a consolidated protocol is built from every implementation at once, so a wekufe cast into a `defimpl` would be silently ignored and counted as a survivor.
+
+It answers `prepared {duration_ms, modules}`, or a fatal `error`:
+
+| Code | When |
+|---|---|
+| `reni_not_isolated` | the build path is not inside the reni, or no reni was given |
+| `wrong_env` | `MIX_ENV` is not `test` |
+| `prepare_failed` | the project does not compile, naming the file and line |
+
+`MIX_TEST_PARTITION` is read from `hello.env`, so each kalku can have its own test database.
 
 ## Sites
 
