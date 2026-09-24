@@ -38,3 +38,14 @@ test "owns agrees with shard_of" {
   assert all(ids(), id => owns(id, shard_of(id, 3), 3))
   assert not any(ids(), id => owns(id, shard_of(id, 3) % 3 + 1, 3))
 }
+
+# A run with no sharding is `1/1`, which is the default every CI job that
+# does not shard uses — the boundary most likely to be trusted untested.
+test "one shard of one is a valid run, and so is the last shard of many" {
+  assert valid(1, 1)
+  assert valid(4, 4)
+  assert valid(1, 4)
+  assert not valid(0, 1)
+  assert not valid(2, 1)
+  assert not valid(5, 4)
+}
