@@ -56,9 +56,6 @@ pub type KalkuSpec = { life: Life, command: String, args: [String] }
 #[doc("A summoned kalku: its process, and the life it is living.")]
 pub type Kalku = { life: Life, child: Child }
 
-#[doc("The longest line a kalku may write before it is cut off.")]
-pub const MAX_LINE : Int = 1048576
-
 #[doc("""
 Summon a kalku with all three of its streams piped.
 
@@ -79,7 +76,7 @@ line to `parent`.
 Runs as its own actor: it blocks on the child, so nothing else should.
 """)]
 pub fn read_loop(k: Kalku, parent: Pid[OrchMsg]) : Unit / Process + Actor[OrchMsg] =
-  pump(k, parent, framer(MAX_LINE))
+  pump(k, parent, framer(MAX_LINE_BYTES))
 
 #[doc("""
 Read the kalku's stderr for as long as it writes, sending each chunk on
@@ -173,5 +170,5 @@ fn deliver(life: Life, parent: Pid[OrchMsg], fed: Fed) : Framer / Actor[OrchMsg]
 # well-formed: the kalku is unreadable from here on.
 fn said(f: Frame) : FromKalku {
   case Line(l) -> Said(l)
-  case TooLong -> Unreadable("a line longer than #{MAX_LINE} bytes")
+  case TooLong -> Unreadable("a line longer than #{MAX_LINE_BYTES} bytes")
 }
