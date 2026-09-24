@@ -114,6 +114,14 @@ defmodule Kalku.PrepareTest do
     dir
   end
 
+  test "the summoner refuses to run without a reni to build into" do
+    {out, status} =
+      System.cmd("sh", ["-c", "#{summoner()} 2>&1"], cd: @fixture, env: [{"MIX_BUILD_PATH", ""}])
+
+    assert status == 2
+    assert out =~ "MIX_BUILD_PATH"
+  end
+
   defp hello(reni) do
     JSON.encode!(%{
       "type" => "hello",
@@ -137,20 +145,18 @@ defmodule Kalku.PrepareTest do
     File.write!(script, input)
     on_exit(fn -> File.rm_rf!(script) end)
 
-    # How a kalku is summoned, and why: mix writes what it compiles to
-    # stdout, and stdout is the protocol. Dependencies are compiled first
-    # with their output sent to stderr, so the loop starts with a clean
-    # channel. `exec` replaces the shell, so a signal reaches the kalku.
+    # Summoned the one supported way, so these tests exercise the contract
+    # rather than a second copy of it.
     {out, _status} =
-      System.cmd(
-        "sh",
-        ["-c", "mix deps.compile >&2 && exec mix kalku.serve < #{script} 2>/dev/null"],
+      System.cmd("sh", ["-c", "#{summoner()} < #{script} 2>/dev/null"],
         cd: cwd,
-        env: [{"MIX_BUILD_PATH", Path.join(reni, "build")}, {"MIX_ENV", "test"}]
+        env: [{"MIX_BUILD_PATH", Path.join(reni, "build")}]
       )
 
     out |> String.split("\n", trim: true)
   end
+
+  defp summoner, do: Path.expand("../bin/kalku-elixir", __DIR__)
 
   defp reply(lines, type) do
     lines

@@ -22,16 +22,17 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 ## Running
 
 ```sh
-MIX_ENV=test MIX_BUILD_PATH=<reni>/build \
-  sh -c 'mix deps.compile >&2 && exec mix kalku.serve'
+MIX_BUILD_PATH=<reni>/build bin/kalku-elixir
 ```
 
-Every part of that line is load-bearing:
+Run from the root of the project being measured. `bin/kalku-elixir` is the supported way to summon this kalku, and it is a shell script because every part of it is load-bearing:
 
 - **`MIX_BUILD_PATH` inside the reni** is how a run leaves the project's own `_build` untouched. `prepare` checks it and refuses to compile anything if the build would land anywhere else — compiling a user's project into their tree, with mutated code, is the one thing a kalku must never do.
 - **`MIX_ENV=test`**, because the suite is the oracle.
 - **`mix deps.compile >&2` first**, because mix writes what it compiles to stdout, and stdout is the protocol. Starting the loop does not compile; one line of `==> kalku_elixir` on stdout is enough for the kaikai side to banish the worker for writing nonsense.
 - **`exec`**, so the kalku is the process that receives a signal, with no shell in between.
+
+Summoning `mix kalku.serve` directly still works once the dependencies are built, but on a cold start it puts the compiler's output on the protocol channel. The script exists so nobody has to remember that; it refuses to start at all without a `MIX_BUILD_PATH`.
 
 ## Preparing
 
