@@ -1,0 +1,46 @@
+#[doc("""
+What guarantees no kalku outlives the run that summoned it.
+
+A line at the end of a function runs on one path: the one where nothing
+went wrong. A run that is cancelled, or unwound by a handler further out,
+skips it and leaves children alive in the user's project — which Tier 1
+says must never happen.
+
+So summoning is watched and banishing is released, and the release lives
+in the handler's `finally`, which runs on **every** path out of the
+scope. A kalku banished in an orderly way is released and not killed
+twice; anything still watched when the scope ends is killed there.
+
+`finally` does not run on `panic`, which aborts the process rather than
+unwinding it. Surviving that is the reni's job, not this one's.
+""")]
+
+import kalku.orchestrator.kalku_proc
+
+#[doc("Keeps the summoned kalku of a run, so the run cannot end without them.")]
+pub effect Ward {
+  watch(k: Kalku) : Unit
+  release(k: Kalku) : Unit
+}
+
+#[doc("Every watched kalku except this one, compared by the life it is living.")]
+pub fn without(watched: [Kalku], k: Kalku) : [Kalku] =
+  filter(watched, other => other.life != k.life)
+
+#[doc("""
+Run `body` with a ward: whatever it summoned and did not banish is
+killed when the scope ends, however it ends.
+""")]
+pub fn warded[a, e](body: () -> a / Ward + Process + e) : a / Process + e = handle {
+  body()
+} with Ward {
+  initially {
+    []
+  }
+  finally {
+    each(state, k => kill_now(k))
+  }
+  watch(k, resume) -> resume((), [k, ...state])
+  release(k, resume) -> resume((), without(state, k))
+  return(x) -> x
+}
