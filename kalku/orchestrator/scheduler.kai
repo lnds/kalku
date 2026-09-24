@@ -64,7 +64,7 @@ fn run_plan(
     queue: casts,
     verdicts: [],
     next_id: 1,
-    failure: None,
+    failure: no_kalku(slots, casts),
     cancelled: false
   })
   dismiss_all(done.slots, 0)
@@ -115,6 +115,21 @@ fn living(slots: [Slot]) : [Life] =
       None -> []
     }
   )
+
+# A run with nothing to cast with does not wait to find that out: with no
+# slot to answer and no deadline to expire, waiting would be forever.
+fn no_kalku(slots: [Slot], casts: [Cast]) : Option[String] =
+  if is_empty(casts) or (not all_gone(slots)) {
+    None
+  } else {
+    Some(no_kalku_reason(slots))
+  }
+
+fn no_kalku_reason(slots: [Slot]) : String = if is_empty(slots) {
+  "a run needs at least one kalku, and this pool was asked for none"
+} else {
+  join(epitaphs(slots), "; ")
+}
 
 # ---- the run ------------------------------------------------------------
 

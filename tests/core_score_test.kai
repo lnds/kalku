@@ -57,3 +57,13 @@ test "too many compile errors accuse the spells, not the suite" {
   assert spells_look_wrong(noisy, COMPILE_ERROR_LIMIT)
   assert not spells_look_wrong(calm, COMPILE_ERROR_LIMIT)
 }
+
+# The limit is the last rate that still accuses the suite: a project
+# sitting exactly on it is not told its spells are broken.
+test "a compile-error rate exactly at the limit does not accuse the spells" {
+  let at_limit = Counts { ...empty(), killed: 4, compile_error: 1 }
+  assert compile_error_rate(at_limit) == 0.2
+  assert not spells_look_wrong(at_limit, 0.2)
+  let over = Counts { ...empty(), killed: 3, compile_error: 2 }
+  assert spells_look_wrong(over, 0.2)
+}
