@@ -5,12 +5,12 @@ defmodule Kalku.Loop do
   stderr before the loop starts.
   """
 
-  alias Kalku.{Protocol, Schema, Sites}
+  alias Kalku.{Prepare, Protocol, Schema, Sites}
 
   @version Mix.Project.config()[:version]
   @spells Schema.spells() -- ["foreign"]
 
-  defstruct root: nil
+  defstruct root: nil, reni: nil, env: %{}, prepared: false
 
   @doc "Runs the loop on stdio until `shutdown` or end of input."
   def run do
@@ -48,14 +48,26 @@ defmodule Kalku.Loop do
     end
   end
 
-  defp dispatch("hello", id, %{"protocol" => 1, "root" => root}, state) do
-    {:reply, reply("ready", id, ready()), %{state | root: root}}
+  defp dispatch("hello", id, %{"protocol" => 1, "root" => root} = body, state) do
+    {:reply, reply("ready", id, ready()),
+     %{state | root: root, reni: body["reni"], env: body["env"] || %{}}}
   end
 
   defp dispatch("hello", id, %{"protocol" => v}, state) do
     {:reply,
      error(id, "protocol_mismatch", "kalku speaks protocol 1, kaikai side speaks #{v}", true),
      state}
+  end
+
+  defp dispatch("prepare", id, _body, %{reni: reni, env: env} = state) do
+    case Prepare.run(reni, env) do
+      {:ok, %{duration_ms: ms, modules: modules}} ->
+        {:reply, reply("prepared", id, %{"duration_ms" => ms, "modules" => modules}),
+         %{state | prepared: true}}
+
+      {:error, code, message} ->
+        {:reply, error(id, code, message, true), state}
+    end
   end
 
   defp dispatch("sites", id, body, %{root: root} = state) when is_binary(root) do

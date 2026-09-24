@@ -18,6 +18,23 @@ The kaikai kalku is native but thin: it drives `kaic2 --mutate-list-json` / `--m
 3. **Run.** Execute exactly the tests the kaikai side asks for and report the outcome. The kaikai side enforces timeouts from outside; a kalku does not time itself.
 4. **Report.** Answer with protocol messages only. Nothing else goes to stdout; logs go to stderr.
 
+## The channel is the kalku's first responsibility
+
+stdout carries the protocol, so a single line of build-system chatter makes the kaikai side banish the worker for writing nonsense — and it does it before the kalku can explain itself.
+
+A kalku can only keep quiet once it is running. Whatever its toolchain prints on the way up was printed before the kalku existed, so the **summoning command** is part of the kalku's contract, not an afterthought: it sends the build's output to stderr and only then execs the loop. For Elixir that is
+
+```sh
+mix deps.compile >&2 && exec mix kalku.serve
+```
+
+Two rules follow, and they hold for any language:
+
+- **Starting does not build.** Building is what `prepare` is for, and `prepare` reports what happened as a protocol message. A kalku that compiled on the way up would corrupt its own first line, and a project that failed to compile would take the kalku down before it could say why.
+- **A build failure is an answer, not an exit.** Catch whatever the toolchain throws — for Elixir, an exit as well as an exception — and reply `error` / `prepare_failed`, fatal, naming the file. A kalku that dies instead leaves the run guessing.
+
+The test that protects this drives a real kalku over a real pipe and asserts that **every** line on stdout parses as JSON. Nothing smaller catches it.
+
 ## Site rules
 
 - The AST decides *what* and *where*; the replacement is a **token span** in the original source, so a wekufe differs by one defect alone and keeps the file's formatting.

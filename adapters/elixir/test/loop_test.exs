@@ -57,9 +57,18 @@ defmodule Kalku.LoopTest do
   end
 
   test "requests this kalku does not serve yet get a non-fatal bad_request" do
-    {:reply, line, _} = Loop.handle(~s({"type":"prepare","id":3}), ready_state())
+    {:reply, line, _} = Loop.handle(~s({"type":"baseline","id":3}), ready_state())
 
     assert %{type: "error", id: 3, body: %{"code" => "bad_request", "fatal" => false}} =
+             reply!(line)
+  end
+
+  # Compiling into a user's own `_build` would leave their tree changed, so
+  # a kalku that was not given a reni refuses before it compiles anything.
+  test "prepare without an isolated reni is a fatal error, not a compile" do
+    {:reply, line, _} = Loop.handle(~s({"type":"prepare","id":4}), ready_state())
+
+    assert %{type: "error", id: 4, body: %{"code" => "reni_not_isolated", "fatal" => true}} =
              reply!(line)
   end
 
