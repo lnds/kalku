@@ -22,6 +22,7 @@ import kalku.core.planner
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.escalation
+import kalku.orchestrator.ward
 
 #[doc("What one wekufe came to.")]
 #[derive(Eq, Show)]
@@ -50,7 +51,12 @@ kalku is left to carry it.
 pub fn cast_all(
   spec: PoolSpec,
   casts: [Cast]
-) : Casting / Process + Spawn + Clock + Actor[OrchMsg] {
+) : Casting / Process + Spawn + Clock + Actor[OrchMsg] = warded(() => run_plan(spec, casts))
+
+fn run_plan(
+  spec: PoolSpec,
+  casts: [Cast]
+) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
   let slots = fill(spec)
   let done = turn(Run {
     spec: spec,
@@ -122,7 +128,7 @@ type Run = {
   cancelled: Bool
 }
 
-fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] {
+fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
   let busy = dispatch(run)
   if over(busy) { busy } else { turn(listen(busy)) }
 }
@@ -132,7 +138,7 @@ fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] {
 fn over(run: Run) : Bool =
   is_some(run.failure) or waiting_on(run.slots) == 0 and (run.cancelled or is_empty(run.queue))
 
-fn listen(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] =
+fn listen(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
   match receive_timeout(patience(run)) {
     None -> expire(run)
     Some(Cancel) -> Run { ...run, cancelled: true, queue: [] }
@@ -166,7 +172,7 @@ fn hand(run: Run, slot: Slot, c: Cast) : Run / Process + Clock {
 
 fn heard_from(run: Run, slot: Slot, what: FromKalku) : Run / Process + Spawn + Clock + Actor[
   OrchMsg
-] {
+] + Ward {
   case run, slot, Said(line) -> match heard(line) {
     Ok(m) -> said(run, slot, m.body)
     Err(e) -> react(run, slot, on_noise(awaiting_of(slot), kind_name(e.kind)))
@@ -176,7 +182,11 @@ fn heard_from(run: Run, slot: Slot, what: FromKalku) : Run / Process + Spawn + C
   case run, slot, Unreadable(why) -> react(run, slot, on_death(awaiting_of(slot), why))
 }
 
-fn said(run: Run, slot: Slot, reply: KalkuReply) : Run / Process + Spawn + Clock + Actor[OrchMsg] =
+fn said(
+  run: Run,
+  slot: Slot,
+  reply: KalkuReply
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
   match reply {
     Ready(m) -> greeted(run, slot, m)
     other -> react(run, slot, on_reply(other, slot.caps))
@@ -191,7 +201,7 @@ fn greeted(run: Run, slot: Slot, m: ReadyMsg) : Run = match ready_refused(m) {
 
 # ---- deadlines ----------------------------------------------------------
 
-fn expire(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] = match overdue(run) {
+fn expire(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward = match overdue(run) {
   None -> run
   Some(slot) -> expire(react(run, slot, due_reaction(slot)))
 }
@@ -231,7 +241,11 @@ fn patience(run: Run) : Duration / Clock {
 
 # ---- carrying a decision out --------------------------------------------
 
-fn react(run: Run, slot: Slot, r: Reaction) : Run / Process + Spawn + Clock + Actor[OrchMsg] {
+fn react(
+  run: Run,
+  slot: Slot,
+  r: Reaction
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
   let recorded = record(run, slot, r.outcome)
   match r.next {
     Keep -> recorded
@@ -259,7 +273,11 @@ fn chase(run: Run, slot: Slot, request: KalkuRequest, awaiting: Awaiting) : Run 
   Run { ...run, slots: put(run.slots, Slot { ...slot, doing: waiting }), next_id: run.next_id + 1 }
 }
 
-fn recycle(run: Run, slot: Slot, why: String) : Run / Process + Spawn + Clock + Actor[OrchMsg] {
+fn recycle(
+  run: Run,
+  slot: Slot,
+  why: String
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
   banish(slot)
   let fresh = refill(run.spec, slot, why)
   let slots = put(run.slots, fresh)

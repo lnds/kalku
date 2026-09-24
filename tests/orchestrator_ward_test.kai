@@ -1,0 +1,64 @@
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.ward
+
+# Something outside the run decides it is over — a cancelled request, a
+# client that hung up — and never resumes what it interrupted.
+effect Stop {
+  stop(why: String) : Nothing
+}
+
+fn a_kalku(worker: Int) : Kalku =
+  Kalku { life: Life { worker: worker, summons: 1 }, child: Child { pid: 1000 + worker } }
+
+# A `Process` that kills nothing and only remembers being asked to, so a
+# test can assert on what the ward did rather than on what survived.
+fn killed_during(body: () -> Unit / Ward + Process + Stop) : [Int] = handle {
+  handle {
+    warded(() => {
+      body()
+      []
+    })
+  } with Stop {
+    stop(why, resume) -> []
+  }
+} with Process {
+  initially {
+    []
+  }
+  kill(c, sig, resume) -> resume(Ok(()), state ++ [c.pid])
+  wait(c, resume) -> resume(Ok(Exited(0)))
+  return(x) -> state
+}
+
+test "a kalku summoned inside a ward is killed when the scope ends" {
+  assert killed_during(() => Ward.watch(a_kalku(0))) == [1000]
+}
+
+# The ordinary path: a kalku banished in order is released, so the ward
+# does not kill a process that is already gone.
+test "a kalku released before the end is not killed again" {
+  let killed = killed_during(() => {
+    let k = a_kalku(0)
+    Ward.watch(k)
+    Ward.release(k)
+  })
+  assert killed == []
+}
+
+# The point of the bracket. A line at the end of a function runs only when
+# nothing went wrong; `finally` runs when something did.
+test "a run that is cut short still banishes everything it summoned" {
+  let killed = killed_during(() => {
+    Ward.watch(a_kalku(0))
+    Ward.watch(a_kalku(1))
+    let _ = Stop.stop("the client hung up")
+    ()
+  })
+  assert length(killed) == 2
+  assert contains(killed, 1000)
+  assert contains(killed, 1001)
+}
+
+test "a ward that was asked for nothing kills nothing" {
+  assert killed_during(() => ()) == []
+}
