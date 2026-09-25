@@ -22,7 +22,10 @@ if [ -z "${MIX_BUILD_PATH:-}" ]; then
   exit 2
 fi
 
-# Dependencies first, with their output where it belongs. `exec` then
-# hands the process to the kalku, so a signal reaches it and not a shell.
-mix deps.compile >&2
+# Dependencies first, with their output where it belongs and with no
+# access to stdin: stdin is the protocol, and a build that reads even one
+# byte of it leaves the loop at end of input before its first request.
+mix deps.compile >&2 </dev/null
+# `exec` hands the process to the kalku, so a signal reaches it rather
+# than a shell that would outlive it.
 exec mix kalku.serve "$@"
