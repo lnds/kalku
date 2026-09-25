@@ -9,4 +9,8 @@ defmodule GreenTest do
   test "total adds" do
     assert Green.total([1, 2, 3]) == 6
   end
+
+  test "counting stops" do
+    assert Green.count_to(10) == 10
+  end
 end
