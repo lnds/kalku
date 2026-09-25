@@ -5,7 +5,7 @@ defmodule Kalku.Loop do
   stderr before the loop starts.
   """
 
-  alias Kalku.{Prepare, Protocol, Schema, Sites}
+  alias Kalku.{Baseline, Prepare, Protocol, Schema, Sites}
 
   @version Mix.Project.config()[:version]
   @spells Schema.spells() -- ["foreign"]
@@ -68,6 +68,19 @@ defmodule Kalku.Loop do
       {:error, code, message} ->
         {:reply, error(id, code, message, true), state}
     end
+  end
+
+  defp dispatch("baseline", id, _body, %{root: root, prepared: true} = state)
+       when is_binary(root) do
+    case Baseline.run(root) do
+      {:ok, body} -> {:reply, reply("baseline_done", id, body), state}
+      {:error, code, message} -> {:reply, error(id, code, message, true), state}
+    end
+  end
+
+  defp dispatch("baseline", id, _body, state) do
+    {:reply, error(id, "not_prepared", "`prepare` has to compile the project first", false),
+     state}
   end
 
   defp dispatch("sites", id, body, %{root: root} = state) when is_binary(root) do
