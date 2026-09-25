@@ -170,6 +170,9 @@ defmodule Kalku.Baseline do
 
   @modules {__MODULE__, :test_modules}
 
+  @doc "The test modules this kalku has loaded, for a cast to run against."
+  def loaded_modules, do: :persistent_term.get(@modules, [])
+
   @doc "Forget the loaded suite, so the next baseline reads the files again."
   def forget, do: :persistent_term.erase(@modules)
 
