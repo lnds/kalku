@@ -11,7 +11,8 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 | `prepare` → `prepared` | yes |
 | `baseline` → `baseline_done` | yes, with per-test coverage |
 | `shutdown` → `bye` | yes |
-| `cast`, `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
+| `cast` → `cast_done` | yes |
+| `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
 
 `ready` announces only `cast` (the native kind); no capability is claimed before it works.
 
@@ -73,6 +74,25 @@ Coverage travels inline when it fits under `hello.inline_limit_bytes`, and other
 A line no test runs has no entry at all: the question is which tests cover a line, and for an uncovered line the honest answer is none, which the kaikai side reads as `no_coverage` rather than as a hole.
 
 The kalku declares OTP's `:tools` application, which is where `:cover` lives.
+
+## Casting
+
+`cast` splices the site's span into the module's source **in memory**, compiles from a string, and loads the result into the warm runtime. Nothing is written to the project: the file on disk is the one the developer left there, before the cast and after it.
+
+The original modules are kept before anything is compiled and reloaded on every path out, including a compile error. A wekufe that outlived its cast would be attributed to the next one, and the next one's result would be a lie.
+
+| Outcome | When |
+|---|---|
+| `equivalent` | the compiled code is the original's, so no test could notice; no test is run |
+| `killed` | a selected test failed, and `killed_by` names it |
+| `survived` | every selected test ran and none noticed |
+| `compile_error` | the wekufe does not compile, with the first line of why |
+
+Equivalence is **proved rather than guessed**: the wekufe's modules and the original's are compared by their BEAM MD5s, which is the runtime's own answer to "is this the same code". A kalku never reports an equivalence it cannot demonstrate.
+
+Only the tests in `cast.tests` run, selected by file and line the way `mix test path:line` does, stopping at the first failure. Those are the tests the baseline's coverage says reach the changed line; running the rest would cost time and could not change the answer.
+
+`dirty` is always `false` today. The kalku does not yet detect global state a cast left behind (ETS tables, registered processes, application env), so it does not claim to — saying `false` when it has not looked is the part to fix, and `reset` (#17) is where that belongs.
 
 ## Sites
 
