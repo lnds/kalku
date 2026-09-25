@@ -22,5 +22,5 @@ defmodule Kalku.MixProject do
 
   # The kalku runs inside the user's project runtime, so it brings no
   # runtime dependencies that could conflict with theirs.
-  def application, do: [extra_applications: [:crypto]]
+  def application, do: [extra_applications: [:crypto, :tools]]
 end

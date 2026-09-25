@@ -7,6 +7,12 @@ defmodule Kalku.Baseline.Recorder do
   forwards what each test was — where it is written, how long it took, and
   why it failed — to a collector that outlives the suite.
 
+  It does not measure coverage. ExUnit delivers these events
+  asynchronously, so a `test_started` can arrive after the test it
+  announces has already run: clearing counters here clears the *next*
+  test's lines. Coverage is measured by running each test on its own,
+  in `Kalku.Baseline`.
+
   The split matters: ExUnit starts a formatter when the suite starts and
   stops it when the suite ends, so anything the formatter kept for itself
   dies with it, before the results can be read.
@@ -17,11 +23,11 @@ defmodule Kalku.Baseline.Recorder do
   alias Kalku.Baseline.Collector
 
   @impl true
-  def init(opts), do: {:ok, opts}
+  def init(_opts), do: {:ok, %{}}
 
   @impl true
   def handle_cast({:test_finished, %ExUnit.Test{} = test}, state) do
-    Collector.record(record(test))
+    Collector.record(record(test), [])
     {:noreply, state}
   end
 
