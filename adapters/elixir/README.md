@@ -9,7 +9,7 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 | `hello` → `ready` | yes |
 | `sites` → `sites_found` | yes, all six spells |
 | `prepare` → `prepared` | yes |
-| `baseline` → `baseline_done` | yes, without per-test coverage yet |
+| `baseline` → `baseline_done` | yes, with per-test coverage |
 | `shutdown` → `bye` | yes |
 | `cast`, `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
 
@@ -60,7 +60,19 @@ Two things it does that are easy to miss:
 - ExUnit's formatters write to stdout, which is the protocol, so the suite runs with a formatter that prints nothing and forwards each result to a collector that **outlives the suite** — ExUnit stops its formatters when the suite ends.
 - The loaded test modules are remembered. ExUnit runs the suite it is given and does not keep it for a second run, and a file already required loads nothing the second time; a kalku runs the suite once per wekufe, not once per life.
 
-Per-test coverage is not implemented yet, so `ready` does not announce `per_test_coverage` and the kaikai side will run every test for every wekufe until it does.
+### Per-test coverage
+
+`baseline` reports which tests execute each line, which is what lets a wekufe be cast against the handful of tests that reach its line instead of the whole suite. Speed is the product, and most of it comes from here.
+
+It costs a **second pass over the suite**, and that is not an oversight. `:cover` counts per line, not per test, and ExUnit delivers its formatter events asynchronously — a `test_started` can arrive after the test it announces has already run, so clearing counters there clears the *next* test's lines. The only honest attribution is to run each test on its own, with the counters cleared before it. That happens once, in the baseline.
+
+Only the project's own modules are instrumented: nobody mutates a dependency, so counting its lines would cost time and say nothing.
+
+Coverage travels inline when it fits under `hello.inline_limit_bytes`, and otherwise is written to `coverage.json` in the reni and reported as `coverage_path` — a megabyte of JSON per worker is a cost the protocol lets us decline.
+
+A line no test runs has no entry at all: the question is which tests cover a line, and for an uncovered line the honest answer is none, which the kaikai side reads as `no_coverage` rather than as a hole.
+
+The kalku declares OTP's `:tools` application, which is where `:cover` lives.
 
 ## Sites
 

@@ -10,7 +10,7 @@ defmodule Kalku.Loop do
   @version Mix.Project.config()[:version]
   @spells Schema.spells() -- ["foreign"]
 
-  defstruct root: nil, reni: nil, env: %{}, prepared: false
+  defstruct root: nil, reni: nil, env: %{}, inline_limit: 65_536, prepared: false
 
   @doc "Runs the loop on stdio until `shutdown` or end of input."
   def run do
@@ -50,7 +50,13 @@ defmodule Kalku.Loop do
 
   defp dispatch("hello", id, %{"protocol" => 1, "root" => root} = body, state) do
     {:reply, reply("ready", id, ready()),
-     %{state | root: root, reni: body["reni"], env: body["env"] || %{}}}
+     %{
+       state
+       | root: root,
+         reni: body["reni"],
+         env: body["env"] || %{},
+         inline_limit: body["inline_limit_bytes"] || 65_536
+     }}
   end
 
   defp dispatch("hello", id, %{"protocol" => v}, state) do
@@ -72,7 +78,7 @@ defmodule Kalku.Loop do
 
   defp dispatch("baseline", id, _body, %{root: root, prepared: true} = state)
        when is_binary(root) do
-    case Baseline.run(root) do
+    case Baseline.run(root, reni: state.reni, inline_limit_bytes: state.inline_limit) do
       {:ok, body} -> {:reply, reply("baseline_done", id, body), state}
       {:error, code, message} -> {:reply, error(id, code, message, true), state}
     end
@@ -100,7 +106,7 @@ defmodule Kalku.Loop do
       "adapter" => @version,
       "runtime" => "Elixir #{System.version()} / OTP #{System.otp_release()}",
       "spells" => @spells,
-      "capabilities" => ["cast"]
+      "capabilities" => ["cast", "per_test_coverage"]
     }
   end
 
