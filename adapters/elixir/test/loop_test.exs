@@ -24,8 +24,10 @@ defmodule Kalku.LoopTest do
     msg = reply!(line)
     assert msg.type == "ready"
     # A capability is claimed only once it works: `cast` because this is a
-    # native kalku, `per_test_coverage` because `baseline` measures it.
-    assert msg.body["capabilities"] == ["cast", "per_test_coverage"]
+    # native kalku, `per_test_coverage` because `baseline` measures it,
+    # `code_hash` and `hot_load` because a cast reports one and does the
+    # other.
+    assert msg.body["capabilities"] == ["cast", "per_test_coverage", "code_hash", "hot_load"]
     assert msg.body["spells"] == ~w(arm compare connect negate literal call)
   end
 

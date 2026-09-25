@@ -5,7 +5,7 @@ defmodule Kalku.Loop do
   stderr before the loop starts.
   """
 
-  alias Kalku.{Baseline, Prepare, Protocol, Schema, Sites}
+  alias Kalku.{Baseline, Cast, Prepare, Protocol, Schema, Sites}
 
   @version Mix.Project.config()[:version]
   @spells Schema.spells() -- ["foreign"]
@@ -89,6 +89,17 @@ defmodule Kalku.Loop do
      state}
   end
 
+  defp dispatch("cast", id, body, %{root: root, prepared: true} = state) when is_binary(root) do
+    %{"wekufe" => wekufe, "site" => site} = body
+    {:ok, done} = Cast.run(root, wekufe, site, body["tests"] || [])
+    {:reply, reply("cast_done", id, done), state}
+  end
+
+  defp dispatch("cast", id, _body, state) do
+    {:reply, error(id, "not_prepared", "`prepare` has to compile the project first", false),
+     state}
+  end
+
   defp dispatch("sites", id, body, %{root: root} = state) when is_binary(root) do
     {:reply, reply("sites_found", id, sites(root, body)), state}
   end
@@ -106,7 +117,7 @@ defmodule Kalku.Loop do
       "adapter" => @version,
       "runtime" => "Elixir #{System.version()} / OTP #{System.otp_release()}",
       "spells" => @spells,
-      "capabilities" => ["cast", "per_test_coverage"]
+      "capabilities" => ["cast", "per_test_coverage", "code_hash", "hot_load"]
     }
   end
 
