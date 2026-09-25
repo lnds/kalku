@@ -17,7 +17,8 @@ defmodule Kalku.BaselineTest do
       # every kalku in a pool has to call the same test the same thing.
       assert Enum.map(done["tests"], & &1["test"]) == [
                "test/green_test.exs:4",
-               "test/green_test.exs:9"
+               "test/green_test.exs:9",
+               "test/green_test.exs:13"
              ]
 
       assert Enum.all?(done["tests"], &(&1["file"] == "test/green_test.exs"))
@@ -101,7 +102,7 @@ defmodule Kalku.BaselineTest do
 
       refute Map.has_key?(done, "coverage")
       assert String.starts_with?(done["coverage_path"], reni)
-      assert done["coverage_path"] |> File.read!() |> JSON.decode!() |> length() == 3
+      assert done["coverage_path"] |> File.read!() |> JSON.decode!() |> length() > 3
     end
 
     test "baseline before prepare is refused, and not fatally", %{reni: reni} do

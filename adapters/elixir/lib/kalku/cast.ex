@@ -15,6 +15,63 @@ defmodule Kalku.Cast do
   alias Kalku.Cast.Tests
 
   @doc """
+  Starts a cast in a process of its own and returns what it takes to
+  abort it.
+
+  The caller keeps reading while this runs: an `abort` is only useful if
+  it can arrive in the middle of the cast it stops.
+  """
+  def start(owner, id, root, wekufe, site, tests) do
+    before = MapSet.new(Process.list())
+    file = Path.join(root, site["file"])
+    originals = originals_of(file)
+
+    pid =
+      spawn(fn ->
+        {:ok, done} = run(root, wekufe, site, tests)
+        send(owner, {:cast_done, id, done})
+      end)
+
+    %{id: id, pid: pid, wekufe: wekufe, originals: originals, before: before}
+  end
+
+  @doc """
+  Stops a cast where it stands and puts the original modules back.
+
+  Killing the casting process is not enough: ExUnit runs each test in a
+  process it monitors rather than links, so a test looping forever
+  outlives the cast that started it and would burn a core for the rest of
+  the run. Everything that appeared while the cast ran is stopped —
+  coarse, deliberately, because a wekufe is why any of it is there.
+
+  Returns whether the runtime was restored, which is what decides between
+  a kalku kept warm and a kalku recycled.
+  """
+  def abort(%{pid: pid, originals: originals, before: before}) do
+    Process.exit(pid, :kill)
+    stop_the_rest(before)
+    restore(originals) == :ok
+  rescue
+    _ -> false
+  end
+
+  defp stop_the_rest(before) do
+    for pid <- Process.list(), not MapSet.member?(before, pid), pid != self(), keep_out?(pid) do
+      Process.exit(pid, :kill)
+    end
+  end
+
+  # A process with a registered name belongs to something that named it —
+  # the runtime, an application, the kalku itself — and outlives any one
+  # cast. Unnamed processes that appeared during the cast are the cast's.
+  defp keep_out?(pid) do
+    case Process.info(pid, :registered_name) do
+      {:registered_name, []} -> true
+      _ -> false
+    end
+  end
+
+  @doc """
   Casts a wekufe and says what it came to.
 
   Returns `{:ok, cast_done}`. A cast that could not compile is an outcome
