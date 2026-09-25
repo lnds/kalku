@@ -146,14 +146,29 @@ defmodule Kalku.PrepareTest do
     on_exit(fn -> File.rm_rf!(script) end)
 
     # Summoned the one supported way, so these tests exercise the contract
-    # rather than a second copy of it.
-    {out, _status} =
-      System.cmd("sh", ["-c", "#{summoner()} < #{script} 2>/dev/null"],
+    # rather than a second copy of it. Its stderr is kept rather than
+    # dropped: when this fails it is the only account of why.
+    errors = Path.join(System.tmp_dir!(), "kalku-err-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf!(errors) end)
+
+    {out, status} =
+      System.cmd("sh", ["-c", "#{summoner()} < #{script} 2> #{errors}"],
         cd: cwd,
         env: [{"MIX_BUILD_PATH", Path.join(reni, "build")}]
       )
 
-    out |> String.split("\n", trim: true)
+    lines = String.split(out, "\n", trim: true)
+
+    if lines == [] do
+      flunk("""
+      the kalku wrote nothing on stdout and exited #{status}. Its stderr:
+
+      #{File.read!(errors)}
+      """)
+    end
+
+    Process.put(:last_stderr, File.read!(errors))
+    lines
   end
 
   defp summoner, do: Path.expand("../bin/kalku-elixir", __DIR__)
@@ -164,6 +179,13 @@ defmodule Kalku.PrepareTest do
     |> Enum.find_value(fn
       {:ok, %{"type" => ^type} = body} -> body
       _ -> nil
-    end) || flunk("no `#{type}` in:\n#{Enum.join(lines, "\n")}")
+    end) ||
+      flunk("""
+      no `#{type}` on stdout:
+      #{Enum.join(lines, "\n")}
+
+      stderr was:
+      #{Process.get(:last_stderr, "(not captured)")}
+      """)
   end
 end
