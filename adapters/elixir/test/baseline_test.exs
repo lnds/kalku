@@ -54,6 +54,56 @@ defmodule Kalku.BaselineTest do
       assert length(second["tests"]) == length(first["tests"])
     end
 
+    # What the coverage is for: a wekufe on `classify` is cast against the
+    # test that runs `classify`, not against the whole suite.
+    test "each line is attributed to the tests that actually run it", %{reni: reni} do
+      done = reply(run(reni, "green", ["baseline"]), "baseline_done")
+
+      by_line = Map.new(done["coverage"], &{&1["line"], &1["tests"]})
+
+      assert by_line[4] == ["test/green_test.exs:4"]
+      assert by_line[5] == ["test/green_test.exs:4"]
+      assert by_line[7] == ["test/green_test.exs:9"]
+
+      assert Enum.all?(done["coverage"], &(&1["file"] == "lib/green.ex"))
+    end
+
+    # A line nobody runs has no entry: the question is which tests cover a
+    # line, and for an uncovered line the honest answer is none.
+    test "a line no test runs is absent rather than empty", %{reni: reni} do
+      done = reply(run(reni, "green", ["baseline"]), "baseline_done")
+      lines = Enum.map(done["coverage"], & &1["line"])
+
+      refute 9 in lines
+      refute Enum.any?(done["coverage"], &(&1["tests"] == []))
+    end
+
+    test "the kalku says it can do this only now that it can", %{reni: reni} do
+      ready = reply(summon(reni, "green", []), "ready")
+      assert "per_test_coverage" in ready["capabilities"]
+    end
+
+    # A megabyte of JSON per worker is a cost the protocol lets us decline,
+    # so past the limit the coverage goes to a file in the reni instead.
+    test "coverage larger than the inline limit is spilled into the reni", %{reni: reni} do
+      hello = JSON.decode!(hello(reni)) |> Map.put("inline_limit_bytes", 10) |> JSON.encode!()
+
+      done =
+        reply(
+          drive_in(project("green"), reni, [
+            hello,
+            request("prepare", 2),
+            request("baseline", 3),
+            request("shutdown", 4)
+          ]),
+          "baseline_done"
+        )
+
+      refute Map.has_key?(done, "coverage")
+      assert String.starts_with?(done["coverage_path"], reni)
+      assert done["coverage_path"] |> File.read!() |> JSON.decode!() |> length() == 3
+    end
+
     test "baseline before prepare is refused, and not fatally", %{reni: reni} do
       lines = summon(reni, "green", [~s({"type":"baseline","id":2})])
       error = reply(lines, "error")

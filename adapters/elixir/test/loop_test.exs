@@ -23,7 +23,9 @@ defmodule Kalku.LoopTest do
     {:reply, line, _state} = Loop.handle(hello(), %Loop{})
     msg = reply!(line)
     assert msg.type == "ready"
-    assert msg.body["capabilities"] == ["cast"]
+    # A capability is claimed only once it works: `cast` because this is a
+    # native kalku, `per_test_coverage` because `baseline` measures it.
+    assert msg.body["capabilities"] == ["cast", "per_test_coverage"]
     assert msg.body["spells"] == ~w(arm compare connect negate literal call)
   end
 
