@@ -57,7 +57,7 @@ defmodule Kalku.LoopTest do
   end
 
   test "requests this kalku does not serve yet get a non-fatal bad_request" do
-    {:reply, line, _} = Loop.handle(~s({"type":"baseline","id":3}), ready_state())
+    {:reply, line, _} = Loop.handle(~s({"type":"cast","id":3}), ready_state())
 
     assert %{type: "error", id: 3, body: %{"code" => "bad_request", "fatal" => false}} =
              reply!(line)

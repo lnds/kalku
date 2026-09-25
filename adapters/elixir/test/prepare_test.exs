@@ -1,9 +1,9 @@
 defmodule Kalku.PrepareTest do
   use ExUnit.Case, async: false
 
-  alias Kalku.Prepare
+  import Kalku.KalkuCase
 
-  @fixture Path.expand("../fixtures/projects/green", __DIR__)
+  alias Kalku.Prepare
 
   describe "the reni is checked, not assumed" do
     test "a build path outside the reni refuses to compile anything" do
@@ -29,36 +29,27 @@ defmodule Kalku.PrepareTest do
   end
 
   describe "against a real project" do
-    @describetag :subprocess
-
-    setup do
-      reni = Path.join(System.tmp_dir!(), "kalku-prepare-#{System.unique_integer([:positive])}")
-      on_exit(fn -> File.rm_rf!(reni) end)
-      {:ok, reni: reni}
-    end
+    setup :a_reni
 
     test "prepare compiles into the reni and leaves the project's tree as it found it", %{
       reni: reni
     } do
-      refute File.exists?(Path.join(@fixture, "_build"))
+      refute File.exists?(Path.join(project("green"), "_build"))
 
-      lines = serve(reni, [hello(reni), ~s({"type":"prepare","id":2}), shutdown(3)])
+      done = reply(summon(reni, "green", [request("prepare", 2)]), "prepared")
 
-      assert %{"type" => "prepared", "modules" => modules, "duration_ms" => ms} =
-               reply(lines, "prepared")
-
-      assert modules > 0
-      assert ms >= 0
+      assert done["modules"] > 0
+      assert done["duration_ms"] >= 0
 
       assert File.exists?(Path.join(reni, "build/lib/green/ebin/Elixir.Green.beam"))
-      refute File.exists?(Path.join(@fixture, "_build"))
+      refute File.exists?(Path.join(project("green"), "_build"))
     end
 
     # The bug this test exists for: mix writes to stdout, and stdout is the
     # protocol. A single line of compiler chatter makes the kaikai side
     # banish the worker for writing nonsense it never meant to write.
     test "nothing but protocol reaches stdout", %{reni: reni} do
-      lines = serve(reni, [hello(reni), ~s({"type":"prepare","id":2}), shutdown(3)])
+      lines = summon(reni, "green", [request("prepare", 2)])
 
       for line <- lines do
         assert {:ok, _} = JSON.decode(line), "not a protocol line on stdout: #{inspect(line)}"
@@ -68,33 +59,36 @@ defmodule Kalku.PrepareTest do
     end
 
     test "a project that does not compile is a fatal error naming the file", %{reni: reni} do
-      broken = copy_of_fixture()
-
-      File.write!(
-        Path.join(broken, "lib/green.ex"),
-        "defmodule Green do\n  def oops(, do:\nend\n"
-      )
-
-      lines = serve(reni, [hello(reni), ~s({"type":"prepare","id":2}), shutdown(3)], broken)
+      broken = broken_copy()
+      lines = drive_in(broken, reni, [hello(reni), request("prepare", 2), request("shutdown", 3)])
       error = reply(lines, "error")
 
       assert error["code"] == "prepare_failed"
       assert error["fatal"] == true
       assert error["message"] =~ "green.ex"
     end
+
+    test "the summoner refuses to run without a reni to build into" do
+      assert {out, 2} =
+               System.cmd("sh", ["-c", "#{summoner()} 2>&1"],
+                 cd: project("green"),
+                 env: [{"MIX_BUILD_PATH", ""}]
+               )
+
+      assert out =~ "MIX_BUILD_PATH"
+    end
   end
 
   # A copy outside the repo, so a project that does not compile is not this
   # one. Its path dependency is rewritten absolute, since a relative one
   # only resolves from where the fixture lives.
-  defp copy_of_fixture do
+  defp broken_copy do
     dir = Path.join(System.tmp_dir!(), "kalku-broken-#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf!(dir) end)
-    File.cp_r!(@fixture, dir)
+    File.cp_r!(project("green"), dir)
     adapter = Path.expand("..", __DIR__)
 
-    Path.join(dir, "mix.exs")
-    |> File.write!("""
+    File.write!(Path.join(dir, "mix.exs"), """
     defmodule Green.MixProject do
       use Mix.Project
 
@@ -111,81 +105,7 @@ defmodule Kalku.PrepareTest do
     end
     """)
 
+    File.write!(Path.join(dir, "lib/green.ex"), "defmodule Green do\n  def oops(, do:\nend\n")
     dir
-  end
-
-  test "the summoner refuses to run without a reni to build into" do
-    {out, status} =
-      System.cmd("sh", ["-c", "#{summoner()} 2>&1"], cd: @fixture, env: [{"MIX_BUILD_PATH", ""}])
-
-    assert status == 2
-    assert out =~ "MIX_BUILD_PATH"
-  end
-
-  defp hello(reni) do
-    JSON.encode!(%{
-      "type" => "hello",
-      "id" => 1,
-      "protocol" => 1,
-      "root" => ".",
-      "reni" => reni,
-      "worker" => 0,
-      "inline_limit_bytes" => 65_536,
-      "env" => %{}
-    })
-  end
-
-  defp shutdown(id), do: ~s({"type":"shutdown","id":#{id}})
-
-  # Drives a real kalku over a real pipe: the only way to see what lands on
-  # stdout, which is what the protocol rides on.
-  defp serve(reni, requests, cwd \\ @fixture) do
-    input = Enum.map_join(requests, "", &(&1 <> "\n"))
-    script = Path.join(System.tmp_dir!(), "kalku-in-#{System.unique_integer([:positive])}")
-    File.write!(script, input)
-    on_exit(fn -> File.rm_rf!(script) end)
-
-    # Summoned the one supported way, so these tests exercise the contract
-    # rather than a second copy of it. Its stderr is kept rather than
-    # dropped: when this fails it is the only account of why.
-    errors = Path.join(System.tmp_dir!(), "kalku-err-#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf!(errors) end)
-
-    {out, status} =
-      System.cmd("sh", ["-c", "#{summoner()} < #{script} 2> #{errors}"],
-        cd: cwd,
-        env: [{"MIX_BUILD_PATH", Path.join(reni, "build")}]
-      )
-
-    lines = String.split(out, "\n", trim: true)
-
-    if lines == [] do
-      flunk("""
-      the kalku wrote nothing on stdout and exited #{status}. Its stderr:
-
-      #{File.read!(errors)}
-      """)
-    end
-
-    Process.put(:last_stderr, File.read!(errors))
-    lines
-  end
-
-  defp summoner, do: Path.expand("../bin/kalku-elixir", __DIR__)
-
-  defp reply(lines, type) do
-    lines
-    |> Enum.map(&JSON.decode/1)
-    |> Enum.find_value(fn
-      {:ok, %{"type" => ^type} = body} -> body
-      _ -> nil
-    end) ||
-      flunk("""
-      no `#{type}` on stdout:
-      #{Enum.join(lines, "\n")}
-
-      stderr was:
-      #{Process.get(:last_stderr, "(not captured)")}
-      """)
   end
 end

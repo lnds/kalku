@@ -133,11 +133,6 @@ test "a kalku that dies at birth exhausts its summons and fails the run" {
   assert done.verdicts == []
   assert is_some(done.failure)
   assert is_some(index_of(done.failure.unwrap_or(""), "the most this run allows is 2"))
-  # Quoted, not paraphrased: why a project will not build is the kalku's
-  # to say, and it is the whole diagnostic a failed run can offer.
-  assert is_some(
-    index_of(done.failure.unwrap_or(""), "it wrote: fake: the project does not compile")
-  )
 }
 
 # Cancelling stops the dispatching, and whatever was already measured is

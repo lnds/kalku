@@ -9,8 +9,9 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 | `hello` → `ready` | yes |
 | `sites` → `sites_found` | yes, all six spells |
 | `prepare` → `prepared` | yes |
+| `baseline` → `baseline_done` | yes, without per-test coverage yet |
 | `shutdown` → `bye` | yes |
-| `baseline`, `cast`, `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
+| `cast`, `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
 
 `ready` announces only `cast` (the native kind); no capability is claimed before it works.
 
@@ -47,6 +48,19 @@ It answers `prepared {duration_ms, modules}`, or a fatal `error`:
 | `prepare_failed` | the project does not compile, naming the file and line |
 
 `MIX_TEST_PARTITION` is read from `hello.env`, so each kalku can have its own test database.
+
+## The baseline
+
+`baseline` runs the suite once **inside the kalku's own runtime**, not in a `mix test` subprocess: a subprocess would take its results with it and leave the runtime cold for the casts that follow.
+
+It answers `baseline_done` with `status` (`green` or `red`), every test named by where it is written (`test/green_test.exs:4`, relative to the project, so every kalku in a pool calls the same test the same thing), how long each took, and the failures quoted from ExUnit's own words.
+
+Two things it does that are easy to miss:
+
+- ExUnit's formatters write to stdout, which is the protocol, so the suite runs with a formatter that prints nothing and forwards each result to a collector that **outlives the suite** — ExUnit stops its formatters when the suite ends.
+- The loaded test modules are remembered. ExUnit runs the suite it is given and does not keep it for a second run, and a file already required loads nothing the second time; a kalku runs the suite once per wekufe, not once per life.
+
+Per-test coverage is not implemented yet, so `ready` does not announce `per_test_coverage` and the kaikai side will run every test for every wekufe until it does.
 
 ## Sites
 
