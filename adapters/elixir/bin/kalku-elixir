@@ -1,0 +1,31 @@
+#!/bin/sh
+# Summons the Elixir kalku with a protocol channel nobody else has written
+# to.
+#
+# stdout carries the protocol. mix writes what it compiles to stdout, and
+# it writes it before the kalku exists, so the loop cannot silence it from
+# the inside: one `==> kalku_elixir` ahead of the handshake and the kaikai
+# side banishes the worker for writing nonsense. The build goes to stderr
+# here, and only then does the loop take over the channel.
+#
+#   MIX_BUILD_PATH=<reni>/build bin/kalku-elixir
+#
+# Run from the root of the project to be measured.
+set -eu
+
+MIX_ENV=test
+export MIX_ENV
+
+if [ -z "${MIX_BUILD_PATH:-}" ]; then
+  echo "kalku-elixir: MIX_BUILD_PATH must point inside the reni, so this" >&2
+  echo "  run cannot write into the project's own _build." >&2
+  exit 2
+fi
+
+# Dependencies first, with their output where it belongs and with no
+# access to stdin: stdin is the protocol, and a build that reads even one
+# byte of it leaves the loop at end of input before its first request.
+mix deps.compile >&2 </dev/null
+# `exec` hands the process to the kalku, so a signal reaches it rather
+# than a shell that would outlive it.
+exec mix kalku.serve "$@"
