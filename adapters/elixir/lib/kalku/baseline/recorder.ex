@@ -1,0 +1,63 @@
+defmodule Kalku.Baseline.Recorder do
+  @moduledoc """
+  An ExUnit formatter that reports nothing and remembers everything.
+
+  ExUnit's own formatters write to stdout, which here carries the
+  protocol, so the suite runs with this one instead: it prints nothing and
+  forwards what each test was — where it is written, how long it took, and
+  why it failed — to a collector that outlives the suite.
+
+  The split matters: ExUnit starts a formatter when the suite starts and
+  stops it when the suite ends, so anything the formatter kept for itself
+  dies with it, before the results can be read.
+  """
+
+  use GenServer
+
+  alias Kalku.Baseline.Collector
+
+  @impl true
+  def init(opts), do: {:ok, opts}
+
+  @impl true
+  def handle_cast({:test_finished, %ExUnit.Test{} = test}, state) do
+    Collector.record(record(test))
+    {:noreply, state}
+  end
+
+  def handle_cast(_event, state), do: {:noreply, state}
+
+  defp record(%ExUnit.Test{} = test) do
+    file = to_string(test.tags[:file])
+    line = test.tags[:line]
+
+    %Collector.Test{
+      id: "#{file}:#{line}",
+      file: file,
+      line: line,
+      duration_ms: div(test.time || 0, 1000),
+      failure: failure_message(test)
+    }
+  end
+
+  # A failure is quoted from the test's own words: what ExUnit would have
+  # printed, without the colours, the header, or the stack — the assertion
+  # and its two sides are what tells someone what broke.
+  defp failure_message(%ExUnit.Test{state: {:failed, failures}} = test) do
+    test
+    |> ExUnit.Formatter.format_test_failure(failures, 1, :infinity, fn _kind, msg -> msg end)
+    |> String.split("\n", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.drop(1)
+    |> Enum.take_while(&(&1 != "stacktrace:"))
+    |> Enum.take(8)
+    |> Enum.join("\n")
+    |> String.trim()
+  rescue
+    # Saying "the test failed" here would be a lie of omission: the test
+    # did fail, and kalku is the one that could not say how.
+    e -> "kalku could not read this failure: #{Exception.message(e)}"
+  end
+
+  defp failure_message(_test), do: nil
+end
