@@ -12,7 +12,8 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 | `baseline` → `baseline_done` | yes, with per-test coverage |
 | `shutdown` → `bye` | yes |
 | `cast` → `cast_done` | yes |
-| `abort`, `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
+| `abort` → `aborted` | yes |
+| `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
 
 `ready` announces only `cast` (the native kind); no capability is claimed before it works.
 
@@ -91,6 +92,16 @@ The original modules are kept before anything is compiled and reloaded on every 
 Equivalence is **proved rather than guessed**: the wekufe's modules and the original's are compared by their BEAM MD5s, which is the runtime's own answer to "is this the same code". A kalku never reports an equivalence it cannot demonstrate.
 
 Only the tests in `cast.tests` run, selected by file and line the way `mix test path:line` does, stopping at the first failure. Those are the tests the baseline's coverage says reach the changed line; running the rest would cost time and could not change the answer.
+
+## Aborting
+
+`abort` stops a cast where it stands and keeps the kalku warm, which is the whole point: a warm kalku is the most expensive thing kalku owns.
+
+For it to be possible at all, the loop **reads while it works**. Reading happens in one process and the cast in another, so a loop that read one line, answered it, and only then read again could never receive an `abort` — the message only matters in the middle of the cast it stops.
+
+Killing the casting process is not enough. ExUnit runs each test in a process it *monitors* rather than links, so a test looping forever outlives the cast that started it and would burn a core for the rest of the run — measured, not assumed. So an abort also stops everything unnamed that appeared while the cast ran. That is coarse on purpose: a wekufe is the reason any of it is there.
+
+Casts are served one at a time, in the order they arrive. A kalku has exactly one runtime, so two casts at once would measure each other; one that arrives early waits rather than being refused. `shutdown` finishes what is under way before saying `bye`, since leaving without it would have the kaikai side report a measured wekufe as crashed.
 
 `dirty` is always `false` today. The kalku does not yet detect global state a cast left behind (ETS tables, registered processes, application env), so it does not claim to — saying `false` when it has not looked is the part to fix, and `reset` (#17) is where that belongs.
 
