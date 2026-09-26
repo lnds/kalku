@@ -206,13 +206,25 @@ defmodule Kalku.Cast do
     _kind, value -> {:error, inspect(value)}
   end
 
+  # Loaded back under the file they came from. Loading a module under a
+  # blank name erases where it was compiled from, and the next cast can
+  # no longer tell that this module is the one its site belongs to — so
+  # it neither restores it nor even finds it, and a wekufe from one cast
+  # stays loaded for the rest of the run.
   defp restore(originals) do
     for {module, binary} <- originals do
       :code.purge(module)
-      :code.load_binary(module, ~c"", binary)
+      :code.load_binary(module, source_charlist(module), binary)
     end
 
     :ok
+  end
+
+  defp source_charlist(module) do
+    case compiled_from(module) do
+      nil -> ~c""
+      source -> source
+    end
   end
 
   defp read(file) do
@@ -229,7 +241,7 @@ defmodule Kalku.Cast do
       "wekufe" => wekufe,
       "outcome" => outcome,
       "duration_ms" => System.monotonic_time(:millisecond) - started,
-      "dirty" => false
+      "dirty" => Kalku.Runtime.dirty?(Mix.Project.config()[:app])
     }
     |> put_optional("killed_by", extra[:killed_by])
     |> put_optional("message", extra[:message])

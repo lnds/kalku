@@ -18,7 +18,8 @@ defmodule Kalku.BaselineTest do
       assert Enum.map(done["tests"], & &1["test"]) == [
                "test/green_test.exs:4",
                "test/green_test.exs:9",
-               "test/green_test.exs:13"
+               "test/green_test.exs:13",
+               "test/green_test.exs:17"
              ]
 
       assert Enum.all?(done["tests"], &(&1["file"] == "test/green_test.exs"))

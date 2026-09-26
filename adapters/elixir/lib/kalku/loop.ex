@@ -5,7 +5,7 @@ defmodule Kalku.Loop do
   stderr before the loop starts.
   """
 
-  alias Kalku.{Baseline, Cast, Prepare, Protocol, Schema, Sites}
+  alias Kalku.{Baseline, Cast, Prepare, Protocol, Runtime, Schema, Sites}
 
   @version Mix.Project.config()[:version]
 
@@ -32,7 +32,7 @@ defmodule Kalku.Loop do
   it before reading again could never receive one.
   """
   def run do
-    :logger.update_handler_config(:default, :config, %{type: :standard_error})
+    Kalku.Log.to_stderr()
     reader = start_reading(self())
     loop(%__MODULE__{reader: reader})
   end
@@ -72,15 +72,27 @@ defmodule Kalku.Loop do
   # A cast in flight is finished before the kalku leaves: its result was
   # measured, and leaving without it would make the kaikai side report a
   # wekufe as crashed when it was nothing of the sort.
-  defp settle(%{casting: nil, waiting: []} = state), do: state
-
-  defp settle(%{casting: nil} = state), do: state |> start_waiting() |> settle()
+  # Waits for the cast under way and stops there: the ones queued behind
+  # it stay queued. A caller that settles is about to do something to the
+  # runtime, and starting the next cast into it is the thing being
+  # avoided.
+  defp settle(%{casting: nil} = state), do: state
 
   defp settle(%{casting: %{id: id}} = state) do
     receive do
-      {:cast_done, ^id, body} -> state |> finished(id, body) |> settle()
+      {:cast_done, ^id, body} ->
+        emit(reply("cast_done", id, body))
+        %{state | casting: nil}
     after
-      @settling_ms -> %{state | casting: nil, waiting: []}
+      @settling_ms -> %{state | casting: nil}
+    end
+  end
+
+  # Everything, for a kalku that is leaving.
+  defp settle_all(state) do
+    case settle(state) do
+      %{waiting: []} = done -> done
+      more -> more |> start_waiting() |> settle_all()
     end
   end
 
@@ -191,12 +203,40 @@ defmodule Kalku.Loop do
     {:reply, reply("aborted", id, %{"cast" => body["cast"] || 0, "restored" => true}), state}
   end
 
+  # Nothing may touch the runtime while a cast is using it: a reset in the
+  # middle of a cast cleans up the state that cast was about to be judged
+  # on, and both answers come out wrong.
+  defp dispatch("reset", id, body, %{casting: casting} = state) when casting != nil do
+    dispatch("reset", id, body, settle(state))
+  end
+
+  defp dispatch("reset", id, _body, %{prepared: true} = state) do
+    started = System.monotonic_time(:millisecond)
+
+    case Runtime.reset(Mix.Project.config()[:app]) do
+      {:ok, clean} ->
+        {:reply,
+         reply("reset_done", id, %{
+           "clean" => clean,
+           "duration_ms" => System.monotonic_time(:millisecond) - started
+         }), start_waiting(state)}
+
+      {:error, message} ->
+        {:reply, error(id, "not_prepared", message, false), state}
+    end
+  end
+
+  defp dispatch("reset", id, _body, state) do
+    {:reply, error(id, "not_prepared", "`prepare` has to compile the project first", false),
+     state}
+  end
+
   defp dispatch("sites", id, body, %{root: root} = state) when is_binary(root) do
     {:reply, reply("sites_found", id, sites(root, body)), state}
   end
 
   defp dispatch("shutdown", id, _body, state) do
-    settle(state)
+    settle_all(state)
     {:stop, reply("bye", id, %{})}
   end
 
@@ -211,7 +251,14 @@ defmodule Kalku.Loop do
       "adapter" => @version,
       "runtime" => "Elixir #{System.version()} / OTP #{System.otp_release()}",
       "spells" => @spells,
-      "capabilities" => ["cast", "per_test_coverage", "code_hash", "hot_load", "abort"]
+      "capabilities" => [
+        "cast",
+        "per_test_coverage",
+        "code_hash",
+        "hot_load",
+        "abort",
+        "reset"
+      ]
     }
   end
 
