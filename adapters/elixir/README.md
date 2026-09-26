@@ -13,7 +13,8 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 | `shutdown` → `bye` | yes |
 | `cast` → `cast_done` | yes |
 | `abort` → `aborted` | yes |
-| `reset`, `reload` | not yet: answered with a non-fatal `bad_request` |
+| `reset` → `reset_done` | yes |
+| `reload` | not yet: answered with a non-fatal `bad_request` |
 
 `ready` announces only `cast` (the native kind); no capability is claimed before it works.
 
@@ -103,7 +104,17 @@ Killing the casting process is not enough. ExUnit runs each test in a process it
 
 Casts are served one at a time, in the order they arrive. A kalku has exactly one runtime, so two casts at once would measure each other; one that arrives early waits rather than being refused. `shutdown` finishes what is under way before saying `bye`, since leaving without it would have the kaikai side report a measured wekufe as crashed.
 
-`dirty` is always `false` today. The kalku does not yet detect global state a cast left behind (ETS tables, registered processes, application env), so it does not claim to — saying `false` when it has not looked is the part to fix, and `reset` (#17) is where that belongs.
+## Dirty state and resetting
+
+State one cast leaves behind is read as the next cast's doing, and the next result is a lie. So each cast is weighed against a mark of what a clean runtime looks like, and one that moved anything answers `dirty: true`.
+
+What is watched is **named ETS tables and the project's application env**. Anonymous tables belong to whoever holds them and vanish with it; processes come and go under a supervisor without anything being wrong. Watching those would call a healthy runtime dirty on every cast — measured, not assumed: a snapshot of the two that are watched is identical across runs.
+
+The mark is taken again **after the baseline**, and that one is what counts. The suite creates named tables the first time it runs, so a mark from before them would have `reset` delete the test framework's own state and leave the kalku unable to run a test at all. That is exactly what happened when the mark was taken in `prepare`: the reset succeeded, reported `clean: true`, and every cast after it survived because nothing could run.
+
+`reset` deletes the tables the project added, restores the application env entry by entry — both directions, since restoring only known keys would leave the additions — and restarts the application. It answers `clean` with whether the runtime matches the mark afterwards; a reset that did not work says so, and the kaikai side recycles the kalku rather than trusting it.
+
+Nothing may touch the runtime while a cast is using it, so a `reset` that arrives mid-cast waits for it. A reset in the middle of a cast cleans up the very state that cast was about to be judged on, and both answers come out wrong.
 
 ## Sites
 

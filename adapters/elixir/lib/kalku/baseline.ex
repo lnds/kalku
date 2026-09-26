@@ -33,6 +33,7 @@ defmodule Kalku.Baseline do
       measured = if measuring, do: measure_each(tests, modules), else: tests
       Collector.stop()
       Cover.stop()
+      Kalku.Runtime.mark(Mix.Project.config()[:app])
       report(measured, System.monotonic_time(:millisecond) - started, root, opts)
     end
   end
