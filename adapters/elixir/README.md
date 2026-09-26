@@ -14,7 +14,7 @@ The native kalku for Elixir: it finds sites with Elixir's own parser and, in lat
 | `cast` → `cast_done` | yes |
 | `abort` → `aborted` | yes |
 | `reset` → `reset_done` | yes |
-| `reload` | not yet: answered with a non-fatal `bad_request` |
+| `reload` → `reloaded` | yes |
 
 `ready` announces only `cast` (the native kind); no capability is claimed before it works.
 
@@ -103,6 +103,16 @@ For it to be possible at all, the loop **reads while it works**. Reading happens
 Killing the casting process is not enough. ExUnit runs each test in a process it *monitors* rather than links, so a test looping forever outlives the cast that started it and would burn a core for the rest of the run — measured, not assumed. So an abort also stops everything unnamed that appeared while the cast ran. That is coarse on purpose: a wekufe is the reason any of it is there.
 
 Casts are served one at a time, in the order they arrive. A kalku has exactly one runtime, so two casts at once would measure each other; one that arrives early waits rather than being refused. `shutdown` finishes what is under way before saying `bye`, since leaving without it would have the kaikai side report a measured wekufe as crashed.
+
+## Reloading, and what depends on what
+
+Between runs a developer edits, and a kalku that stayed warm is holding the code from before. `reload {files}` recompiles them — and whatever is stitched into them at compile time.
+
+A module that uses another's macro has the expansion baked in. Recompiling only the macro's own module leaves the caller running the old one, so a wekufe cast there is **loaded but not running anywhere a test can reach it**. It comes back `survived`, and that is a false survivor: a hole reported where the measurement never happened. The fixture shows it as a test — the same wekufe, the same test, `survived` with `reload: "module"` and `killed` with `reload: "dependents"`.
+
+So `sites` marks each site with the reload its file needs, and a `cast` on a `dependents` site recompiles the dependents too and restores them afterwards. The graph comes from `mix xref`, the compiler's own answer rather than a guess of ours; its output is captured rather than printed, and the quiet shell the kalku runs under is lifted for the length of the question, since a quiet shell answers nothing.
+
+`reload` also makes the kalku forget the suite it loaded, since a test file may be among the changed ones.
 
 ## Dirty state and resetting
 

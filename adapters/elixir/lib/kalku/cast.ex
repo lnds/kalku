@@ -13,6 +13,7 @@ defmodule Kalku.Cast do
   """
 
   alias Kalku.Cast.Tests
+  alias Kalku.Deps
 
   @doc """
   Starts a cast in a process of its own and returns what it takes to
@@ -83,7 +84,7 @@ defmodule Kalku.Cast do
 
     with {:ok, source} <- read(file),
          {:ok, spliced} <- splice(source, site) do
-      cast(root, wekufe, file, spliced, tests, started)
+      cast(root, wekufe, file, spliced, tests, started, site)
     else
       {:error, message} -> {:ok, done(wekufe, "compile_error", started, message: message)}
     end
@@ -118,19 +119,48 @@ defmodule Kalku.Cast do
 
   # ---- the cast -----------------------------------------------------
 
-  defp cast(root, wekufe, file, spliced, tests, started) do
+  defp cast(root, wekufe, file, spliced, tests, started, site) do
     originals = originals_of(file)
+    dependents = dependent_paths(root, site)
+    borrowed = Enum.flat_map(dependents, &originals_of/1)
 
     case compile(spliced, file) do
       {:error, message} ->
-        restore(originals)
+        restore(originals ++ borrowed)
         {:ok, done(wekufe, "compile_error", started, message: message)}
 
       {:ok, compiled} ->
+        recompile(dependents)
         outcome = measure(root, compiled, originals, tests)
-        restore(originals)
+        restore(originals ++ borrowed)
         {:ok, done(wekufe, outcome.outcome, started, Map.to_list(Map.delete(outcome, :outcome)))}
     end
+  end
+
+  # A module that used this one's macro has the old expansion baked in.
+  # Cast without recompiling it and the wekufe is loaded but not running
+  # anywhere the caller can reach — a survivor that was never really
+  # cast.
+  defp dependent_paths(root, %{"reload" => "dependents", "file" => file}) do
+    for dependent <- Deps.compile_dependents(file), do: Path.join(root, dependent)
+  end
+
+  defp dependent_paths(_root, _site), do: []
+
+  defp recompile(paths) do
+    for path <- paths, File.exists?(path) do
+      safely(fn -> Code.compile_file(path) end)
+    end
+
+    :ok
+  end
+
+  defp safely(work) do
+    work.()
+  rescue
+    _ -> :error
+  catch
+    _, _ -> :error
   end
 
   # A wekufe whose compiled code is the original's cannot be killed by any
