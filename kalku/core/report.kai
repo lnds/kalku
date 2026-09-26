@@ -11,6 +11,7 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.score
 import kalku.core.gate
+import kalku.core.hint
 
 #[doc("A wekufe that lived, and the tests that ran without noticing.")]
 #[derive(Eq, Show)]
@@ -68,8 +69,13 @@ pub fn summary_line(r: Report) : String {
 fn survivor_blocks(r: Report) : [String] =
   if is_empty(r.survivors) { [] } else { flat_map(r.survivors, block) ++ [""] }
 
+# The hint goes with the survivor rather than in a legend at the end: a
+# reader acts on one hole at a time, and the sentence belongs where the
+# hole is.
 fn block(s: Survivor) : [String] =
-  [location(s)] ++ (diff_of(s.site) | (line => "  #{line}")) ++ [covered_by(s), ""]
+  [location(s)]
+    ++ (diff_of(s.site) | (line => "  #{line}"))
+    ++ [covered_by(s), "  #{hint_for(s.site)}", ""]
 
 fn covered_by(s: Survivor) : String =
   if is_empty(s.tests) {

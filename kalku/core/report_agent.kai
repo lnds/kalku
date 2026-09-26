@@ -1,0 +1,160 @@
+#[doc("""
+The report an agent reads: one survivor per line, then a summary.
+
+An agent works one hole at a time — read a survivor, write a test,
+re-cast — so each line has to carry everything that hole needs: where it
+is, what changed, which tests already run that line, the few lines
+around it, and what to do. Anything missing is a file the agent has to
+open, and opening files is what this format exists to avoid.
+
+It is NDJSON and it is terse on purpose. No pretty-printing, and a field
+kalku does not know is left out rather than sent as null: an agent that
+reads `"enclosing": null` learns nothing it did not already know from
+the field's absence, and pays tokens for it.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.verdict
+import kalku.core.score
+import kalku.core.gate
+import kalku.core.report
+import kalku.core.hint
+
+#[doc("How many lines of context travel with a survivor, on each side.")]
+pub const CONTEXT_LINES : Int = 2
+
+#[doc("""
+The whole report as NDJSON: a line per survivor, then the summary.
+
+`source` is asked for the lines of a file, so this module reads nothing
+itself. A file it cannot answer for simply travels without context.
+""")]
+pub fn agent(r: Report, source: (String) -> [String]) : String =
+  join((ordered(r.survivors) | (s => survivor_line(s, source))) ++ [summary_line(r)], "\n")
+
+#[doc("Survivors in the order a reader expects: by file, then line, then spell.")]
+pub fn ordered(survivors: [Survivor]) : [Survivor] =
+  sort_by(survivors, (a, b) => compare_text(sort_key(a), sort_key(b)))
+
+fn sort_key(s: Survivor) : String =
+  "#{s.site.file}:#{padded(s.site.span.start.line)}:#{spell_name(s.site.spell)}"
+
+fn compare_text(a: String, b: String) : Int = if a == b {
+  0
+} else if a < b {
+  0 - 1
+} else {
+  1
+}
+
+#[doc("One survivor, as the object an agent acts on.")]
+pub fn survivor_line(s: Survivor, source: (String) -> [String]) : String = json_encode(
+  JObj(
+    [
+      ("wekufe", JStr(s.site.site_id)),
+      ("file", JStr(s.site.file)),
+      ("line", JNum(s.site.span.start.line)),
+      ("spell", JStr(spell_name(s.site.spell)))
+    ]
+      ++ optional("enclosing", s.site.enclosing)
+      ++ optional("original", s.site.original)
+      ++ [("replacement", JStr(s.site.replacement))]
+      ++ strings("context", context(s.site, source))
+      ++ strings("covering_tests", s.tests)
+      ++ [("hint", JStr(hint_for(s.site)))]
+  )
+)
+
+#[doc("""
+The lines around a site, with the indentation they share taken off.
+
+Shared indentation is noise an agent pays for by the token, and every
+line of a deeply nested clause carries the same amount of it.
+""")]
+pub fn context(site: Site, source: (String) -> [String]) : [String] {
+  let lines = source(site.file)
+  let at = site.span.start.line
+  let from = max_of(1, at - CONTEXT_LINES)
+  let to = min_of(length(lines), at + CONTEXT_LINES)
+  if is_empty(lines) or at > length(lines) { [] } else { undent(window(lines, from, to)) }
+}
+
+# ---- the summary --------------------------------------------------------
+
+fn summary_line(r: Report) : String = json_encode(
+  JObj(
+    [
+      ("summary", JBool(true)),
+      ("counts", counts_of(r.counts)),
+      ("survivors_on_changed_lines", JNum(r.on_changed_lines))
+    ]
+      ++ score_field(r.counts)
+      ++ suppression_field(r.suppressions)
+      ++ [("exit", JNum(exit_code(r.blockers)))]
+  )
+)
+
+# A score that does not exist is absent, not zero: nothing could have
+# been killed, and zero would read as everything survived.
+fn score_field(c: Counts) : [(String, JsonValue)] = match score(c) {
+  Some(s) -> [("score", JReal(s))]
+  None -> []
+}
+
+fn counts_of(c: Counts) : JsonValue = JObj([
+  ("killed", JNum(c.killed)),
+  ("survived", JNum(c.survived)),
+  ("timeout", JNum(c.timeout)),
+  ("no_coverage", JNum(c.no_coverage)),
+  ("compile_error", JNum(c.compile_error)),
+  ("crashed", JNum(c.crashed)),
+  ("equivalent", JNum(c.equivalent.bytecode + c.equivalent.declared))
+])
+
+# Suppressions travel only when there are some: a change that hid
+# nothing should cost an agent no tokens to learn that.
+fn suppression_field(s: SuppressionChanges) : [(String, JsonValue)] =
+  if s.equivalent_added == 0 and is_empty(s.exclude_added) and is_empty(s.exclude_calls_added) {
+    []
+  } else {
+    [
+      (
+        "suppression_changes",
+        JObj(
+          [("equivalent_added", JNum(s.equivalent_added))]
+            ++ strings("exclude_added", s.exclude_added)
+            ++ strings("exclude_calls_added", s.exclude_calls_added)
+        )
+      )
+    ]
+  }
+
+# ---- pieces -------------------------------------------------------------
+
+fn optional(name: String, value: Option[String]) : [(String, JsonValue)] = match value {
+  Some(text) -> [(name, JStr(text))]
+  None -> []
+}
+
+fn strings(name: String, values: [String]) : [(String, JsonValue)] =
+  if is_empty(values) { [] } else { [(name, JArr(values | (v => JStr(v))))] }
+
+fn window(lines: [String], from: Int, to: Int) : [String] =
+  enumerate(lines) |? (l => l.fst + 1 >= from and l.fst + 1 <= to) | (.snd)
+
+fn undent(lines: [String]) : [String] {
+  let filled = filter(lines, l => not is_blank(l))
+  let shared = foldl(filled, 1000, (least, l) => min_of(least, indent_of(l)))
+  lines | (l => if length(l) >= shared { slice(l, shared, length(l)) } else { trim_left(l) })
+}
+
+fn indent_of(line: String) : Int = length(line) - length(trim_left(line))
+
+fn min_of(a: Int, b: Int) : Int = if a < b { a } else { b }
+
+fn max_of(a: Int, b: Int) : Int = if a > b { a } else { b }
+
+# Sorting by text, so a line number has to sort as a number would.
+fn padded(n: Int) : String = pad_left("#{n}", 9, '0')

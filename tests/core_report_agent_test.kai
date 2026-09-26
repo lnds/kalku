@@ -1,0 +1,190 @@
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.verdict
+import kalku.core.gate
+import kalku.core.report
+import kalku.core.report_agent
+
+const SOURCE : [String] = [
+  "defmodule Parser do",
+  "  defp next_token(s, i) when i >= 0 do",
+  "    case String.at(s, i) do",
+  "      nil -> :eof",
+  "      c -> {c, i + 1}",
+  "    end",
+  "  end",
+  "end"
+]
+
+fn lines_of(file: String) : [String] = if file == "lib/parser.ex" { SOURCE } else { [] }
+
+fn survivor(file: String, line: Int, spell: Spell, tests: [String]) : Survivor = Survivor {
+  site: Site {
+    site_id: "c1f3",
+    file: file,
+    enclosing: Some("Parser.next_token/2"),
+    ordinal: None,
+    span: Span { start: Position { line: line, col: 7, byte: 0 }, end: None },
+    spell: spell,
+    original: Some(">="),
+    replacement: ">",
+    reload: ModuleOnly
+  },
+  tests: tests
+}
+
+fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
+  counts: counts,
+  survivors: survivors,
+  on_changed_lines: 0,
+  suppressions: SuppressionChanges {
+    equivalent_added: 0,
+    exclude_added: [],
+    exclude_calls_added: []
+  },
+  blockers: []
+}
+
+fn one() : Counts = tally([Cast(Killed), Cast(Survived)])
+
+fn first_line(text: String) : String = head(lines(text)).unwrap_or("")
+
+fn field(line: String, name: String) : JsonValue = match json_decode(line) {
+  Some(v) -> get(v, name)
+  None -> JNull
+}
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+fn where_of(line: String) : String = match as_string(field(line, "file")) {
+  Some(file) ->
+    "#{file}:#{as_int(field(line, "line")).unwrap_or(0)}:#{as_string(field(line, "spell")).unwrap_or("")}"
+  None -> "summary"
+}
+
+# Everything the agent needs to write the killing test, without opening
+# a file: where it is, what changed, what already covers it, what to do.
+test "a survivor carries what it takes to close the hole" {
+  let out = agent(
+    report_of([survivor("lib/parser.ex", 2, Compare, ["test/parser_test.exs:18"])], one()),
+    lines_of
+  )
+  let line = first_line(out)
+
+  assert field(line, "wekufe") == JStr("c1f3")
+  assert field(line, "file") == JStr("lib/parser.ex")
+  assert field(line, "line") == JNum(2)
+  assert field(line, "spell") == JStr("compare")
+  assert field(line, "enclosing") == JStr("Parser.next_token/2")
+  assert field(line, "original") == JStr(">=")
+  assert field(line, "replacement") == JStr(">")
+  assert field(line, "covering_tests") == JArr([JStr("test/parser_test.exs:18")])
+  assert has(line, "boundary where the two sides are equal")
+}
+
+# A field kalku does not know is left out. An agent reading `null` learns
+# nothing the absence did not already tell it, and pays tokens for it.
+test "what the kalku does not know is absent, never null" {
+  let bare = Survivor {
+    site: Site {
+      site_id: "b1",
+      file: "lib/other.ex",
+      enclosing: None,
+      ordinal: None,
+      span: Span { start: Position { line: 1, col: 1, byte: 0 }, end: None },
+      spell: Arm,
+      original: None,
+      replacement: "",
+      reload: ModuleOnly
+    },
+    tests: []
+  }
+  let line = first_line(agent(report_of([bare], one()), lines_of))
+
+  assert not has(line, "null")
+  assert not has(line, "enclosing")
+  assert not has(line, "original")
+  assert not has(line, "covering_tests")
+  assert not has(line, "context")
+  assert field(line, "hint") != JNull
+}
+
+# Shared indentation is noise an agent pays for by the token.
+test "context is the lines around the site, without the indentation they share" {
+  let line = first_line(agent(report_of([survivor("lib/parser.ex", 4, Arm, [])], one()), lines_of))
+
+  assert field(line, "context")
+    == JArr([
+      JStr("defp next_token(s, i) when i >= 0 do"),
+      JStr("  case String.at(s, i) do"),
+      JStr("    nil -> :eof"),
+      JStr("    c -> {c, i + 1}"),
+      JStr("  end")
+    ])
+}
+
+test "a file the reader cannot answer for travels without context" {
+  let line = first_line(agent(report_of([survivor("lib/missing.ex", 2, Arm, [])], one()), lines_of))
+  assert not has(line, "context")
+}
+
+# Same input, same bytes: an agent that re-runs a report should see a
+# diff only where the code changed.
+test "survivors come out in a settled order" {
+  let out = agent(
+    report_of(
+      [
+        survivor("lib/b.ex", 10, Arm, []),
+        survivor("lib/a.ex", 100, Arm, []),
+        survivor("lib/a.ex", 9, Negate, []),
+        survivor("lib/a.ex", 9, Arm, [])
+      ],
+      one()
+    ),
+    lines_of
+  )
+
+  assert (lines(out) | where_of)
+    == ["lib/a.ex:9:arm", "lib/a.ex:9:negate", "lib/a.ex:100:arm", "lib/b.ex:10:arm", "summary"]
+}
+
+test "the summary closes the report, with the score and what to exit with" {
+  let out = agent(report_of([survivor("lib/parser.ex", 2, Compare, [])], one()), lines_of)
+  let summary = last(lines(out)).unwrap_or("")
+
+  assert field(summary, "summary") == JBool(true)
+  assert field(summary, "score") == JReal(0.5)
+  assert field(summary, "survivors_on_changed_lines") == JNum(0)
+  assert field(summary, "exit") == JNum(0)
+  assert get(field(summary, "counts"), "survived") == JNum(1)
+}
+
+# A score that does not exist is absent, not zero: nothing could have
+# been killed, and zero would read as everything survived.
+test "a run with nothing to kill reports no score at all" {
+  let summary = last(lines(agent(report_of([], tally([Cast(Timeout)])), lines_of))).unwrap_or("")
+
+  assert field(summary, "score") == JNull
+  assert not has(summary, "score")
+}
+
+# A change that hid nothing costs an agent no tokens to learn it.
+test "suppressions travel only when a change made some" {
+  let quiet = last(lines(agent(report_of([], one()), lines_of))).unwrap_or("")
+  assert not has(quiet, "suppression_changes")
+
+  let noisy = Report {
+    ...report_of([], one()),
+    suppressions: SuppressionChanges {
+      equivalent_added: 2,
+      exclude_added: ["lib/gen/**"],
+      exclude_calls_added: []
+    }
+  }
+  let loud = last(lines(agent(noisy, lines_of))).unwrap_or("")
+
+  assert get(field(loud, "suppression_changes"), "equivalent_added") == JNum(2)
+  assert get(field(loud, "suppression_changes"), "exclude_added") == JArr([JStr("lib/gen/**")])
+  assert not has(loud, "exclude_calls_added")
+}
