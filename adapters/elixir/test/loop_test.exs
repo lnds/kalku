@@ -28,7 +28,7 @@ defmodule Kalku.LoopTest do
     # `code_hash` and `hot_load` because a cast reports one and does the
     # other.
     assert msg.body["capabilities"] ==
-             ["cast", "per_test_coverage", "code_hash", "hot_load", "abort"]
+             ["cast", "per_test_coverage", "code_hash", "hot_load", "abort", "reset"]
 
     assert msg.body["spells"] == ~w(arm compare connect negate literal call)
   end

@@ -28,7 +28,8 @@ defmodule Kalku.Prepare do
          :ok <- inside_reni(reni),
          :ok <- partition(env),
          {:ok, modules} <- compile(),
-         :ok <- start_apps() do
+         :ok <- start_apps(),
+         :ok <- Kalku.Runtime.mark(Mix.Project.config()[:app]) do
       {:ok, %{duration_ms: System.monotonic_time(:millisecond) - started, modules: modules}}
     end
   end
@@ -92,8 +93,11 @@ defmodule Kalku.Prepare do
   defp exit_message({%{__exception__: true} = e, _stack}), do: Exception.message(e)
   defp exit_message(reason), do: inspect(reason)
 
+  # Starting applications installs the logger's handlers again, which puts
+  # them back on stdout — where the protocol lives.
   defp start_apps do
     Mix.Task.rerun("app.start", [])
+    Kalku.Log.to_stderr()
     :ok
   rescue
     e ->

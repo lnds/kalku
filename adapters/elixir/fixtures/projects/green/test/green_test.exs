@@ -13,4 +13,8 @@ defmodule GreenTest do
   test "counting stops" do
     assert Green.count_to(10) == 10
   end
+
+  test "remembering keeps what it was given" do
+    assert Green.remember(:once) == :once
+  end
 end
