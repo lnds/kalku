@@ -5,7 +5,7 @@ defmodule Kalku.Loop do
   stderr before the loop starts.
   """
 
-  alias Kalku.{Baseline, Cast, Prepare, Protocol, Runtime, Schema, Sites}
+  alias Kalku.{Baseline, Cast, Deps, Prepare, Protocol, Reload, Runtime, Schema, Sites}
 
   @version Mix.Project.config()[:version]
 
@@ -231,6 +231,20 @@ defmodule Kalku.Loop do
      state}
   end
 
+  defp dispatch("reload", id, body, %{casting: casting} = state) when casting != nil do
+    dispatch("reload", id, body, settle(state))
+  end
+
+  defp dispatch("reload", id, body, %{root: root, prepared: true} = state) when is_binary(root) do
+    {:ok, done} = Reload.run(root, body["files"] || [])
+    {:reply, reply("reloaded", id, done), state}
+  end
+
+  defp dispatch("reload", id, _body, state) do
+    {:reply, error(id, "not_prepared", "`prepare` has to compile the project first", false),
+     state}
+  end
+
   defp dispatch("sites", id, body, %{root: root} = state) when is_binary(root) do
     {:reply, reply("sites_found", id, sites(root, body)), state}
   end
@@ -257,7 +271,8 @@ defmodule Kalku.Loop do
         "code_hash",
         "hot_load",
         "abort",
-        "reset"
+        "reset",
+        "recompile_dependents"
       ]
     }
   end
@@ -285,7 +300,7 @@ defmodule Kalku.Loop do
             "kalku: #{file}: #{dropped} candidate(s) dropped, wekufe would not parse"
           )
 
-      {:ok, sites}
+      {:ok, with_reload(sites, file)}
     else
       {:skip, reason, message} ->
         {:skip, %{"file" => file, "reason" => reason, "message" => message}}
@@ -293,6 +308,13 @@ defmodule Kalku.Loop do
       {:error, message} ->
         {:skip, %{"file" => file, "reason" => "parse_error", "message" => message}}
     end
+  end
+
+  # A site in a file others are stitched into at compile time costs more
+  # to cast: the kaikai side is told so it can budget the recompile.
+  defp with_reload(sites, file) do
+    reload = Deps.reload_for(file)
+    Enum.map(sites, &Map.put(&1, "reload", reload))
   end
 
   # Tests and scripts are the oracle, not code under test.
