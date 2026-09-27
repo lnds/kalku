@@ -91,6 +91,26 @@ make ci        # kaikai side: format check, lint, build, tests, km quality gate
 make check     # everything: `make ci` plus the Elixir kalku's tests
 ```
 
+### kalku measured by kalku
+
+`make self-mutate` casts wekufe into kalku's own sources through the
+kaikai kalku and reports what its suite did not notice:
+
+```
+kalku/core/shard.kai:30  literal  shard.wrap32/1
+  - 4294967296
+  + 0
+  covered by 189 tests
+  No test depends on the exact value `4294967296` in `shard.wrap32/1`.
+
+score 40% · 2 killed · 3 survived · 1 compile error
+```
+
+One module at a time, and slow on purpose: kaikai reports no per-test
+coverage and has no warm runtime to reload into, so every wekufe rebuilds
+the package and runs the whole suite. `SELF_MODULE` and `SELF_LIMIT`
+choose how much to measure.
+
 ## Contributing
 
 - Code, docs, and commits are in English.

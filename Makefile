@@ -62,12 +62,17 @@ ci: fmt-check lint build test-kaikai km
 
 check: ci test-elixir
 
-# kalku on its own sources. Until the CLI exists this is kaikai's own
-# `kai mutate`, which is the same engine the kaikai kalku drives — so the
-# survivors are the same ones, found the long way round. Advisory: it
-# reports and never fails a build.
-self-mutate:
-	$(KAI) mutate --limit 20 --module kalku/core/score.kai || true
+# kalku on its own sources, through its own kalku: the project's claim,
+# run rather than asserted. One module at a time, because a kaikai cast
+# rebuilds the package and runs the whole suite — honest and slow.
+# Advisory: it reports and never fails a build.
+SELF_MODULE ?= kalku/core/shard.kai
+SELF_LIMIT  ?= 6
+SELF_RENI   ?= /tmp/kalku-self/reni
+
+self-mutate: build $(KKALKU)
+	KALKU_ROOT=. KALKU_FILES=$(SELF_MODULE) KALKU_LIMIT=$(SELF_LIMIT) \
+	  KALKU_RENI=$(SELF_RENI) $(BUILD)/kalku run || true
 
 clean:
 	rm -rf $(BUILD) .kai-cache

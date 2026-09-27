@@ -1,0 +1,8 @@
+import tiny
+
+# A second test module, sorted before the one that holds the kill: `kai
+# test` writes a summary per module, so reading the first summary alone
+# reads this module's green and calls the suite green.
+test "total of nothing is nothing" {
+  assert total([]) == 0
+}

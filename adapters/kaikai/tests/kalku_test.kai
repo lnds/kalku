@@ -5,6 +5,7 @@ import encoding.json
 # The kalku is driven as the kaikai side drives it: a real binary, a real
 # pipe, a real package to measure. Nothing smaller proves it works.
 const KALKU : String = "./bin/kalku-kaikai"
+
 const TINY : String = "fixtures/tiny"
 
 # Outside the package, deliberately: a reni inside it would be copied
@@ -52,16 +53,18 @@ fn field(line: String, name: String) : String = match json_decode(line) {
 
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
 
-# `above/2` shifts `>=` to `>` at byte 144, and a test covers the
-# boundary. `clamp/1` shifts `>` to `>=` at byte 362, and no test goes
-# near zero — the hole planted on purpose.
+# `above/2` shifts `>=` to `>` at byte 305, and a test covers the
+# boundary. `clamp/1` shifts `>` to `>=` at byte 523, and no test goes
+# near zero — the hole planted on purpose. Both spans sit after a dash in
+# the fixture, so a splice that counted codepoints would land two bytes
+# along and measure something else.
 test "the three outcomes a cast can have, against a real package" {
   let said = told([
     hello(),
     "{\"type\":\"prepare\",\"id\":2}",
-    cast(3, "covered", 144, 146, ">"),
-    cast(4, "uncovered", 362, 363, ">="),
-    cast(5, "broken", 362, 363, "@")
+    cast(3, "covered", 305, 307, ">"),
+    cast(4, "uncovered", 523, 524, ">="),
+    cast(5, "broken", 523, 524, "@")
   ])
 
   assert outcome_of(said, "covered") == "killed"
@@ -71,7 +74,7 @@ test "the three outcomes a cast can have, against a real package" {
 
 # A kill names the test that noticed, so a report can point at it.
 test "a kill names the test that noticed" {
-  let said = told([hello(), "{\"type\":\"prepare\",\"id\":2}", cast(3, "covered", 144, 146, ">")])
+  let said = told([hello(), "{\"type\":\"prepare\",\"id\":2}", cast(3, "covered", 305, 307, ">")])
   let line = find(said, l => has(l, "\"wekufe\":\"covered\"")).unwrap_or("")
 
   assert has(field(line, "killed_by"), "tests/tiny_test.kai")
@@ -101,7 +104,7 @@ test "sites come from kaikai's own parser, with the span and text to match" {
 
   assert has(found, "\"enclosing\":\"tiny.above/2\"")
   assert has(found, "\"original\":\">=\"")
-  assert has(found, "\"byte\":144")
+  assert has(found, "\"byte\":305")
 }
 
 # A reni inside the package would be copied into itself until the path
@@ -126,7 +129,7 @@ test "the package under test is never written to" {
   let _ = told([
     hello(),
     "{\"type\":\"prepare\",\"id\":2}",
-    cast(3, "covered", 144, 146, ">")
+    cast(3, "covered", 305, 307, ">")
   ])
 
   assert file.read("#{TINY}/tiny.kai") == before

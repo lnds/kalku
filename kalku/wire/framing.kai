@@ -23,17 +23,17 @@ pub type Fed = { framer: Framer, frames: [Frame] }
 pub fn framer(max: Int) : Framer = Framer { pending: "", max: max, skipping: false }
 
 #[doc("Feed a chunk; returns the lines it completes, in order.")]
-pub fn feed(f: Framer, chunk: String) : Fed = split(f, f.pending ++ chunk, [])
+pub fn feed(f: Framer, chunk: String) : Fed = cut_lines(f, f.pending ++ chunk, [])
 
 #[doc("A message as it goes on the wire: the line plus its newline.")]
 pub fn frame(line: String) : String = line ++ "\n"
 
-fn split(f: Framer, data: String, acc: [Frame]) : Fed = match index_of(data, "\n") {
+fn cut_lines(f: Framer, data: String, acc: [Frame]) : Fed = match index_of(data, "\n") {
   Some(i) -> {
     let line = cut(data, 0, i)
     let rest = cut(data, i + 1, length(data) - i - 1)
     let done = if f.skipping or length(line) > f.max { TooLong } else { Line(line) }
-    split(Framer { pending: "", max: f.max, skipping: false }, rest, [done, ...acc])
+    cut_lines(Framer { pending: "", max: f.max, skipping: false }, rest, [done, ...acc])
   }
   None -> Fed { framer: hold(f, data), frames: reverse(acc) }
 }

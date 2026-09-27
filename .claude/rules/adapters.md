@@ -41,6 +41,21 @@ The test that protects this drives a real kalku over a real pipe and asserts tha
 - Every site carries its semantic key (`enclosing`, `ordinal`) so declared equivalents survive edits.
 - Spells use the shared names (`arm`, `compare`, `connect`, `negate`, `literal`, `call`). A language-specific spell gets a new shared name through the protocol, not an ad-hoc string.
 
+## Count the tests, not the framework's summary
+
+An outcome comes from the individual test results, never from a total the
+test runner prints. A runner is free to print one total per module, per
+file, or per shard — `kai test --json` prints one per test module — and a
+kalku that reads "the" total reads one module and calls it the suite. The
+wekufe a later module killed then comes back `survived`, which is the one
+error a measuring tool must never make.
+
+A one-module fixture cannot catch this, so a kalku that reads anything a
+runner aggregated needs a fixture project with at least two test modules,
+the test that kills sorted *after* a module that passes. A kalku that
+already counts individual results does not need one — the Elixir kalku
+finds the failing test among the results it collected.
+
 ## Isolation
 
 - A wekufe never outlives its cast: the next cast starts from the original modules.

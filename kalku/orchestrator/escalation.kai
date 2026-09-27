@@ -30,7 +30,7 @@ pub type Next
 
 #[doc("A decision: what the wekufe in flight came to, and what happens to the kalku.")]
 #[derive(Eq, Show)]
-pub type Reaction = { outcome: Option[Outcome], next: Next }
+pub type Reaction = { outcome: Option[Outcome], said: Option[String], next: Next }
 
 #[doc("""
 What a kalku's reply means for the cast in flight.
@@ -106,13 +106,20 @@ pub fn recycling(r: Reaction) : Option[String] = match r.next {
 # A cast that dirtied global state is not trusted to run the next one:
 # state left behind by one wekufe is a result attributed to another.
 fn after_cast(m: CastDoneMsg, caps: [Capability]) : Reaction = if not m.dirty {
-  stopped(m.outcome, Free)
+  explained(m.outcome, m.message, Free)
 } else if can_reset(caps) {
-  stopped(m.outcome, AskReset)
+  explained(m.outcome, m.message, AskReset)
 } else {
-  stopped(m.outcome, Recycle("left global state behind and cannot reset"))
+  explained(m.outcome, m.message, Recycle("left global state behind and cannot reset"))
 }
 
-fn stopped(o: Outcome, next: Next) : Reaction = Reaction { outcome: Some(o), next: next }
+fn stopped(o: Outcome, next: Next) : Reaction =
+  Reaction { outcome: Some(o), said: None, next: next }
 
-fn carry_on(next: Next) : Reaction = Reaction { outcome: None, next: next }
+# What the kalku said about the wekufe, kept with the outcome: a
+# `compile_error` or a `crashed` nobody can explain is a number without a
+# reason, and a reason is the whole reason to report it apart.
+fn explained(o: Outcome, said: Option[String], next: Next) : Reaction =
+  Reaction { outcome: Some(o), said: said, next: next }
+
+fn carry_on(next: Next) : Reaction = Reaction { outcome: None, said: None, next: next }

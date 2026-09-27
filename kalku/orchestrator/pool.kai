@@ -23,7 +23,7 @@ import kalku.orchestrator.ward
 pub type Job = { id: Int, wekufe: String, deadline: Instant, awaiting: Awaiting }
 
 #[doc("What a slot is doing.")]
-pub type Doing = Greeting(Instant) | Idle | Working(Job) | Lost(String)
+pub type Doing = Greeting(Instant) | Readying(Instant) | Idle | Working(Job) | Lost(String)
 
 #[doc("One kalku's place in the pool, filled or not.")]
 pub type Slot = {
@@ -111,6 +111,9 @@ pub fn put(slots: [Slot], slot: Slot) : [Slot] =
 
 #[doc("The slots that could take a cast right now.")]
 pub fn idle(slots: [Slot]) : [Slot] = filter(slots, s => is_idle(s))
+
+#[doc("How long a kalku is given to compile the project into its workspace.")]
+pub const READYING_MS : Int = 900_000
 
 #[doc("True when the slot is waiting for work.")]
 pub fn is_idle(s: Slot) : Bool = match s.doing {
@@ -202,10 +205,23 @@ fn quoted(words: Option[String]) : String = match words {
   None -> ""
 }
 
+# The budget is in bytes, so the cut is in bytes: `slice` counts
+# codepoints, and a kalku whose diagnostics are not ASCII would have them
+# trimmed by an amount nobody asked for. A cut that would split a
+# character keeps one byte less rather than dropping the text.
 fn last_of(s: String, n: Int) : String = if length(s) <= n {
   s
 } else {
-  slice(s, length(s) - n, length(s))
+  from_byte(s, length(s) - n)
+}
+
+fn from_byte(s: String, at: Int) : String = if at >= length(s) {
+  ""
+} else {
+  match byte_slice(s, at, length(s) - at) {
+    Some(text) -> text
+    None -> from_byte(s, at + 1)
+  }
 }
 
 fn out_of_budget(spec: PoolSpec, slot: Slot, why: String) : String =
