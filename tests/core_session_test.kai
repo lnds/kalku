@@ -1,0 +1,105 @@
+import kalku.core.session
+
+fn through(events: [Event]) : Session = foldl(events, opened("/p"), step)
+
+fn named(events: [Event]) : String = state_name(through(events).state)
+
+# The lifecycle as `docs/design.md` draws it, walked end to end.
+test "a project walks from cold to ready and stays warm" {
+  assert named([]) == "cold"
+  assert named([Asked]) == "preparing"
+  assert named([Asked, Prepared]) == "baseline"
+  assert named([Asked, Prepared, BaselineGreen]) == "running"
+  assert named([Asked, Prepared, BaselineGreen, Finished]) == "ready"
+  assert warm(through([Asked, Prepared, BaselineGreen, Finished]))
+}
+
+# A warm session is the point of a server: the next run does not prepare
+# or baseline again.
+test "a run on a warm session starts at once" {
+  let warmed = through([Asked, Prepared, BaselineGreen, Finished])
+  assert state_name(step(warmed, Asked).state) == "running"
+}
+
+# A project has one set of warm kalku, so two runs would measure each
+# other. The second waits, and `status` can say how many are waiting.
+test "a run asked of a busy session waits rather than restarting it" {
+  let busy_one = through([Asked, Prepared, BaselineGreen, Asked])
+  assert state_name(busy_one.state) == "running"
+  assert busy_one.queued == 1
+  assert busy(busy_one)
+
+  # And finishing takes the waiting run rather than making the client ask
+  # again.
+  let after = step(busy_one, Finished)
+  assert state_name(after.state) == "running"
+  assert after.queued == 0
+}
+
+test "a suite that is already red fails the session, with the reason kept" {
+  let failed = through([Asked, Prepared, BaselineRed("2 tests fail")])
+  assert state_name(failed.state) == "failed"
+  assert failure(failed) == Some("2 tests fail")
+}
+
+# The failure was about the project as it was; the point of asking again
+# is that it may not be any more.
+test "a failed session starts over from cold when asked again" {
+  let failed = through([Asked, Prepared, BaselineRed("red")])
+  let again = step(failed, Asked)
+  assert state_name(again.state) == "preparing"
+  assert failure(again) == None
+  assert again.queued == 0
+}
+
+test "anything can break, and anything can be shut" {
+  assert named([Asked, Broke("no kalku left")]) == "failed"
+  assert named([Asked, Prepared, BaselineGreen, Broke("worker died")]) == "failed"
+  assert named([Asked, Prepared, BaselineGreen, Shut]) == "closed"
+  assert named([Shut]) == "closed"
+}
+
+test "cancelling leaves the session warm, and drops what was waiting" {
+  let busy_one = through([Asked, Prepared, BaselineGreen, Asked, Asked])
+  assert busy_one.queued == 2
+  let cancelled = step(busy_one, Cancelled)
+  assert state_name(cancelled.state) == "ready"
+  assert cancelled.queued == 0
+}
+
+# Idle closes a warm session, never a working one: a run in progress is
+# activity by definition.
+test "going idle closes a warm session and leaves a running one alone" {
+  assert named([Asked, Prepared, BaselineGreen, Finished, WentIdle]) == "closed"
+  assert named([Asked, Prepared, BaselineGreen, WentIdle]) == "running"
+}
+
+# Two clients naming the same project must land on the same session, or
+# each would summon kalku and measure half the project.
+test "one session per root, shared by whoever asks" {
+  let (with_one, first) = session_for(no_sessions(), "/p")
+  let (with_same, again) = session_for(with_one, "/p")
+
+  assert how_many(with_same) == 1
+  assert first.root == again.root
+
+  let (with_two, _other) = session_for(with_same, "/q")
+  assert how_many(with_two) == 2
+}
+
+test "a session's new state is what the server holds afterwards" {
+  let (all, s) = session_for(no_sessions(), "/p")
+  let running = foldl([Asked, Prepared, BaselineGreen], s, step)
+  let held = remember(all, running)
+  let (_unchanged, found) = session_for(held, "/p")
+
+  assert state_name(found.state) == "running"
+}
+
+test "a closed session is no longer the server's to hold" {
+  let (all, s) = session_for(no_sessions(), "/p")
+  let held = remember(all, step(s, Shut))
+
+  assert how_many(held) == 1
+  assert how_many(forget_closed(held)) == 0
+}
