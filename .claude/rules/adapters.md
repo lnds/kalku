@@ -50,9 +50,11 @@ kalku that reads "the" total reads one module and calls it the suite. The
 wekufe a later module killed then comes back `survived`, which is the one
 error a measuring tool must never make.
 
-A one-module fixture cannot catch this, so every kalku's fixture project
-has at least two test modules, with the test that kills sorted *after* a
-module that passes.
+A one-module fixture cannot catch this, so a kalku that reads anything a
+runner aggregated needs a fixture project with at least two test modules,
+the test that kills sorted *after* a module that passes. A kalku that
+already counts individual results does not need one — the Elixir kalku
+finds the failing test among the results it collected.
 
 ## Isolation
 
