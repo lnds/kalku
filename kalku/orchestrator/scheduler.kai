@@ -204,15 +204,33 @@ fn said(
 ) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
   match reply {
     Ready(m) -> greeted(run, slot, m)
+    Prepared(_) -> ready_for_work(run, slot)
     other -> react(run, slot, on_reply(other, slot.caps))
   }
 
 # A kalku whose protocol this side cannot speak ends the run rather than
 # the kalku: a second one would say the same thing.
-fn greeted(run: Run, slot: Slot, m: ReadyMsg) : Run = match ready_refused(m) {
+fn greeted(run: Run, slot: Slot, m: ReadyMsg) : Run / Process + Clock = match ready_refused(m) {
   Some(why) -> Run { ...run, failure: Some("worker #{slot.worker} #{why}") }
-  None -> Run { ...run, slots: put(run.slots, Slot { ...slot, caps: m.capabilities, doing: Idle }) }
+  None -> prepare_it(run, Slot { ...slot, caps: m.capabilities })
 }
+
+# A greeting is not readiness. Every kalku compiles the project into its
+# own workspace before it is given a wekufe: one that was handed a cast
+# straight after `ready` answers that it was never prepared, and a kalku
+# that answers instead of working is a kalku that waits out its deadline.
+fn prepare_it(run: Run, slot: Slot) : Run / Process + Clock {
+  tell(slot, prepare_id(slot.worker), Prepare)
+  Run {
+    ...run,
+    slots: put(run.slots, Slot { ...slot, doing: Readying(deadline_in(millis(READYING_MS))) })
+  }
+}
+
+fn prepare_id(worker: Int) : Int = 0 - (worker + 1000)
+
+fn ready_for_work(run: Run, slot: Slot) : Run =
+  Run { ...run, slots: put(run.slots, Slot { ...slot, doing: Idle }) }
 
 # ---- deadlines ----------------------------------------------------------
 
@@ -237,6 +255,7 @@ fn overdue(run: Run) : Option[Slot] / Clock {
 fn due_at(s: Slot) : Option[Instant] = match s.doing {
   Working(job) -> Some(job.deadline)
   Greeting(at) -> Some(at)
+  Readying(at) -> Some(at)
   _ -> None
 }
 
@@ -308,6 +327,7 @@ fn recycle(
 fn awaiting_of(slot: Slot) : Awaiting = match slot.doing {
   Working(job) -> job.awaiting
   Greeting(_) -> AwaitingReady
+  Readying(_) -> AwaitingReady
   _ -> AwaitingReset
 }
 

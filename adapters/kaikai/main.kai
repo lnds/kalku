@@ -121,7 +121,7 @@ fn report_of(r: Ran) : KalkuReply = match r.broke {
   None -> BaselineDone(BaselineDoneMsg {
     status: if r.failed == 0 { Green } else { Red },
     duration_ms: 0,
-    tests: [],
+    tests: r.tests,
     coverage: None,
     coverage_path: None,
     failures: failures_of(r)

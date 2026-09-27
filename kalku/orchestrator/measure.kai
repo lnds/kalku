@@ -1,0 +1,244 @@
+#[doc("""
+A run, end to end: ask a kalku what can be broken, break it, and say
+what nobody noticed.
+
+This is the path that makes the project's own claim true — kalku
+measuring kalku — by putting the pieces that were built apart to work
+together: a kalku for the language, the planner to decide what is worth
+casting, the scheduler to cast it under deadlines, and the report to say
+what survived.
+
+Discovery talks to one kalku, because `prepare` and `baseline` are asked
+once per project. Casting then hands the plan to a pool, which is where
+the parallelism belongs.
+""")]
+
+import actor
+import time
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.core.verdict
+import kalku.core.planner
+import kalku.core.gate
+import kalku.core.report
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.scheduler
+
+#[doc("What to measure, and with what.")]
+#[derive(Eq, Show)]
+pub type Asking = {
+  spec: PoolSpec,
+  files: [String],
+  spells: [Spell],
+  exclude_calls: [String],
+  limit: Int,
+  timeout_floor_ms: Int
+}
+
+#[doc("What the first kalku answered: what can be broken, and what judges it.")]
+#[derive(Eq, Show)]
+pub type Known = { sites: [Site], tests: [String] }
+
+#[doc("What a run found, or why it could not look.")]
+#[derive(Eq, Show)]
+pub type Found = { report: Option[Report], failure: Option[String] }
+
+#[doc("""
+Measure a project and report what survived.
+
+Every step can fail for a reason the caller has to hear: a kalku that
+will not start, a project that will not compile, a suite that is already
+red. None of them produce a score, because a score built on any of them
+would be a number nobody should believe.
+""")]
+pub fn measure(asking: Asking) : Found / Process + Spawn + Clock + Actor[OrchMsg] {
+  match discover(asking) {
+    Err(why) -> Found { report: None, failure: Some(why) }
+    Ok(known) -> Found { report: Some(cast_them(asking, known)), failure: None }
+  }
+}
+
+#[doc("""
+What can be broken in this project, asked of one kalku.
+
+`prepare` and `baseline` come first because they are about the project
+rather than about any wekufe: a suite that cannot build, or that is
+already failing, ends the run here.
+""")]
+pub fn discover(asking: Asking) : Result[Known, String] / Process + Spawn + Clock + Actor[OrchMsg] {
+  let life = Life { worker: 0, summons: 1 }
+  match summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args }) {
+    Err(e) -> Err(e)
+    Ok(k) -> {
+      let me = Actor.self()
+      let _reader = spawn_actor(() => read_loop(k, me))
+      let answer = interview(k, asking)
+      kill_now(k)
+      answer
+    }
+  }
+}
+
+fn interview(k: Kalku, asking: Asking) : Result[Known, String] / Process + Clock + Actor[OrchMsg] {
+  greet(k, asking)!
+  await_kind(k, "ready")!
+  tell(k, 2, Prepare)!
+  await_kind(k, "prepared")!
+  tell(k, 3, Baseline)!
+  let baseline = await_kind(k, "baseline_done")!
+  refuse_red(baseline)!
+  let suite = suite_of(baseline)
+  tell(
+    k,
+    4,
+    Sites(SitesMsg {
+      files: asking.files,
+      spells: asking.spells,
+      exclude_calls: asking.exclude_calls
+    })
+  )!
+  Ok(Known { sites: sites_of(await_kind(k, "sites_found")!)!, tests: suite })
+}
+
+# The suite as the kalku enumerated it. Without coverage to narrow them
+# down, every test judges every wekufe — slow, and the only honest
+# reading of "this kalku does not measure coverage".
+fn suite_of(reply: KalkuReply) : [String] = match reply {
+  BaselineDone(m) -> m.tests | (.test_id)
+  _ -> []
+}
+
+# A red baseline ends the run: a wekufe on top of a failing test measures
+# nothing, and pretending otherwise is the one thing a measuring tool
+# must never do.
+fn refuse_red(reply: KalkuReply) : Result[Unit, String] = match reply {
+  BaselineDone(m) -> if m.status == Red {
+    Err("the suite is already failing: #{failure_names(m.failures)}")
+  } else {
+    Ok(())
+  }
+  _ -> Ok(())
+}
+
+fn failure_names(failures: [Failure]) : String = if is_empty(failures) {
+  "no test named"
+} else {
+  join(failures | (.test_id), ", ")
+}
+
+fn sites_of(reply: KalkuReply) : Result[[Site], String] = match reply {
+  SitesFound(m) -> Ok(m.sites)
+  other -> Err("expected the sites, got #{other}")
+}
+
+fn greet(k: Kalku, asking: Asking) : Result[Unit, String] / Process =
+  tell(k, 1, greeting(asking.spec, 0))
+
+fn tell(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Process =
+  ask(k, id, request)
+
+# One reply of the kind asked for. Anything else the kalku says on the
+# way — progress, a line that will not decode — is not the answer.
+fn await_kind(k: Kalku, kind: String) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] =
+  match receive_timeout(seconds(600)) {
+    None -> Err("the kalku said nothing while we waited for `#{kind}`")
+    Some(Cancel) -> Err("the run was cancelled")
+    Some(Wire(_life, Said(line))) -> match heard(line) {
+      Err(e) -> Err("the kalku wrote a line this side cannot read: #{e.detail}")
+      Ok(m) -> judge(k, kind, m.body)
+    }
+    Some(Wire(_life, Closed)) -> Err("the kalku closed its pipe before saying `#{kind}`")
+    Some(Wire(_life, Unreadable(why))) -> Err(why)
+    Some(Wire(_life, Wrote(_chunk))) -> await_kind(k, kind)
+  }
+
+fn judge(k: Kalku, kind: String, body: KalkuReply) : Result[KalkuReply, String] / Clock + Actor[
+  OrchMsg
+] = match body {
+  KalkuError(e) -> Err("#{e.code}: #{e.message}")
+  Progress(_) -> await_kind(k, kind)
+  answered -> if reply_kind(answered) == kind {
+    Ok(answered)
+  } else {
+    Err("expected `#{kind}`, the kalku said `#{reply_kind(answered)}`")
+  }
+}
+
+fn reply_kind(r: KalkuReply) : String {
+  case Ready(_) -> "ready"
+  case Prepared(_) -> "prepared"
+  case BaselineDone(_) -> "baseline_done"
+  case SitesFound(_) -> "sites_found"
+  case CastDone(_) -> "cast_done"
+  case Aborted(_) -> "aborted"
+  case ResetDone(_) -> "reset_done"
+  case Reloaded(_) -> "reloaded"
+  case Delegated(_) -> "delegated"
+  case Progress(_) -> "progress"
+  case Bye -> "bye"
+  case KalkuError(_) -> "error"
+}
+
+# ---- casting -------------------------------------------------------------
+
+fn cast_them(asking: Asking, known: Known) : Report / Process + Spawn + Clock + Actor[OrchMsg] {
+  let ready = plan(inputs_for(asking, known), _id => None)
+  let casting = cast_all(asking.spec, limited(ready.to_cast, asking.limit))
+  report_of(ready, casting, known)
+}
+
+# Without per-test coverage the plan cannot select tests, so a cast runs
+# the whole suite. That is slow and honest; guessing at coverage would be
+# fast and wrong.
+fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
+  sites: known.sites,
+  coverage: None,
+  all_tests: known.tests,
+  durations: [],
+  suppressed_ids: [],
+  exclude: [],
+  reach: Everything,
+  timeout_floor_ms: asking.timeout_floor_ms
+}
+
+fn limited(casts: [Cast], limit: Int) : [Cast] = if limit <= 0 {
+  casts
+} else {
+  enumerate(casts) |? (c => c.fst < limit) | (.snd)
+}
+
+# A wekufe with no verdict was never answered for, which is a crash as
+# far as a report is concerned: it is counted, never quietly dropped.
+fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
+  let verdicts = casting.verdicts | (v => of_outcome(v.outcome))
+  let uncovered = ready.no_coverage | (_s => of_outcome(NoCoverage))
+  Report {
+    counts: tally(verdicts ++ uncovered),
+    survivors: survivors_of(casting, known),
+    on_changed_lines: 0,
+    suppressions: SuppressionChanges {
+      equivalent_added: 0,
+      exclude_added: [],
+      exclude_calls_added: []
+    },
+    blockers: []
+  }
+}
+
+fn survivors_of(casting: Casting, known: Known) : [Survivor] = flat_map(
+  casting.verdicts,
+  v => if v.outcome == Survived { site_named(known, v.wekufe) } else { [] }
+)
+
+# The tests that judged it are the ones that ran, and without coverage
+# that is the whole suite. Reporting none would read as "nothing looked",
+# which is the opposite of what happened.
+fn site_named(known: Known, wekufe: String) : [Survivor] = match find(
+  known.sites,
+  s => s.site_id == wekufe
+) {
+  Some(s) -> [Survivor { site: s, tests: known.tests }]
+  None -> []
+}

@@ -1,3 +1,4 @@
 {"expect":"hello","reply":{"type":"ready","protocol":1,"language":"fake","adapter":"fake_kalku 0.1","runtime":"none","spells":["arm"],"capabilities":["cast","abort","reset"]}}
+{"expect":"prepare","reply":{"type":"prepared","duration_ms":1,"modules":1}}
 {"expect":"cast","reply":{"type":"cast_done","wekufe":"w","outcome":"killed","duration_ms":1,"dirty":true}}
 {"expect":"reset","reply":{"type":"reset_done","clean":false,"duration_ms":2}}

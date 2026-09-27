@@ -23,7 +23,7 @@ import kalku.orchestrator.ward
 pub type Job = { id: Int, wekufe: String, deadline: Instant, awaiting: Awaiting }
 
 #[doc("What a slot is doing.")]
-pub type Doing = Greeting(Instant) | Idle | Working(Job) | Lost(String)
+pub type Doing = Greeting(Instant) | Readying(Instant) | Idle | Working(Job) | Lost(String)
 
 #[doc("One kalku's place in the pool, filled or not.")]
 pub type Slot = {
@@ -111,6 +111,9 @@ pub fn put(slots: [Slot], slot: Slot) : [Slot] =
 
 #[doc("The slots that could take a cast right now.")]
 pub fn idle(slots: [Slot]) : [Slot] = filter(slots, s => is_idle(s))
+
+#[doc("How long a kalku is given to compile the project into its workspace.")]
+pub const READYING_MS : Int = 900_000
 
 #[doc("True when the slot is waiting for work.")]
 pub fn is_idle(s: Slot) : Bool = match s.doing {

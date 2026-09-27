@@ -13,6 +13,7 @@ what makes the second cast cheap.
 
 import os.process as proc
 import fs.file
+import fs.dir
 import encoding.json
 import kalku.wire.enums
 import kalku.wire.shapes
@@ -23,7 +24,13 @@ pub type Work = { root: String, copy: String }
 
 #[doc("What running the tests came to.")]
 #[derive(Eq, Show)]
-pub type Ran = { passed: Int, failed: Int, first_failure: Option[String], broke: Option[String] }
+pub type Ran = {
+  passed: Int,
+  failed: Int,
+  first_failure: Option[String],
+  broke: Option[String],
+  tests: [TestTiming]
+}
 
 #[doc("""
 Copy the package into the reni, and warm the build cache there.
@@ -31,7 +38,7 @@ Copy the package into the reni, and warm the build cache there.
 A copy rather than a link: a wekufe is written into it, and a link would
 write into the user's file.
 """)]
-pub fn prepare(root: String, reni: String, worker: Int) : Result[Work, String] / Process {
+pub fn prepare(root: String, reni: String, worker: Int) : Result[Work, String] / Process + File {
   let copy = "#{reni}/work/#{worker}"
   if inside(reni, root) {
     Err(refuse_nested(reni, root))
@@ -47,13 +54,38 @@ pub fn prepare(root: String, reni: String, worker: Int) : Result[Work, String] /
 fn refuse_nested(reni: String, root: String) : String =
   "the reni #{reni} is inside the package #{root}; copying would nest it in itself"
 
-fn inside(inner: String, outer: String) : Bool =
-  starts_with(inner, "#{outer}/") or inner == outer
+# Claimed only where it can be known from the paths themselves: both
+# relative, or both absolute. A relative root and an absolute reni would
+# need the working directory to compare, and a guess in either direction
+# is worse than the dotted-entry rule that already skips a nested reni
+# when copying.
+fn inside(inner: String, outer: String) : Bool {
+  let here = plain(inner)
+  let there = plain(outer)
+  if is_empty(there) or absolute(here) != absolute(there) {
+    false
+  } else {
+    starts_with(here, "#{there}/") or here == there
+  }
+}
 
-fn fill(root: String, copy: String) : Result[Work, String] / Process {
+fn absolute(path: String) : Bool = starts_with(path, "/")
+
+fn plain(path: String) : String = if starts_with(path, "./") {
+  slice(path, 2, length(path))
+} else if path == "." {
+  ""
+} else {
+  path
+}
+
+# Only what a package is: its manifest, its sources and its tests. A
+# repository also holds `.git`, a build directory and caches, and copying
+# those turns a cast into minutes of I/O for bytes nobody compiles.
+fn fill(root: String, copy: String) : Result[Work, String] / Process + File {
   let _ = run(["/bin/rm", "-rf", copy])
   let _ = run(["/bin/mkdir", "-p", copy])
-  match run(["/bin/cp", "-R", "#{root}/.", copy]) {
+  match copy_worth_having(root, copy) {
     Err(e) -> Err("cannot copy the package into the reni: #{e}")
     Ok(_) -> {
       let w = Work { root: root, copy: copy }
@@ -63,6 +95,20 @@ fn fill(root: String, copy: String) : Result[Work, String] / Process {
   }
 }
 
+
+fn copy_worth_having(root: String, copy: String) : Result[String, String] / Process + File {
+  let entries = filter(dir.list_dir(root), worth_copying)
+  if is_empty(entries) {
+    Err("#{root} holds nothing to copy")
+  } else {
+    run(["/bin/cp", "-R"] ++ (entries | (e => "#{root}/#{e}")) ++ [copy])
+  }
+}
+
+# A dotted entry is tooling's, not the package's — and one of them is the
+# reni itself, which would nest the tree inside itself.
+fn worth_copying(entry: String) : Bool =
+  not starts_with(entry, ".") and entry != "_build" and entry != "deps"
 
 #[doc("The sites in one file of the package, as kaikai's own mutate reports them.")]
 pub fn sites_in(w: Work, which: String, spells: [Spell]) : Result[[Site], String] / Process {
@@ -111,8 +157,16 @@ pub fn source_of(w: Work, which: String) : String / File = file.read("#{w.copy}/
 
 # ---- running ------------------------------------------------------------
 
+# Every word is quoted, and it has to be: a kaikai test is selected by an
+# id like `tests/x_test.kai:a test with spaces`, and pasting that into a
+# shell line unquoted hands the words to the shell — which is both a
+# broken command and, with a hostile file name, a way to run one.
 fn run_in(w: Work, argv: [String]) : Result[String, String] / Process =
-  run(["/bin/sh", "-c", "cd #{w.copy} && #{join(argv, " ")} 2>&1"])
+  run(["/bin/sh", "-c", "cd #{quoted(w.copy)} && #{join(argv | quoted, " ")} 2>&1"])
+
+# Single quotes hold everything except a single quote, which is closed,
+# escaped and reopened.
+fn quoted(word: String) : String = "'#{replace(word, "'", "'\\''")}'"
 
 fn run(argv: [String]) : Result[String, String] / Process = match argv {
   [] -> Err("nothing to run")
@@ -140,18 +194,40 @@ fn drain(child: Child, so_far: String) : Result[String, String] / Process =
 # A run that produced no summary did not run: the build failed, and the
 # output is the diagnostic rather than results.
 fn read_run(out: Result[String, String]) : Ran = match out {
-  Err(e) -> Ran { passed: 0, failed: 0, first_failure: None, broke: Some(e) }
+  Err(e) -> broken(e)
   Ok(text) -> match find(lines(text), l => is_some(index_of(l, "\"type\":\"summary\""))) {
-    None -> Ran { passed: 0, failed: 0, first_failure: None, broke: Some(first_line(text)) }
+    None -> broken(first_line(text))
     Some(summary) -> tally(text, summary)
   }
 }
+
+fn broken(why: String) : Ran =
+  Ran { passed: 0, failed: 0, first_failure: None, broke: Some(why), tests: [] }
 
 fn tally(text: String, summary: String) : Ran = Ran {
   passed: number_in(summary, "passed"),
   failed: number_in(summary, "failed"),
   first_failure: first_failed(text),
-  broke: None
+  broke: None,
+  tests: flat_map(lines(text), timing_of)
+}
+
+# Every test the suite has, by the id `--only` selects it with. Without
+# coverage to narrow them down, this is what a cast runs against — and
+# the kaikai side cannot plan a single cast without knowing they exist.
+fn timing_of(line: String) : [TestTiming] = if is_some(index_of(line, "\"type\":\"test\"")) {
+  match text_in(line, "id") {
+    Some(id) -> [
+      TestTiming {
+        test_id: id,
+        file: text_in(line, "file").unwrap_or(""),
+        duration_ms: number_in(line, "duration_ms")
+      }
+    ]
+    None -> []
+  }
+} else {
+  []
 }
 
 fn first_failed(text: String) : Option[String] = match find(

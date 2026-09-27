@@ -1,9 +1,15 @@
 #[doc("kalku's entry point: parse the arguments, print, and return the exit code.")]
 
+import actor
 import os.args
+import kalku.wire.enums
+import kalku.core.report
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.measure
 import kalku.cli
 
-fn main() : Int / Stdout + Stderr + Env {
+fn main() : Int / Stdout + Stderr + Env + Process + Spawn + Clock {
   match cli.parse_args(args.argv()) {
     ShowVersion -> {
       Stdout.print(cli.version_line())
@@ -13,6 +19,7 @@ fn main() : Int / Stdout + Stderr + Env {
       Stdout.print(cli.help_text())
       0
     }
+    Pending("run") -> run_here()
     Pending(cmd) -> {
       Stderr.eprint("kalku: `#{cmd}` is not implemented yet")
       2
@@ -22,4 +29,69 @@ fn main() : Int / Stdout + Stderr + Env {
       2
     }
   }
+}
+
+# The first thing `run` can honestly do: measure this package, with this
+# package's own kalku, and print what survived. Scope, formats and the
+# server come next; this is the claim the project makes about itself, so
+# it is the part that has to work first.
+fn run_here() : Int / Stdout + Stderr + Env + Process + Spawn + Clock = with_mailbox {
+  let found = measure(asking_for(asked_root(), asked_files()))
+  match found.failure {
+    Some(why) -> {
+      Stderr.eprint("kalku: #{why}")
+      2
+    }
+    None -> match found.report {
+      None -> {
+        Stderr.eprint("kalku: nothing measured")
+        2
+      }
+      Some(r) -> {
+        Stdout.print(human(r))
+        exit_code(r.blockers)
+      }
+    }
+  }
+}
+
+fn asking_for(root: String, files: [String]) : Asking / Env = Asking {
+  spec: PoolSpec {
+    command: "adapters/kaikai/bin/kalku-kaikai",
+    args: [],
+    workers: 2,
+    root: root,
+    reni: "/tmp/kalku-self/reni",
+    inline_limit_bytes: 65536,
+    env: StrMap { entries: [] },
+    greeting_ms: 60000,
+    summons_allowed: 2
+  },
+  files: files,
+  spells: [Arm, Compare, Connect, Negate, Literal, Call],
+  exclude_calls: [],
+  limit: asked_limit(),
+  timeout_floor_ms: 
+  # A cast here rebuilds kalku and runs its suite, which is minutes. The
+  # kaikai kalku has no warm runtime and no coverage to select by, so the
+  # floor has to be honest about that rather than turn slow into
+  # `timeout`.
+  900000
+}
+
+# The pure core first: it is where a surviving wekufe says the most about
+# the suite, and where a run is cheap enough to be worth starting with.
+# Until `run` parses its own arguments, the package and the modules come
+# from the environment, defaulting to kalku measuring kalku — which is
+# the claim, and also the slowest possible run.
+fn asked_root() : String / Env = Env.get("KALKU_ROOT").unwrap_or(".")
+
+fn asked_limit() : Int / Env = match Env.get("KALKU_LIMIT") {
+  Some(text) -> to_int(text).unwrap_or(2)
+  None -> 2
+}
+
+fn asked_files() : [String] / Env = match Env.get("KALKU_FILES") {
+  Some(list) -> filter(split(list, ","), f => not is_empty(f))
+  None -> ["kalku/core/shard.kai"]
 }
