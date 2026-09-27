@@ -1,0 +1,6 @@
+name = "kaikai_kalku"
+version = "0.0.0"
+entry = "main.kai"
+
+[dependencies]
+kalku = { path = "../.." }

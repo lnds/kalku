@@ -1,0 +1,18 @@
+import tiny
+
+# Covers the boundary, so a wekufe that shifts `>=` to `>` dies here.
+test "above is true at the floor and below it is false" {
+  assert above(3, 3)
+  assert above(4, 3)
+  assert not above(2, 3)
+}
+
+test "total adds" {
+  assert total([1, 2, 3]) == 6
+}
+
+# Only well above the boundary, on purpose: this is the hole kalku
+# should find.
+test "clamp keeps a positive number" {
+  assert clamp(5) == 5
+}

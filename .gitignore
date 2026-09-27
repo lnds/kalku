@@ -13,3 +13,7 @@ erl_crash.dump
 
 # built by `make test-kaikai`
 tests/fake_kalku/fake_kalku
+
+# built by `make test-kaikai-kalku`
+adapters/kaikai/bin/
+adapters/kaikai/fixtures/reni/

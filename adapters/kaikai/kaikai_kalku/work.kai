@@ -1,0 +1,223 @@
+#[doc("""
+The workspace a kaikai kalku casts in, and the commands it runs there.
+
+The user's package is copied into the reni once, and every wekufe is
+spliced into that copy. Their own tree is never written to — not the
+source, not the build directory — so a crash or a `kill -9` leaves it
+exactly as it was found.
+
+Unlike the Elixir kalku there is no shared runtime to keep warm: each
+cast rebuilds. What stays warm is the build cache in the reni, which is
+what makes the second cast cheap.
+""")]
+
+import os.process as proc
+import fs.file
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("Where a kalku works: the copy it casts in, and the package it came from.")]
+#[derive(Eq, Show)]
+pub type Work = { root: String, copy: String }
+
+#[doc("What running the tests came to.")]
+#[derive(Eq, Show)]
+pub type Ran = { passed: Int, failed: Int, first_failure: Option[String], broke: Option[String] }
+
+#[doc("""
+Copy the package into the reni, and warm the build cache there.
+
+A copy rather than a link: a wekufe is written into it, and a link would
+write into the user's file.
+""")]
+pub fn prepare(root: String, reni: String, worker: Int) : Result[Work, String] / Process {
+  let copy = "#{reni}/work/#{worker}"
+  if inside(reni, root) {
+    Err(refuse_nested(reni, root))
+  } else {
+    fill(root, copy)
+  }
+}
+
+# A reni inside the package would be copied into itself, on and on until
+# the path runs out of room — which on the way there fills a disk with
+# copies of someone's project. The reni belongs outside the tree it
+# measures.
+fn refuse_nested(reni: String, root: String) : String =
+  "the reni #{reni} is inside the package #{root}; copying would nest it in itself"
+
+fn inside(inner: String, outer: String) : Bool =
+  starts_with(inner, "#{outer}/") or inner == outer
+
+fn fill(root: String, copy: String) : Result[Work, String] / Process {
+  let _ = run(["/bin/rm", "-rf", copy])
+  let _ = run(["/bin/mkdir", "-p", copy])
+  match run(["/bin/cp", "-R", "#{root}/.", copy]) {
+    Err(e) -> Err("cannot copy the package into the reni: #{e}")
+    Ok(_) -> {
+      let w = Work { root: root, copy: copy }
+      let _warm = run_in(w, ["kai", "build", "."])
+      Ok(w)
+    }
+  }
+}
+
+
+#[doc("The sites in one file of the package, as kaikai's own mutate reports them.")]
+pub fn sites_in(w: Work, which: String, spells: [Spell]) : Result[[Site], String] / Process {
+  # Asked of the copy, not of the user's package: `kai mutate` builds a
+  # cache where it runs, and that cache does not belong in someone's tree.
+  match run_in(w, ["kai", "mutate", "--list", "--json", "--module", which]) {
+    Err(e) -> Err(e)
+    Ok(out) -> Ok(filter(flat_map(lines(out), site_of), s => contains(spells, s.spell)))
+  }
+}
+
+#[doc("Run the whole suite in the copy, for a baseline.")]
+pub fn test_all(w: Work) : Ran / Process = read_run(run_in(w, ["kai", "test", "--json", "."]))
+
+#[doc("""
+Run only these tests in the copy.
+
+Given none, the whole suite runs: a kalku that skipped the tests would
+report every wekufe as a survivor, which is the loudest possible lie.
+""")]
+pub fn test_only(w: Work, ids: [String]) : Ran / Process = if is_empty(ids) {
+  test_all(w)
+} else {
+  read_run(run_in(w, ["kai", "test", "--json"] ++ flat_map(ids, id => ["--only", id]) ++ ["."]))
+}
+
+#[doc("Write a wekufe's source over the copy's file, keeping what was there.")]
+pub fn splice_in(w: Work, which: String, source: String) : String / File {
+  let path = "#{w.copy}/#{which}"
+  let was = file.read(path)
+  file.write(path, source)
+  was
+}
+
+#[doc("Put the file in the copy back to what it held.")]
+pub fn restore(w: Work, which: String, was: String) : Unit / File =
+  file.write("#{w.copy}/#{which}", was)
+
+#[doc("""
+The source of one file, read from the copy.
+
+The copy is what gets built, and it is byte-identical to the user's file
+until a wekufe is spliced in — and again once it is restored.
+""")]
+pub fn source_of(w: Work, which: String) : String / File = file.read("#{w.copy}/#{which}")
+
+# ---- running ------------------------------------------------------------
+
+fn run_in(w: Work, argv: [String]) : Result[String, String] / Process =
+  run(["/bin/sh", "-c", "cd #{w.copy} && #{join(argv, " ")} 2>&1"])
+
+fn run(argv: [String]) : Result[String, String] / Process = match argv {
+  [] -> Err("nothing to run")
+  [cmd, ...args] -> match proc.start_piped(cmd, args) {
+    Err(e) -> Err(e)
+    Ok(child) -> drain(child, "")
+  }
+}
+
+fn drain(child: Child, so_far: String) : Result[String, String] / Process =
+  match proc.read_stdout(child) {
+    Err(e) -> Err(e)
+    Ok(chunk) -> if is_empty(chunk) {
+      {
+        let _ = proc.wait(child)
+        Ok(so_far)
+      }
+    } else {
+      drain(child, so_far ++ chunk)
+    }
+  }
+
+# ---- reading kaikai's answers -------------------------------------------
+
+# A run that produced no summary did not run: the build failed, and the
+# output is the diagnostic rather than results.
+fn read_run(out: Result[String, String]) : Ran = match out {
+  Err(e) -> Ran { passed: 0, failed: 0, first_failure: None, broke: Some(e) }
+  Ok(text) -> match find(lines(text), l => is_some(index_of(l, "\"type\":\"summary\""))) {
+    None -> Ran { passed: 0, failed: 0, first_failure: None, broke: Some(first_line(text)) }
+    Some(summary) -> tally(text, summary)
+  }
+}
+
+fn tally(text: String, summary: String) : Ran = Ran {
+  passed: number_in(summary, "passed"),
+  failed: number_in(summary, "failed"),
+  first_failure: first_failed(text),
+  broke: None
+}
+
+fn first_failed(text: String) : Option[String] = match find(
+  lines(text),
+  l => is_some(index_of(l, "\"status\":\"fail\""))
+) {
+  Some(line) -> text_in(line, "id")
+  None -> None
+}
+
+fn number_in(line: String, field: String) : Int = match json_decode(line) {
+  Some(v) -> as_int(get(v, field)).unwrap_or(0)
+  None -> 0
+}
+
+fn text_in(line: String, field: String) : Option[String] = match json_decode(line) {
+  Some(v) -> as_string(get(v, field))
+  None -> None
+}
+
+fn first_line(text: String) : String = head(lines(text)).unwrap_or("nothing on stdout")
+
+# ---- reading a site ----------------------------------------------------
+
+# Everything a site needs comes from kaikai's own listing: the span in
+# bytes, the text on both sides, and the declaration it lives in. Nothing
+# is inferred, so nothing is guessed.
+fn site_of(line: String) : [Site] = match json_decode(line) {
+  None -> []
+  Some(v) -> match spell_of(as_string(get(v, "operator")).unwrap_or("")) {
+    None -> []
+    Some(spell) -> [
+      Site {
+        site_id: site_id_of(v),
+        file: as_string(get(v, "file")).unwrap_or(""),
+        enclosing: as_string(get(v, "enclosing")),
+        ordinal: as_int(get(v, "ordinal")),
+        span: Span {
+          start: position_in(v, "start"),
+          end: Some(position_in(v, "end"))
+        },
+        spell: spell,
+        original: as_string(get(v, "original")),
+        replacement: as_string(get(v, "replacement")).unwrap_or(""),
+        reload: ModuleOnly
+      }
+    ]
+  }
+}
+
+fn position_in(v: JsonValue, field: String) : Position {
+  let at = get(v, field)
+  Position {
+    line: as_int(get(at, "line")).unwrap_or(0),
+    col: as_int(get(at, "col")).unwrap_or(0),
+    byte: as_int(get(at, "byte")).unwrap_or(0)
+  }
+}
+
+fn site_id_of(v: JsonValue) : String {
+  let where_at = as_string(get(v, "file")).unwrap_or("")
+  let at = as_int(get(get(v, "start"), "byte")).unwrap_or(0)
+  let spell = as_string(get(v, "operator")).unwrap_or("")
+  "#{where_at}:#{at}:#{spell}"
+}
+
+# The spells kaikai's own mutate applies; `foreign` is a driver's.
+fn spell_of(name: String) : Option[Spell] =
+  find([Arm, Compare, Connect, Negate, Literal, Call], s => spell_name(s) == name)
