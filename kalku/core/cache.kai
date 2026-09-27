@@ -1,0 +1,122 @@
+#[doc("""
+What makes a cast worth repeating, and what makes it a waste.
+
+A wekufe's outcome is keyed by everything that could change it: the
+kalku's version, the spell, where the site is, the source it was cut
+from, and the files of every test that would judge it. Change any of
+them and the old answer is about something else.
+
+Never a timestamp. A key that moves on its own turns a cache into a
+stopwatch: the same code would be re-cast because time passed, and a
+changed file would be trusted because it was touched a moment ago.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("A file and what is in it, as the cache knows it.")]
+#[derive(Eq, Show)]
+pub type FileHash = { file: String, hash: String }
+
+#[doc("""
+What a cast's outcome depends on.
+
+`tests` are the files of the covering tests, and `loaded` the files
+those tests pull in — a test that reads a fixture is judged by that
+fixture too, so a change to it has to invalidate the answer.
+""")]
+#[derive(Eq, Show)]
+pub type Inputs = {
+  adapter: String,
+  site: Site,
+  source: String,
+  tests: [FileHash],
+  loaded: [FileHash]
+}
+
+#[doc("""
+The key for one wekufe's outcome.
+
+Built from the parts in a fixed order so the same inputs give the same
+key on every machine and in every run.
+""")]
+pub fn key_of(i: Inputs) : String = digest(
+  join(
+    [i.adapter, spell_name(i.site.spell), where_of(i.site), i.source]
+      ++ sorted_hashes(i.tests)
+      ++ sorted_hashes(i.loaded),
+    "\u{1f}"
+  )
+)
+
+#[doc("""
+The key for a wekufe by the code it compiled to.
+
+Two wekufe that compile to the same program are the same program,
+however they were reached, so one cast answers for both.
+""")]
+pub fn code_key(adapter: String, code_hash: String) : String =
+  digest(join([adapter, "code", code_hash], "\u{1f}"))
+
+#[doc("Where a site is, in the terms a key can be built from.")]
+pub fn where_of(site: Site) : String {
+  let at = site.span.start
+  let ends = match site.span.end {
+    Some(e) -> "#{e.line}:#{e.col}:#{e.byte}"
+    None -> "-"
+  }
+  "#{site.file}:#{at.line}:#{at.col}:#{at.byte}:#{ends}:#{site.replacement}"
+}
+
+#[doc("""
+True when a cached answer is still about this wekufe.
+
+The comparison is the key, not the age: a cache entry is either about
+the same inputs or about different ones, and nothing in between.
+""")]
+pub fn still_valid(cached_key: String, now: Inputs) : Bool = cached_key == key_of(now)
+
+#[doc("""
+The files whose contents changed between two runs.
+
+What a warm run reloads, and what decides which wekufe have to be cast
+again rather than read from the cache.
+""")]
+pub fn changed(before: [FileHash], now: [FileHash]) : [String] =
+  flat_map(now, f => if is_unchanged(before, f) { [] } else { [f.file] })
+
+#[doc("True when this file's contents are what they were.")]
+pub fn is_unchanged(before: [FileHash], f: FileHash) : Bool = match find(
+  before,
+  old => old.file == f.file
+) {
+  Some(old) -> old.hash == f.hash
+  None -> false
+}
+
+# Order cannot change a key: two runs that list the same covering tests
+# differently are asking the same question.
+fn sorted_hashes(files: [FileHash]) : [String] =
+  sort(files | (f => "#{f.file}=#{f.hash}"))
+
+# FNV-1a over the bytes, the same hash the sharder uses: a few lines, no
+# dependency, and the same answer on every machine — which is all a cache
+# key needs.
+fn digest(text: String) : String = pad_left(int_to_hex(fnv(text)), 8, '0')
+
+fn fnv(s: String) : Int = foldl(bytes(s) | byte_to_int, 2166136261, mix)
+
+fn mix(acc: Int, byte: Int) : Int = wrap32(bit_xor(acc, byte) * 16777619)
+
+fn wrap32(n: Int) : Int {
+  let m = n % 4294967296
+  if m < 0 { m + 4294967296 } else { m }
+}
+
+fn int_to_hex(n: Int) : String = if n == 0 {
+  "0"
+} else {
+  int_to_hex(n / 16) ++ hex_digit(n % 16)
+}
+
+fn hex_digit(n: Int) : String = slice("0123456789abcdef", n, n + 1)

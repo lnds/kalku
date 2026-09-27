@@ -1,0 +1,97 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.cache
+
+fn site_at(file: String, line: Int, replacement: String) : Site = Site {
+  site_id: "s1",
+  file: file,
+  enclosing: Some("A.f/1"),
+  ordinal: None,
+  span: Span { start: Position { line: line, col: 5, byte: 40 }, end: None },
+  spell: Compare,
+  original: Some(">="),
+  replacement: replacement,
+  reload: ModuleOnly
+}
+
+fn inputs() : Inputs = Inputs {
+  adapter: "elixir 0.1",
+  site: site_at("lib/a.ex", 4, ">"),
+  source: "source-hash",
+  tests: [FileHash { file: "test/a_test.exs", hash: "t1" }],
+  loaded: [FileHash { file: "test/fixtures/x.json", hash: "f1" }]
+}
+
+# Everything that could change the answer is in the key, and nothing
+# else. A key that moved on its own would turn a cache into a stopwatch.
+test "the same inputs give the same key, every time" {
+  assert key_of(inputs()) == key_of(inputs())
+  assert still_valid(key_of(inputs()), inputs())
+}
+
+test "a change to anything the outcome depends on changes the key" {
+  let base = key_of(inputs())
+
+  assert key_of(Inputs { ...inputs(), adapter: "elixir 0.2" }) != base
+  assert key_of(Inputs { ...inputs(), source: "edited" }) != base
+  assert key_of(Inputs { ...inputs(), site: site_at("lib/a.ex", 5, ">") }) != base
+  assert key_of(Inputs { ...inputs(), site: site_at("lib/b.ex", 4, ">") }) != base
+  assert key_of(Inputs { ...inputs(), site: site_at("lib/a.ex", 4, ">=") }) != base
+
+  # A test's file, and a file that test reads: a fixture change can
+  # turn a kill into a survivor, so it belongs in the key.
+  assert key_of(Inputs { ...inputs(), tests: [FileHash { file: "test/a_test.exs", hash: "t2" }] })
+    != base
+  assert key_of(
+    Inputs { ...inputs(), loaded: [FileHash { file: "test/fixtures/x.json", hash: "f2" }] }
+  )
+    != base
+}
+
+# Two runs that list the same covering tests in a different order are
+# asking the same question.
+test "the order the covering tests come in does not change the key" {
+  let one = Inputs {
+    ...inputs(),
+    tests: [
+      FileHash { file: "test/a_test.exs", hash: "t1" },
+      FileHash { file: "test/b_test.exs", hash: "t2" }
+    ]
+  }
+  let other = Inputs {
+    ...inputs(),
+    tests: [
+      FileHash { file: "test/b_test.exs", hash: "t2" },
+      FileHash { file: "test/a_test.exs", hash: "t1" }
+    ]
+  }
+  assert key_of(one) == key_of(other)
+}
+
+# Two wekufe that compile to the same program are the same program,
+# however they were reached, so one cast answers for both.
+test "identical compiled code shares one key" {
+  assert code_key("elixir 0.1", "deadbeef") == code_key("elixir 0.1", "deadbeef")
+  assert code_key("elixir 0.1", "deadbeef") != code_key("elixir 0.1", "feedface")
+  assert code_key("elixir 0.1", "deadbeef") != code_key("elixir 0.2", "deadbeef")
+}
+
+test "a cached answer about other inputs is not still valid" {
+  assert not still_valid(key_of(inputs()), Inputs { ...inputs(), source: "edited" })
+}
+
+# What a warm run reloads, and what decides which wekufe are cast again.
+test "changed files are the ones whose contents moved, and the new ones" {
+  let before = [
+    FileHash { file: "lib/a.ex", hash: "1" },
+    FileHash { file: "lib/b.ex", hash: "2" }
+  ]
+  let now = [
+    FileHash { file: "lib/a.ex", hash: "1" },
+    FileHash { file: "lib/b.ex", hash: "CHANGED" },
+    FileHash { file: "lib/c.ex", hash: "3" }
+  ]
+
+  assert changed(before, now) == ["lib/b.ex", "lib/c.ex"]
+  assert changed(before, before) == []
+}
