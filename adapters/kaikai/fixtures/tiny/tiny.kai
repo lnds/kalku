@@ -1,4 +1,4 @@
-#[doc("A package small enough to measure by hand.")]
+#[doc("A package small enough to measure by hand — and it holds a dash, on purpose: the spans a kalku splices with are in bytes, and this is what tells a codepoint-counting splice apart from a byte-exact one.")]
 
 #[doc("Whether n is at or above the floor.")]
 pub fn above(n: Int, floor: Int) : Bool = n >= floor

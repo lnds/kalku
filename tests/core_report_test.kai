@@ -38,6 +38,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     survivors: survivors,
     on_changed_lines: length(blockers),
     suppressions: no_suppressions(),
+    troubles: [],
     blockers: blockers
   }
 
@@ -72,6 +73,17 @@ test "the human report leads with survivors and closes with the summary" {
 test "a survivor no test covers says so" {
   let lonely = Survivor { site: arm_site(), tests: [] }
   assert has(human(report_of([lonely], tally([Cast(Survived)]), [])), "no test covers it")
+}
+
+# Without per-test coverage a survivor is judged by the whole suite:
+# naming every test buries the diff, and naming the first three points at
+# tests that have nothing to do with the site.
+test "a survivor judged by a whole suite counts the tests it cannot name" {
+  let whole =
+    Survivor { site: arm_site(), tests: enumerate(list.repeat("t", 10)) | (p => "t#{p.fst}") }
+  let text = human(report_of([whole], tally([Cast(Survived)]), []))
+
+  assert has(text, "covered by 10 tests")
 }
 
 test "the summary reports apart what never entered the score" {
@@ -165,4 +177,24 @@ test "the step summary tables the survivors" {
   assert starts_with(text, "## kalku")
   assert has(text, "| `lib/a.ex:42` | compare | `- >= + >` |")
   assert has(step_summary(report_of([], tally([Cast(Killed)]), [])), "No survivors.")
+}
+
+# An outcome outside the score still has to be actionable: `1 compile
+# error` with no reason leaves a reader with nothing to fix.
+test "an outcome outside the score is reported with what the kalku said" {
+  let troubled = Report {
+    ...plain(),
+    troubles: [
+      Trouble {
+        wekufe: "lib/a.ex:42:compare",
+        outcome: CompileError,
+        said: Some("error: cannot find `f` in this scope\n  --> lib/a.ex:42\n")
+      }
+    ]
+  }
+  let text = human(troubled)
+
+  assert has(text, "what could not be measured:")
+  assert has(text, "lib/a.ex:42:compare  compile_error")
+  assert has(text, "error: cannot find `f` in this scope")
 }

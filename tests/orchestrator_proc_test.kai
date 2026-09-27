@@ -64,6 +64,7 @@ fn next() : String / Actor[OrchMsg] + Clock = next_within(PATIENCE)
 fn tell(r: KalkuReply) : String {
   case Ready(m) -> "ready #{m.language} protocol #{m.version}"
   case CastDone(m) -> "cast_done #{outcome_name(m.outcome)}"
+  case Prepared(_) -> "prepared"
   case Bye -> "bye"
   case other -> "#{other}"
 }
@@ -95,15 +96,17 @@ test "a kalku is summoned, answers, and leaves of its own accord" {
         listen_to(k)
         let _h = ask(k, 1, hello())
         let ready = next()
+        let _p = ask(k, 9, Prepare)
+        let prepared = next()
         let _c = ask(k, 2, a_cast("w1"))
         let outcome = next()
         let _s = ask(k, 3, Shutdown)
         let farewell = next()
-        [ready, outcome, farewell, ending(reap(k))]
+        [ready, prepared, outcome, farewell, ending(reap(k))]
       }
     }
   }
-  assert told == ["ready fake protocol 1", "cast_done killed", "bye", "exited 0"]
+  assert told == ["ready fake protocol 1", "prepared", "cast_done killed", "bye", "exited 0"]
 }
 
 # A version this side cannot speak is refused by name: guessing at what a
@@ -141,14 +144,16 @@ test "a line that is not JSON is a protocol error, and the kalku is still reapab
         listen_to(k)
         let _h = ask(k, 1, hello())
         let ready = next()
+        let _p = ask(k, 9, Prepare)
+        let prepared = next()
         let _c = ask(k, 2, a_cast("w1"))
         let noise = next()
         kill_now(k)
-        [ready, noise]
+        [ready, prepared, noise]
       }
     }
   }
-  assert told == ["ready fake protocol 1", "protocol error: not_json"]
+  assert told == ["ready fake protocol 1", "prepared", "protocol error: not_json"]
 }
 
 # A kalku that dies mid-cast closes its pipe; the wekufe it was casting is
@@ -161,13 +166,15 @@ test "a kalku that crashes mid-cast closes its pipe and reaps with its code" {
         listen_to(k)
         let _h = ask(k, 1, hello())
         let ready = next()
+        let _p = ask(k, 9, Prepare)
+        let prepared = next()
         let _c = ask(k, 2, a_cast("w1"))
         let end = next()
-        [ready, end, ending(reap(k))]
+        [ready, prepared, end, ending(reap(k))]
       }
     }
   }
-  assert told == ["ready fake protocol 1", "closed", "exited 7"]
+  assert told == ["ready fake protocol 1", "prepared", "closed", "exited 7"]
 }
 
 # The last step of the escalation: a kalku deaf to `abort` answers nothing,
@@ -180,16 +187,18 @@ test "a kalku that never answers is killed, and killing it leaves nothing behind
         listen_to(k)
         let _h = ask(k, 1, hello())
         let ready = next()
+        let _p = ask(k, 9, Prepare)
+        let prepared = next()
         let _c = ask(k, 2, a_cast("w1"))
         let hung = next_within(BRIEF)
         let _a = ask(k, 3, Abort(AbortMsg { cast: 2 }))
         let still_hung = next_within(BRIEF)
         kill_now(k)
         # Reaped by the kill, the pipe is gone rather than at end of input.
-        [ready, hung, still_hung, next_within(BRIEF)]
+        [ready, prepared, hung, still_hung, next_within(BRIEF)]
       }
     }
   }
 
-  assert told == ["ready fake protocol 1", "silence", "silence", "unreadable"]
+  assert told == ["ready fake protocol 1", "prepared", "silence", "silence", "unreadable"]
 }

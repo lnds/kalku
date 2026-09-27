@@ -17,6 +17,15 @@ pub type Origin = Bytecode | Declared
 #[derive(Eq, Show)]
 pub type Verdict = Cast(Outcome) | EquivalentBy(Origin)
 
+#[doc("""
+A verdict from an outcome a kalku reported.
+
+Named rather than written as `Cast(o)` at the call site: the protocol has
+a `Cast` request too, and a module that knows about both cannot say which
+one it means.
+""")]
+pub fn of_outcome(o: Outcome) : Verdict = Cast(o)
+
 #[doc("The protocol outcome a verdict reports.")]
 pub fn outcome_of(v: Verdict) : Outcome {
   case Cast(o) -> o

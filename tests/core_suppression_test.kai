@@ -65,3 +65,11 @@ test "excluded calls are diffed the same way" {
     Suppressions { equivalent: [], exclude: [], exclude_calls: ["Logger.debug", "Logger.*"] }
   assert added(old, new).exclude_calls_added == ["Logger.*"]
 }
+
+# A prefix is counted in bytes, so it is cut in bytes: half a character
+# matches nothing, and a suppression that silently matches nothing is a
+# hole nobody is told about.
+test "a wider pattern with a multibyte character still covers what it should" {
+  assert covers("lib/café/**", "lib/café/one.ex")
+  assert not covers("lib/café/**", "lib/cafe/one.ex")
+}
