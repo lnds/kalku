@@ -98,16 +98,14 @@ fn block(s: Survivor) : [String] =
 fn covered_by(s: Survivor) : String =
   if is_empty(s.tests) { "  no test covers it" } else { "  covered by #{named(s.tests)}" }
 
-# Named while the list is short enough to read, counted past that: a
-# survivor judged by a whole suite would otherwise bury its own diff
-# under every test id there is.
-fn named(tests: [String]) : String {
-  let rest = length(tests) - SHOWN_TESTS
-  if rest <= 0 {
-    join(tests, ", ")
-  } else {
-    "#{join(take(tests, SHOWN_TESTS), ", ")} and #{rest} more"
-  }
+# Named while the list is short enough to read, counted past that. Not
+# the first few of a long list: without coverage to select by, the order
+# is the suite's, and the three it would name have nothing to do with the
+# site — which reads as an attribution kalku did not make.
+fn named(tests: [String]) : String = if length(tests) <= SHOWN_TESTS {
+  join(tests, ", ")
+} else {
+  "#{length(tests)} tests"
 }
 
 # An outcome that never enters the score still has to be actionable: a

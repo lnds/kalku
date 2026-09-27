@@ -75,14 +75,15 @@ test "a survivor no test covers says so" {
   assert has(human(report_of([lonely], tally([Cast(Survived)]), [])), "no test covers it")
 }
 
-# Without per-test coverage a survivor is judged by the whole suite, and
-# naming every test would bury the diff it exists to show.
+# Without per-test coverage a survivor is judged by the whole suite:
+# naming every test buries the diff, and naming the first three points at
+# tests that have nothing to do with the site.
 test "a survivor judged by a whole suite counts the tests it cannot name" {
   let whole =
     Survivor { site: arm_site(), tests: enumerate(list.repeat("t", 10)) | (p => "t#{p.fst}") }
   let text = human(report_of([whole], tally([Cast(Survived)]), []))
 
-  assert has(text, "covered by t0, t1, t2 and 7 more")
+  assert has(text, "covered by 10 tests")
 }
 
 test "the summary reports apart what never entered the score" {
