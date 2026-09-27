@@ -22,6 +22,9 @@ import kalku.wire.shapes
 #[derive(Eq, Show)]
 pub type Work = { root: String, copy: String }
 
+# Enough of a diagnostic to name the file, the line and the error.
+const KEPT_LINES : Int = 12
+
 #[doc("What running the tests came to.")]
 #[derive(Eq, Show)]
 pub type Ran = {
@@ -95,7 +98,6 @@ fn fill(root: String, copy: String) : Result[Work, String] / Process + File {
   }
 }
 
-
 fn copy_worth_having(root: String, copy: String) : Result[String, String] / Process + File {
   let entries = filter(dir.list_dir(root), worth_copying)
   if is_empty(entries) {
@@ -108,7 +110,7 @@ fn copy_worth_having(root: String, copy: String) : Result[String, String] / Proc
 # A dotted entry is tooling's, not the package's — and one of them is the
 # reni itself, which would nest the tree inside itself.
 fn worth_copying(entry: String) : Bool =
-  not starts_with(entry, ".") and entry != "_build" and entry != "deps"
+  (not starts_with(entry, ".")) and entry != "_build" and entry != "deps"
 
 #[doc("The sites in one file of the package, as kaikai's own mutate reports them.")]
 pub fn sites_in(w: Work, which: String, spells: [Spell]) : Result[[Site], String] / Process {
@@ -191,64 +193,76 @@ fn drain(child: Child, so_far: String) : Result[String, String] / Process =
 
 # ---- reading kaikai's answers -------------------------------------------
 
-# A run that produced no summary did not run: the build failed, and the
-# output is the diagnostic rather than results.
+# Counted from the tests themselves, never from a summary line: `kai test`
+# writes one summary per test module, so reading "the" summary reads one
+# module and calls it the suite — which turns a wekufe a later module
+# killed into a survivor.
 fn read_run(out: Result[String, String]) : Ran = match out {
   Err(e) -> broken(e)
-  Ok(text) -> match find(lines(text), l => is_some(index_of(l, "\"type\":\"summary\""))) {
-    None -> broken(first_line(text))
-    Some(summary) -> tally(text, summary)
+  Ok(text) -> {
+    let said = lines(text)
+    let judged = flat_map(said, judged_of)
+    if is_empty(judged) { broken(diagnostic(said)) } else { tallied(judged) }
   }
 }
 
 fn broken(why: String) : Ran =
   Ran { passed: 0, failed: 0, first_failure: None, broke: Some(why), tests: [] }
 
-fn tally(text: String, summary: String) : Ran = Ran {
-  passed: number_in(summary, "passed"),
-  failed: number_in(summary, "failed"),
-  first_failure: first_failed(text),
+fn tallied(judged: [Judged]) : Ran = Ran {
+  passed: length(judged |? (j => not j.failed)),
+  failed: length(judged |? (.failed)),
+  first_failure: first_failed(judged),
   broke: None,
-  tests: flat_map(lines(text), timing_of)
+  tests: judged | (.timing)
 }
 
-# Every test the suite has, by the id `--only` selects it with. Without
-# coverage to narrow them down, this is what a cast runs against — and
-# the kaikai side cannot plan a single cast without knowing they exist.
-fn timing_of(line: String) : [TestTiming] = if is_some(index_of(line, "\"type\":\"test\"")) {
-  match text_in(line, "id") {
-    Some(id) -> [
-      TestTiming {
-        test_id: id,
-        file: text_in(line, "file").unwrap_or(""),
-        duration_ms: number_in(line, "duration_ms")
-      }
-    ]
+fn first_failed(judged: [Judged]) : Option[String] = match find(judged, j => j.failed) {
+  Some(j) -> Some(j.timing.test_id)
+  None -> None
+}
+
+# One test as kaikai reported it: the id `--only` selects it with, and
+# whether it held.
+type Judged = { timing: TestTiming, failed: Bool }
+
+fn judged_of(line: String) : [Judged] = if is_some(index_of(line, "\"type\":\"test\"")) {
+  match json_decode(line) {
     None -> []
+    Some(v) -> match as_string(get(v, "id")) {
+      None -> []
+      Some(id) -> [
+        Judged {
+          timing: TestTiming {
+            test_id: id,
+            file: as_string(get(v, "file")).unwrap_or(""),
+            duration_ms: as_int(get(v, "duration_ms")).unwrap_or(0)
+          },
+          failed: as_string(get(v, "status")).unwrap_or("") != "pass"
+        }
+      ]
+    }
   }
 } else {
   []
 }
 
-fn first_failed(text: String) : Option[String] = match find(
-  lines(text),
-  l => is_some(index_of(l, "\"status\":\"fail\""))
-) {
-  Some(line) -> text_in(line, "id")
-  None -> None
-}
+# No test ran, so the output is a diagnostic rather than results. A
+# toolchain leads with a banner and its warnings, and only the error that
+# stopped it says why nothing ran, so the quote starts there.
+fn diagnostic(said: [String]) : String =
+  join(from_first_error(said |? (l => (not starts_with(l, "{")) and (not is_blank(l)))), "\n")
 
-fn number_in(line: String, field: String) : Int = match json_decode(line) {
-  Some(v) -> as_int(get(v, field)).unwrap_or(0)
-  None -> 0
-}
+fn from_first_error(said: [String]) : [String] =
+  match find(enumerate(said), l => is_some(index_of(l.snd, "error"))) {
+    Some(hit) -> take(enumerate(said) |? (l => l.fst >= hit.fst) | (.snd), KEPT_LINES)
+    None -> last_few(said, KEPT_LINES)
+  }
 
-fn text_in(line: String, field: String) : Option[String] = match json_decode(line) {
-  Some(v) -> as_string(get(v, field))
-  None -> None
+fn last_few(said: [String], keep: Int) : [String] {
+  let extra = length(said) - keep
+  if extra <= 0 { said } else { enumerate(said) |? (l => l.fst >= extra) | (.snd) }
 }
-
-fn first_line(text: String) : String = head(lines(text)).unwrap_or("nothing on stdout")
 
 # ---- reading a site ----------------------------------------------------
 

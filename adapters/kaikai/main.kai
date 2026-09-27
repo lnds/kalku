@@ -39,7 +39,11 @@ fn serve(state: Serving) : Int / Stdin + Stdout + Stderr + File + Process {
   }
 }
 
-fn answer(id: Int, request: KalkuRequest, state: Serving) : Int / Stdin + Stdout + Stderr + File + Process = match request {
+fn answer(
+  id: Int,
+  request: KalkuRequest,
+  state: Serving
+) : Int / Stdin + Stdout + Stderr + File + Process = match request {
   Hello(m) -> {
     say(encode_reply(id, greeting(m)))
     serve(Serving { root: m.root, reni: m.reni, worker: m.worker, work: None })
@@ -140,18 +144,19 @@ fn found(m: SitesMsg, state: Serving) : KalkuReply / Process = match state.work 
   Some(w) -> gather(w, m, [], [])
 }
 
-fn gather(w: Work, m: SitesMsg, sites: [Site], skipped: [Skipped]) : KalkuReply / Process = match m.files {
-  [] -> SitesFound(SitesFoundMsg { sites: sites, skipped: skipped })
-  [file, ...rest] -> match sites_in(w, file, m.spells) {
-    Ok(found_here) -> gather(w, SitesMsg { ...m, files: rest }, sites ++ found_here, skipped)
-    Err(why) -> gather(
-      w,
-      SitesMsg { ...m, files: rest },
-      sites,
-      skipped ++ [Skipped { file: file, reason: "unreadable", message: why }]
-    )
+fn gather(w: Work, m: SitesMsg, sites: [Site], skipped: [Skipped]) : KalkuReply / Process =
+  match m.files {
+    [] -> SitesFound(SitesFoundMsg { sites: sites, skipped: skipped })
+    [file, ...rest] -> match sites_in(w, file, m.spells) {
+      Ok(found_here) -> gather(w, SitesMsg { ...m, files: rest }, sites ++ found_here, skipped)
+      Err(why) -> gather(
+        w,
+        SitesMsg { ...m, files: rest },
+        sites,
+        skipped ++ [Skipped { file: file, reason: "unreadable", message: why }]
+      )
+    }
   }
-}
 
 # ---- cast ----------------------------------------------------------------
 
@@ -177,7 +182,11 @@ fn outcome_of(wekufe: String, r: Ran) : KalkuReply = match r.broke {
   }
 }
 
-# The span is in bytes, so the splice is exact whatever the file holds.
+# The span is in bytes, and it is cut in bytes: `slice` counts codepoints,
+# so a single accented character or dash anywhere earlier in the file
+# would move the splice off the site and mutate whatever sits two bytes
+# along. That is a wekufe with more than one defect in it, which is the
+# one thing a wekufe may not be.
 fn splice(w: Work, site: Site) : Result[String, String] / File {
   let source = source_of(w, site.file)
   let from = site.span.start.byte
@@ -188,9 +197,15 @@ fn splice(w: Work, site: Site) : Result[String, String] / File {
   if to < from or to > length(source) {
     Err("the site's span is not inside #{site.file}")
   } else {
-    Ok(slice(source, 0, from) ++ site.replacement ++ slice(source, to, length(source)))
+    spliced(source, from, to, site)
   }
 }
+
+fn spliced(source: String, from: Int, to: Int, site: Site) : Result[String, String] =
+  match (byte_slice(source, 0, from), byte_slice(source, to, length(source) - to)) {
+    (Some(before), Some(after)) -> Ok(before ++ site.replacement ++ after)
+    _ -> Err("the site's span does not fall on character boundaries in #{site.file}")
+  }
 
 fn done(wekufe: String, outcome: Outcome, by: Option[String], why: Option[String]) : KalkuReply =
   CastDone(CastDoneMsg {

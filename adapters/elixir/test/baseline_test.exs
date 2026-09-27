@@ -15,14 +15,15 @@ defmodule Kalku.BaselineTest do
 
       # A test is named by where it is written, relative to the project:
       # every kalku in a pool has to call the same test the same thing.
-      assert Enum.map(done["tests"], & &1["test"]) == [
-               "test/green_test.exs:4",
-               "test/green_test.exs:9",
+      assert Enum.sort(Enum.map(done["tests"], & &1["test"])) == [
+               "test/aaa_green_test.exs:8",
                "test/green_test.exs:13",
-               "test/green_test.exs:17"
+               "test/green_test.exs:17",
+               "test/green_test.exs:4",
+               "test/green_test.exs:9"
              ]
 
-      assert Enum.all?(done["tests"], &(&1["file"] == "test/green_test.exs"))
+      assert Enum.all?(done["tests"], &(&1["file"] =~ "_test.exs"))
       assert Enum.all?(done["tests"], &(&1["duration_ms"] >= 0))
     end
 
