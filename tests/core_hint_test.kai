@@ -1,0 +1,58 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.hint
+
+fn site_of(spell: Spell, original: Option[String], enclosing: Option[String]) : Site = Site {
+  site_id: "s1",
+  file: "lib/parser.ex",
+  enclosing: enclosing,
+  ordinal: None,
+  span: Span { start: Position { line: 42, col: 7, byte: 0 }, end: None },
+  spell: spell,
+  original: original,
+  replacement: ">",
+  reload: ModuleOnly
+}
+
+fn hint(spell: Spell, original: Option[String]) : String =
+  hint_for(site_of(spell, original, Some("Parser.next/2")))
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+# A hint names what to write, not what happened: a survivor is already
+# the news, and the sentence has to be the next step.
+test "every spell has a hint that says what to do" {
+  assert has(hint(Arm, None), "Add a case that takes it")
+  assert has(hint(Compare, Some(">=")), "boundary where the two sides are equal")
+  assert has(hint(Connect, Some("and")), "each side on its own")
+  assert has(hint(Negate, None), "the other branch")
+  assert has(hint(Literal, Some("0")), "exact value")
+  assert has(hint(Call, Some("log(x)")), "Assert what it returns")
+  assert has(hint(Foreign, Some("mutator.rename")), "No test detects this change")
+}
+
+# Where the site carries the text it changed, the hint quotes it, so an
+# agent can find the place without opening the file.
+test "a hint quotes the text the site changed" {
+  assert has(hint(Compare, Some(">=")), "`>=`")
+  assert has(hint(Compare, Some(">=")), "`>`")
+  assert has(hint(Literal, Some("0")), "`0`")
+  assert has(hint(Call, Some("log(x)")), "`log(x)`")
+}
+
+# A kalku that reports positions but no text gets the general sentence
+# rather than an invented operand. Never a guess.
+test "a site with no text degrades to the general sentence" {
+  assert has(hint(Compare, None), "this comparison")
+  assert not has(hint(Compare, None), "``")
+  assert has(hint(Literal, None), "this exact value")
+  assert has(hint(Call, None), "this call")
+  assert has(hint(Connect, None), "this condition")
+  assert has(hint(Foreign, None), "No test detects this change.")
+}
+
+test "a hint names the declaration when the site knows it, and stays quiet when it does not" {
+  assert has(hint_for(site_of(Arm, None, Some("Parser.next/2"))), "of `Parser.next/2`")
+  assert not has(hint_for(site_of(Arm, None, None)), "of `")
+  assert has(hint_for(site_of(Arm, None, None)), "No test reaches this clause.")
+}

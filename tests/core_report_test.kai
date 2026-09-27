@@ -89,6 +89,14 @@ test "the summary reports apart what never entered the score" {
     == "score 50% · 1 killed · 1 survived · 1 timeout · 1 no coverage · 1 compile error · 1 crashed · 2 equivalent (1 bytecode, 1 declared)"
 }
 
+# A survivor is only half the news; the other half is what to do about
+# it, and a reader should not have to go looking for it.
+test "every survivor is followed by what to do about it" {
+  let text = human(plain())
+  assert has(text, "No test tells")
+  assert has(text, "Add a case at the boundary")
+}
+
 test "a run with nothing to kill says n/a, never 100%" {
   assert has(summary_line(report_of([], tally([Cast(Timeout)]), [])), "score n/a")
 }
