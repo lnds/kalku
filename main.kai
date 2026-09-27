@@ -59,9 +59,9 @@ fn asking_for(root: String, files: [String]) : Asking / Env = Asking {
   spec: PoolSpec {
     command: "adapters/kaikai/bin/kalku-kaikai",
     args: [],
-    workers: 2,
+    workers: asked_workers(),
     root: root,
-    reni: "/tmp/kalku-self/reni",
+    reni: asked_reni(),
     inline_limit_bytes: 65536,
     env: StrMap { entries: [] },
     greeting_ms: 60000,
@@ -85,6 +85,18 @@ fn asking_for(root: String, files: [String]) : Asking / Env = Asking {
 # from the environment, defaulting to kalku measuring kalku — which is
 # the claim, and also the slowest possible run.
 fn asked_root() : String / Env = Env.get("KALKU_ROOT").unwrap_or(".")
+
+# Outside the package it measures, always: a reni inside it would be
+# copied into itself.
+fn asked_reni() : String / Env = Env.get("KALKU_RENI").unwrap_or("/tmp/kalku-self/reni")
+
+# One kalku builds and tests in its own copy of the package; two do it at
+# the same time. Askable because a run that differs only in this is how a
+# problem gets pinned on the pool rather than on the wekufe.
+fn asked_workers() : Int / Env = match Env.get("KALKU_WORKERS") {
+  Some(text) -> to_int(text).unwrap_or(2)
+  None -> 2
+}
 
 fn asked_limit() : Int / Env = match Env.get("KALKU_LIMIT") {
   Some(text) -> to_int(text).unwrap_or(2)
