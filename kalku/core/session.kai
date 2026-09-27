@@ -1,0 +1,155 @@
+#[doc("""
+A project's session: what state it is in, and what may happen next.
+
+One session per project root, shared by every client that asks about
+that root. Runs are serialised — a project has one set of warm kalku and
+two runs would measure each other — but `status` is answered at any
+moment, including mid-run, because a client that cannot ask what is
+happening has no way to decide whether to wait.
+
+Nothing here performs an effect. The server carries these decisions out;
+keeping them apart is what lets every transition in *Session states* be
+a test rather than a race.
+""")]
+
+#[doc("Where a session is, exactly as *Session states* draws it.")]
+#[derive(Eq, Show)]
+pub type State
+  = Cold
+  | Preparing
+  | Baselining
+  | Ready
+  | Running
+  | Failed(String)
+  | Closed
+
+#[doc("What happened to a session.")]
+#[derive(Eq, Show)]
+pub type Event
+  = Asked
+  | Prepared
+  | BaselineGreen
+  | BaselineRed(String)
+  | Broke(String)
+  | Finished
+  | Cancelled
+  | WentIdle
+  | Shut
+
+#[doc("A session: the state it is in and how many runs are waiting behind the one going on.")]
+#[derive(Eq, Show)]
+pub type Session = { root: String, state: State, queued: Int }
+
+#[doc("A session nobody has asked anything of yet.")]
+pub fn opened(root: String) : Session = Session { root: root, state: Cold, queued: 0 }
+
+#[doc("""
+Where an event takes a session.
+
+A `run` asked of a session that is already running does not restart
+anything: it waits, and the count of waiting runs is what the server
+answers `status` with.
+
+A `failed` session keeps its diagnostics until the next run, which
+starts over from cold — the failure was about the project as it was, and
+the point of asking again is that it may not be any more.
+""")]
+pub fn step(s: Session, e: Event) : Session {
+  case s, Shut -> Session { ...s, state: Closed, queued: 0 }
+  case s, Broke(why) -> Session { ...s, state: Failed(why), queued: 0 }
+  case s, Asked -> asked(s)
+  case s, Prepared -> if s.state == Preparing { Session { ...s, state: Baselining } } else { s }
+  case s, BaselineGreen -> if s.state == Baselining { Session { ...s, state: Running } } else { s }
+  case s, BaselineRed(why) -> if s.state == Baselining {
+    Session { ...s, state: Failed(why), queued: 0 }
+  } else {
+    s
+  }
+  case s, Finished -> finished(s)
+  case s, Cancelled ->
+    if s.state == Running { Session { ...s, state: Ready, queued: 0 } } else { s }
+  case s, WentIdle -> if s.state == Ready { Session { ...s, state: Closed } } else { s }
+}
+
+# A run asked of a warm session starts at once; asked of a busy one it
+# waits; asked of a failed or closed one it starts over from cold, which
+# is what gives a project a second chance after a bad state.
+fn asked(s: Session) : Session = match s.state {
+  Cold -> Session { ...s, state: Preparing }
+  Ready -> Session { ...s, state: Running }
+  Running -> Session { ...s, queued: s.queued + 1 }
+  Preparing -> Session { ...s, queued: s.queued + 1 }
+  Baselining -> Session { ...s, queued: s.queued + 1 }
+  Failed(_) -> Session { root: s.root, state: Preparing, queued: 0 }
+  Closed -> Session { root: s.root, state: Preparing, queued: 0 }
+}
+
+# A finished run leaves the session warm, and takes the next waiting run
+# with it rather than making the client ask again.
+fn finished(s: Session) : Session = if s.state != Running {
+  s
+} else if s.queued > 0 {
+  Session { ...s, queued: s.queued - 1 }
+} else {
+  Session { ...s, state: Ready, queued: 0 }
+}
+
+#[doc("True when a run asked for now would have to wait.")]
+pub fn busy(s: Session) : Bool = s.state == Running or s.queued > 0
+
+#[doc("True when the kalku of this session are warm and a run can start at once.")]
+pub fn warm(s: Session) : Bool = s.state == Ready
+
+#[doc("Why a session failed, if it did.")]
+pub fn failure(s: Session) : Option[String] = match s.state {
+  Failed(why) -> Some(why)
+  _ -> None
+}
+
+#[doc("The state's name, as `status` reports it.")]
+pub fn state_name(s: State) : String {
+  case Cold -> "cold"
+  case Preparing -> "preparing"
+  case Baselining -> "baseline"
+  case Ready -> "ready"
+  case Running -> "running"
+  case Failed(_) -> "failed"
+  case Closed -> "closed"
+}
+
+# ---- many sessions ------------------------------------------------------
+
+#[doc("""
+Every session the server holds, one per root.
+
+The root is canonical before it gets here: two clients naming the same
+project differently must land on the same session, or they would summon
+two sets of kalku for one project and each measure half of it.
+""")]
+pub type Sessions = { open: [Session] }
+
+#[doc("A server holding no sessions yet.")]
+pub fn no_sessions() : Sessions = Sessions { open: [] }
+
+#[doc("The session for this root, opening one if this is the first time it is named.")]
+pub fn session_for(all: Sessions, root: String) : (Sessions, Session) = match find(
+  all.open,
+  s => s.root == root
+) {
+  Some(found) -> (all, found)
+  None -> {
+    let fresh = opened(root)
+    (Sessions { open: all.open ++ [fresh] }, fresh)
+  }
+}
+
+#[doc("The server with this session's new state remembered.")]
+pub fn remember(all: Sessions, s: Session) : Sessions =
+  Sessions { open: all.open | (each_one => if each_one.root == s.root { s } else { each_one }) }
+
+#[doc("Sessions that are closed are no longer the server's to hold.")]
+pub fn forget_closed(all: Sessions) : Sessions =
+  Sessions { open: filter(all.open, s => s.state != Closed) }
+
+#[doc("How many sessions the server is holding.")]
+pub fn how_many(all: Sessions) : Int = length(all.open)
