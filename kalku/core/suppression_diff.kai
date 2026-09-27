@@ -1,0 +1,68 @@
+#[doc("""
+What a change suppressed, so that suppressing is never quiet.
+
+A hole can be closed by writing a test or by telling kalku to stop
+looking. Both make the score go up and only one makes the code better,
+so a change that widens what is ignored says so in every report it
+appears in.
+
+Only additions are counted. Removing a suppression is never a way of
+hiding a hole, so a change that removes one has nothing to answer for.
+""")]
+
+import kalku.wire.shapes
+
+#[doc("What a change added to what kalku is told to ignore.")]
+#[derive(Eq, Show)]
+pub type Suppressions = { equivalent: [String], exclude: [String], exclude_calls: [String] }
+
+#[doc("Nothing suppressed: what an unchanged project has to answer for.")]
+pub fn nothing() : Suppressions = Suppressions { equivalent: [], exclude: [], exclude_calls: [] }
+
+#[doc("""
+What the new version suppresses that the old one did not.
+
+A pattern that is not in the old list counts as added, and so does one
+that covers an old pattern's ground and more: widening `lib/gen/a/**` to
+`lib/gen/**` hides everything the narrower one did and then some, which
+is exactly the move this exists to surface.
+""")]
+pub fn added(old: Suppressions, new: Suppressions) : SuppressionChanges = SuppressionChanges {
+  equivalent_added: length(new_in(old.equivalent, new.equivalent)),
+  exclude_added: widened(old.exclude, new.exclude),
+  exclude_calls_added: widened(old.exclude_calls, new.exclude_calls)
+}
+
+#[doc("The equivalent entries this change added, by their keys.")]
+pub fn equivalent_added(old: Suppressions, new: Suppressions) : [String] =
+  new_in(old.equivalent, new.equivalent)
+
+#[doc("True when a change suppressed nothing at all.")]
+pub fn quiet(changes: SuppressionChanges) : Bool =
+  changes.equivalent_added == 0
+    and is_empty(changes.exclude_added)
+    and is_empty(changes.exclude_calls_added)
+
+fn new_in(old: [String], new: [String]) : [String] = filter(new, p => not contains(old, p))
+
+# Added outright, or added by widening: a pattern nobody had before, or
+# one that swallows a pattern that was already there.
+fn widened(old: [String], new: [String]) : [String] =
+  filter(new, p => (not contains(old, p)) or covers_more(p, old))
+
+fn covers_more(pattern: String, old: [String]) : Bool =
+  is_some(find(old, other => other != pattern and covers(pattern, other)))
+
+#[doc("""
+True when `wide` matches everywhere `narrow` does and more.
+
+Only the shape a glob widens by: a prefix ending in `**` covers anything
+that starts with that prefix. Anything subtler is left alone rather than
+claimed — a diff that cried wolf about patterns it half-understood would
+be ignored, which is the one thing this must not be.
+""")]
+pub fn covers(wide: String, narrow: String) : Bool =
+  ends_with(wide, "**") and starts_with(narrow, drop_end(wide, 2)) and wide != narrow
+
+fn drop_end(s: String, n: Int) : String =
+  if length(s) <= n { "" } else { slice(s, 0, length(s) - n) }

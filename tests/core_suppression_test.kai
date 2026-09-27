@@ -1,0 +1,67 @@
+import kalku.wire.shapes
+import kalku.core.suppression_diff
+
+fn suppressing(equivalent: [String], exclude: [String]) : Suppressions =
+  Suppressions { equivalent: equivalent, exclude: exclude, exclude_calls: [] }
+
+# A hole can be closed by writing a test or by telling kalku to stop
+# looking. Both raise the score and only one is work.
+test "an entry the old version did not have is an addition" {
+  let old = suppressing(["lib/a.ex:A.f/1:compare"], [])
+  let new = suppressing(["lib/a.ex:A.f/1:compare", "lib/b.ex:B.g/2:arm"], [])
+  let changes = added(old, new)
+
+  assert changes.equivalent_added == 1
+  assert equivalent_added(old, new) == ["lib/b.ex:B.g/2:arm"]
+  assert not quiet(changes)
+}
+
+test "a change that suppressed nothing has nothing to answer for" {
+  let same = suppressing(["lib/a.ex:A.f/1:compare"], ["lib/gen/**"])
+  assert quiet(added(same, same))
+  assert added(same, same)
+    == SuppressionChanges {
+      equivalent_added: 0,
+      exclude_added: [],
+      exclude_calls_added: []
+    }
+}
+
+# Removing a suppression is never a way of hiding a hole.
+test "removing a suppression is not reported" {
+  let old = suppressing(["lib/a.ex:A.f/1:compare", "lib/b.ex:B.g/2:arm"], ["lib/gen/**"])
+  let new = suppressing(["lib/a.ex:A.f/1:compare"], [])
+  assert quiet(added(old, new))
+}
+
+# The move this exists to catch: the pattern was already there, and the
+# change made it swallow more ground.
+test "a glob widened over one that was already there counts as added" {
+  let old = suppressing([], ["lib/gen/a/**"])
+  let new = suppressing([], ["lib/gen/**"])
+  assert added(old, new).exclude_added == ["lib/gen/**"]
+}
+
+test "a pattern that covers no old one, and was already listed, is not an addition" {
+  let old = suppressing([], ["lib/gen/**", "lib/other/**"])
+  let new = suppressing([], ["lib/gen/**", "lib/other/**"])
+  assert added(old, new).exclude_added == []
+}
+
+# Only the shape a glob widens by. A diff that cried wolf about patterns
+# it half-understood would be ignored, which is the one thing it must
+# not be.
+test "covering is claimed only where it is certain" {
+  assert covers("lib/**", "lib/gen/a.ex")
+  assert covers("lib/gen/**", "lib/gen/a/**")
+  assert not covers("lib/gen/**", "lib/gen/**")
+  assert not covers("lib/gen/a.ex", "lib/gen/a.ex")
+  assert not covers("lib/**", "test/a.ex")
+}
+
+test "excluded calls are diffed the same way" {
+  let old = Suppressions { equivalent: [], exclude: [], exclude_calls: ["Logger.debug"] }
+  let new =
+    Suppressions { equivalent: [], exclude: [], exclude_calls: ["Logger.debug", "Logger.*"] }
+  assert added(old, new).exclude_calls_added == ["Logger.*"]
+}
