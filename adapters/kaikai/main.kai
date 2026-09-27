@@ -1,0 +1,211 @@
+#[doc("""
+The kaikai kalku: the one kalku measures itself with.
+
+It speaks the kalku protocol on stdio like any other kalku, and it is
+thin on purpose — kaikai's own `kai mutate` finds the sites and `kai
+test` judges them. What this adds is the protocol, the workspace in the
+reni, and the honesty about what it cannot know.
+
+It claims neither `hot_load` nor `per_test_coverage` nor `reset`: every
+cast rebuilds, kaikai reports no per-test coverage, and there is no
+shared runtime to dirty. A capability is claimed only once it is true.
+""")]
+
+import fs.file
+import kalku.wire.enums
+import kalku.wire.envelope
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.wire.kalku_codec
+import kalku.wire.version
+import kaikai_kalku.work
+
+type Serving = { root: String, reni: String, worker: Int, work: Option[Work] }
+
+fn main() : Int / Stdin + Stdout + Stderr + File + Process + Env {
+  serve(Serving { root: ".", reni: "", worker: 0, work: None })
+}
+
+fn serve(state: Serving) : Int / Stdin + Stdout + Stderr + File + Process {
+  match Stdin.read_line() {
+    None -> 0
+    Some(line) -> match decode_request(trim_right(line)) {
+      Err(e) -> {
+        say(encode_reply(0, refusal("bad_request", "#{kind_name(e.kind)}: #{e.detail}", false)))
+        serve(state)
+      }
+      Ok(m) -> answer(m.id, m.body, state)
+    }
+  }
+}
+
+fn answer(id: Int, request: KalkuRequest, state: Serving) : Int / Stdin + Stdout + Stderr + File + Process = match request {
+  Hello(m) -> {
+    say(encode_reply(id, greeting(m)))
+    serve(Serving { root: m.root, reni: m.reni, worker: m.worker, work: None })
+  }
+  Prepare -> prepared(id, state)
+  Baseline -> {
+    say(encode_reply(id, baseline_of(state)))
+    serve(state)
+  }
+  Sites(m) -> {
+    say(encode_reply(id, found(m, state)))
+    serve(state)
+  }
+  Cast(m) -> {
+    say(encode_reply(id, cast_one(m, state)))
+    serve(state)
+  }
+  Shutdown -> {
+    say(encode_reply(id, Bye))
+    0
+  }
+  other -> {
+    say(encode_reply(id, refusal("bad_request", "`#{other}` is not served by this kalku", false)))
+    serve(state)
+  }
+}
+
+# ---- hello ---------------------------------------------------------------
+
+fn greeting(m: HelloMsg) : KalkuReply = if not compatible(m.version) {
+  refusal(
+    "protocol_mismatch",
+    "this kalku speaks protocol #{PROTOCOL_VERSION}, the kaikai side speaks #{m.version}",
+    true
+  )
+} else {
+  Ready(ReadyMsg {
+    version: PROTOCOL_VERSION,
+    language: "kaikai",
+    adapter: "kalku_kaikai 0.0.0",
+    runtime: "kaikai",
+    spells: mutate_spells(),
+    capabilities: [CastCap, AbortCap]
+  })
+}
+
+# What `kai mutate` applies, in its own order. `foreign` is a driver's
+# and has no meaning here.
+fn mutate_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call]
+
+# ---- prepare -------------------------------------------------------------
+
+fn prepared(id: Int, state: Serving) : Int / Stdin + Stdout + Stderr + File + Process {
+  let started = 0
+  match work.prepare(state.root, state.reni, state.worker) {
+    Err(why) -> {
+      say(encode_reply(id, refusal("prepare_failed", why, true)))
+      serve(state)
+    }
+    Ok(w) -> {
+      say(encode_reply(id, Prepared(PreparedMsg { duration_ms: started, modules: 0 })))
+      serve(Serving { ...state, work: Some(w) })
+    }
+  }
+}
+
+# ---- baseline ------------------------------------------------------------
+
+fn baseline_of(state: Serving) : KalkuReply / Process = match state.work {
+  None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
+  Some(w) -> report_of(test_all(w))
+}
+
+# Coverage is absent rather than faked: kaikai reports no per-test
+# coverage, so the kaikai side runs every test for every wekufe and knows
+# that it is doing so.
+fn report_of(r: Ran) : KalkuReply = match r.broke {
+  Some(why) -> refusal("baseline_failed", why, true)
+  None -> BaselineDone(BaselineDoneMsg {
+    status: if r.failed == 0 { Green } else { Red },
+    duration_ms: 0,
+    tests: [],
+    coverage: None,
+    coverage_path: None,
+    failures: failures_of(r)
+  })
+}
+
+fn failures_of(r: Ran) : [Failure] = match r.first_failure {
+  Some(id) -> [Failure { test_id: id, message: "the test failed" }]
+  None -> []
+}
+
+# ---- sites ---------------------------------------------------------------
+
+fn found(m: SitesMsg, state: Serving) : KalkuReply / Process = match state.work {
+  None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
+  Some(w) -> gather(w, m, [], [])
+}
+
+fn gather(w: Work, m: SitesMsg, sites: [Site], skipped: [Skipped]) : KalkuReply / Process = match m.files {
+  [] -> SitesFound(SitesFoundMsg { sites: sites, skipped: skipped })
+  [file, ...rest] -> match sites_in(w, file, m.spells) {
+    Ok(found_here) -> gather(w, SitesMsg { ...m, files: rest }, sites ++ found_here, skipped)
+    Err(why) -> gather(
+      w,
+      SitesMsg { ...m, files: rest },
+      sites,
+      skipped ++ [Skipped { file: file, reason: "unreadable", message: why }]
+    )
+  }
+}
+
+# ---- cast ----------------------------------------------------------------
+
+fn cast_one(m: CastMsg, state: Serving) : KalkuReply / File + Process = match state.work {
+  None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
+  Some(w) -> match splice(w, m.site) {
+    Err(why) -> done(m.wekufe, CompileError, None, Some(why))
+    Ok(spliced) -> {
+      let was = splice_in(w, m.site.file, spliced)
+      let ran = test_only(w, m.tests)
+      restore(w, m.site.file, was)
+      outcome_of(m.wekufe, ran)
+    }
+  }
+}
+
+fn outcome_of(wekufe: String, r: Ran) : KalkuReply = match r.broke {
+  Some(why) -> done(wekufe, CompileError, None, Some(why))
+  None -> if r.failed > 0 {
+    done(wekufe, Killed, r.first_failure, None)
+  } else {
+    done(wekufe, Survived, None, None)
+  }
+}
+
+# The span is in bytes, so the splice is exact whatever the file holds.
+fn splice(w: Work, site: Site) : Result[String, String] / File {
+  let source = source_of(w, site.file)
+  let from = site.span.start.byte
+  let to = match site.span.end {
+    Some(e) -> e.byte
+    None -> from
+  }
+  if to < from or to > length(source) {
+    Err("the site's span is not inside #{site.file}")
+  } else {
+    Ok(slice(source, 0, from) ++ site.replacement ++ slice(source, to, length(source)))
+  }
+}
+
+fn done(wekufe: String, outcome: Outcome, by: Option[String], why: Option[String]) : KalkuReply =
+  CastDone(CastDoneMsg {
+    wekufe: wekufe,
+    outcome: outcome,
+    killed_by: by,
+    message: why,
+    code_hash: None,
+    duration_ms: 0,
+    dirty: false
+  })
+
+# ---- the wire -----------------------------------------------------------
+
+fn refusal(code: String, message: String, fatal: Bool) : KalkuReply =
+  KalkuError(ErrorMsg { code: code, message: message, fatal: fatal })
+
+fn say(line: String) : Unit / Stdout = Stdout.print(line)

@@ -1,0 +1,10 @@
+#[doc("A package small enough to measure by hand.")]
+
+#[doc("Whether n is at or above the floor.")]
+pub fn above(n: Int, floor: Int) : Bool = n >= floor
+
+#[doc("The sum of a list.")]
+pub fn total(xs: [Int]) : Int = foldl(xs, 0, (a, b) => a + b)
+
+#[doc("Clamped at zero; the boundary is never tested, so a wekufe there lives.")]
+pub fn clamp(n: Int) : Int = if n > 0 { n } else { 0 }
