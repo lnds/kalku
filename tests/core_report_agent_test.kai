@@ -43,6 +43,7 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
     exclude_added: [],
     exclude_calls_added: []
   },
+  troubles: [],
   blockers: []
 }
 
@@ -187,4 +188,24 @@ test "suppressions travel only when a change made some" {
   assert get(field(loud, "suppression_changes"), "equivalent_added") == JNum(2)
   assert get(field(loud, "suppression_changes"), "exclude_added") == JArr([JStr("lib/gen/**")])
   assert not has(loud, "exclude_calls_added")
+}
+
+# An agent that cannot tell a hole from a wekufe that never compiled will
+# write a test for the second and learn nothing from it.
+test "a wekufe that produced nothing to score travels with its reason" {
+  let troubled = Report {
+    ...report_of([], one()),
+    troubles: [
+      Trouble {
+        wekufe: "lib/a.ex:42:compare",
+        outcome: CompileError,
+        said: Some("error: undefined function f/1")
+      }
+    ]
+  }
+  let line = head(lines(agent(troubled, lines_of))).unwrap_or("")
+
+  assert field(line, "wekufe") == JStr("lib/a.ex:42:compare")
+  assert field(line, "outcome") == JStr("compile_error")
+  assert field(line, "message") == JStr("error: undefined function f/1")
 }

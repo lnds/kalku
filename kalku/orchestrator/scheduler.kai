@@ -26,7 +26,7 @@ import kalku.orchestrator.ward
 
 #[doc("What one wekufe came to.")]
 #[derive(Eq, Show)]
-pub type Verdict = { wekufe: String, outcome: Outcome }
+pub type Verdict = { wekufe: String, outcome: Outcome, said: Option[String] }
 
 #[doc("""
 What a run produced: every wekufe that was dispatched, and why the run
@@ -280,7 +280,7 @@ fn react(
   slot: Slot,
   r: Reaction
 ) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
-  let recorded = record(run, slot, r.outcome)
+  let recorded = record(run, slot, r)
   match r.next {
     Keep -> recorded
     Free -> Run { ...recorded, slots: put(recorded.slots, Slot { ...slot, doing: Idle }) }
@@ -290,9 +290,11 @@ fn react(
   }
 }
 
-fn record(run: Run, slot: Slot, outcome: Option[Outcome]) : Run = match (outcome, slot.doing) {
-  (Some(o), Working(job)) ->
-    Run { ...run, verdicts: run.verdicts ++ [Verdict { wekufe: job.wekufe, outcome: o }] }
+fn record(run: Run, slot: Slot, r: Reaction) : Run = match (r.outcome, slot.doing) {
+  (Some(o), Working(job)) -> Run {
+    ...run,
+    verdicts: run.verdicts ++ [Verdict { wekufe: job.wekufe, outcome: o, said: r.said }]
+  }
   _ -> run
 }
 

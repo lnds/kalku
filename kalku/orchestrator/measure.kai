@@ -223,9 +223,24 @@ fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
       exclude_added: [],
       exclude_calls_added: []
     },
+    troubles: troubles_of(casting),
     blockers: []
   }
 }
+
+# An outcome outside the score is carried with whatever the kalku said
+# about it: a `compile_error` a reader cannot explain is the one result
+# that helps nobody.
+fn troubles_of(casting: Casting) : [Trouble] = flat_map(
+  casting.verdicts,
+  v => if scoring(v.outcome) {
+    []
+  } else {
+    [Trouble { wekufe: v.wekufe, outcome: v.outcome, said: v.said }]
+  }
+)
+
+fn scoring(o: Outcome) : Bool = o == Killed or o == Survived or o == Equivalent
 
 fn survivors_of(casting: Casting, known: Known) : [Survivor] = flat_map(
   casting.verdicts,

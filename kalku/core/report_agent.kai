@@ -31,8 +31,29 @@ The whole report as NDJSON: a line per survivor, then the summary.
 `source` is asked for the lines of a file, so this module reads nothing
 itself. A file it cannot answer for simply travels without context.
 """)]
-pub fn agent(r: Report, source: (String) -> [String]) : String =
-  join((ordered(r.survivors) | (s => survivor_line(s, source))) ++ [summary_line(r)], "\n")
+pub fn agent(r: Report, source: (String) -> [String]) : String = join(
+  (ordered(r.survivors) | (s => survivor_line(s, source)))
+    ++ (r.troubles | trouble_line)
+    ++ [summary_line(r)],
+  "\n"
+)
+
+#[doc("""
+One wekufe that produced nothing to score, and why.
+
+An agent that cannot tell a hole from a wekufe that never compiled will
+write a test for the second, so the reason travels here too.
+""")]
+pub fn trouble_line(t: Trouble) : String = json_encode(
+  JObj(
+    [("wekufe", JStr(t.wekufe)), ("outcome", JStr(outcome_name(t.outcome)))] ++ said_field(t.said)
+  )
+)
+
+fn said_field(said: Option[String]) : [(String, JsonValue)] = match said {
+  Some(text) -> [("message", JStr(text))]
+  None -> []
+}
 
 #[doc("Survivors in the order a reader expects: by file, then line, then spell.")]
 pub fn ordered(survivors: [Survivor]) : [Survivor] =
@@ -147,7 +168,16 @@ fn window(lines: [String], from: Int, to: Int) : [String] =
 fn undent(lines: [String]) : [String] {
   let filled = filter(lines, l => not is_blank(l))
   let shared = foldl(filled, 1000, (least, l) => min_of(least, indent_of(l)))
-  lines | (l => if length(l) >= shared { slice(l, shared, length(l)) } else { trim_left(l) })
+  lines | (l => undented(l, shared))
+}
+
+# The indent is counted in bytes, so it is dropped in bytes: a line of
+# source with an accent in it would otherwise lose characters instead of
+# leading blanks.
+fn undented(line: String, shared: Int) : String = if length(line) >= shared {
+  byte_slice(line, shared, length(line) - shared).unwrap_or(trim_left(line))
+} else {
+  trim_left(line)
 }
 
 fn indent_of(line: String) : Int = length(line) - length(trim_left(line))

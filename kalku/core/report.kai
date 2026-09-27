@@ -13,6 +13,13 @@ import kalku.core.score
 import kalku.core.gate
 import kalku.core.hint
 
+# Enough test ids to recognise the guard that ran, before the list stops
+# being something a reader reads.
+const SHOWN_TESTS : Int = 3
+
+# Enough of a toolchain's diagnostic to name the file and the error.
+const SAID_LINES : Int = 6
+
 #[doc("A wekufe that lived, and the tests that ran without noticing.")]
 #[derive(Eq, Show)]
 pub type Survivor = { site: Site, tests: [String] }
@@ -24,12 +31,23 @@ pub type Report = {
   survivors: [Survivor],
   on_changed_lines: Int,
   suppressions: SuppressionChanges,
+  troubles: [Trouble],
   blockers: [Blocker]
 }
 
+#[doc("A wekufe that produced nothing to score, and what the kalku said about it.")]
+#[derive(Eq, Show)]
+pub type Trouble = { wekufe: String, outcome: Outcome, said: Option[String] }
+
 #[doc("The whole report as a person reads it: survivors, then the summary, then what was suppressed.")]
-pub fn human(r: Report) : String =
-  join(survivor_blocks(r) ++ [summary_line(r)] ++ suppression_block(r) ++ blocker_block(r), "\n")
+pub fn human(r: Report) : String = join(
+  survivor_blocks(r)
+    ++ trouble_blocks(r)
+    ++ [summary_line(r)]
+    ++ suppression_block(r)
+    ++ blocker_block(r),
+  "\n"
+)
 
 #[doc("Where a survivor lives, which spell made it, and in which declaration.")]
 pub fn location(s: Survivor) : String {
@@ -78,11 +96,38 @@ fn block(s: Survivor) : [String] =
     ++ [covered_by(s), "  #{hint_for(s.site)}", ""]
 
 fn covered_by(s: Survivor) : String =
-  if is_empty(s.tests) {
-    "  no test covers it"
+  if is_empty(s.tests) { "  no test covers it" } else { "  covered by #{named(s.tests)}" }
+
+# Named while the list is short enough to read, counted past that: a
+# survivor judged by a whole suite would otherwise bury its own diff
+# under every test id there is.
+fn named(tests: [String]) : String {
+  let rest = length(tests) - SHOWN_TESTS
+  if rest <= 0 {
+    join(tests, ", ")
   } else {
-    "  covered by #{join(s.tests, ", ")}"
+    "#{join(take(tests, SHOWN_TESTS), ", ")} and #{rest} more"
   }
+}
+
+# An outcome that never enters the score still has to be actionable: a
+# compile error or a crash whose reason nobody printed is a number that
+# leaves a reader with nothing to fix.
+fn trouble_blocks(r: Report) : [String] = if is_empty(r.troubles) {
+  []
+} else {
+  ["what could not be measured:"] ++ flat_map(r.troubles, trouble_lines) ++ [""]
+}
+
+fn trouble_lines(t: Trouble) : [String] =
+  ["  #{t.wekufe}  #{outcome_name(t.outcome)}"] ++ (said_by(t) | (line => "    #{line}"))
+
+# A toolchain's diagnostic can run to hundreds of lines; the first few
+# name the file and the error, which is what a reader needs.
+fn said_by(t: Trouble) : [String] = match t.said {
+  None -> []
+  Some(text) -> take(filter(lines(text), l => not is_empty(trim_right(l))), SAID_LINES)
+}
 
 # Suppressions a change adds are as loud as the holes it leaves.
 fn suppression_block(r: Report) : [String] {
