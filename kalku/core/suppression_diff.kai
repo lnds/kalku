@@ -64,5 +64,7 @@ be ignored, which is the one thing this must not be.
 pub fn covers(wide: String, narrow: String) : Bool =
   ends_with(wide, "**") and starts_with(narrow, drop_end(wide, 2)) and wide != narrow
 
+# `**` is two bytes, so two bytes come off: a pattern with an accent in it
+# would otherwise lose part of a character and match nothing.
 fn drop_end(s: String, n: Int) : String =
-  if length(s) <= n { "" } else { slice(s, 0, length(s) - n) }
+  if length(s) <= n { "" } else { byte_slice(s, 0, length(s) - n).unwrap_or(s) }
