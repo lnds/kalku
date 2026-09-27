@@ -1,5 +1,9 @@
 # kalku
 
+<p align="center">
+  <img src="docs/img/mascot.png" alt="The kalku mascot: a black bird in a red ninja headband, grinning with a mouthful of teeth" width="380">
+</p>
+
 **Mutation testing for humans, CI, and coding agents.** Native where a language has none, and one honest gate over the tools that already exist.
 
 kalku checks how good a test suite really is by breaking the code on purpose, one small defect at a time, and seeing whether any test notices. A defect that no test catches is a hole in the suite, and kalku reports it with a file, a line, and a diff.
@@ -8,7 +12,7 @@ Coding agents write tests fast, but a test can run a line without checking anyth
 
 It targets Elixir first. It is written in [kaikai](https://github.com/lnds/kaikai) and uses kalku to test its own code.
 
-> **Status: pre-alpha.** The design is written; the code is not. Nothing below works yet. Track progress in the [issues](https://github.com/lnds/kalku/issues).
+> **Status: pre-alpha.** A run works end to end — the Elixir kalku, the kaikai kalku, the pool, the scheduler and the reports — and `make self-mutate` measures kalku with kalku. There is no CLI yet: `kalku run` and the flags below are still the design, not the program. Track progress in the [issues](https://github.com/lnds/kalku/issues).
 
 ## The cast
 
@@ -108,8 +112,15 @@ score 40% · 2 killed · 3 survived · 1 compile error
 
 One module at a time, and slow on purpose: kaikai reports no per-test
 coverage and has no warm runtime to reload into, so every wekufe rebuilds
-the package and runs the whole suite. `SELF_MODULE` and `SELF_LIMIT`
-choose how much to measure.
+the package and runs the whole suite. `SELF_MODULE`, `SELF_LIMIT` and
+`SELF_WORKERS` choose how much to measure and how hard. Leave the working
+tree alone while it runs — each worker copies the project when it starts,
+so an edit mid-run gets measured.
+
+The same run happens nightly (`.github/workflows/self-mutate.yml`, also
+startable by hand with a module and a limit) and its report is attached to
+the run. It is advisory: a gate that blocks a pull request has to measure
+the lines that pull request changed, and that does not exist yet.
 
 ## Contributing
 
