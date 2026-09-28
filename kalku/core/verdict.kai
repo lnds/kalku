@@ -43,6 +43,7 @@ pub fn empty() : Counts = Counts {
   no_coverage: 0,
   compile_error: 0,
   crashed: 0,
+  nondeterministic: 0,
   equivalent: EquivalentCounts { bytecode: 0, declared: 0 }
 }
 
@@ -54,6 +55,7 @@ pub fn total(c: Counts) : Int =
     + c.no_coverage
     + c.compile_error
     + c.crashed
+    + c.nondeterministic
     + c.equivalent.bytecode
     + c.equivalent.declared
 
@@ -64,6 +66,8 @@ fn add(c: Counts, v: Verdict) : Counts {
   case c, Cast(NoCoverage) -> Counts { ...c, no_coverage: c.no_coverage + 1 }
   case c, Cast(CompileError) -> Counts { ...c, compile_error: c.compile_error + 1 }
   case c, Cast(Crashed) -> Counts { ...c, crashed: c.crashed + 1 }
+  case c, Cast(Nondeterministic) ->
+    Counts { ...c, nondeterministic: c.nondeterministic + 1 }
   case c, Cast(Equivalent) -> bump_equivalent(c, Bytecode)
   case c, EquivalentBy(o) -> bump_equivalent(c, o)
 }

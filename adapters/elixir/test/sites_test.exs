@@ -4,7 +4,10 @@ defmodule Kalku.SitesTest do
   alias Kalku.{Protocol, Schema, Sites, Source}
 
   @fixtures Path.expand("fixtures", __DIR__)
-  @spells Schema.spells() -- ["foreign"]
+  # The goldens cover the spells a default run casts. The concurrency
+  # ones are opt-in and have fixtures of their own, in
+  # `concurrency_test.exs`.
+  @spells Schema.spells() -- ~w(foreign await supervise)
   @exclude ["Logger.*"]
 
   # Set KALKU_UPDATE_GOLDENS=1 to rewrite the goldens after reviewing a change.

@@ -38,7 +38,7 @@ defmodule Kalku.LoopTest do
                "recompile_dependents"
              ]
 
-    assert msg.body["spells"] == ~w(arm compare connect negate literal call)
+    assert msg.body["spells"] == ~w(arm compare connect negate literal call await supervise)
   end
 
   test "a protocol version mismatch is a fatal error" do

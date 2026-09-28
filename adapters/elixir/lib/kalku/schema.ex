@@ -4,8 +4,8 @@ defmodule Kalku.Schema do
   One table drives both validation on decode and field order on encode.
   """
 
-  @spells ~w(arm compare connect negate literal call foreign)
-  @outcomes ~w(killed survived timeout no_coverage compile_error crashed equivalent)
+  @spells ~w(arm compare connect negate literal call await supervise foreign)
+  @outcomes ~w(killed survived timeout no_coverage compile_error crashed nondeterministic equivalent)
 
   @enums %{
     spell: @spells,

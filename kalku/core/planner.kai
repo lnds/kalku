@@ -20,7 +20,7 @@ pub type Reach = Everything | Touched([FileChange]) | Listed([String])
 
 #[doc("One wekufe to cast: the site, the tests that would notice, and its timeout.")]
 #[derive(Eq, Show)]
-pub type Wekufe = { site: Site, tests: [String], timeout_ms: Int }
+pub type Wekufe = { site: Site, tests: [String], timeout_ms: Int, casts: Int }
 
 #[doc("A site whose outcome is already known, and the outcome.")]
 #[derive(Eq, Show)]
@@ -57,6 +57,22 @@ pub fn tests_by_wekufe(p: Plan) : [(String, [String])] =
 
 #[doc("A site whose module others depend on at compile time pays for their rebuild too.")]
 pub const DEPENDENTS_FACTOR : Int = 2
+
+#[doc("""
+How many times a wekufe is cast before its outcome is believed.
+
+Once, for a defect that is the same on every run. A concurrency wekufe
+can die on one run and live on the next, and one cast of one of those is
+not evidence of anything: it is cast until it agrees with itself, and
+reported as `nondeterministic` when it will not.
+""")]
+pub fn agreements_for(spell: Spell) : Int = if concurrent(spell) { AGREEMENTS } else { 1 }
+
+#[doc("True for the spells whose outcome depends on how things were scheduled.")]
+pub fn concurrent(spell: Spell) : Bool = spell == Await or spell == Supervise
+
+#[doc("How many agreeing casts a concurrency wekufe needs before its outcome is believed.")]
+pub const AGREEMENTS : Int = 3
 
 #[doc("How many times a test's own duration a wekufe may take before it is a timeout.")]
 pub const TIMEOUT_FACTOR : Int = 3
@@ -101,7 +117,14 @@ fn castable(site: Site, inputs: Inputs) : [Wekufe] {
   if is_empty(tests) {
     []
   } else {
-    [Wekufe { site: site, tests: tests, timeout_ms: timeout_for(site, tests, inputs) }]
+    [
+      Wekufe {
+        site: site,
+        tests: tests,
+        timeout_ms: timeout_for(site, tests, inputs),
+        casts: agreements_for(site.spell)
+      }
+    ]
   }
 }
 
