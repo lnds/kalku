@@ -17,6 +17,7 @@ pub type Command
   | Display(String, Shape)
   | Propose(String, String)
   | Serve
+  | Mcp
   | Pending(String)
   | Unknown(String)
   | Misused(String)
@@ -55,6 +56,7 @@ pub fn parse_args(argv: [String]) : Command {
   case ["show", ...rest] -> displaying(rest)
   case ["propose-equivalent", ...rest] -> proposing(rest, "", "")
   case ["serve", ...] -> Serve
+  case ["mcp", ...] -> Mcp
   case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
 }
 
@@ -210,6 +212,7 @@ commands:
   info [topic]     what kalku knows about spells, outcomes, formats, agents
 
   serve            answer the client protocol on a local socket
+  mcp              serve the agent tools to an MCP host, over stdio
 
 not implemented yet:
   merge    combine sharded reports
