@@ -103,3 +103,40 @@ test "only the same protocol version is compatible" {
   assert not compatible(PROTOCOL_VERSION + 1)
   assert not compatible(0)
 }
+
+# How a stream is cut into chunks is the network's business, not the
+# protocol's: the same bytes must frame into the same lines whether they
+# arrive whole, one byte at a time, or split down the middle of a line.
+# This is the shape of the bug that cost a release.
+
+fn framed_whole(text: String) : [String] = said_of(feed(framer(4096), text).frames)
+
+fn framed_in_bits(text: String, at: Int) : [String] {
+  let cut = if length(text) == 0 { 0 } else { abs(at) % length(text) }
+  let first = feed(framer(4096), byte_slice(text, 0, cut).unwrap_or(""))
+  let rest = feed(first.framer, byte_slice(text, cut, length(text) - cut).unwrap_or(""))
+  said_of(first.frames ++ rest.frames)
+}
+
+fn said_of(frames: [Frame]) : [String] = flat_map(frames, one_line)
+
+fn one_line(f: Frame) : [String] = match f {
+  Line(l) -> [l]
+  TooLong -> ["<too long>"]
+}
+
+check "where a chunk is cut does not change the lines framed out of it" with body: String, at: Int {
+  let text = "#{replace(body, "\n", "")}\nsecond\n"
+  framed_whole(text) == framed_in_bits(text, at)
+}
+
+check "a line arrives whole or not at all, never truncated into one that parses" with body: String {
+  let text = "#{replace(body, "\n", "")}\n"
+  framed_whole(text) == [replace(body, "\n", "")]
+}
+
+# Framing runs over every byte a kalku says, so it is the one piece of
+# the wire that a slow implementation would be felt through.
+bench "framing a hundred protocol lines" {
+  feed(framer(4096), repeat("{\"type\":\"cast_done\",\"id\":1,\"outcome\":\"killed\"}\n", 100))
+}

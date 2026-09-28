@@ -7,8 +7,12 @@ lands the same way. Shards are disjoint and together cover the plan.
 """)]
 
 #[doc("The shard a wekufe belongs to, 1-based, of `count` shards.")]
-pub fn shard_of(site_id: String, count: Int) : Int =
+pub fn shard_of(site_id: String, count: Int) : Int
+  requires count >= 1
+  ensures result >= 1 and result <= count
+{
   if count <= 1 { 1 } else { hash(site_id) % count + 1 }
+}
 
 #[doc("True when this shard owns the wekufe: `index` is 1-based, of `count`.")]
 pub fn owns(site_id: String, index: Int, count: Int) : Bool = shard_of(site_id, count) == index
