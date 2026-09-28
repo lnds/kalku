@@ -1,0 +1,83 @@
+# kalku measured by kalku, nightly.
+#
+# Advisory on purpose: it reports and never fails a build. A gate that
+# blocks a pull request has to measure the lines that pull request
+# changed, and nothing here knows about changed lines yet.
+#
+# Slow on purpose too: the kaikai kalku has no warm runtime and kaikai
+# reports no per-test coverage, so every wekufe rebuilds the package and
+# runs the whole suite. One module at a time is what that affords.
+name: self-mutate
+
+on:
+  schedule:
+    # 05:40 UTC, off the hour: a nightly that runs when everyone else's does
+    # waits in the queue instead of running.
+    - cron: '40 5 * * *'
+  workflow_dispatch:
+    inputs:
+      module:
+        description: 'Module to measure'
+        default: 'kalku/core/shard.kai'
+      limit:
+        description: 'How many wekufe to cast (0 for all of them)'
+        default: '6'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-mutate
+  cancel-in-progress: false
+
+jobs:
+  self-mutate:
+    runs-on: ubuntu-latest
+    # A cast is minutes, and a run is one cast after another. This is the
+    # ceiling, not the expectation: six wekufe take about twenty minutes.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kaikai (pinned)
+        run: |
+          v="$(cat .kaikai-version)"
+          curl -fsSL https://raw.githubusercontent.com/kaikailang-org/kaikai/main/install.sh \
+            | KAIKAI_DIST_BASE="https://github.com/kaikailang-org/kaikai/releases/download/v$v" sh
+          echo "$HOME/.kaikai/bin" >> "$GITHUB_PATH"
+
+      - name: Check toolchain
+        run: kai --version
+
+      # The reni lives outside the checkout: a reni inside the package
+      # being measured would be copied into itself, and the kalku refuses
+      # to start rather than fill a disk with copies.
+      - name: Measure kalku with kalku
+        env:
+          SELF_MODULE: ${{ inputs.module || 'kalku/core/shard.kai' }}
+          SELF_LIMIT: ${{ inputs.limit || '6' }}
+          SELF_RENI: ${{ runner.temp }}/kalku-self/reni
+          # One worker on a two-core runner: two of them would compete for
+          # the same cores and make every cast slower, not the run shorter.
+          SELF_WORKERS: '1'
+        run: make self-mutate | tee self-mutate.txt
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### kalku measured by kalku'
+            echo
+            echo "module \`${{ inputs.module || 'kalku/core/shard.kai' }}\`, limit ${{ inputs.limit || '6' }}"
+            echo
+            echo '```'
+            cat self-mutate.txt 2>/dev/null || echo 'the run produced no report'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: self-mutate-report
+          path: self-mutate.txt
+          if-no-files-found: warn

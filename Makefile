@@ -66,13 +66,16 @@ check: ci test-elixir
 # run rather than asserted. One module at a time, because a kaikai cast
 # rebuilds the package and runs the whole suite — honest and slow.
 # Advisory: it reports and never fails a build.
-SELF_MODULE ?= kalku/core/shard.kai
-SELF_LIMIT  ?= 6
-SELF_RENI   ?= /tmp/kalku-self/reni
+SELF_MODULE  ?= kalku/core/shard.kai
+SELF_LIMIT   ?= 6
+SELF_RENI    ?= /tmp/kalku-self/reni
+# Two kalku build and test in their own copies at once, which is worth it
+# on a developer's machine and not on a two-core runner.
+SELF_WORKERS ?= 2
 
 self-mutate: build $(KKALKU)
 	KALKU_ROOT=. KALKU_FILES=$(SELF_MODULE) KALKU_LIMIT=$(SELF_LIMIT) \
-	  KALKU_RENI=$(SELF_RENI) $(BUILD)/kalku run || true
+	  KALKU_RENI=$(SELF_RENI) KALKU_WORKERS=$(SELF_WORKERS) $(BUILD)/kalku run || true
 
 clean:
 	rm -rf $(BUILD) .kai-cache
