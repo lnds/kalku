@@ -1,6 +1,6 @@
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "0.1.1"
 version_files = ["VERSION", "kai.toml:^version", "kalku/version.kai:VERSION", "adapters/elixir/mix.exs:@version"]
 tag_format = "v$version"
 update_changelog_on_bump = true
