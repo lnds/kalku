@@ -12,9 +12,19 @@ stderr and never to stdout, because stdout carries the report a caller
 may be piping into something.
 """)]
 
-#[doc("A running account of what the orchestrator is doing.")]
+import kalku.wire.enums
+
+#[doc("""
+A running account of what the orchestrator is doing.
+
+Three kinds of note, because two kinds of listener want different
+things. A person reads sentences; a client of the protocol reads the
+stage a run entered and how far along it is, and can render either.
+""")]
 pub effect Telling {
   tell_of(line: String) : Unit
+  entered(phase: Phase) : Unit
+  got_through(done: Int, total: Int) : Unit
 }
 
 #[doc("Run with every note on stderr.")]
@@ -25,6 +35,14 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     Stderr.eprint("kalku: #{line}")
     resume(())
   }
+  entered(phase, resume) -> {
+    Stderr.eprint("kalku: #{phase_name(phase)}")
+    resume(())
+  }
+  got_through(done, total, resume) -> {
+    Stderr.eprint("kalku: #{done} of #{total}")
+    resume(())
+  }
   return(x) -> x
 }
 
@@ -33,19 +51,11 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   body()
 } with Telling {
   tell_of(_line, resume) -> resume(())
+  entered(_phase, resume) -> resume(())
+  got_through(_done, _total, resume) -> resume(())
   return(x) -> x
 }
 
 #[doc("Run either way, so a caller can decide without two call sites.")]
 pub fn telling[a, e](aloud: Bool, body: () -> a / Telling + e) : a / Stderr + e =
-  if aloud { told(body) } else { told_nothing(body) }
-
-# `untold` discharges `Telling` without needing `Stderr`, which is the
-# point of having it; this is the same thing with the row the caller of
-# `telling` already has.
-fn told_nothing[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
-  body()
-} with Telling {
-  tell_of(_line, resume) -> resume(())
-  return(x) -> x
-}
+  if aloud { told(body) } else { untold(body) }
