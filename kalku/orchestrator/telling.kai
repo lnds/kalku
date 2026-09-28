@@ -1,0 +1,51 @@
+#[doc("""
+Saying what a run is doing while it does it.
+
+A run is minutes long and, until it ends, silent: a kalku rebuilding a
+package looks exactly like a kalku that has hung. This is the channel
+that tells them apart.
+
+It is an effect rather than a write to stderr because the orchestrator's
+logic has no business knowing where words go: `told` sends them to
+stderr, `untold` drops them, and a test reads them as a list. Notes go to
+stderr and never to stdout, because stdout carries the report a caller
+may be piping into something.
+""")]
+
+#[doc("A running account of what the orchestrator is doing.")]
+pub effect Telling {
+  tell_of(line: String) : Unit
+}
+
+#[doc("Run with every note on stderr.")]
+pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
+  body()
+} with Telling {
+  tell_of(line, resume) -> {
+    Stderr.eprint("kalku: #{line}")
+    resume(())
+  }
+  return(x) -> x
+}
+
+#[doc("Run with every note dropped, which is what a quiet run is.")]
+pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
+  body()
+} with Telling {
+  tell_of(_line, resume) -> resume(())
+  return(x) -> x
+}
+
+#[doc("Run either way, so a caller can decide without two call sites.")]
+pub fn telling[a, e](aloud: Bool, body: () -> a / Telling + e) : a / Stderr + e =
+  if aloud { told(body) } else { told_nothing(body) }
+
+# `untold` discharges `Telling` without needing `Stderr`, which is the
+# point of having it; this is the same thing with the row the caller of
+# `telling` already has.
+fn told_nothing[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
+  body()
+} with Telling {
+  tell_of(_line, resume) -> resume(())
+  return(x) -> x
+}

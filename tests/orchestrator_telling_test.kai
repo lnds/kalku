@@ -1,0 +1,29 @@
+import kalku.orchestrator.telling
+
+# Reading the account back is what a handler is for: no process, no
+# stderr, and the lines in the order they were said in.
+fn heard(body: () -> Unit / Telling) : [String] = handle {
+  body()
+} with Telling([]) {
+  tell_of(line, resume) -> resume((), state ++ [line])
+  return(_x) -> state
+}
+
+fn phases() : Unit / Telling {
+  Telling.tell_of("preparing")
+  Telling.tell_of("casting 2 of 6")
+}
+
+test "an account is heard in the order it was said" {
+  assert heard(phases) == ["preparing", "casting 2 of 6"]
+}
+
+# A quiet run is not a run that says nothing to nobody: the notes are
+# made and dropped, and what the body returns is untouched.
+test "a quiet run drops the account and keeps the answer" {
+  assert untold(() => {
+    phases()
+    42
+  })
+    == 42
+}

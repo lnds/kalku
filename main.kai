@@ -2,14 +2,19 @@
 
 import actor
 import os.args
+import fs.file
 import kalku.wire.enums
 import kalku.core.report
+import kalku.core.config
+import kalku.core.setting_up
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.measure
+import kalku.orchestrator.telling
+import kalku.settling
 import kalku.cli
 
-fn main() : Int / Stdout + Stderr + Env + Process + Spawn + Clock {
+fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock {
   match cli.parse_args(args.argv()) {
     ShowVersion -> {
       Stdout.print(cli.version_line())
@@ -19,7 +24,12 @@ fn main() : Int / Stdout + Stderr + Env + Process + Spawn + Clock {
       Stdout.print(cli.help_text())
       0
     }
-    Pending("run") -> run_here()
+    Initialise(setup) -> settle(setup.root, setup.language, setup.assume_yes)
+    Measure(wanted) -> run_here(wanted)
+    Misused(why) -> {
+      Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
+      2
+    }
     Pending(cmd) -> {
       Stderr.eprint("kalku: `#{cmd}` is not implemented yet")
       2
@@ -31,12 +41,30 @@ fn main() : Int / Stdout + Stderr + Env + Process + Spawn + Clock {
   }
 }
 
-# The first thing `run` can honestly do: measure this package, with this
-# package's own kalku, and print what survived. Scope, formats and the
-# server come next; this is the claim the project makes about itself, so
-# it is the part that has to work first.
-fn run_here() : Int / Stdout + Stderr + Env + Process + Spawn + Clock = with_mailbox {
-  let found = measure(asking_for(asked_root(), asked_files()))
+# A run measures the project one is standing in, with the kalku that
+# project's `.kalku.toml` names. Without that file there is nothing to
+# summon, so the way out is `kalku init` rather than a guess.
+fn run_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock =
+  match settings() {
+    Err(why) -> {
+      Stderr.eprint("kalku: #{why}")
+      2
+    }
+    Ok(c) -> if is_empty(wanted.files) {
+      {
+        Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
+        2
+      }
+    } else {
+      measured(asking_for(c, wanted), wanted.aloud)
+    }
+  }
+
+fn measured(
+  asking: Asking,
+  aloud: Bool
+) : Int / Stdout + Stderr + Process + Spawn + Clock = with_mailbox {
+  let found = telling(aloud, () => measure(asking))
   match found.failure {
     Some(why) -> {
       Stderr.eprint("kalku: #{why}")
@@ -55,72 +83,38 @@ fn run_here() : Int / Stdout + Stderr + Env + Process + Spawn + Clock = with_mai
   }
 }
 
-fn asking_for(root: String, files: [String]) : Asking / Env = Asking {
+# ---- what a run was asked for -------------------------------------------
+
+fn settings() : Result[Config, String] / File = if file.exists(CONFIG_PATH) {
+  read_settings(file.read(CONFIG_PATH))
+} else {
+  Err("no #{CONFIG_PATH} here; run `kalku init` to set this project up")
+}
+
+fn read_settings(text: String) : Result[Config, String] = match config.parse(text) {
+  Err(problems) -> Err(join(problems | (p => "#{CONFIG_PATH}: #{p.key}: #{p.message}"), "\n"))
+  Ok(c) -> if is_some(c.summon) {
+    Ok(c)
+  } else {
+    Err("#{CONFIG_PATH} names no kalku to summon; `kalku init` writes one")
+  }
+}
+
+fn asking_for(c: Config, wanted: Wanted) : Asking = Asking {
   spec: PoolSpec {
-    command: asked_kalku(),
-    args: asked_args(),
-    workers: asked_workers(),
-    root: root,
-    reni: asked_reni(),
+    command: c.summon.unwrap_or(""),
+    args: [],
+    workers: c.workers.unwrap_or(1),
+    root: ".",
+    reni: c.reni.unwrap_or("/tmp/kalku/reni"),
     inline_limit_bytes: 65536,
     env: StrMap { entries: [] },
     greeting_ms: 60000,
     summons_allowed: 2
   },
-  files: files,
-  spells: [Arm, Compare, Connect, Negate, Literal, Call],
-  exclude_calls: [],
-  limit: asked_limit(),
-  timeout_floor_ms: asked_floor()
-}
-
-# The pure core first: it is where a surviving wekufe says the most about
-# the suite, and where a run is cheap enough to be worth starting with.
-# Until `run` parses its own arguments, the package and the modules come
-# from the environment, defaulting to kalku measuring kalku — which is
-# the claim, and also the slowest possible run.
-fn asked_root() : String / Env = Env.get("KALKU_ROOT").unwrap_or(".")
-
-# Outside the package it measures, always: a reni inside it would be
-# copied into itself.
-fn asked_reni() : String / Env = Env.get("KALKU_RENI").unwrap_or("/tmp/kalku-self/reni")
-
-# Which kalku to summon. The kaikai one by default, because measuring
-# kalku is what this program can do without being told anything; any
-# other language is its kalku's executable, and `adapters/<lang>/bin/`
-# is where each one ships the summoning that keeps its toolchain's noise
-# off the protocol.
-fn asked_kalku() : String / Env =
-  Env.get("KALKU_KALKU").unwrap_or("adapters/kaikai/bin/kalku-kaikai")
-
-fn asked_args() : [String] / Env = match Env.get("KALKU_KALKU_ARGS") {
-  Some(list) -> filter(split(list, " "), a => not is_empty(a))
-  None -> []
-}
-
-# How long a cast may take before it is a `timeout` rather than a slow
-# test. Fifteen minutes suits a kalku that rebuilds a package and runs its
-# whole suite for every wekufe; a kalku with a warm runtime wants seconds,
-# and the floor is where that is said.
-fn asked_floor() : Int / Env = match Env.get("KALKU_TIMEOUT_MS") {
-  Some(text) -> to_int(text).unwrap_or(900000)
-  None -> 900000
-}
-
-# One kalku builds and tests in its own copy of the package; two do it at
-# the same time. Askable because a run that differs only in this is how a
-# problem gets pinned on the pool rather than on the wekufe.
-fn asked_workers() : Int / Env = match Env.get("KALKU_WORKERS") {
-  Some(text) -> to_int(text).unwrap_or(2)
-  None -> 2
-}
-
-fn asked_limit() : Int / Env = match Env.get("KALKU_LIMIT") {
-  Some(text) -> to_int(text).unwrap_or(2)
-  None -> 2
-}
-
-fn asked_files() : [String] / Env = match Env.get("KALKU_FILES") {
-  Some(list) -> filter(split(list, ","), f => not is_empty(f))
-  None -> ["kalku/core/shard.kai"]
+  files: wanted.files,
+  spells: c.spells,
+  exclude_calls: c.exclude_calls,
+  limit: wanted.limit.unwrap_or(0),
+  timeout_floor_ms: c.timeout_floor_ms
 }

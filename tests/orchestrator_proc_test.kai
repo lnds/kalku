@@ -195,7 +195,10 @@ test "a kalku that never answers is killed, and killing it leaves nothing behind
         let still_hung = next_within(BRIEF)
         kill_now(k)
         # Reaped by the kill, the pipe is gone rather than at end of input.
-        [ready, prepared, hung, still_hung, next_within(BRIEF)]
+        # Waited for rather than snatched at: this test asserts silence
+        # twice already, and a loaded machine that takes a moment to
+        # deliver the reader's last word is not a kalku that lived.
+        [ready, prepared, hung, still_hung, next()]
       }
     }
   }

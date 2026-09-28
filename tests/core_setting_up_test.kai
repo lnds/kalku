@@ -1,0 +1,64 @@
+import kalku.core.setting_up
+
+fn elixir() : Known = Known { language: "elixir", marker: "mix.exs", summon: "" }
+
+test "a project says what it is written in" {
+  assert detect(["mix.exs", "README.md"]).map(.language) == Ok("elixir")
+  assert detect(["kai.toml"]).map(.language) == Ok("kaikai")
+}
+
+# Two markers are two answers and no way to choose, which is a question
+# for the owner rather than a coin to flip.
+test "a project that looks like two is asked about, not guessed at" {
+  assert detect(["mix.exs", "kai.toml"]) == Err(Ambiguous(["elixir", "kaikai"]))
+  assert has(explain(Ambiguous(["elixir", "kaikai"])), "--lang")
+}
+
+test "a project with no marker says what it looked for" {
+  assert detect(["README.md"]) == Err(Undetected)
+  assert has(explain(Undetected), "mix.exs")
+}
+
+test "a language kalku has no kalku for is named, with what it does have" {
+  assert named("rust") == Err(Unknown("rust"))
+  assert has(explain(Unknown("rust")), "elixir")
+  assert named("Elixir").map(.language) == Ok("elixir")
+}
+
+# The reni is named after the project so two projects never share one,
+# and it lives outside the tree it measures.
+test "the reni is outside the project and named after it" {
+  assert reni_for("/tmp", "thing") == "/tmp/kalku/thing"
+  assert reni_for("/tmp/", "thing") == "/tmp/kalku/thing"
+}
+
+test "what init writes says where the reni is and how to summon the kalku" {
+  let plan = plan_for(elixir(), "/tmp/kalku/thing")
+
+  assert has(plan.config, "language = \"elixir\"")
+  assert has(plan.config, "reni = \"/tmp/kalku/thing\"")
+  assert has(plan.config, "summon = \".kalku/summon\"")
+}
+
+# stdout carries the protocol: a summoning that let a build write there
+# would have the worker banished for nonsense it never meant to write.
+test "the summoning keeps the build off the protocol channel" {
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+
+  assert has(plan.summoner, ">&2")
+  assert has(plan.summoner, "</dev/null")
+  assert has(plan.summoner, "MIX_BUILD_PATH=\"/r/build\"")
+  assert has(plan.summoner, "exec mix kalku.serve")
+}
+
+# A kalku runs inside the project's runtime, so the project depends on
+# it. kalku says so; it does not edit someone's build file behind them.
+test "an Elixir project is told what to add, and only when it is missing" {
+  let plan = plan_for(elixir(), "/r")
+
+  assert is_some(plan.dependency)
+  assert not depends_already(elixir(), "defmodule A do\n  defp deps, do: []\nend")
+  assert depends_already(elixir(), "{:kalku_elixir, path: \"../kalku\"}")
+}
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))

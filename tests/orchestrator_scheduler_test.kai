@@ -6,6 +6,7 @@ import kalku.core.planner
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
+import kalku.orchestrator.telling
 
 const FAKE : String = "./tests/fake_kalku/fake_kalku"
 
@@ -23,6 +24,11 @@ fn pool_of(script: String, workers: Int, summons: Int) : PoolSpec = PoolSpec {
   greeting_ms: 5000,
   summons_allowed: summons
 }
+
+# What a run says about itself is not what these tests are about, so the
+# account is dropped rather than printed.
+fn casting(spec: PoolSpec, cs: [Cast]) : Casting / Process + Spawn + Clock + Actor[OrchMsg] =
+  untold(() => cast_all(spec, cs))
 
 fn casts(n: Int, timeout_ms: Int) : [Cast] =
   enumerate(repeat(0, n))
@@ -52,7 +58,7 @@ fn tally(c: Casting) : [(String, Int)] {
 fn wekufe_named(c: Casting) : [String] = c.verdicts | (.wekufe)
 
 test "four kalku cast a hundred wekufe, and every one is accounted for exactly once" {
-  let done = with_mailbox { cast_all(pool_of("pool_happy.ndjson", 4, 1), casts(100, 5000)) }
+  let done = with_mailbox { casting(pool_of("pool_happy.ndjson", 4, 1), casts(100, 5000)) }
   assert length(done.verdicts) == 100
   assert tally(done) == [("killed", 100)]
   assert length(uniq(wekufe_named(done))) == 100
@@ -64,7 +70,7 @@ test "four kalku cast a hundred wekufe, and every one is accounted for exactly o
 # refuse a `cast`, so a re-summon would show up as a crash here.
 test "a cast past its deadline is a timeout, and the same kalku takes the next one" {
   let done = with_mailbox {
-    cast_all(pool_of("pool_timeout_abort.ndjson", 1, 1), casts(3, SHORT_CAST_MS))
+    casting(pool_of("pool_timeout_abort.ndjson", 1, 1), casts(3, SHORT_CAST_MS))
   }
   assert tally(done) == [("timeout", 1), ("survived", 2)]
   assert done.failure == None
@@ -74,7 +80,7 @@ test "a cast past its deadline is a timeout, and the same kalku takes the next o
 # and the run carries on with the replacement.
 test "a kalku that ignores `abort` is replaced, and the run carries on" {
   let done = with_mailbox {
-    cast_all(pool_of("pool_deaf_abort.ndjson", 1, 3), casts(2, SHORT_CAST_MS))
+    casting(pool_of("pool_deaf_abort.ndjson", 1, 3), casts(2, SHORT_CAST_MS))
   }
   assert tally(done) == [("timeout", 2)]
   assert done.failure == None
@@ -82,7 +88,7 @@ test "a kalku that ignores `abort` is replaced, and the run carries on" {
 
 test "a kalku that never said it can abort is killed on the deadline" {
   let done = with_mailbox {
-    cast_all(pool_of("pool_no_abort.ndjson", 1, 2), casts(1, SHORT_CAST_MS))
+    casting(pool_of("pool_no_abort.ndjson", 1, 2), casts(1, SHORT_CAST_MS))
   }
   assert tally(done) == [("timeout", 1)]
 }
@@ -91,7 +97,7 @@ test "a kalku that never said it can abort is killed on the deadline" {
 # so a dirty kalku is reset before it serves again.
 test "a dirty cast is reset in place, and the kalku keeps working" {
   let done = with_mailbox {
-    cast_all(pool_of("pool_dirty_reset.ndjson", 1, 1), casts(3, 5000))
+    casting(pool_of("pool_dirty_reset.ndjson", 1, 1), casts(3, 5000))
   }
   assert tally(done) == [("killed", 1), ("survived", 2)]
   assert done.failure == None
@@ -99,7 +105,7 @@ test "a dirty cast is reset in place, and the kalku keeps working" {
 
 test "a kalku whose reset is not clean is recycled" {
   let done = with_mailbox {
-    cast_all(pool_of("pool_dirty_unclean.ndjson", 1, 2), casts(1, 5000))
+    casting(pool_of("pool_dirty_unclean.ndjson", 1, 2), casts(1, 5000))
   }
   assert tally(done) == [("killed", 1)]
   assert done.failure == None
@@ -107,20 +113,20 @@ test "a kalku whose reset is not clean is recycled" {
 
 # The kalku is lost; the wekufe it was casting is not.
 test "a kalku that crashes mid-cast reports its wekufe as crashed" {
-  let done = with_mailbox { cast_all(pool_of("pool_crash.ndjson", 1, 2), casts(1, 5000)) }
+  let done = with_mailbox { casting(pool_of("pool_crash.ndjson", 1, 2), casts(1, 5000)) }
   assert tally(done) == [("crashed", 1)]
   assert wekufe_named(done) == ["w0"]
 }
 
 test "a kalku that writes a line this side cannot read is banished, its wekufe crashed" {
-  let done = with_mailbox { cast_all(pool_of("pool_garbage.ndjson", 1, 2), casts(1, 5000)) }
+  let done = with_mailbox { casting(pool_of("pool_garbage.ndjson", 1, 2), casts(1, 5000)) }
   assert tally(done) == [("crashed", 1)]
 }
 
 # A version this side cannot speak is not a kalku problem: a replacement
 # would say the same thing, so the run stops and says why.
 test "a protocol version this side cannot speak fails the run with a readable reason" {
-  let done = with_mailbox { cast_all(pool_of("pool_mismatch.ndjson", 1, 3), casts(2, 5000)) }
+  let done = with_mailbox { casting(pool_of("pool_mismatch.ndjson", 1, 3), casts(2, 5000)) }
   assert done.verdicts == []
   assert done.failure == Some("worker 0 speaks protocol 99, this kalku speaks 1")
 }
@@ -128,7 +134,7 @@ test "a protocol version this side cannot speak fails the run with a readable re
 # A kalku that dies on startup would otherwise be summoned forever.
 test "a kalku that dies at birth exhausts its summons and fails the run" {
   let done = with_mailbox {
-    cast_all(pool_of("pool_dies_at_birth.ndjson", 1, 2), casts(1, 5000))
+    casting(pool_of("pool_dies_at_birth.ndjson", 1, 2), casts(1, 5000))
   }
   assert done.verdicts == []
   assert is_some(done.failure)
@@ -141,7 +147,7 @@ test "a kalku that dies at birth exhausts its summons and fails the run" {
 test "a cancelled run stops dispatching and returns what it had" {
   let done = with_mailbox {
     Actor.send(Actor.self(), Cancel)
-    cast_all(pool_of("pool_happy.ndjson", 1, 1), casts(50, 5000))
+    casting(pool_of("pool_happy.ndjson", 1, 1), casts(50, 5000))
   }
   assert done.cancelled
   assert done.verdicts == []
@@ -151,13 +157,13 @@ test "a cancelled run stops dispatching and returns what it had" {
 # A pool of no workers has nobody to answer and no deadline to expire, so
 # a run that waited for one would wait forever. It says so instead.
 test "a run with no kalku at all fails instead of waiting" {
-  let done = with_mailbox { cast_all(pool_of("pool_happy.ndjson", 0, 1), casts(3, 5000)) }
+  let done = with_mailbox { casting(pool_of("pool_happy.ndjson", 0, 1), casts(3, 5000)) }
   assert done.verdicts == []
   assert done.failure == Some("a run needs at least one kalku, and this pool was asked for none")
 }
 
 test "a pool of no workers with nothing to cast is simply an empty run" {
-  let done = with_mailbox { cast_all(pool_of("pool_happy.ndjson", 0, 1), []) }
+  let done = with_mailbox { casting(pool_of("pool_happy.ndjson", 0, 1), []) }
   assert done.verdicts == []
   assert done.failure == None
 }
@@ -166,7 +172,7 @@ test "a pool of no workers with nothing to cast is simply an empty run" {
 # point of a budget of 2.
 test "a kalku that dies at birth is summoned exactly as often as allowed" {
   let done = with_mailbox {
-    cast_all(pool_of("pool_dies_at_birth.ndjson", 1, 2), casts(1, 5000))
+    casting(pool_of("pool_dies_at_birth.ndjson", 1, 2), casts(1, 5000))
   }
   assert is_some(index_of(done.failure.unwrap_or(""), "summoned 2 time(s)"))
 }
