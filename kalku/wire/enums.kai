@@ -162,6 +162,9 @@ pub fn every_spell() : [Spell] = spells() | (.snd)
 #[doc("Every outcome there is, in the order they are documented.")]
 pub fn every_outcome() : [Outcome] = outcomes() | (.snd)
 
+#[doc("The wire name of a phase.")]
+pub fn phase_name(p: Phase) : String = name_of(phases(), p)
+
 #[doc("The wire name of a spell.")]
 pub fn spell_name(s: Spell) : String = name_of(spells(), s)
 
