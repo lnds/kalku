@@ -92,8 +92,34 @@ pub const LAST_WORDS_MS : Int = 2000
 # that word from each of them, so it leaves no fiber talking to a mailbox
 # that is no longer there — and keeps what they were still carrying, which
 # is what a kalku wrote about itself on the way down.
-fn hear_last_words(slots: [Slot]) : [Slot] / Clock + Actor[OrchMsg] =
-  wait_out(slots, living(slots), deadline_in(millis(LAST_WORDS_MS)))
+fn hear_last_words(slots: [Slot]) : [Slot] / Clock + Actor[OrchMsg] {
+  let heard = wait_out(slots, living(slots), deadline_in(millis(LAST_WORDS_MS)))
+  if any(heard, still_silent) {
+    linger(heard, deadline_in(millis(LINGER_MS)))
+  } else {
+    heard
+  }
+}
+
+#[doc("How long a run waits on a reader whose kalku it has already given up on.")]
+pub const LINGER_MS : Int = 200
+
+# A kalku that was given up on has no life left to wait for, and its last
+# words may still be on their way: its reader wrote them as the kalku
+# died, and by then nothing above was waiting. Paid for only when a slot
+# was abandoned with nothing to show for it.
+fn still_silent(s: Slot) : Bool = is_gone(s) and is_none(own_words(s))
+
+fn linger(slots: [Slot], until: Instant) : [Slot] / Clock + Actor[OrchMsg] =
+  if not instant_lt(monotonic(), until) {
+    slots
+  } else {
+    match receive_timeout(elapsed_since(monotonic(), until)) {
+      None -> slots
+      Some(Cancel) -> linger(slots, until)
+      Some(Wire(life, what)) -> linger(kept(slots, life, what), until)
+    }
+  }
 
 fn wait_out(slots: [Slot], lives: [Life], until: Instant) : [Slot] / Clock + Actor[OrchMsg] =
   if is_empty(lives) or (not instant_lt(monotonic(), until)) {
@@ -113,11 +139,20 @@ fn wait_out(slots: [Slot], lives: [Life], until: Instant) : [Slot] / Clock + Act
 # A chunk of stderr that arrives while the run is winding down belongs to
 # the slot that wrote it, wherever its epitaph is written later.
 fn kept(slots: [Slot], life: Life, what: FromKalku) : [Slot] = match what {
-  Wrote(chunk) -> match slot_living(slots, life) {
+  Wrote(chunk) -> match wrote_it(slots, life) {
     Some(slot) -> put(slots, noted(slot, chunk))
     None -> slots
   }
   _ -> slots
+}
+
+# The slot living that life, or the abandoned one that worker left
+# behind. A worker given up on is never summoned again, so there is no
+# later incarnation these words could belong to instead — and dropping
+# them is how a run ends up quoting a silence that was not one.
+fn wrote_it(slots: [Slot], life: Life) : Option[Slot] = match slot_living(slots, life) {
+  Some(slot) -> Some(slot)
+  None -> find(slots, s => s.worker == life.worker and is_gone(s))
 }
 
 # Composed here rather than where the slot was given up on: what a kalku
