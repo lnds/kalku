@@ -1,0 +1,83 @@
+import encoding.json
+import kalku.core.mcp
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+fn call(json: String) : Heard = asked_of(json).snd
+
+fn tool_names() : [String] = match json_decode(tools(Some(1))) {
+  None -> []
+  Some(v) -> flat_map(as_arr(get(get(v, "result"), "tools")), named_tool)
+}
+
+fn as_arr(v: JsonValue) : [JsonValue] = match v {
+  JArr(items) -> items
+  _ -> []
+}
+
+fn named_tool(v: JsonValue) : [String] = match as_string(get(v, "name")) {
+  Some(n) -> [n]
+  None -> []
+}
+
+test "a host's first word is answered with what kalku is and speaks" {
+  let hello = greeting(Some(1))
+
+  assert has(hello, "\"jsonrpc\":\"2.0\"")
+  assert has(hello, "\"protocolVersion\":\"#{PROTOCOL}\"")
+  assert has(hello, "\"name\":\"kalku\"")
+}
+
+test "the methods a host uses are read, and anything else is said to be unknown" {
+  assert call("{\"method\":\"initialize\",\"id\":1}") == Initialise
+  assert call("{\"method\":\"tools/list\",\"id\":2}") == ListTools
+  assert call("{\"method\":\"notifications/initialized\"}") == Notice
+  assert call("{\"method\":\"resources/list\",\"id\":3}")
+    == Garbled("no such method `resources/list`")
+  assert call("not json") == Garbled("not JSON")
+}
+
+test "a tool call carries its tool, its wekufe and its reason" {
+  let asked = call(
+    "{\"method\":\"tools/call\",\"id\":4,\"params\":{\"name\":\"kalku_cast\",\"arguments\":{\"wekufe\":[\"w1\",\"w2\"],\"root\":\"/p\"}}}"
+  )
+
+  assert asked
+    == CallTool(Call { tool: "kalku_cast", root: Some("/p"), wekufe: ["w1", "w2"], reason: "" })
+}
+
+# A host may send one id as a string where another sends a list, and the
+# files a run measures arrive under their own name.
+test "one wekufe, many, or a list of files all read as what was named" {
+  assert call(
+    "{\"method\":\"tools/call\",\"params\":{\"name\":\"kalku_show\",\"arguments\":{\"wekufe\":\"w1\"}}}"
+  )
+    == CallTool(Call { tool: "kalku_show", root: None, wekufe: ["w1"], reason: "" })
+  assert call(
+    "{\"method\":\"tools/call\",\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"files\":[\"lib/a.ex\"]}}}"
+  )
+    == CallTool(Call { tool: "kalku_run", root: None, wekufe: ["lib/a.ex"], reason: "" })
+}
+
+# The tools are the CLI's, and there is deliberately no tool that
+# suppresses anything: an agent proposes, a person decides.
+test "every tool an agent gets, and no tool that hides a hole" {
+  let names = tool_names()
+
+  assert names == ["kalku_run", "kalku_cast", "kalku_show", "kalku_propose_equivalent"]
+  assert not any(names, n => has(n, "suppress") or has(n, "exclude") or has(n, "ignore"))
+}
+
+# What the proposal tool says about itself is the guardrail itself: a
+# host shows this text to the agent before it decides to call it.
+test "the proposal tool says it suppresses nothing" {
+  assert has(tools(Some(1)), "suppresses nothing")
+  assert has(tools(Some(1)), "for a person to review")
+}
+
+test "a tool that could not run is a result the agent sees, not a protocol error" {
+  assert has(refused(Some(2), "never cast: w9"), "\"isError\":true")
+  assert has(refused(Some(2), "never cast: w9"), "never cast: w9")
+  assert has(answered(Some(2), "all killed"), "\"isError\":false")
+  assert has(protocol_error(Some(3), "no method"), "\"error\"")
+}

@@ -1,0 +1,179 @@
+#[doc("""
+kalku as a tool an agent host can call: the MCP conversation, decided.
+
+MCP over stdio is JSON-RPC 2.0, one message per line, so what a host asks
+and what it is told are both text this module turns into each other.
+Performing the work — running, re-casting, showing — belongs to whoever
+calls `answer`, which is handed the results rather than the means.
+
+The tools are the CLI's, exactly. There is no tool that edits
+`.kalku/equivalent`, `.kalku.toml`, a source file or a test, and none
+that suppresses anything: an agent may propose an equivalent with a
+reason and a person decides. A tool an agent could use to make a hole
+disappear is a tool this project will not ship.
+""")]
+
+import encoding.json
+import kalku.version
+
+#[doc("What a host asked for.")]
+#[derive(Eq, Show)]
+pub type Heard
+  = Initialise
+  | ListTools
+  | CallTool(Call)
+  | Notice
+  | Garbled(String)
+
+#[doc("One tool call: which tool, and the arguments as they arrived.")]
+#[derive(Eq, Show)]
+pub type Call = { tool: String, root: Option[String], wekufe: [String], reason: String }
+
+#[doc("The MCP revision this speaks.")]
+pub const PROTOCOL : String = "2024-11-05"
+
+#[doc("Read one line from a host.")]
+pub fn asked_of(line: String) : (Option[Int], Heard) = match json_decode(line) {
+  None -> (None, Garbled("not JSON"))
+  Some(v) -> (as_int(get(v, "id")), for_method(as_string(get(v, "method")).unwrap_or(""), v))
+}
+
+fn for_method(method: String, v: JsonValue) : Heard = match method {
+  "initialize" -> Initialise
+  "tools/list" -> ListTools
+  "tools/call" -> CallTool(call_of(get(v, "params")))
+  "" -> Garbled("no method")
+  other -> if starts_with(other, "notifications/") {
+    Notice
+  } else {
+    Garbled("no such method `#{other}`")
+  }
+}
+
+fn call_of(params: JsonValue) : Call {
+  let args = get(params, "arguments")
+  Call {
+    tool: as_string(get(params, "name")).unwrap_or(""),
+    root: as_string(get(args, "root")),
+    wekufe: wekufe_in(args),
+    reason: as_string(get(args, "reason")).unwrap_or("")
+  }
+}
+
+fn wekufe_in(args: JsonValue) : [String] = match get(args, "wekufe") {
+  JArr(items) -> flat_map(items, as_one)
+  JStr(one) -> [one]
+  _ -> flat_map(as_arr(get(args, "files")), as_one)
+}
+
+fn as_one(v: JsonValue) : [String] = match as_string(v) {
+  Some(s) -> [s]
+  None -> []
+}
+
+fn as_arr(v: JsonValue) : [JsonValue] = match v {
+  JArr(items) -> items
+  _ -> []
+}
+
+#[doc("What kalku says about itself when a host connects.")]
+pub fn greeting(id: Option[Int]) : String = replying(
+  id,
+  JObj([
+    ("protocolVersion", JStr(PROTOCOL)),
+    ("capabilities", JObj([("tools", JObj([]))])),
+    ("serverInfo", JObj([("name", JStr("kalku")), ("version", JStr(version.VERSION))]))
+  ])
+)
+
+#[doc("Every tool, with the guardrails said in plain words.")]
+pub fn tools(id: Option[Int]) : String = replying(id, JObj([("tools", JArr(tool_list()))]))
+
+fn tool_list() : [JsonValue] = [
+  tool(
+    "kalku_run",
+    "Measure files: break each one in small ways and report the defects no test noticed. Slow — minutes — and it runs the project's test suite many times.",
+    JObj([
+      ("files", strings_of("The files to measure, as paths in the project.")),
+      ("root", one_string("The project to measure; defaults to where the host is."))
+    ])
+  ),
+  tool(
+    "kalku_cast",
+    "Re-cast wekufe that a run already found, after writing a test for them. Says whether each one is now killed.",
+    JObj([
+      ("wekufe", strings_of("The wekufe ids, as a run reported them.")),
+      ("root", one_string("The project; defaults to where the host is."))
+    ])
+  ),
+  tool(
+    "kalku_show",
+    "One wekufe in full: where it is, what it changed, which tests judged it, a hint, and what it came to before.",
+    JObj([
+      ("wekufe", one_string("The wekufe id.")),
+      ("root", one_string("The project; defaults to where the host is."))
+    ])
+  ),
+  tool(
+    "kalku_propose_equivalent",
+    "Write a proposal that a wekufe cannot be told apart from the original, for a person to review. It suppresses nothing: kalku never applies a proposal, and the wekufe keeps counting until a person accepts it.",
+    JObj([
+      ("wekufe", one_string("The wekufe id.")),
+      ("reason", one_string("Why no test could tell it apart. Required.")),
+      ("root", one_string("The project; defaults to where the host is."))
+    ])
+  )
+]
+
+fn tool(name: String, about: String, properties: JsonValue) : JsonValue = JObj([
+  ("name", JStr(name)),
+  ("description", JStr(about)),
+  ("inputSchema", JObj([("type", JStr("object")), ("properties", properties)]))
+])
+
+fn one_string(about: String) : JsonValue =
+  JObj([("type", JStr("string")), ("description", JStr(about))])
+
+fn strings_of(about: String) : JsonValue = JObj([
+  ("type", JStr("array")),
+  ("items", JObj([("type", JStr("string"))])),
+  ("description", JStr(about))
+])
+
+#[doc("A tool's answer, which is text however it was produced.")]
+pub fn answered(id: Option[Int], text: String) : String = replying(
+  id,
+  JObj([
+    ("content", JArr([JObj([("type", JStr("text")), ("text", JStr(text))])])),
+    ("isError", JBool(false))
+  ])
+)
+
+#[doc("""
+A tool that could not be run, said as a result rather than as a protocol
+error: the host shows it to the agent, which is who needs to know.
+""")]
+pub fn refused(id: Option[Int], why: String) : String = replying(
+  id,
+  JObj([
+    ("content", JArr([JObj([("type", JStr("text")), ("text", JStr(why))])])),
+    ("isError", JBool(true))
+  ])
+)
+
+#[doc("A line the host sent that this side cannot act on at all.")]
+pub fn protocol_error(id: Option[Int], why: String) : String =
+  rpc_message(id, "error", JObj([("code", JNum(0 - 32600)), ("message", JStr(why))]))
+
+fn replying(id: Option[Int], result: JsonValue) : String = rpc_message(id, "result", result)
+
+# Every message carries the id it answers, and a notification answers
+# none — which JSON-RPC spells as a null id rather than as an absence.
+fn rpc_message(id: Option[Int], field: String, body: JsonValue) : String = json_encode(
+  JObj([("jsonrpc", JStr("2.0")), ("id", answering(id)), (field, body)])
+)
+
+fn answering(id: Option[Int]) : JsonValue = match id {
+  Some(n) -> JNum(n)
+  None -> JNull
+}

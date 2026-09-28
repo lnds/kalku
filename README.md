@@ -30,7 +30,8 @@ It targets Elixir first. It is written in [kaikai](https://github.com/lnds/kaika
 | Per-test coverage *used* by a run (a cast still runs the whole suite) | not yet |
 | `--since`, `--watch`, `--ci`, and the gate on changed lines | not yet |
 | **`kalku info`** — spells, outcomes, formats and the agent loop, in the binary | done |
-| **Server** (`kalku serve`), **MCP** | not yet |
+| **`kalku serve`** — the client protocol on a `0600` Unix socket | done: sessions are cold |
+| **`kalku mcp`** — the four agent tools, over stdio | done |
 
 Both kalku are driven end to end by their own test suites, over real pipes, against real fixture projects — and kalku measures its own suite through the kaikai one (`make self-mutate`).
 
@@ -72,6 +73,7 @@ kalku init                     # detect the language and set this project up
 kalku run lib/thing.ex         # measure those files
 kalku run lib/a.ex --limit 6 --verbose
 kalku info outcomes            # what kalku knows about itself
+kalku mcp                      # the agent tools, for an MCP host
 kalku info agents --snippet    # the lines to paste into CLAUDE.md
 ```
 
@@ -104,7 +106,7 @@ kalku info agents                        # a snippet to paste into CLAUDE.md / A
 ```
 
 - **Everything needed to act in one object:** file, line, enclosing function, the change, the source around it, the tests that cover it, and a hint. Hints come from a fixed template per spell (*"no test tells `i == 0` apart from `i > 0`"*), not from a model.
-- **MCP** (not built yet): `kalku serve` will expose `kalku_run`, `kalku_cast`, `kalku_show`, and `kalku_propose_equivalent` as tools for Claude Code, Cursor, and similar hosts.
+- **MCP:** `kalku mcp` serves `kalku_run`, `kalku_cast`, `kalku_show` and `kalku_propose_equivalent` over stdio to Claude Code, Cursor and similar hosts — `claude mcp add kalku -- kalku mcp`. There is deliberately no tool that suppresses, excludes or ignores anything.
 - **Guardrails:** an agent can only *propose* an equivalent mutant; a person has to accept it. Suppressions added in a pull request appear under their own heading in every report. A test only counts as killing a wekufe if it passes on the original code. A timeout never counts as a kill.
 
 ## Languages
