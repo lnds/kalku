@@ -1,3 +1,9 @@
+## v0.1.2 (2026-09-28)
+
+### Fixed
+
+- **ci**: build the Linux release where kaikai can run (#74)
+
 ## v0.1.1 (2026-09-28)
 
 ## v0.1.0 (2026-09-28)
