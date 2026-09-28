@@ -248,5 +248,17 @@ defmodule Kalku.Baseline do
     end
   end
 
-  defp relative(file, root), do: Path.relative_to(to_string(file), Path.expand(root))
+  # Relative to the root the client named, and failing that to the
+  # directory the kalku is actually standing in. They differ whenever a
+  # path reaches the project through a symlink — `/tmp` is one on macOS —
+  # and a coverage entry that stays absolute matches no site, which makes
+  # every wekufe look uncovered.
+  defp relative(file, root) do
+    text = to_string(file)
+
+    case Path.relative_to(text, Path.expand(root)) do
+      ^text -> Path.relative_to(text, File.cwd!())
+      relative -> relative
+    end
+  end
 end
