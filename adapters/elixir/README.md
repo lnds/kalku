@@ -1,6 +1,29 @@
 # Elixir kalku
 
-The native kalku for Elixir: it finds sites with Elixir's own parser and, in later stages, casts wekufe into a warm BEAM node with the project loaded. It speaks the kalku protocol (`docs/protocol.md`) on stdio.
+The native kalku for Elixir: it finds sites with Elixir's own parser,
+casts wekufe into a warm BEAM node with the project loaded, and runs only
+the tests that cover each one. It speaks the kalku protocol on stdio, to
+[kalku](https://github.com/lnds/kalku).
+
+This package is half of the tool. It runs *inside* the project it
+measures — that is how a wekufe is loaded into a warm BEAM instead of
+rebuilt — and the `kalku` binary drives it from outside.
+
+## Install
+
+```elixir
+# mix.exs
+{:kalku_elixir, "~> 0.1", only: :test, runtime: false}
+```
+
+Then install the `kalku` binary ([how](https://github.com/lnds/kalku#install))
+and, from the root of your project:
+
+```sh
+mix deps.get
+kalku init                 # detects Elixir, writes .kalku.toml and .kalku/summon
+kalku run lib/thing.ex     # measure one file
+```
 
 ## Status
 

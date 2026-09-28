@@ -1,7 +1,8 @@
 defmodule Kalku.MixProject do
   use Mix.Project
 
-  @version "0.0.0"
+  @version "0.1.0"
+  @source_url "https://github.com/lnds/kalku"
 
   def project do
     [
@@ -11,7 +12,31 @@ defmodule Kalku.MixProject do
       start_permanent: false,
       deps: [],
       elixirc_paths: elixirc_paths(Mix.env()),
-      test_ignore_filters: [~r{^test/fixtures/}]
+      test_ignore_filters: [~r{^test/fixtures/}],
+      description: description(),
+      package: package(),
+      source_url: @source_url,
+      docs: [main: "readme", extras: ["README.md"], source_ref: "v#{@version}"]
+    ]
+  end
+
+  defp description do
+    "The Elixir kalku: the worker that mutation-tests an Elixir project " <>
+      "for kalku. It finds sites with Elixir's own parser, casts each " <>
+      "wekufe into a warm BEAM, and runs only the tests that cover it."
+  end
+
+  # The package carries the kalku and the script that summons it, and
+  # nothing from the suite that tests it: fixtures are whole Mix projects,
+  # and they are not what a user installs.
+  defp package do
+    [
+      licenses: ["MIT", "Apache-2.0"],
+      files: ~w(lib bin mix.exs README.md LICENSE-MIT LICENSE-APACHE),
+      links: %{
+        "GitHub" => @source_url,
+        "Protocol" => "#{@source_url}/blob/main/docs/protocol.md"
+      }
     ]
   end
 

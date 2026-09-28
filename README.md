@@ -12,41 +12,111 @@ Coding agents write tests fast, but a test can run a line without checking anyth
 
 It targets Elixir first. It is written in [kaikai](https://github.com/lnds/kaikai) and uses kalku to test its own code.
 
-> **Status: pre-alpha.** `kalku init` and `kalku run` work: a project is set up in one command and measured in another, with the Elixir kalku or the kaikai one. The rest of the command line — `serve`, `cast`, `show`, `merge`, `info` — is still the design, and so are the flags marked below. Track progress in the [issues](https://github.com/lnds/kalku/issues).
+> **Status: pre-alpha, and installed from source.** There is no release and no package yet: you build the binary, and an Elixir project points at this checkout. Everything below runs today; [what is done and what is not](#what-works-today) is at the end.
 
-## What works today
+## Install
 
-| Piece | State |
-|---|---|
-| **`kalku init`** — detects the language, writes `.kalku.toml` and the summoning script | done |
-| **`kalku run <files>`** — measures those files and reports survivors | done |
-| **Protocol** — both directions, canonical NDJSON, fixtures for every message | done |
-| **Core** — planner, test selection, outcomes, score, gate, equivalents, `.kalku.toml`, sharding, changed lines | done |
-| **Reports** — human, JSON, GitHub annotations, and `agent` NDJSON with per-spell hints | done |
-| **Orchestrator** — kalku pool, scheduler, timeout escalation (abort → reset → kill), restart budget, cancellation | done |
-| **Elixir kalku** — sites, `prepare`, `baseline` with per-test coverage, `cast`, `abort`, `reset`, `reload` | done: every protocol message but `delegate` |
-| **kaikai kalku** — the one kalku measures itself with | done |
-| **Session and cache keys** — one warm session per project, incremental re-casting | done |
-| Per-test coverage *used* by a run (a cast still runs the whole suite) | not yet |
-| `--since`, `--watch`, `--ci`, and the gate on changed lines | not yet |
-| **`kalku info`** — spells, outcomes, formats and the agent loop, in the binary | done |
-| **`kalku serve`** — the client protocol on a `0600` Unix socket | done: sessions are cold |
-| **`kalku mcp`** — the four agent tools, over stdio | done |
+kalku is one binary, built with [kaikai](https://github.com/lnds/kaikai) (the version in `.kaikai-version`):
 
-Both kalku are driven end to end by their own test suites, over real pipes, against real fixture projects — and kalku measures its own suite through the kaikai one (`make self-mutate`).
+```sh
+git clone https://github.com/lnds/kalku
+cd kalku
+make build                    # _build/kalku
+export PATH="$PWD/_build:$PATH"
+kalku info                    # check it answers
+```
 
-## The cast
+## Measure an Elixir project
 
-In Mapuche belief, a *kalku* is a sorcerer who works in a hidden cave, the *reni*, and commands the *wekufe*, spirits that bring harm. kalku borrows that cast:
+The Elixir kalku runs *inside* the project it measures — that is how it
+loads a wekufe into a warm BEAM instead of rebuilding — so the project
+depends on it, for tests only:
 
-| Term | Meaning |
-|---|---|
-| **kalku** | a worker bound to one language, which knows how to break code in that language |
-| **wekufe** | a mutant: your program with exactly one defect cast into it |
-| **spell** | a kind of defect: drop a `case` clause, shift `>=` to `>`, swap `and` for `or`, … |
-| **reni** | an isolated workspace where wekufe are cast. Your working tree is never touched |
+```elixir
+# mix.exs, in deps/0
+{:kalku_elixir, path: "/path/to/kalku/adapters/elixir", only: :test, runtime: false}
+```
 
-Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads without the glossary.
+Then, from the root of that project:
+
+```sh
+mix deps.get
+kalku init                    # detects Elixir, writes .kalku.toml and .kalku/summon
+kalku run lib/thing.ex        # measure one file
+```
+
+`init` reads the project's own markers — `mix.exs`, `kai.toml` — says what
+it found, and writes `.kalku.toml` plus a `.kalku/summon` script holding
+whatever the toolchain needs to start the kalku with a clean protocol
+channel. It never writes over a file that is there, and it never edits the
+build file that decides what a project depends on: it prints the line to
+add and says why.
+
+Start with one file and a limit. A first whole-project run on a real
+codebase is long, and there is nothing to learn from it that a single
+file does not already show.
+
+## What a run tells you
+
+```sh
+kalku run lib/green.ex --limit 6 --verbose
+```
+
+```
+lib/green.ex:4  compare  Green.classify/1
+  - >=
+  + >
+  covered by 4 tests
+  No test tells `>=` apart from `>` in `Green.classify/1`. Add a case at the boundary where the two sides are equal.
+
+score 60% · 3 killed · 2 survived · 1 compile error
+```
+
+Survivors come first and the score comes after, because the survivor is
+the thing you can act on. `covered by 4 tests` is not decoration: the
+baseline records which tests reach which lines, and a wekufe is cast
+against those tests alone. A site no test reaches is `no_coverage`, never
+a kill — and neither is a timeout, a crash, or a wekufe that did not
+compile. The score is `killed / (killed + survived)` and nothing else
+moves it.
+
+Read one back, or re-cast it after writing a test:
+
+```sh
+kalku show <wekufe>            # site, diff, covering tests, hint, history
+kalku cast <wekufe>            # re-cast just that one
+kalku info outcomes            # what each outcome means
+```
+
+## Keep it warm
+
+A run spends most of its time setting the project up. `kalku serve` keeps
+the kalku a project was measured with, so the next run casts over a warm
+one:
+
+```sh
+kalku serve                    # a 0600 Unix socket, streaming a run as it happens
+```
+
+The pool is thrown away the moment any source or test file changes:
+measuring with a kalku that holds yesterday's code is measuring
+yesterday's code. It serves one client at a time.
+
+## For coding agents
+
+People read one run and CI gates one run per pull request. An agent
+iterates: it finds a survivor, writes a test, checks whether the wekufe is
+dead, and repeats. kalku is built for that loop.
+
+```sh
+kalku run lib/thing.ex --format agent   # survivors as compact JSON, each with a hint
+kalku cast <wekufe>                     # re-cast just that one, against a warm kalku
+kalku info agents --snippet             # lines to paste into CLAUDE.md / AGENTS.md
+```
+
+- **Everything needed to act in one object:** file, line, enclosing function, the change, the source around it, the tests that cover it, and a hint. Hints come from a fixed template per spell (*"no test tells `i == 0` apart from `i > 0`"*), not from a model.
+- **MCP:** `kalku mcp` serves `kalku_run`, `kalku_cast`, `kalku_show` and `kalku_propose_equivalent` over stdio to Claude Code, Cursor and similar hosts — `claude mcp add kalku -- kalku mcp`. There is deliberately no tool that suppresses, excludes or ignores anything.
+- **Guardrails:** an agent can only *propose* an equivalent mutant; a person has to accept it. Suppressions added in a pull request appear under their own heading in every report. A test only counts as killing a wekufe if it passes on the original code. A timeout never counts as a kill.
 
 ## How it works
 
@@ -62,52 +132,22 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 1. **Baseline.** Run the suite once and record which tests cover which lines. If the suite is already failing, stop, because mutants on top of failing tests measure nothing.
 2. **Plan.** Find the places where each spell applies, using the language's own parser rather than regexes. Skip lines no test covers and mutants declared equivalent.
 3. **Cast.** Load each wekufe into a warm kalku and run only the tests that cover it. Stop at the first failing test.
-4. **Report.** List the survivors first. The score, `killed / (killed + survived)`, comes after as context. Timeouts and crashes are reported separately and never counted as kills.
+4. **Report.** List the survivors first. The score comes after as context. Timeouts and crashes are reported separately and never counted as kills.
 
 Warm workers are the point. A timeout is aborted inside the running VM, and a worker is restarted only when it stops responding. After the first run, a warm session only re-casts what changed, which makes watch mode and fast CI possible.
 
-## Usage
+## The cast
 
-```sh
-kalku init                     # detect the language and set this project up
-kalku run lib/thing.ex         # measure those files
-kalku run lib/a.ex --limit 6 --verbose
-kalku info outcomes            # what kalku knows about itself
-kalku mcp                      # the agent tools, for an MCP host
-kalku info agents --snippet    # the lines to paste into CLAUDE.md
-```
+In Mapuche belief, a *kalku* is a sorcerer who works in a hidden cave, the *reni*, and commands the *wekufe*, spirits that bring harm. kalku borrows that cast:
 
-`init` reads the project's own markers — `mix.exs`, `kai.toml` — says what
-it found, and writes `.kalku.toml` plus a `.kalku/summon` script holding
-whatever the toolchain needs to start the kalku with a clean protocol
-channel. It never writes over a file that is there, and it never edits the
-build file that decides what a project depends on: it prints the line to
-add and says why.
+| Term | Meaning |
+|---|---|
+| **kalku** | a worker bound to one language, which knows how to break code in that language |
+| **wekufe** | a mutant: your program with exactly one defect cast into it |
+| **spell** | a kind of defect: drop a `case` clause, shift `>=` to `>`, swap `and` for `or`, … |
+| **reni** | an isolated workspace where wekufe are cast. Your working tree is never touched |
 
-Still the design, not the program:
-
-```sh
-kalku run                      # the whole project
-kalku run --since main         # only the lines you changed
-kalku run --watch              # re-cast on save, against warm workers
-kalku run --ci --since origin/main --format github
-```
-
-In CI, a pull request fails when **a wekufe survives on a line it changed**, not when a global score dips. Old debt does not block new work. Exit codes separate *"your tests have holes"* (`1`) from *"kalku could not measure"* (`2`).
-
-## For coding agents
-
-People read one run and CI gates one run per pull request. An agent iterates: it finds a survivor, writes a test, checks whether the wekufe is dead, and repeats. kalku is built for that loop.
-
-```sh
-kalku run --since HEAD --format agent   # survivors as compact JSON, each with a hint
-kalku cast <wekufe>                      # re-cast just that one, in seconds
-kalku info agents                        # a snippet to paste into CLAUDE.md / AGENTS.md
-```
-
-- **Everything needed to act in one object:** file, line, enclosing function, the change, the source around it, the tests that cover it, and a hint. Hints come from a fixed template per spell (*"no test tells `i == 0` apart from `i > 0`"*), not from a model.
-- **MCP:** `kalku mcp` serves `kalku_run`, `kalku_cast`, `kalku_show` and `kalku_propose_equivalent` over stdio to Claude Code, Cursor and similar hosts — `claude mcp add kalku -- kalku mcp`. There is deliberately no tool that suppresses, excludes or ignores anything.
-- **Guardrails:** an agent can only *propose* an equivalent mutant; a person has to accept it. Suppressions added in a pull request appear under their own heading in every report. A test only counts as killing a wekufe if it passes on the original code. A timeout never counts as a kill.
+Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads without the glossary.
 
 ## Languages
 
@@ -116,6 +156,38 @@ kalku info agents                        # a snippet to paste into CLAUDE.md / A
 | Elixir | native | kalku owns the loop: warm BEAM nodes, in-memory loading, coverage-based test selection |
 | kaikai | native (thin) | built on `kai mutate`; this is how kalku tests itself |
 | others | driver | wraps an existing framework (Stryker, PIT, …), normalizes its results, and recomputes the score |
+
+## What works today
+
+| Piece | State |
+|---|---|
+| **`kalku init`** — detects the language, writes `.kalku.toml` and the summoning script | done |
+| **`kalku run <files>`** — measures those files and reports survivors | done |
+| **`kalku cast <wekufe>`** — re-cast one wekufe, and `kalku show` to read it back | done |
+| **`kalku propose-equivalent`** — an agent proposes, a person accepts | done |
+| **`kalku info`** — spells, outcomes, formats and the agent loop, in the binary | done |
+| **`kalku mcp`** — the four agent tools, over stdio | done |
+| **`kalku serve`** — the client protocol on a `0600` Unix socket, streaming a run as it happens | done: one client at a time |
+| **Warm sessions** — the pool a project was measured with survives the run, and is replaced when the project changes | done |
+| **Protocol** — both directions, canonical NDJSON, fixtures for every message | done |
+| **Core** — planner, test selection, outcomes, score, gate, equivalents, `.kalku.toml`, sharding, changed lines | done |
+| **Reports** — human, JSON, GitHub annotations, and `agent` NDJSON with per-spell hints | done |
+| **Orchestrator** — kalku pool, scheduler, timeout escalation (abort → reset → kill), restart budget, cancellation | done |
+| **Elixir kalku** — sites, `prepare`, `baseline` with per-test coverage, `cast`, `abort`, `reset`, `reload` | done: every protocol message but `delegate` |
+| **kaikai kalku** — the one kalku measures itself with | done |
+| **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir |
+| Parallel workers in an Elixir project (one build path, so one worker) | not yet |
+| `--since`, `--watch`, `--ci`, and the gate on changed lines | not yet |
+| `merge` — combining sharded reports | not yet |
+| A release, a binary to download, and `kalku_elixir` on Hex | not yet |
+
+Both kalku are driven end to end by their own test suites, over real pipes, against real fixture projects — and kalku measures its own suite through the kaikai one (`make self-mutate`).
+
+The plan for CI is a gate that does not punish old debt: a pull request
+fails when **a wekufe survives on a line it changed**, not when a global
+score dips, and exit codes separate *"your tests have holes"* (`1`) from
+*"kalku could not measure"* (`2`). That needs `--since`, which is the
+next thing.
 
 ## Documentation
 
@@ -129,42 +201,11 @@ Requires [kaikai](https://github.com/kaikailang-org/kaikai) (version in `.kaikai
 
 ```sh
 make build     # _build/kalku
-make test      # kaikai tests, and the Elixir kalku's once it exists
+make test      # kaikai tests, and the Elixir kalku's
 make ci        # kaikai side: format check, lint, build, tests, km quality gate
 make check     # everything: `make ci` plus the Elixir kalku's tests
 ```
 
-### Measuring an Elixir project
-
-The Elixir kalku runs *inside* the project it measures, so that project
-depends on it:
-
-```elixir
-# mix.exs
-{:kalku_elixir, path: "/path/to/kalku/adapters/elixir", only: :test, runtime: false}
-```
-
-Then, from the root of that project:
-
-```sh
-kalku init
-kalku run lib/thing.ex --limit 6 --verbose
-```
-
-```
-lib/green.ex:4  compare  Green.classify/1
-  - >=
-  + >
-  covered by 4 tests
-  No test tells `>=` apart from `>` in `Green.classify/1`. Add a case at the boundary where the two sides are equal.
-
-score 60% · 3 killed · 2 survived · 1 compile error
-```
-
-One worker for now: each kalku needs a build path of its own, and there
-is one `MIX_BUILD_PATH` to give. The kaikai side also does not yet use
-the per-test coverage this kalku measures, so every wekufe is cast
-against the whole suite.
 ### kalku measured by kalku
 
 `make self-mutate` casts wekufe into kalku's own sources through the
@@ -191,6 +232,16 @@ The same run happens nightly (`.github/workflows/self-mutate.yml`, also
 startable by hand with a module and a limit) and its report is attached to
 the run. It is advisory: a gate that blocks a pull request has to measure
 the lines that pull request changed, and that does not exist yet.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option — `MIT OR Apache-2.0`, the same
+terms as kaikai. Apache-2.0 is there because it grants patent rights
+explicitly, which is what a company's review asks for; MIT is there
+because it is short. Unless you state otherwise, a contribution you
+submit for inclusion in kalku is dual licensed on those terms, with no
+additional conditions.
 
 ## Contributing
 
