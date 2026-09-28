@@ -8,3 +8,12 @@ pub fn total(xs: [Int]) : Int = foldl(xs, 0, (a, b) => a + b)
 
 #[doc("Clamped at zero; the boundary is never tested, so a wekufe there lives.")]
 pub fn clamp(n: Int) : Int = if n > 0 { n } else { 0 }
+
+#[doc("""
+Wrapped into a range.
+
+The divisor is here for one reason: a wekufe that turns it into `0` traps
+the runtime, and a kalku that counted the tests which did not get to run
+would call that a survivor.
+""")]
+pub fn wrapped(n: Int) : Int = n % 10
