@@ -60,6 +60,47 @@ pub fn cast_all(
 ) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Telling =
   warded(() => run_plan(spec, casts))
 
+#[doc("""
+Summon a pool and keep it, for a caller that will cast more than once.
+
+The ward that outlives the run is the caller's: whoever opens a pool this
+way is promising to be inside a `warded` scope for as long as the kalku
+live, which is what keeps `kill -9` on the server from leaving children
+behind.
+""")]
+pub fn open_pool(
+  spec: PoolSpec
+) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] + Ward = fill(spec)
+
+#[doc("""
+Cast over a pool that is already alive, and hand it back.
+
+The kalku are not dismissed at the end: they are the point. What the
+caller gets back is what the run left them as, so the next run can see
+which ones were lost.
+""")]
+pub fn cast_over(
+  spec: PoolSpec,
+  slots: [Slot],
+  casts: [Wekufe],
+  from_id: Int
+) : (Casting, [Slot], Int) / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
+  let done = turn(Run {
+    spec: spec,
+    slots: slots,
+    queue: casts,
+    verdicts: [],
+    next_id: from_id,
+    failure: no_kalku(slots, casts),
+    cancelled: false
+  })
+  (
+    Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled },
+    done.slots,
+    done.next_id
+  )
+}
+
 fn run_plan(
   spec: PoolSpec,
   casts: [Wekufe]

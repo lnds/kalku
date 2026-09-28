@@ -95,3 +95,22 @@ test "changed files are the ones whose contents moved, and the new ones" {
   assert changed(before, now) == ["lib/b.ex", "lib/c.ex"]
   assert changed(before, before) == []
 }
+
+# A warm kalku holds a compiled copy of a project, and the fingerprint is
+# what says the copy is still the project. If it does not change when a
+# file does, a run measures last week's code and says nothing about it.
+test "a fingerprint changes when any file's contents change" {
+  let before = [FileHash { file: "lib/a.ex", hash: hash_of("one") }]
+  let after = [FileHash { file: "lib/a.ex", hash: hash_of("two") }]
+
+  assert hash_of("one") != hash_of("two")
+  assert fingerprint(before) != fingerprint(after)
+  assert fingerprint(before) == fingerprint(before)
+}
+
+test "a fingerprint does not depend on the order the files were read in" {
+  let one = FileHash { file: "lib/a.ex", hash: hash_of("a") }
+  let two = FileHash { file: "lib/b.ex", hash: hash_of("b") }
+
+  assert fingerprint([one, two]) == fingerprint([two, one])
+}

@@ -23,9 +23,23 @@ import kalku.core.session
 #[doc("What a server is doing: which socket it holds, and which projects it knows.")]
 pub type Serving = { path: String, sessions: [Project] }
 
-#[doc("One project the server has been asked about.")]
-#[derive(Eq, Show)]
-pub type Project = { root: String, state: State, runs: Int }
+#[doc("""
+One project the server has been asked about, and the kalku it keeps warm
+for it.
+
+`fingerprint` is what those kalku were compiled from. A kalku holding a
+copy of a project that has since changed is holding the wrong one, and
+measuring with it would be measuring the wrong code — so the moment the
+fingerprint differs, the warm pool is worth nothing and is replaced.
+""")]
+pub type Project = {
+  root: String,
+  state: State,
+  runs: Int,
+  slots: [Slot],
+  fingerprint: String,
+  next_id: Int
+}
 
 #[doc("""
 Where the socket goes.
@@ -51,8 +65,19 @@ pub fn session_for(sessions: [Project], root: String) : Project = match find(
   s => s.root == root
 ) {
   Some(s) -> s
-  None -> Project { root: root, state: SessionCold, runs: 0 }
+  None ->
+    Project { root: root, state: SessionCold, runs: 0, slots: [], fingerprint: "", next_id: 1 }
 }
+
+#[doc("""
+Whether a project's warm kalku can be trusted for this run.
+
+Only when there are some and the project is exactly as they last saw it.
+Anything else — a first run, a file changed, a pool that lost its last
+kalku — and they are worth nothing.
+""")]
+pub fn still_warm(p: Project, now: String) : Bool =
+  (not is_empty(p.slots)) and p.fingerprint == now and any(p.slots, s => not is_gone(s))
 
 #[doc("The sessions with this one's place taken by it.")]
 pub fn with_session(sessions: [Project], one: Project) : [Project] =
