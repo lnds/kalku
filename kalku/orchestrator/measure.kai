@@ -236,11 +236,11 @@ fn casting_them(
 ) : Found / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
   let known = wanted_only(asking, all_known)
   let ready = plan(inputs_for(asking, known), _id => None)
-  let casts = limited(ready.to_cast, asking.limit)
+  let casts = repeated(limited(ready.to_cast, asking.limit))
   Telling.tell_of(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
   )
-  let casting = cast_all(asking.spec, casts)
+  let casting = agreed(cast_all(asking.spec, casts))
   Found {
     report: Some(report_of(ready, casting, known)),
     failure: None,
@@ -351,4 +351,41 @@ fn judged_for(casting: Casting, wekufe: String, known: Known) : [String] = match
 ) {
   Some(v) -> v.tests
   None -> known.tests
+}
+
+# A wekufe whose outcome depends on how things were scheduled is cast
+# more than once, and the queue is where that happens: the scheduler
+# hands out casts and knows nothing about why two of them are the same.
+fn repeated(casts: [Wekufe]) : [Wekufe] = flat_map(casts, again)
+
+fn again(c: Wekufe) : [Wekufe] = repeat(c, max_casts(c.casts))
+
+fn max_casts(n: Int) : Int = if n < 1 { 1 } else { n }
+
+# One verdict per wekufe, from however many casts it took. A wekufe that
+# came to the same thing every time is believed; one that did not is
+# `nondeterministic`, which is a fact about the suite and not a
+# measurement of it.
+fn agreed(casting: Casting) : Casting = Casting {
+  ...casting,
+  verdicts: uniq(casting.verdicts | (.wekufe)) | (w => settled(casting.verdicts, w))
+}
+
+fn settled(verdicts: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {
+  let mine = filter(verdicts, v => v.wekufe == wekufe)
+  let first = head(mine)
+  match first {
+    None -> scheduler.Verdict { wekufe: wekufe, outcome: Crashed, tests: [], said: None }
+    Some(one) -> if all(mine, v => v.outcome == one.outcome) {
+      one
+    } else {
+      scheduler.Verdict {
+        ...one,
+        outcome: Nondeterministic,
+        said: Some(
+          "cast #{length(mine)} times: #{join(uniq(mine | (v => outcome_name(v.outcome))), ", ")}"
+        )
+      }
+    }
+  }
 }

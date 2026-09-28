@@ -119,8 +119,8 @@ Half-open `[start, end)`.
 
 | Set | Values |
 |---|---|
-| Spell | `arm` `compare` `connect` `negate` `literal` `call` `foreign` (drivers only) |
-| Outcome | `killed` `survived` `timeout` `no_coverage` `compile_error` `crashed` `equivalent` |
+| Spell | `arm` `compare` `connect` `negate` `literal` `call` `await` `supervise` `foreign` (drivers only) |
+| Outcome | `killed` `survived` `timeout` `no_coverage` `compile_error` `crashed` `nondeterministic` `equivalent` |
 | Capability | `cast` `delegate` `per_test_coverage` `hot_load` `recompile_dependents` `abort` `reset` `code_hash` — unknown values ignored |
 | Format | `human` `json` `github` `agent` |
 | Phase | `prepare` `baseline` `plan` `cast` `report` |
@@ -268,7 +268,7 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 | `duration_ms` | int | |
 | `dirty` | bool | the runtime may not be back to its original state |
 
-`timeout` and `crashed` never appear here: the kaikai side detects them from outside (a missing response, a dead process). A native kalku does not enforce its own timeout. Any other outcome is `invalid`.
+`timeout`, `crashed` and `nondeterministic` never appear here: the kaikai side decides them from outside — a missing response, a dead process, or a wekufe whose repeated casts did not agree with each other. A native kalku does not enforce its own timeout, and does not know that it has been asked to cast the same wekufe twice. Any other outcome is `invalid`.
 
 `equivalent` means the wekufe compiled to the same code as the original, so no test ran: identical compiled code is the only mechanical evidence of equivalence, and a kalku never reports equivalence on any other ground. Should another kind of evidence appear, it arrives as a new optional field.
 
@@ -445,7 +445,7 @@ Events, terminal event `report`:
 | `suppression_changes` | Suppression changes | |
 | `exit` | int | the exit code a CLI client should return (*Running in CI* in `docs/design.md`) |
 
-**Counts:** `killed`, `survived`, `timeout`, `no_coverage`, `compile_error`, `crashed` (ints), `equivalent` ({`bytecode`, `declared`} ints).
+**Counts:** `killed`, `survived`, `timeout`, `no_coverage`, `compile_error`, `crashed`, `nondeterministic` (ints), `equivalent` ({`bytecode`, `declared`} ints).
 
 **Suppression changes:** `equivalent_added` (int), `exclude_added` ([string]), `exclude_calls_added` ([string]) — suppressions the scope's diff adds, so every client can show them. Zero and empty when nothing changed.
 
@@ -454,7 +454,7 @@ Events, terminal event `report`:
 {"type":"phase","id":1,"phase":"baseline"}
 {"type":"progress","id":1,"done":120,"total":480}
 {"type":"outcome","id":1,"wekufe":"c1f37a90e2b4","site":{"site_id":"c1f37a90e2b4","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.next_token/2","ordinal":1,"span":{"start":{"line":42,"col":7,"byte":1180},"end":{"line":42,"col":9,"byte":1182}},"spell":"compare","original":">=","replacement":">","reload":"module"},"outcome":"survived","covering_tests":["test/my_app/parser_test.exs:18"],"hint":"No test tells i >= 0 apart from i > 0. Add a case at the boundary where they are equal.","duration_ms":41}
-{"type":"report","id":1,"score":0.83,"counts":{"killed":380,"survived":78,"timeout":6,"no_coverage":14,"compile_error":2,"crashed":0,"equivalent":{"bytecode":9,"declared":5}},"survivors_on_changed_lines":3,"suppression_changes":{"equivalent_added":2,"exclude_added":[],"exclude_calls_added":["MyApp.Metrics.*"]},"exit":1}
+{"type":"report","id":1,"score":0.83,"counts":{"killed":380,"survived":78,"timeout":6,"no_coverage":14,"compile_error":2,"crashed":0,"nondeterministic":0,"equivalent":{"bytecode":9,"declared":5}},"survivors_on_changed_lines":3,"suppression_changes":{"equivalent_added":2,"exclude_added":[],"exclude_calls_added":["MyApp.Metrics.*"]},"exit":1}
 ```
 
 ### `cast`

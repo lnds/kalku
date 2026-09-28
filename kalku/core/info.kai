@@ -113,6 +113,8 @@ fn breaks(s: Spell) : String {
   case Negate -> "inverts a condition"
   case Literal -> "perturbs a literal: a number, a string, a boolean"
   case Call -> "elides a call, leaving its argument or nothing"
+  case Await -> "takes the deadline off a wait, or the waiting off a call"
+  case Supervise -> "changes what happens when a process dies: the restart, the link, the trapping"
   case Foreign -> "whatever an existing framework's operator did; a driver's spell"
 }
 
@@ -155,6 +157,8 @@ fn means(o: Outcome) : String {
   case NoCoverage -> "no test reaches the line at all"
   case CompileError -> "the wekufe does not compile, so it says nothing about the suite"
   case Crashed -> "the cast produced no verdict: the kalku died, or could not run its tests"
+  case Nondeterministic ->
+    "cast several times and did not agree with itself; a result nobody should trust"
   case Equivalent -> "the wekufe cannot be told apart from the original"
 }
 

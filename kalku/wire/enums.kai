@@ -8,11 +8,28 @@ import encoding.json
 
 #[doc("A class of defect a kalku can cast; `Foreign` is a driver framework's own operator.")]
 #[derive(Eq, Show)]
-pub type Spell = Arm | Compare | Connect | Negate | Literal | Call | Foreign
+pub type Spell
+  = Arm
+  | Compare
+  | Connect
+  | Negate
+  | Literal
+  | Call
+  | Await
+  | Supervise
+  | Foreign
 
 #[doc("What happened to one wekufe.")]
 #[derive(Eq, Show)]
-pub type Outcome = Killed | Survived | Timeout | NoCoverage | CompileError | Crashed | Equivalent
+pub type Outcome
+  = Killed
+  | Survived
+  | Timeout
+  | NoCoverage
+  | CompileError
+  | Crashed
+  | Nondeterministic
+  | Equivalent
 
 #[doc("What a kalku can do. `OtherCapability` keeps a value this version does not know, which the kaikai side ignores.")]
 #[derive(Eq, Show)]
@@ -67,6 +84,8 @@ fn spells() : [(String, Spell)] = [
   ("negate", Negate),
   ("literal", Literal),
   ("call", Call),
+  ("await", Await),
+  ("supervise", Supervise),
   ("foreign", Foreign)
 ]
 
@@ -77,6 +96,7 @@ fn outcomes() : [(String, Outcome)] = [
   ("no_coverage", NoCoverage),
   ("compile_error", CompileError),
   ("crashed", Crashed),
+  ("nondeterministic", Nondeterministic),
   ("equivalent", Equivalent)
 ]
 
