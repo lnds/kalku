@@ -14,8 +14,9 @@ test "help and version flags" {
 }
 
 test "commands still to come are pending, others unknown" {
-  assert cli.parse_args(["serve"]) == Pending("serve")
+  assert cli.parse_args(["merge"]) == Pending("merge")
   assert cli.parse_args(["nope"]) == Unknown("nope")
+  assert cli.parse_args(["serve"]) == Serve
 }
 
 test "the version line carries VERSION" {

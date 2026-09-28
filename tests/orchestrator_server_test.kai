@@ -1,0 +1,67 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.client_msg
+import kalku.core.session
+import kalku.orchestrator.server
+
+fn a_run(root: String) : ClientRequest =
+  RunReq(RunMsg { root: root, scope: All, format: Human, shard: None })
+
+# The socket is a file only its owner can open, under a directory the
+# system already keeps private per user.
+test "the socket goes where the system keeps a user's own things" {
+  assert socket_path(Some("/run/user/501"), "/tmp", 501) == "/run/user/501/kalku.sock"
+  assert socket_path(None, "/tmp", 501) == "/tmp/kalku-501/kalku.sock"
+}
+
+# A shell that clears a variable leaves it set to nothing, and a path
+# built from that puts the socket at the root of the filesystem.
+test "an empty runtime directory is not a directory" {
+  assert socket_path(Some(""), "/tmp", 501) == "/tmp/kalku-501/kalku.sock"
+  assert socket_path(Some("  "), "/tmp", 7) == "/tmp/kalku-7/kalku.sock"
+}
+
+test "a root the server has not heard of gets a cold session" {
+  assert session_for([], "/p").state == SessionCold
+  assert session_for([], "/p").root == "/p"
+}
+
+test "a session replaces the one for its root, and leaves the others alone" {
+  let one = Project { root: "/a", state: SessionReady, runs: 1 }
+  let two = Project { root: "/b", state: SessionRunning, runs: 0 }
+  let after = with_session(with_session([], one), two)
+
+  assert length(after) == 2
+  assert session_for(after, "/a").state == SessionReady
+  assert length(with_session(after, Project { root: "/a", state: SessionRunning, runs: 2 })) == 2
+  assert session_for(
+    with_session(after, Project { root: "/a", state: SessionRunning, runs: 2 }),
+    "/a"
+  ).runs
+    == 2
+}
+
+# A client that cannot ask what is happening has no way to decide whether
+# to wait, so `status` is answered from whatever the server knows.
+test "status names every session and the state it is in" {
+  let sessions = [Project { root: "/a", state: SessionRunning, runs: 3 }]
+
+  assert sessions_event(sessions)
+    == SessionsEv(SessionsMsg {
+      sessions: [SessionInfo { root: "/a", state: StateRunning, kalku: 0, idle_s: 0 }]
+    })
+}
+
+# The uid the kernel recorded at connect time is the one thing about a
+# peer that a peer cannot forge, and a server that casts wekufe on
+# request has to care.
+test "a connection from another user is refused, whatever it asks" {
+  assert is_some(refusal_for(StatusReq, false))
+  assert is_some(refusal_for(a_run("/p"), false))
+  assert refusal_for(StatusReq, true) == None
+}
+
+test "a run without a root is a request that cannot be served" {
+  assert is_some(refusal_for(a_run("  "), true))
+  assert refusal_for(a_run("/p"), true) == None
+}
