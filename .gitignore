@@ -17,3 +17,4 @@ tests/fake_kalku/fake_kalku
 # built by `make test-kaikai-kalku`
 adapters/kaikai/bin/
 adapters/kaikai/fixtures/reni/
+/dist/

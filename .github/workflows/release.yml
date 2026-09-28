@@ -1,0 +1,91 @@
+name: release
+
+# A tag is the trigger, because a release is a version and `cz bump`
+# writes the version into the tag. `workflow_dispatch` builds the same
+# tarballs without publishing, for checking the pipeline itself.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # kaikai publishes a toolchain for darwin-arm64 and linux-x86_64, so a
+  # kalku binary exists for those two and nowhere else. Each runner is
+  # the platform it builds for: nothing here cross-compiles.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            platform: darwin-arm64
+          - runner: ubuntu-22.04
+            platform: linux-x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kaikai (pinned)
+        run: |
+          v="$(cat .kaikai-version)"
+          curl -fsSL https://raw.githubusercontent.com/kaikailang-org/kaikai/main/install.sh \
+            | KAIKAI_DIST_BASE="https://github.com/kaikailang-org/kaikai/releases/download/v$v" sh
+          echo "$HOME/.kaikai/bin" >> "$GITHUB_PATH"
+
+      - run: make dist
+
+      # A binary that only runs on the machine that built it is not a
+      # release. This is the first thing a user does with the tarball.
+      - name: Smoke-test the tarball
+        run: |
+          tar -xzf dist/kalku-*.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/kalku" info > /dev/null
+          "$RUNNER_TEMP/kalku" info spells | head -1
+
+      - name: Check the tarball is named for this platform
+        run: ls dist/kalku-*-${{ matrix.platform }}.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kalku-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # The formula carries the checksums of the very files being
+      # published, so it is written here and not by hand.
+      - name: Write the Homebrew formula
+        run: sh tools/brew-formula.sh "${GITHUB_REF_NAME#v}" dist > dist/kalku.rb
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Install: \`brew install lnds/kalku/kalku\`, or download a tarball below and put \`kalku\` and \`kalku-kaikai\` on your PATH." \
+            --verify-tag \
+            dist/*.tar.gz dist/*.sha256 dist/kalku.rb
+
+      # The tap updates itself from this release: `lnds/homebrew-kalku`
+      # picks the formula up from the assets with its own token, so no
+      # credential for another repository is kept here.
+      - name: Ask the tap to pick the formula up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run update.yml --repo lnds/homebrew-kalku 2>/dev/null \
+            || echo "the tap will pick it up on its next scheduled run"
