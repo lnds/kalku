@@ -44,6 +44,7 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
     exclude_calls_added: []
   },
   troubles: [],
+  uncovered: [],
   blockers: []
 }
 
@@ -198,6 +199,7 @@ test "a wekufe that produced nothing to score travels with its reason" {
     troubles: [
       Trouble {
         wekufe: "lib/a.ex:42:compare",
+        at: None,
         outcome: CompileError,
         said: Some("error: undefined function f/1")
       }

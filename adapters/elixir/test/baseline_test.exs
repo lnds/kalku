@@ -15,14 +15,14 @@ defmodule Kalku.BaselineTest do
 
       # A test is named by where it is written, relative to the project:
       # every kalku in a pool has to call the same test the same thing.
-      assert Enum.map(done["tests"], & &1["test"]) == [
+      assert Enum.sort(Enum.map(done["tests"], & &1["test"])) == [
+               "test/green_test.exs:13",
+               "test/green_test.exs:17",
                "test/green_test.exs:4",
                "test/green_test.exs:9",
-               "test/green_test.exs:13",
-               "test/green_test.exs:17"
+               "test/same_line_test.exs:4"
              ]
 
-      assert Enum.all?(done["tests"], &(&1["file"] == "test/green_test.exs"))
       assert Enum.all?(done["tests"], &(&1["duration_ms"] >= 0))
     end
 
@@ -57,7 +57,10 @@ defmodule Kalku.BaselineTest do
     end
 
     # What the coverage is for: a wekufe on `classify` is cast against the
-    # test that runs `classify`, not against the whole suite.
+    # test that runs `classify`, not against the whole suite. The fixture
+    # has a second module whose test is written on the same line as one
+    # that does cover `classify`, which is what selecting by line alone
+    # used to conflate.
     test "each line is attributed to the tests that actually run it", %{reni: reni} do
       done = reply(run(reni, "green", ["baseline"]), "baseline_done")
 

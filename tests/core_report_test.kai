@@ -39,6 +39,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     on_changed_lines: length(blockers),
     suppressions: no_suppressions(),
     troubles: [],
+    uncovered: [],
     blockers: blockers
   }
 
@@ -187,6 +188,7 @@ test "an outcome outside the score is reported with what the kalku said" {
     troubles: [
       Trouble {
         wekufe: "lib/a.ex:42:compare",
+        at: Some(compare_site()),
         outcome: CompileError,
         said: Some("error: cannot find `f` in this scope\n  --> lib/a.ex:42\n")
       }
@@ -195,6 +197,18 @@ test "an outcome outside the score is reported with what the kalku said" {
   let text = human(troubled)
 
   assert has(text, "what could not be measured:")
-  assert has(text, "lib/a.ex:42:compare  compile_error")
+  # Where it was cast, not the id it was cast under: a reader can open one
+  # of those.
+  assert has(text, "lib/a.ex:42  compare  A.f/1  compile_error")
   assert has(text, "error: cannot find `f` in this scope")
+}
+
+# A line no test reaches is a hole too, and a larger one than a wekufe
+# that survived: there was nothing there to notice it.
+test "a site no test reaches is named, not just counted" {
+  let nothing_reaches = Report { ...plain(), uncovered: [arm_site()] }
+  let text = human(nothing_reaches)
+
+  assert has(text, "no test reaches these:")
+  assert has(text, "lib/b.ex:7  compare")
 }
