@@ -41,7 +41,7 @@ pub type Format = Human | JsonFormat | Github | Agent
 
 #[doc("The stage a run is in.")]
 #[derive(Eq, Show)]
-pub type Phase = Preparing | Baselining | Planning | Casting | Reporting
+pub type Phase = PhasePreparing | PhaseBaselining | PhasePlanning | PhaseCasting | PhaseReporting
 
 #[doc("The lifecycle state of a server session.")]
 #[derive(Eq, Show)]
@@ -99,11 +99,11 @@ fn formats() : [(String, Format)] = [
 ]
 
 fn phases() : [(String, Phase)] = [
-  ("prepare", Preparing),
-  ("baseline", Baselining),
-  ("plan", Planning),
-  ("cast", Casting),
-  ("report", Reporting)
+  ("prepare", PhasePreparing),
+  ("baseline", PhaseBaselining),
+  ("plan", PhasePlanning),
+  ("cast", PhaseCasting),
+  ("report", PhaseReporting)
 ]
 
 fn session_states() : [(String, SessionState)] = [

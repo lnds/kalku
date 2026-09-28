@@ -1,0 +1,118 @@
+#[doc("""
+`kalku serve`: one local server, speaking the client protocol.
+
+A run is minutes of setting up a project before it measures anything, and
+a server is how that setting-up is paid for once instead of once per
+question. This is the socket, the sessions and the conversation; keeping
+a kalku warm across runs comes next, and the shape here is what it will
+arrive into.
+
+Local only, and deliberately so. A server that casts wekufe on request is
+remote code execution by definition, so it listens on a Unix socket whose
+file only its owner can open, and it checks the uid the kernel recorded
+for whoever connected rather than anything they said about themselves.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.client_msg
+import kalku.wire.client_codec
+import kalku.wire.framing
+import kalku.core.session
+
+#[doc("What a server is doing: which socket it holds, and which projects it knows.")]
+pub type Serving = { path: String, sessions: [Project] }
+
+#[doc("One project the server has been asked about.")]
+#[derive(Eq, Show)]
+pub type Project = { root: String, state: State, runs: Int }
+
+#[doc("""
+Where the socket goes.
+
+`XDG_RUNTIME_DIR` is the directory the system already keeps private per
+user; the fallback is one kalku makes under the temporary directory,
+named after the uid so two users never meet in it.
+""")]
+pub fn socket_path(runtime_dir: Option[String], tmp: String, uid: Int) : String =
+  match runtime_dir {
+    Some(dir) -> if is_empty(trim(dir)) { under(tmp, uid) } else { "#{dir}/kalku.sock" }
+    None -> under(tmp, uid)
+  }
+
+# An empty variable is not a directory: a shell that clears one leaves it
+# set to nothing, and building a path out of that puts the socket at the
+# root of the filesystem.
+fn under(tmp: String, uid: Int) : String = "#{tmp}/kalku-#{uid}/kalku.sock"
+
+#[doc("A session for this root, as it stands, or a cold one when the root is new.")]
+pub fn session_for(sessions: [Project], root: String) : Project = match find(
+  sessions,
+  s => s.root == root
+) {
+  Some(s) -> s
+  None -> Project { root: root, state: SessionCold, runs: 0 }
+}
+
+#[doc("The sessions with this one's place taken by it.")]
+pub fn with_session(sessions: [Project], one: Project) : [Project] =
+  filter(sessions, s => s.root != one.root) ++ [one]
+
+#[doc("""
+What a client is answered when it asks what is going on.
+
+Answered at any moment, including in the middle of a run: a client that
+cannot ask what is happening has no way to decide whether to wait.
+""")]
+pub fn sessions_event(sessions: [Project]) : ServerEvent = SessionsEv(SessionsMsg {
+  sessions: sessions | told_about
+})
+
+fn told_about(s: Project) : SessionInfo = SessionInfo {
+  root: s.root,
+  state: reported(s.state),
+  kalku: 0,
+  idle_s: 0
+}
+
+# The session states the protocol names, which are the ones `session.kai`
+# decides between: the wire has no word for `preparing` as distinct from
+# `baselining` because a client waits for either the same way.
+fn reported(state: State) : SessionState {
+  case SessionCold -> StateCold
+  case SessionPreparing -> StatePreparing
+  case SessionBaselining -> StateBaseline
+  case SessionReady -> StateReady
+  case SessionRunning -> StateRunning
+  case SessionFailed(_) -> StateFailed
+  case SessionClosed -> StateClosed
+}
+
+#[doc("""
+Why a request cannot be served, or nothing when it can.
+
+A run for a root the server is already running is not refused: it waits,
+because a client that is told *busy* has nothing to do but ask again.
+Only a request that could never be served is an error.
+""")]
+pub fn refusal_for(r: ClientRequest, uid_ok: Bool) : Option[ServerEvent] = if not uid_ok {
+  Some(
+    ErrorEv(ErrorMsg {
+      code: "forbidden",
+      message: "this socket serves only the user who owns it",
+      fatal: true
+    })
+  )
+} else {
+  match r {
+    RunReq(m) -> if is_empty(trim(m.root)) {
+      Some(ErrorEv(ErrorMsg { code: "bad_request", message: "`run` needs a root", fatal: false }))
+    } else {
+      None
+    }
+    _ -> None
+  }
+}
+
+#[doc("One line as it goes to a client: an event, framed.")]
+pub fn said(id: Int, e: ServerEvent) : String = frame(encode_event(id, e))

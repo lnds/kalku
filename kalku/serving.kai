@@ -1,0 +1,244 @@
+#[doc("""
+Holding the socket open and answering what comes down it.
+
+The decisions — which session a root has, what a client is told, what is
+refused — live in `kalku.orchestrator.server`, where they are tested
+without a socket. This is the part that cannot be: binding the file,
+accepting a connection, reading until a line is whole.
+
+One client at a time, on purpose while a run is the only thing a server
+does: a second client waiting is a second client that will be answered,
+and a half-built session shared between two of them is a measurement
+nobody can trust. Concurrency arrives with warm sessions, which is what
+makes it worth the risk.
+""")]
+
+import net.unix as sock
+import fs.file
+import fs.dir
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.envelope
+import kalku.wire.client_msg
+import kalku.wire.client_codec
+import kalku.wire.framing
+import kalku.core.session
+import kalku.orchestrator.server
+
+#[doc("How much of a client's line is read at a time.")]
+pub const CHUNK : Int = 65536
+
+#[doc("""
+Listen, and answer until nobody is left to answer.
+
+`run_it` is how a run is performed, which this module does not know: it
+is handed a root and gives back the events to send, so the socket and the
+measuring stay apart.
+""")]
+pub fn serve_at[e](
+  path: String,
+  mine: Int,
+  run_it: (String) -> [ServerEvent] / e
+) : Result[Unit, String] / NetUnix + File + Stderr + e {
+  let _ = dir.create_dir(holding(path))
+  let _ = if file.exists(path) { clear_stale(path) } else { () }
+  match NetUnix.listen(path, sock.owner_only) {
+    Err(e) -> Err("cannot listen on #{path}: #{e}")
+    Ok(l) -> {
+      Stderr.eprint("kalku: serving on #{path}")
+      let ending = attend(l, Serving { path: path, sessions: [] }, mine, run_it)
+      NetUnix.close_listener(l)
+      ending
+    }
+  }
+}
+
+# A socket file with nobody behind it is what a killed server leaves. It
+# is removed rather than reported: the alternative is a machine where
+# kalku cannot start again until someone deletes a file they have never
+# heard of.
+fn clear_stale(path: String) : Unit / NetUnix + File = match NetUnix.connect(path) {
+  Ok(c) -> NetUnix.close(c)
+  Err(_) -> {
+    let _ = file.delete(path)
+    ()
+  }
+}
+
+fn holding(path: String) : String = match last_slash(path) {
+  Some(at) -> slice(path, 0, at)
+  None -> "."
+}
+
+fn last_slash(path: String) : Option[Int] = match index_of(path, "/") {
+  None -> None
+  Some(i) -> match last_slash(slice(path, i + 1, length(path))) {
+    None -> Some(i)
+    Some(rest) -> Some(i + 1 + rest)
+  }
+}
+
+fn attend[e](
+  l: Listener,
+  serving: Serving,
+  mine: Int,
+  run_it: (String) -> [ServerEvent] / e
+) : Result[Unit, String] / NetUnix + Stderr + e = match NetUnix.accept(l) {
+  Err(e) -> Err("cannot accept: #{e}")
+  Ok(c) -> {
+    let after = converse(c, serving, mine, run_it)
+    NetUnix.close(c)
+    attend(l, after, mine, run_it)
+  }
+}
+
+# The uid the kernel recorded when this connection was made, which is the
+# only thing about a peer that a peer cannot lie about.
+fn its_owner(c: Conn, mine: Int) : Bool / NetUnix = match NetUnix.peer_uid(c) {
+  Ok(uid) -> uid == mine
+  Err(_) -> false
+}
+
+fn converse[e](
+  c: Conn,
+  serving: Serving,
+  mine: Int,
+  run_it: (String) -> [ServerEvent] / e
+) : Serving / NetUnix + Stderr + e = read_on(c, serving, mine, run_it, framer(MAX_LINE_BYTES))
+
+fn read_on[e](
+  c: Conn,
+  serving: Serving,
+  mine: Int,
+  run_it: (String) -> [ServerEvent] / e,
+  f: Framer
+) : Serving / NetUnix + Stderr + e = match NetUnix.recv(c, CHUNK) {
+  Err(_) -> serving
+  Ok(data) -> if is_empty(data) {
+    serving
+  } else {
+    {
+      let fed = feed(f, as_text(data))
+      let after = answer_each(c, serving, mine, run_it, fed.frames)
+      read_on(c, after, mine, run_it, fed.framer)
+    }
+  }
+}
+
+fn answer_each[e](
+  c: Conn,
+  serving: Serving,
+  mine: Int,
+  run_it: (String) -> [ServerEvent] / e,
+  frames: [Frame]
+) : Serving / NetUnix + Stderr + e = match frames {
+  [] -> serving
+  [fr, ...rest] -> answer_each(c, answered(c, serving, mine, run_it, fr), mine, run_it, rest)
+}
+
+fn answered[e](
+  c: Conn,
+  serving: Serving,
+  mine: Int,
+  run_it: (String) -> [ServerEvent] / e,
+  fr: Frame
+) : Serving / NetUnix + Stderr + e = match fr {
+  TooLong -> {
+    tell(
+      c,
+      0,
+      ErrorEv(ErrorMsg {
+        code: "too_long",
+        message: "a line longer than #{MAX_LINE_BYTES} bytes",
+        fatal: true
+      })
+    )
+    serving
+  }
+  Line(line) -> match decode_client_request(line) {
+    Err(e) -> {
+      tell(
+        c,
+        0,
+        ErrorEv(ErrorMsg {
+          code: "bad_request",
+          message: "#{kind_name(e.kind)}: #{e.detail}",
+          fatal: false
+        })
+      )
+      serving
+    }
+    Ok(m) -> serve_one(c, serving, mine, run_it, m.id, m.body)
+  }
+}
+
+fn serve_one[e](
+  c: Conn,
+  serving: Serving,
+  mine: Int,
+  run_it: (String) -> [ServerEvent] / e,
+  id: Int,
+  request: ClientRequest
+) : Serving / NetUnix + Stderr + e = match refusal_for(request, its_owner(c, mine)) {
+  Some(no) -> {
+    tell(c, id, no)
+    serving
+  }
+  None -> carry_out(c, serving, run_it, id, request)
+}
+
+fn carry_out[e](
+  c: Conn,
+  serving: Serving,
+  run_it: (String) -> [ServerEvent] / e,
+  id: Int,
+  request: ClientRequest
+) : Serving / NetUnix + Stderr + e = match request {
+  StatusReq -> {
+    tell(c, id, sessions_event(serving.sessions))
+    serving
+  }
+  RunReq(m) -> {
+    let started = with_session(
+      serving.sessions,
+      Project { ...session_for(serving.sessions, m.root), state: SessionRunning }
+    )
+    each(run_it(m.root), e => tell(c, id, e))
+    Serving {
+      ...serving,
+      sessions: with_session(started, done_with(session_for(started, m.root)))
+    }
+  }
+  CancelReq(m) -> {
+    tell(c, id, CancelledEv(CancelledMsg { run: m.run }))
+    serving
+  }
+  other -> {
+    tell(
+      c,
+      id,
+      ErrorEv(ErrorMsg {
+        code: "not_implemented",
+        message: "`#{other}` is not served yet",
+        fatal: false
+      })
+    )
+    serving
+  }
+}
+
+fn done_with(s: Project) : Project = Project { ...s, state: SessionReady, runs: s.runs + 1 }
+
+# The socket carries bytes and the protocol is text, which is the whole
+# of the conversion: a line in, a line out.
+fn as_text(data: [Int]) : String = from_bytes(flat_map(data, as_byte))
+
+fn as_byte(n: Int) : [Byte] = match int_to_byte(n) {
+  Ok(b) -> [b]
+  Err(_) -> []
+}
+
+fn tell(c: Conn, id: Int, e: ServerEvent) : Unit / NetUnix {
+  let _ = NetUnix.send(c, bytes(said(id, e)) | byte_to_int)
+  ()
+}
