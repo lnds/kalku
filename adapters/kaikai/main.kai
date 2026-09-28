@@ -120,8 +120,9 @@ fn baseline_of(state: Serving) : KalkuReply / Process = match state.work {
 # Coverage is absent rather than faked: kaikai reports no per-test
 # coverage, so the kaikai side runs every test for every wekufe and knows
 # that it is doing so.
-fn report_of(r: Ran) : KalkuReply = match r.broke {
-  Some(why) -> refusal("baseline_failed", why, true)
+fn report_of(r: Ran) : KalkuReply = match r.mishap {
+  Some(NoBuild(why)) -> refusal("baseline_failed", why, true)
+  Some(CutShort(why)) -> refusal("baseline_failed", why, true)
   None -> BaselineDone(BaselineDoneMsg {
     status: if r.failed == 0 { Green } else { Red },
     duration_ms: 0,
@@ -173,8 +174,11 @@ fn cast_one(m: CastMsg, state: Serving) : KalkuReply / File + Process = match st
   }
 }
 
-fn outcome_of(wekufe: String, r: Ran) : KalkuReply = match r.broke {
-  Some(why) -> done(wekufe, CompileError, None, Some(why))
+# A run that stopped is not a wekufe that survived: the wekufe took the
+# runtime down with it, and nothing judged it.
+fn outcome_of(wekufe: String, r: Ran) : KalkuReply = match r.mishap {
+  Some(NoBuild(why)) -> done(wekufe, CompileError, None, Some(why))
+  Some(CutShort(why)) -> done(wekufe, Crashed, None, Some(why))
   None -> if r.failed > 0 {
     done(wekufe, Killed, r.first_failure, None)
   } else {
