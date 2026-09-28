@@ -57,3 +57,13 @@ test "run takes the files to measure, and how much of them" {
 test "run with nothing named is still a run" {
   assert cli.parse_args(["run"]) == Measure(Wanted { files: [], limit: None, aloud: false })
 }
+
+test "info takes a topic and how to print it" {
+  assert cli.parse_args(["info"])
+    == Inform(Asked { topic: None, as_json: false, snippet_only: false })
+  assert cli.parse_args(["info", "spells", "--json"])
+    == Inform(Asked { topic: Some("spells"), as_json: true, snippet_only: false })
+  assert cli.parse_args(["info", "agents", "--snippet"])
+    == Inform(Asked { topic: Some("agents"), as_json: false, snippet_only: true })
+  assert cli.parse_args(["info", "--wat"]) == Misused("`kalku info` does not take --wat")
+}

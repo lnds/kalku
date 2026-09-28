@@ -1,0 +1,213 @@
+#[doc("""
+kalku's own documentation, in the binary.
+
+What a person reads when they wonder what `survived` means, and what an
+agent consults instead of guessing. It is here rather than in a file
+beside the binary so it cannot go missing, and the parts of it the code
+already knows — the spells there are, the outcomes there are, what enters
+the score — are built from the code rather than retyped, so a page cannot
+quietly stop being true.
+
+Every topic renders as text for a person and as JSON for a program, from
+the same content.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.hint
+
+#[doc("One page: what it is called, what it is about, and what it says.")]
+#[derive(Eq, Show)]
+pub type Topic = { name: String, summary: String, entries: [Entry] }
+
+#[doc("One thing a page explains: a name, what it means, and a detail worth keeping.")]
+#[derive(Eq, Show)]
+pub type Entry = { term: String, meaning: String, detail: Option[String] }
+
+#[doc("Every page there is.")]
+pub fn topics() : [Topic] = [spells_topic(), outcomes_topic(), formats_topic(), agents_topic()]
+
+#[doc("The page by that name, or nothing when there is no such page.")]
+pub fn page(name: String) : Option[Topic] = find(topics(), t => t.name == name)
+
+#[doc("The pages there are, one per line, for `kalku info` with nothing named.")]
+pub fn listing() : String = join(
+  ["topics:"] ++ (topics() | (t => "  #{padded(t.name)}  #{t.summary}")),
+  "\n"
+)
+
+#[doc("A page as a person reads it.")]
+pub fn as_text(t: Topic) : String =
+  join([t.summary, ""] ++ flat_map(t.entries, entry_lines), "\n")
+
+#[doc("A page as a program reads it: one object, with its entries.")]
+pub fn as_json(t: Topic) : String = json_encode(
+  JObj([
+    ("topic", JStr(t.name)),
+    ("summary", JStr(t.summary)),
+    ("entries", JArr(t.entries | entry_json))
+  ])
+)
+
+#[doc("""
+The lines a project pastes into its `CLAUDE.md` or `AGENTS.md`.
+
+Short on purpose: it is read by an agent on every task, and every line of
+it costs the task it is read for.
+""")]
+pub fn snippet() : String = join(
+  [
+    "After writing or changing tests, run `kalku run <files> --format agent`",
+    "and close the survivors with tests that pass on the original code.",
+    "Never edit `.kalku/equivalent`, `exclude`, or `exclude_calls` to make a",
+    "survivor go away: propose an equivalent with a reason instead."
+  ],
+  "\n"
+)
+
+fn entry_lines(e: Entry) : [String] = ["  #{padded(e.term)}  #{e.meaning}"]
+  ++ (match e.detail {
+    Some(d) -> ["  #{blanks()}  #{d}", ""]
+    None -> [""]
+  })
+
+fn entry_json(e: Entry) : JsonValue = JObj(
+  [("term", JStr(e.term)), ("meaning", JStr(e.meaning))]
+    ++ (match e.detail {
+      Some(d) -> [("detail", JStr(d))]
+      None -> []
+    })
+)
+
+#[doc("How wide a term is printed, so the meanings line up.")]
+pub const TERM_WIDTH : Int = 14
+
+fn padded(s: String) : String = s ++ repeat(" ", max_of(TERM_WIDTH - length(s), 1))
+
+fn blanks() : String = repeat(" ", TERM_WIDTH)
+
+fn max_of(a: Int, b: Int) : Int = if a > b { a } else { b }
+
+# ---- the pages ----------------------------------------------------------
+
+# Built from `every_spell`, so a spell that exists in code and not here is
+# impossible rather than merely unlikely. What each one breaks is written
+# here; the sentence a report hands a reader comes from the hint itself.
+fn spells_topic() : Topic = Topic {
+  name: "spells",
+  summary: "The kinds of defect kalku casts, one per wekufe.",
+  entries: every_spell() | spell_entry
+}
+
+fn spell_entry(s: Spell) : Entry = Entry {
+  term: spell_name(s),
+  meaning: breaks(s),
+  detail: Some(hint_for(sample_site(s)))
+}
+
+fn breaks(s: Spell) : String {
+  case Arm -> "drops one clause of a `case`, `cond`, or multi-head function"
+  case Compare -> "shifts a comparison across its boundary: `>=` to `>`, `<` to `<=`"
+  case Connect -> "swaps `and` for `or`, and back"
+  case Negate -> "inverts a condition"
+  case Literal -> "perturbs a literal: a number, a string, a boolean"
+  case Call -> "elides a call, leaving its argument or nothing"
+  case Foreign -> "whatever an existing framework's operator did; a driver's spell"
+}
+
+# A site with nothing in it but the spell: the hint templates are written
+# to work from what a site carries, and what they say without a
+# declaration or an original is exactly the shape of the sentence.
+fn sample_site(s: Spell) : Site = Site {
+  site_id: "",
+  file: "",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 0, col: 0, byte: 0 }, end: None },
+  spell: s,
+  original: None,
+  replacement: "",
+  reload: ModuleOnly
+}
+
+# Built from `every_outcome`, and what enters the score is stated where
+# the score is defined: `killed / (killed + survived)` and nothing else.
+fn outcomes_topic() : Topic = Topic {
+  name: "outcomes",
+  summary: "What a cast can come to. The score is killed / (killed + survived), and nothing else.",
+  entries: every_outcome() | outcome_entry
+}
+
+fn outcome_entry(o: Outcome) : Entry = Entry {
+  term: outcome_name(o),
+  meaning: means(o),
+  detail: Some(if scored(o) { "counts towards the score" } else { "reported apart from the score" })
+}
+
+#[doc("True when an outcome is one of the two the score is built from.")]
+pub fn scored(o: Outcome) : Bool = o == Killed or o == Survived
+
+fn means(o: Outcome) : String {
+  case Killed -> "a test noticed the defect"
+  case Survived -> "every test that reaches the line ran, and none noticed"
+  case Timeout -> "the wekufe ran past its deadline; an endless loop is not a failing assertion"
+  case NoCoverage -> "no test reaches the line at all"
+  case CompileError -> "the wekufe does not compile, so it says nothing about the suite"
+  case Crashed -> "the cast produced no verdict: the kalku died, or could not run its tests"
+  case Equivalent -> "the wekufe cannot be told apart from the original"
+}
+
+fn formats_topic() : Topic = Topic {
+  name: "formats",
+  summary: "How a run reports what it found.",
+  entries: [
+    Entry {
+      term: "human",
+      meaning: "survivors first, each with file, line, spell, diff and a hint",
+      detail: Some("the default; the score is context, printed last")
+    },
+    Entry {
+      term: "agent",
+      meaning: "NDJSON, one line per survivor and one summary",
+      detail: Some("each line carries everything needed to act without opening a file")
+    },
+    Entry {
+      term: "json",
+      meaning: "the whole report as one object",
+      detail: None
+    },
+    Entry {
+      term: "github",
+      meaning: "workflow commands, so survivors appear on the diff",
+      detail: None
+    }
+  ]
+}
+
+fn agents_topic() : Topic = Topic {
+  name: "agents",
+  summary: "The loop kalku is built for, and the rules that keep it honest.",
+  entries: [
+    Entry {
+      term: "the loop",
+      meaning: "find a survivor, write a test, re-cast, repeat",
+      detail: Some("`kalku run <files> --format agent` gives one survivor per line")
+    },
+    Entry {
+      term: "a kill",
+      meaning: "a test that fails on the wekufe and passes on the original code",
+      detail: Some("a test that fails on both is a broken test, not a kill")
+    },
+    Entry {
+      term: "equivalents",
+      meaning: "proposed with a written reason, never declared to make a hole go away",
+      detail: Some("suppressions a change adds are reported under their own heading")
+    },
+    Entry {
+      term: "snippet",
+      meaning: "`kalku info agents --snippet` prints the lines to paste into CLAUDE.md",
+      detail: None
+    }
+  ]
+}

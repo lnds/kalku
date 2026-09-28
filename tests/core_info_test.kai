@@ -1,0 +1,64 @@
+import kalku.wire.enums
+import kalku.core.info
+import kalku.core.score
+import kalku.core.verdict
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+fn terms_of(name: String) : [String] = match page(name) {
+  Some(t) -> t.entries | (.term)
+  None -> []
+}
+
+test "every topic is listed, and every listed topic exists" {
+  let named = topics() | (.name)
+
+  assert contains(named, "spells")
+  assert contains(named, "outcomes")
+  assert all(named, n => is_some(page(n)))
+  assert all(named, n => has(listing(), n))
+  assert page("nonesuch") == None
+}
+
+# The point of building the pages from the code: a spell that exists and
+# is not documented cannot happen, and this says so rather than trusting
+# it.
+test "every spell in the code is on the spells page" {
+  let documented = terms_of("spells")
+
+  assert all(every_spell(), s => contains(documented, spell_name(s)))
+  assert length(documented) == length(every_spell())
+}
+
+test "every outcome in the code is on the outcomes page" {
+  let documented = terms_of("outcomes")
+
+  assert all(every_outcome(), o => contains(documented, outcome_name(o)))
+  assert length(documented) == length(every_outcome())
+}
+
+# The page says which outcomes count, and the score is what decides it:
+# a tally of one such outcome has a score, and of any other has none.
+test "what the page calls scored is what the score is built from" {
+  assert all(
+    every_outcome(),
+    o => is_some(score(tally([of_outcome(o)]))) == scored(o)
+  )
+}
+
+test "a page renders for a person and for a program, from the same content" {
+  let outcomes = page("outcomes").unwrap_or(Topic { name: "", summary: "", entries: [] })
+
+  assert has(as_text(outcomes), "killed")
+  assert has(as_text(outcomes), "counts towards the score")
+  assert has(as_json(outcomes), "\"topic\":\"outcomes\"")
+  assert has(as_json(outcomes), "\"term\":\"killed\"")
+}
+
+# An agent reads this on every task, so it says what to do and what never
+# to do, and nothing else.
+test "the snippet tells an agent what to do and what not to" {
+  assert has(snippet(), "--format agent")
+  assert has(snippet(), "pass on the original code")
+  assert has(snippet(), "propose an equivalent with a reason")
+}

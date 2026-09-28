@@ -7,6 +7,7 @@ import kalku.wire.enums
 import kalku.core.report
 import kalku.core.config
 import kalku.core.setting_up
+import kalku.core.info
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.measure
@@ -25,6 +26,7 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
       0
     }
     Initialise(setup) -> settle(setup.root, setup.language, setup.assume_yes)
+    Inform(asked) -> told_about(asked)
     Measure(wanted) -> run_here(wanted)
     Misused(why) -> {
       Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
@@ -37,6 +39,32 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     Unknown(cmd) -> {
       Stderr.eprint("kalku: unknown command `#{cmd}`\n#{cli.usage_line()}")
       2
+    }
+  }
+}
+
+# What kalku knows about itself, for whoever asks: a person who wonders
+# what `survived` means, or an agent that would otherwise guess.
+fn told_about(asked: Asked) : Int / Stdout + Stderr = if asked.snippet_only {
+  {
+    Stdout.print(snippet())
+    0
+  }
+} else {
+  match asked.topic {
+    None -> {
+      Stdout.print(listing())
+      0
+    }
+    Some(name) -> match page(name) {
+      None -> {
+        Stderr.eprint("kalku: no such topic `#{name}`\n#{listing()}")
+        2
+      }
+      Some(t) -> {
+        Stdout.print(if asked.as_json { as_json(t) } else { as_text(t) })
+        0
+      }
     }
   }
 }
