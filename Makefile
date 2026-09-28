@@ -4,6 +4,21 @@
 
 KAI   ?= kai
 BUILD := _build
+DIST  := dist
+
+VERSION := $(shell cat VERSION)
+PREFIX  ?= /usr/local
+
+# The platform a release tarball is named for. kaikai publishes a
+# toolchain for darwin-arm64 and linux-x86_64, so those are the two
+# kalku can be built for at all.
+OS   := $(shell uname -s | tr 'A-Z' 'a-z')
+ARCH := $(shell uname -m)
+ifeq ($(ARCH),aarch64)
+  ARCH := arm64
+endif
+PLATFORM := $(OS)-$(ARCH)
+TARBALL  := $(DIST)/kalku-v$(VERSION)-$(PLATFORM).tar.gz
 
 KAI_SRC := main.kai $(shell find kalku -name '*.kai') $(wildcard tests/*.kai)
 
@@ -16,7 +31,7 @@ KKALKU_SRC := $(wildcard adapters/kaikai/*.kai) $(wildcard adapters/kaikai/kaika
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir fmt fmt-check lint km ci check properties bench clean self-mutate
+.PHONY: all build test test-kaikai test-elixir fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
 
 all: build
 
@@ -89,7 +104,26 @@ self-mutate: build $(KKALKU)
 	KALKU_ROOT=. KALKU_FILES=$(SELF_MODULE) KALKU_LIMIT=$(SELF_LIMIT) \
 	  KALKU_RENI=$(SELF_RENI) KALKU_WORKERS=$(SELF_WORKERS) $(BUILD)/kalku run || true
 
+# What a release ships: both binaries a user summons, side by side with
+# the licences they are shipped under. Flat, so a package manager can
+# install the tarball's contents without knowing this layout.
+dist: build $(KKALKU)
+	@rm -rf $(DIST) && mkdir -p $(DIST)
+	@cp $(BUILD)/kalku $(KKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
+	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai LICENSE-MIT LICENSE-APACHE README.md
+	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/LICENSE-* $(DIST)/README.md
+	@cd $(DIST) && (command -v sha256sum >/dev/null && sha256sum $(notdir $(TARBALL)) \
+	  || shasum -a 256 $(notdir $(TARBALL))) > $(notdir $(TARBALL)).sha256
+	@echo "built $(TARBALL)"
+
+install: build $(KKALKU)
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(BUILD)/kalku $(KKALKU) $(DESTDIR)$(PREFIX)/bin/
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai
+
 clean:
-	rm -rf $(BUILD) .kai-cache
+	rm -rf $(BUILD) $(DIST) .kai-cache
 	rm -f $(FAKE) $(KKALKU)
 	rm -rf adapters/kaikai/fixtures/reni
