@@ -77,12 +77,17 @@ pub fn refill(spec: PoolSpec, slot: Slot, why: String) : Slot / Process + Spawn 
     summon_slot(spec, slot.worker, slot.summons + 1)
   }
 
-#[doc("Stop a kalku where it stands and reap it, so nothing outlives the run.")]
+#[doc("""
+Stop a kalku where it stands, and leave the reaping to the ward.
+
+Killed but not reaped: whatever it wrote about itself on the way down is
+still in a pipe its reader has not finished with, and reaping now would
+throw that away — which is exactly the explanation a failed run owes a
+person. The ward kills and reaps whatever is left when the run ends, so
+no child outlives it.
+""")]
 pub fn banish(slot: Slot) : Unit / Process + Ward = match slot.kalku {
-  Some(k) -> {
-    kill_now(k)
-    Ward.release(k)
-  }
+  Some(k) -> silence(k)
   None -> ()
 }
 

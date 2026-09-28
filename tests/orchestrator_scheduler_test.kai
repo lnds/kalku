@@ -169,10 +169,16 @@ test "a pool of no workers with nothing to cast is simply an empty run" {
 }
 
 # The budget is spent, not exceeded: `summoned 2 time(s)` is the whole
-# point of a budget of 2.
-test "a kalku that dies at birth is summoned exactly as often as allowed" {
+# point of a budget of 2. And a kalku that died with something to say
+# about itself is quoted: the words arrive after its death is noticed, so
+# an epitaph written the moment the budget ran out would quote a silence
+# that was not one.
+test "a kalku that dies at birth is summoned exactly as often as allowed, and quoted" {
   let done = with_mailbox {
     casting(pool_of("pool_dies_at_birth.ndjson", 1, 2), casts(1, 5000))
   }
-  assert is_some(index_of(done.failure.unwrap_or(""), "summoned 2 time(s)"))
+  let why = done.failure.unwrap_or("")
+
+  assert is_some(index_of(why, "summoned 2 time(s)"))
+  assert is_some(index_of(why, "it wrote: fake: the project does not compile"))
 }
