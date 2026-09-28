@@ -12,7 +12,26 @@ Coding agents write tests fast, but a test can run a line without checking anyth
 
 It targets Elixir first. It is written in [kaikai](https://github.com/lnds/kaikai) and uses kalku to test its own code.
 
-> **Status: pre-alpha.** A run works end to end — the Elixir kalku, the kaikai kalku, the pool, the scheduler and the reports — and `make self-mutate` measures kalku with kalku. There is no CLI yet: `kalku run` and the flags below are still the design, not the program. Track progress in the [issues](https://github.com/lnds/kalku/issues).
+> **Status: pre-alpha.** `kalku init` and `kalku run` work: a project is set up in one command and measured in another, with the Elixir kalku or the kaikai one. The rest of the command line — `serve`, `cast`, `show`, `merge`, `info` — is still the design, and so are the flags marked below. Track progress in the [issues](https://github.com/lnds/kalku/issues).
+
+## What works today
+
+| Piece | State |
+|---|---|
+| **`kalku init`** — detects the language, writes `.kalku.toml` and the summoning script | done |
+| **`kalku run <files>`** — measures those files and reports survivors | done |
+| **Protocol** — both directions, canonical NDJSON, fixtures for every message | done |
+| **Core** — planner, test selection, outcomes, score, gate, equivalents, `.kalku.toml`, sharding, changed lines | done |
+| **Reports** — human, JSON, GitHub annotations, and `agent` NDJSON with per-spell hints | done |
+| **Orchestrator** — kalku pool, scheduler, timeout escalation (abort → reset → kill), restart budget, cancellation | done |
+| **Elixir kalku** — sites, `prepare`, `baseline` with per-test coverage, `cast`, `abort`, `reset`, `reload` | done: every protocol message but `delegate` |
+| **kaikai kalku** — the one kalku measures itself with | done |
+| **Session and cache keys** — one warm session per project, incremental re-casting | done |
+| Per-test coverage *used* by a run (a cast still runs the whole suite) | not yet |
+| `--since`, `--watch`, `--ci`, and the gate on changed lines | not yet |
+| **Server** (`kalku serve`), **MCP**, `kalku info` | not yet |
+
+Both kalku are driven end to end by their own test suites, over real pipes, against real fixture projects — and kalku measures its own suite through the kaikai one (`make self-mutate`).
 
 ## The cast
 
@@ -45,7 +64,22 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 
 Warm workers are the point. A timeout is aborted inside the running VM, and a worker is restarted only when it stops responding. After the first run, a warm session only re-casts what changed, which makes watch mode and fast CI possible.
 
-## Planned usage
+## Usage
+
+```sh
+kalku init                     # detect the language and set this project up
+kalku run lib/thing.ex         # measure those files
+kalku run lib/a.ex --limit 6 --verbose
+```
+
+`init` reads the project's own markers — `mix.exs`, `kai.toml` — says what
+it found, and writes `.kalku.toml` plus a `.kalku/summon` script holding
+whatever the toolchain needs to start the kalku with a clean protocol
+channel. It never writes over a file that is there, and it never edits the
+build file that decides what a project depends on: it prints the line to
+add and says why.
+
+Still the design, not the program:
 
 ```sh
 kalku run                      # the whole project
@@ -67,7 +101,7 @@ kalku info agents                        # a snippet to paste into CLAUDE.md / A
 ```
 
 - **Everything needed to act in one object:** file, line, enclosing function, the change, the source around it, the tests that cover it, and a hint. Hints come from a fixed template per spell (*"no test tells `i == 0` apart from `i > 0`"*), not from a model.
-- **MCP:** `kalku serve` exposes `kalku_run`, `kalku_cast`, `kalku_show`, and `kalku_propose_equivalent` as tools for Claude Code, Cursor, and similar hosts.
+- **MCP** (not built yet): `kalku serve` will expose `kalku_run`, `kalku_cast`, `kalku_show`, and `kalku_propose_equivalent` as tools for Claude Code, Cursor, and similar hosts.
 - **Guardrails:** an agent can only *propose* an equivalent mutant; a person has to accept it. Suppressions added in a pull request appear under their own heading in every report. A test only counts as killing a wekufe if it passes on the original code. A timeout never counts as a kill.
 
 ## Languages
@@ -97,9 +131,8 @@ make check     # everything: `make ci` plus the Elixir kalku's tests
 
 ### Measuring an Elixir project
 
-There is no CLI yet, so a run is steered by the environment. The Elixir
-kalku runs *inside* the project it measures, so that project depends on
-it, the way the `green` fixture does:
+The Elixir kalku runs *inside* the project it measures, so that project
+depends on it:
 
 ```elixir
 # mix.exs
@@ -109,11 +142,8 @@ it, the way the `green` fixture does:
 Then, from the root of that project:
 
 ```sh
-export MIX_BUILD_PATH=/tmp/kalku-reni/build    # the build goes in the reni, never in _build
-KALKU_KALKU=/path/to/kalku/adapters/elixir/bin/kalku-elixir \
-KALKU_ROOT=. KALKU_FILES=lib/thing.ex KALKU_LIMIT=6 KALKU_WORKERS=1 \
-KALKU_RENI=/tmp/kalku-reni KALKU_TIMEOUT_MS=60000 \
-  /path/to/kalku/_build/kalku run
+kalku init
+kalku run lib/thing.ex --limit 6 --verbose
 ```
 
 ```
@@ -130,7 +160,6 @@ One worker for now: each kalku needs a build path of its own, and there
 is one `MIX_BUILD_PATH` to give. The kaikai side also does not yet use
 the per-test coverage this kalku measures, so every wekufe is cast
 against the whole suite.
-
 ### kalku measured by kalku
 
 `make self-mutate` casts wekufe into kalku's own sources through the
