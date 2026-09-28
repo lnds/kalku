@@ -23,7 +23,11 @@ pub type Setup = { root: String, language: Option[String], assume_yes: Bool }
 
 #[doc("What `run` was asked to measure: which files, and how much of them.")]
 #[derive(Eq, Show)]
-pub type Wanted = { files: [String], limit: Option[Int], aloud: Bool }
+pub type Wanted = { files: [String], limit: Option[Int], aloud: Bool, shape: Shape }
+
+#[doc("How a run prints what it found.")]
+#[derive(Eq, Show)]
+pub type Shape = AsHuman | AsAgent | AsJson | AsGithub
 
 #[doc("What `info` was asked for: a topic, and how to print it.")]
 #[derive(Eq, Show)]
@@ -74,7 +78,7 @@ fn read_setup(args: [String], so_far: Setup) : Command = match args {
 
 fn measuring(args: [String]) : Command = read_wanted(
   args,
-  Wanted { files: [], limit: None, aloud: false }
+  Wanted { files: [], limit: None, aloud: false, shape: AsHuman }
 )
 
 fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
@@ -84,6 +88,11 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
     None -> Misused("`--limit` takes a number, not `#{n}`")
     Some(limit) -> read_wanted(rest, Wanted { ...so_far, limit: Some(limit) })
   }
+  ["--format"] -> Misused("`--format` needs a name: human, agent, json or github")
+  ["--format", name, ...rest] -> match shape_of(name) {
+    None -> Misused("`--format` takes human, agent, json or github, not `#{name}`")
+    Some(shape) -> read_wanted(rest, Wanted { ...so_far, shape: shape })
+  }
   ["--verbose", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
   ["-v", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
   [other, ...rest] -> if starts_with(other, "-") {
@@ -91,6 +100,14 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   } else {
     read_wanted(rest, Wanted { ...so_far, files: so_far.files ++ [other] })
   }
+}
+
+fn shape_of(name: String) : Option[Shape] = match name {
+  "human" -> Some(AsHuman)
+  "agent" -> Some(AsAgent)
+  "json" -> Some(AsJson)
+  "github" -> Some(AsGithub)
+  _ -> None
 }
 
 # ---- info ---------------------------------------------------------------
@@ -136,6 +153,7 @@ options:
   --lang <name>    the project's language, when init should not guess
   -y, --yes        do not ask before writing
   --limit <n>      cast at most n wekufe (0 for all of them)
+  --format <name>  human (the default), agent, json, or github
   --json           print an info topic as JSON
   --snippet        print only the lines an agent pastes into CLAUDE.md
   -v, --verbose    say what the run is doing while it does it

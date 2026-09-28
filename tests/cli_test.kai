@@ -48,14 +48,17 @@ test "a flag without its value is a misuse, not a default" {
 
 test "run takes the files to measure, and how much of them" {
   assert cli.parse_args(["run", "lib/a.ex", "lib/b.ex"])
-    == Measure(Wanted { files: ["lib/a.ex", "lib/b.ex"], limit: None, aloud: false })
+    == Measure(
+      Wanted { files: ["lib/a.ex", "lib/b.ex"], limit: None, aloud: false, shape: AsHuman }
+    )
   assert cli.parse_args(["run", "--limit", "6", "-v", "lib/a.ex"])
-    == Measure(Wanted { files: ["lib/a.ex"], limit: Some(6), aloud: true })
+    == Measure(Wanted { files: ["lib/a.ex"], limit: Some(6), aloud: true, shape: AsHuman })
 }
 
 # The files a run measures come from the config when none are named.
 test "run with nothing named is still a run" {
-  assert cli.parse_args(["run"]) == Measure(Wanted { files: [], limit: None, aloud: false })
+  assert cli.parse_args(["run"])
+    == Measure(Wanted { files: [], limit: None, aloud: false, shape: AsHuman })
 }
 
 test "info takes a topic and how to print it" {
@@ -66,4 +69,18 @@ test "info takes a topic and how to print it" {
   assert cli.parse_args(["info", "agents", "--snippet"])
     == Inform(Asked { topic: Some("agents"), as_json: false, snippet_only: true })
   assert cli.parse_args(["info", "--wat"]) == Misused("`kalku info` does not take --wat")
+}
+
+# The format is how a run is read, and reading it wrong is worse than not
+# reading it: a name that is not a format stops the run rather than
+# quietly printing something else.
+test "run takes the shape it should print in" {
+  assert cli.parse_args(["run", "lib/a.ex", "--format", "agent"])
+    == Measure(Wanted { files: ["lib/a.ex"], limit: None, aloud: false, shape: AsAgent })
+  assert cli.parse_args(["run", "--format", "github", "lib/a.ex"])
+    == Measure(Wanted { files: ["lib/a.ex"], limit: None, aloud: false, shape: AsGithub })
+  assert cli.parse_args(["run", "--format"])
+    == Misused("`--format` needs a name: human, agent, json or github")
+  assert cli.parse_args(["run", "--format", "yaml"])
+    == Misused("`--format` takes human, agent, json or github, not `yaml`")
 }

@@ -5,6 +5,9 @@ import os.args
 import fs.file
 import kalku.wire.enums
 import kalku.core.report
+import kalku.core.report_agent
+import kalku.core.report_json
+import kalku.core.report_github
 import kalku.core.config
 import kalku.core.setting_up
 import kalku.core.info
@@ -84,15 +87,16 @@ fn run_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + Spa
         2
       }
     } else {
-      measured(asking_for(c, wanted), wanted.aloud)
+      measured(asking_for(c, wanted), wanted)
     }
   }
 
 fn measured(
   asking: Asking,
-  aloud: Bool
-) : Int / Stdout + Stderr + Process + Spawn + Clock = with_mailbox {
-  let found = telling(aloud, () => measure(asking))
+  wanted: Wanted
+) : Int / Stdout + Stderr + File + Process + Spawn + Clock = with_mailbox {
+  let shape = wanted.shape
+  let found = telling(wanted.aloud, () => measure(asking))
   match found.failure {
     Some(why) -> {
       Stderr.eprint("kalku: #{why}")
@@ -104,12 +108,37 @@ fn measured(
         2
       }
       Some(r) -> {
-        Stdout.print(human(r))
+        Stdout.print(printed(r, shape))
         exit_code(r.blockers)
       }
     }
   }
 }
+
+# Each format is a different reader: a person, an agent, a program, a
+# pull request. The survivors are the same in all of them.
+fn printed(r: Report, shape: Shape) : String / File {
+  case r, AsHuman -> human(r)
+  case r, AsAgent -> agent(r, of_files(sources_of(r)))
+  case r, AsJson -> json(r, exit_code(r.blockers))
+  case r, AsGithub -> "#{annotations(r)}\n#{step_summary(r)}"
+}
+
+# The lines around a survivor travel with it in the agent format, so an
+# agent does not have to open a file to see what it is looking at. The
+# files are read here and looked up purely, because the format reads
+# nothing itself — which is what makes it testable without a filesystem.
+fn sources_of(r: Report) : [(String, [String])] / File =
+  uniq(r.survivors | (s => s.site.file)) | (path => (path, read_lines(path)))
+
+fn read_lines(path: String) : [String] / File =
+  if file.exists(path) { lines(file.read(path)) } else { [] }
+
+fn of_files(sources: [(String, [String])]) : (String) -> [String] =
+  path => match find(sources, s => s.fst == path) {
+    Some(s) -> s.snd
+    None -> []
+  }
 
 # ---- what a run was asked for -------------------------------------------
 
