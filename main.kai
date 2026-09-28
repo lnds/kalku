@@ -14,6 +14,7 @@ import kalku.core.report_github
 import kalku.core.config
 import kalku.core.setting_up
 import kalku.core.info
+import kalku.core.mcp
 import kalku.core.remembering
 import kalku.core.showing
 import kalku.orchestrator.kalku_proc
@@ -41,6 +42,7 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     Recast(wanted) -> recast_here(wanted)
     Propose(wekufe, reason) -> proposed(wekufe, reason)
     Serve -> serving_here()
+    Mcp -> tooling()
     Measure(wanted) -> run_here(wanted)
     Misused(why) -> {
       Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
@@ -421,3 +423,153 @@ fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
   suppression_changes: r.suppressions,
   exit: exit_code(r.blockers)
 })
+
+# ---- the agent host -----------------------------------------------------
+
+# MCP over stdio is JSON-RPC, one message per line, and a host holds the
+# pipe open for as long as it wants the tools.
+fn tooling() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock =
+  match Stdin.read_line() {
+    None -> 0
+    Some(line) -> {
+      let asked = asked_of(trim_right(line))
+      answer_host(asked.fst, asked.snd)
+      tooling()
+    }
+  }
+
+fn answer_host(
+  id: Option[Int],
+  heard: Heard
+) : Unit / Stdout + Stderr + Env + File + Process + Spawn + Clock = match heard {
+  Initialise -> Stdout.print(greeting(id))
+  ListTools -> Stdout.print(tools(id))
+  CallTool(c) -> Stdout.print(tool_ran(id, c))
+  Notice -> ()
+  Garbled(why) -> Stdout.print(protocol_error(id, why))
+}
+
+# The tools are the CLI's, and what they answer is what it prints. A tool
+# that could not run says so as a result: the host shows that to the
+# agent, which is who needs to know.
+fn tool_ran(
+  id: Option[Int],
+  c: Call
+) : String / Stderr + Env + File + Process + Spawn + Clock = match c.tool {
+  "kalku_run" -> measured_for(id, c)
+  "kalku_cast" -> recast_for(id, c)
+  "kalku_show" -> shown_for(id, c)
+  "kalku_propose_equivalent" -> proposal_for(id, c)
+  other -> refused(id, "no such tool `#{other}`")
+}
+
+# A root the host named, or the one it is standing in.
+fn root_of(c: Call) : String = c.root.unwrap_or(".")
+
+fn measured_for(
+  id: Option[Int],
+  c: Call
+) : String / Stderr + Env + File + Process + Spawn + Clock = if is_empty(c.wekufe) {
+  refused(id, "`kalku_run` needs the files to measure")
+} else {
+  match settings_in(root_of(c)) {
+    Err(why) -> refused(id, why)
+    Ok(cfg) -> as_agent(
+      id,
+      with_mailbox {
+        untold(() => measure(asking_at(cfg, root_of(c), c.wekufe)))
+      }
+    )
+  }
+}
+
+fn recast_for(
+  id: Option[Int],
+  c: Call
+) : String / Stderr + Env + File + Process + Spawn + Clock = if is_empty(c.wekufe) {
+  refused(id, "`kalku_cast` needs the wekufe to re-cast")
+} else {
+  match settings_in(root_of(c)) {
+    Err(why) -> refused(id, why)
+    Ok(cfg) -> {
+      let all = ledger_in(root_of(c))
+      let unknown = strangers(all, c.wekufe)
+      if not is_empty(unknown) {
+        refused(id, "never cast: #{join(unknown, ", ")}")
+      } else {
+        as_agent(
+          id,
+          with_mailbox {
+            untold(() => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe))))
+          }
+        )
+      }
+    }
+  }
+}
+
+fn shown_for(id: Option[Int], c: Call) : String / File = match head(c.wekufe) {
+  None -> refused(id, "`kalku_show` needs a wekufe")
+  Some(w) -> {
+    let all = ledger_in(root_of(c))
+    match latest(all, w) {
+      None -> refused(id, "nothing known about `#{w}`; run `kalku_run` first")
+      Some(r) -> answered(id, showing.as_json(r, history(all, w)))
+    }
+  }
+}
+
+fn proposal_for(id: Option[Int], c: Call) : String / File = match head(c.wekufe) {
+  None -> refused(id, "`kalku_propose_equivalent` needs a wekufe")
+  Some(w) -> if is_empty(trim(c.reason)) {
+    refused(id, "`kalku_propose_equivalent` needs a reason a person can weigh")
+  } else {
+    proposal_written(id, root_of(c), w, c.reason)
+  }
+}
+
+fn proposal_written(
+  id: Option[Int],
+  root: String,
+  wekufe: String,
+  reason: String
+) : String / File {
+  let all = ledger_in(root)
+  match latest(all, wekufe) {
+    None -> refused(id, "nothing known about `#{wekufe}`; run `kalku_run` first")
+    Some(r) -> if r.outcome != Survived {
+      refused(
+        id,
+        "`#{wekufe}` is #{outcome_name(r.outcome)}, not survived; only a survivor can be equivalent"
+      )
+    } else {
+      {
+        append_proposal_in(root, r, reason)
+        answered(id, "proposed, for review in #{root}/#{PROPOSED_PATH}:\n#{proposal_of(r, reason)}")
+      }
+    }
+  }
+}
+
+# The agent format is what a host hands an agent: one line per survivor,
+# everything needed to act on it, and a summary.
+fn as_agent(id: Option[Int], found: Found) : String / File = match found.report {
+  None -> refused(id, found.failure.unwrap_or("nothing measured"))
+  Some(r) -> answered(id, agent(r, of_files(sources_of(r))))
+}
+
+fn narrowed(cfg: Config, root: String, sites: [Site]) : Asking = Asking {
+  ...asking_at(cfg, root, uniq(sites | (.file))),
+  only: sites | (.site_id)
+}
+
+fn ledger_in(root: String) : [Remembered] / File {
+  let path = "#{root}/#{LEDGER_PATH}"
+  if file.exists(path) { read_all(file.read(path)) } else { [] }
+}
+
+fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File {
+  let path = "#{root}/#{PROPOSED_PATH}"
+  let was = if file.exists(path) { file.read(path) } else { "" }
+  file.write(path, was ++ proposal_of(r, reason))
+}
