@@ -1,0 +1,162 @@
+#[doc("""
+Carrying out what `init` decided: reading a directory, asking, writing.
+
+Kept apart from `main` so the decisions stay in `kalku.core.setting_up`,
+where they are tested, and the file-touching stays in one place, where it
+can be read in full before anyone runs it against their project.
+
+Nothing here writes over something that is already there: a project that
+has been set up before is told so, and left as it is.
+""")]
+
+import fs.file
+import fs.dir
+import os.process as proc
+import kalku.core.setting_up
+
+#[doc("Set a project up, asking before anything is written.")]
+pub fn settle(
+  root: String,
+  language: Option[String],
+  assume_yes: Bool
+) : Int / Stdin + Stdout + Stderr + File + Process + Env {
+  match which_language(root, language) {
+    Err(p) -> {
+      Stderr.eprint("kalku: #{explain(p)}")
+      2
+    }
+    Ok(known) -> {
+      let plan = plan_for(known, reni_for(temp_dir(), named_after(root)))
+      Stdout.print(intent(root, plan))
+      if assume_yes or agreed() { write_it(root, plan) } else { declined() }
+    }
+  }
+}
+
+# Being told beats guessing, and guessing beats asking: `--lang` wins, a
+# project's own markers answer for it, and only a project that says
+# nothing is a question.
+fn which_language(root: String, language: Option[String]) : Result[Known, Puzzle] / File =
+  match language {
+    Some(name) -> named(name)
+    None -> detect(dir.list_dir(root))
+  }
+
+# The reni is named after the project, and a project named `.` is
+# whatever directory one is standing in — which the shell knows and this
+# process can only ask it for.
+# Written as comparisons rather than as a `match` on `leaf`: an empty-string
+# pattern matches a value that is not empty when what it matches came from
+# a recursive function, which silently took the wrong branch here
+# (lnds/kaikai#2224).
+fn named_after(root: String) : String / Env {
+  let leaf = last_segment(root)
+  if is_empty(leaf) or leaf == "." { standing_in() } else { leaf }
+}
+
+fn standing_in() : String / Env = match Env.get("PWD") {
+  Some(dir) -> {
+    let leaf = last_segment(dir)
+    if is_empty(leaf) { "project" } else { leaf }
+  }
+  None -> "project"
+}
+
+# `path.basename` would do, but importing that module brings a `join` of
+# its own that shadows the list one this file also uses.
+fn last_segment(p: String) : String {
+  let cleaned = if ends_with(p, "/") { slice(p, 0, length(p) - 1) } else { p }
+  match index_of(cleaned, "/") {
+    None -> cleaned
+    Some(i) -> last_segment(slice(cleaned, i + 1, length(cleaned)))
+  }
+}
+
+fn temp_dir() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
+
+# ---- asking -------------------------------------------------------------
+
+fn intent(root: String, plan: Plan) : String = join(
+  [
+    "kalku: this looks like #{plan.known.language} (#{plan.known.marker} is here)",
+    "",
+    "It will write:",
+    "  #{root}/#{CONFIG_PATH}     how a run is set up",
+    "  #{root}/#{SUMMONER_PATH}   how this project's kalku is summoned",
+    ""
+  ],
+  "\n"
+)
+
+fn agreed() : Bool / Stdin + Stdout {
+  Stdout.print("Write them? [y/N] ")
+  match Stdin.read_line() {
+    None -> false
+    Some(answer) -> contains(["y", "yes"], to_lower(trim(answer)))
+  }
+}
+
+fn declined() : Int / Stdout {
+  Stdout.print("kalku: nothing written.")
+  0
+}
+
+# ---- writing ------------------------------------------------------------
+
+fn write_it(root: String, plan: Plan) : Int / Stdout + Stderr + File + Process {
+  let config = "#{root}/#{CONFIG_PATH}"
+  let summoner = "#{root}/#{SUMMONER_PATH}"
+  keep(config, plan.config)
+  let _ = dir.create_dir("#{root}/.kalku")
+  keep(summoner, plan.summoner)
+  make_runnable(summoner)
+  say_what_is_left(root, plan)
+  0
+}
+
+# A project already set up is left alone: whoever edited these files meant
+# it, and overwriting them is not something an `init` should do twice.
+fn keep(path: String, content: String) : Unit / Stdout + File = if file.exists(path) {
+  Stdout.print("  kept    #{path} (already there)")
+} else {
+  {
+    file.write(path, content)
+    Stdout.print("  wrote   #{path}")
+  }
+}
+
+# A summoner that is not executable is a worker that will not start, and
+# the error it gives is about a pipe rather than about a mode bit.
+fn make_runnable(path: String) : Unit / Process {
+  let _ = proc.start_piped("/bin/chmod", ["+x", path])
+  ()
+}
+
+# The one thing kalku will not do for someone: edit the build file that
+# decides what their project depends on.
+fn say_what_is_left(root: String, plan: Plan) : Unit / Stdout + File = match plan.dependency {
+  None -> Stdout.print("\nkalku: ready. Try `kalku run <file>`.")
+  Some(line) -> if depends_already(plan.known, build_file_of(root, plan.known)) {
+    Stdout.print("\nkalku: ready. Try `kalku run <file>`.")
+  } else {
+    Stdout.print(
+      join(
+        [
+          "",
+          "One thing left, in #{plan.known.marker}: this kalku runs inside your",
+          "project's runtime, so your project has to depend on it. Add to `deps`:",
+          "",
+          line,
+          "",
+          "Then `mix deps.get`, and `kalku run <file>`."
+        ],
+        "\n"
+      )
+    )
+  }
+}
+
+fn build_file_of(root: String, known: Known) : String / File {
+  let path = "#{root}/#{known.marker}"
+  if file.exists(path) { file.read(path) } else { "" }
+}

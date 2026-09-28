@@ -1,0 +1,176 @@
+#[doc("""
+What `kalku init` decides, worked out without touching a thing.
+
+A project says what it is written in — `mix.exs` means Elixir, `kai.toml`
+means kaikai — so being told is only needed when the guess would be
+wrong. Everything here is a decision about files: what to look for, what
+to write, and what to say. `main` performs it, and asks first.
+
+The catalogue below is the one place the kaikai side knows a language by
+name, and it is data rather than logic: a marker to look for, and the
+summoning to write. What that summoning must do belongs to the kalku it
+summons, which is why it is written into the project as a script the
+owner can read and change.
+""")]
+
+#[doc("A language kalku can set a project up for.")]
+#[derive(Eq, Show)]
+pub type Known = { language: String, marker: String, summon: String }
+
+#[doc("What init found, and what it would write.")]
+#[derive(Eq, Show)]
+pub type Plan = { known: Known, config: String, summoner: String, dependency: Option[String] }
+
+#[doc("Why init could not decide.")]
+#[derive(Eq, Show)]
+pub type Puzzle = Unknown(String) | Undetected | Ambiguous([String])
+
+#[doc("Where the summoning script a project gets is written.")]
+pub const SUMMONER_PATH : String = ".kalku/summon"
+
+#[doc("Where a project's configuration is written.")]
+pub const CONFIG_PATH : String = ".kalku.toml"
+
+#[doc("Every language this kalku can set a project up for.")]
+pub fn catalogue() : [Known] = [
+  Known { language: "elixir", marker: "mix.exs", summon: elixir_summoner() },
+  Known { language: "kaikai", marker: "kai.toml", summon: kaikai_summoner() }
+]
+
+#[doc("""
+The language of a project whose markers are these, or why it cannot be
+told.
+
+Two markers mean two possible answers and no way to choose between them,
+which is a question for the owner rather than a coin to flip.
+""")]
+pub fn detect(markers: [String]) : Result[Known, Puzzle] = match found_in(markers) {
+  [] -> Err(Undetected)
+  [only] -> Ok(only)
+  several -> Err(Ambiguous(several | (.language)))
+}
+
+fn found_in(markers: [String]) : [Known] = filter(catalogue(), k => contains(markers, k.marker))
+
+#[doc("The language by the name it was given, for a project that says so itself.")]
+pub fn named(language: String) : Result[Known, Puzzle] = match find(
+  catalogue(),
+  k => k.language == to_lower(language)
+) {
+  Some(k) -> Ok(k)
+  None -> Err(Unknown(language))
+}
+
+#[doc("What to say about a puzzle, in a line the owner can act on.")]
+pub fn explain(p: Puzzle) : String {
+  case Unknown(name) -> "kalku has no kalku for `#{name}`; it knows #{languages()}"
+  case Undetected ->
+    "no language detected here: no #{markers()} to go by. Say which with `--lang`."
+  case Ambiguous(names) ->
+    "this looks like more than one project (#{join(names, ", ")}); say which with `--lang`"
+}
+
+fn languages() : String = join(catalogue() | (.language), ", ")
+
+fn markers() : String = join(catalogue() | (.marker), " or ")
+
+#[doc("Everything init would write, given the language and where the reni goes.")]
+pub fn plan_for(known: Known, reni: String) : Plan = Plan {
+  known: known,
+  config: config_text(known, reni),
+  summoner: summoner_text(known, reni),
+  dependency: dependency_for(known)
+}
+
+# The reni is named after the project so two projects do not share one,
+# and it sits outside the project because a run's artefacts are not the
+# project's — and because a kalku that copies its tree would copy the
+# reni into itself.
+#[doc("Where a project's reni goes, given a temporary directory and the project's name.")]
+pub fn reni_for(under: String, leaf: String) : String = "#{trim_right_slash(under)}/kalku/#{leaf}"
+
+fn trim_right_slash(path: String) : String = if ends_with(path, "/") {
+  slice(path, 0, length(path) - 1)
+} else {
+  path
+}
+
+# Written rather than remembered: a run reads this, and so does whoever
+# wonders what kalku is doing to their project.
+fn config_text(known: Known, reni: String) : String = trim_left("""
+# Written by `kalku init`. Every key is optional; these are the ones that
+# make a run work without arguments.
+language = "#{known.language}"
+
+# The executable that speaks the kalku protocol for this language. It is
+# a script in this project so that whatever its toolchain needs — a build
+# path, an environment — is written down where it can be read.
+summon = "#{SUMMONER_PATH}"
+
+# Outside the project: a run's artefacts are not the project's, and a
+# kalku that copies the tree would otherwise copy this into itself.
+reni = "#{reni}"
+
+[run]
+# One worker while a kalku has a single build path to give.
+workers = 1
+
+# A cast that runs longer than this is a `timeout`, not a slow test.
+timeout_floor_ms = 60000
+""")
+
+# A shebang is only a shebang on the first line: the kernel reads the
+# first two bytes, and a leading newline makes the file something no
+# `execve` will start.
+fn summoner_text(known: Known, reni: String) : String =
+  trim_left(replace(known.summon, "@RENI@", reni))
+
+# stdout carries the protocol, so everything a build prints goes to
+# stderr and nothing reads stdin. `exec` puts the kalku itself at the end
+# of the pipe, with no shell left to outlive it.
+fn elixir_summoner() : String = """
+#!/bin/sh
+# Summons the Elixir kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol, so the build's output goes to stderr
+# and nothing here reads stdin. The build path is inside the reni, which
+# is what keeps a run out of this project's own `_build`.
+set -eu
+
+MIX_ENV=test
+MIX_BUILD_PATH="@RENI@/build"
+export MIX_ENV MIX_BUILD_PATH
+
+mkdir -p "$MIX_BUILD_PATH"
+mix deps.compile >&2 </dev/null
+exec mix kalku.serve "$@"
+"""
+
+fn kaikai_summoner() : String = """
+#!/bin/sh
+# Summons the kaikai kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol, so anything the toolchain prints on
+# the way up goes to stderr.
+set -eu
+
+exec kalku-kaikai "$@"
+"""
+
+# A kalku runs inside the project's own runtime, so the project has to
+# depend on it. Shown rather than written: this is the owner's build
+# file, and kalku does not edit it without being told to.
+fn dependency_for(known: Known) : Option[String] = if known.language == "elixir" {
+  Some("""
+{:kalku_elixir,
+ git: "https://github.com/lnds/kalku.git",
+ sparse: "adapters/elixir",
+ only: :test,
+ runtime: false}""")
+} else {
+  None
+}
+
+#[doc("True when this project already depends on the kalku it needs.")]
+pub fn depends_already(known: Known, build_file: String) : Bool =
+  known.language != "elixir" or is_some(index_of(build_file, "kalku_elixir"))

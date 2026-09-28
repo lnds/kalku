@@ -6,14 +6,26 @@ owns the I/O and the exit code.
 import kalku.version
 
 #[doc("What the command line asks for.")]
+#[derive(Eq, Show)]
 pub type Command
   = ShowVersion
   | ShowHelp
+  | Initialise(Setup)
+  | Measure(Wanted)
   | Pending(String)
   | Unknown(String)
+  | Misused(String)
+
+#[doc("What `init` was asked to set up: where, in which language, and whether to ask first.")]
+#[derive(Eq, Show)]
+pub type Setup = { root: String, language: Option[String], assume_yes: Bool }
+
+#[doc("What `run` was asked to measure: which files, and how much of them.")]
+#[derive(Eq, Show)]
+pub type Wanted = { files: [String], limit: Option[Int], aloud: Bool }
 
 # Commands that are part of the design but not built yet.
-const PENDING : [String] = ["run", "serve", "cast", "show", "merge", "info"]
+const PENDING : [String] = ["serve", "cast", "show", "merge", "info"]
 
 #[doc("Read the arguments (program name excluded) into a `Command`.")]
 pub fn parse_args(argv: [String]) : Command {
@@ -23,7 +35,56 @@ pub fn parse_args(argv: [String]) : Command {
   case ["--help", ...] -> ShowHelp
   case ["--version", ...] -> ShowVersion
   case ["-V", ...] -> ShowVersion
+  case ["init", ...rest] -> initialising(rest)
+  case ["run", ...rest] -> measuring(rest)
   case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
+}
+
+# ---- init ---------------------------------------------------------------
+
+# The directory is optional because `kalku init` in the project one is
+# standing in is the whole point; `--lang` is optional because a project
+# says what it is written in, and being told is only needed when the
+# guess would be wrong.
+fn initialising(args: [String]) : Command = read_setup(
+  args,
+  Setup { root: ".", language: None, assume_yes: false }
+)
+
+fn read_setup(args: [String], so_far: Setup) : Command = match args {
+  [] -> Initialise(so_far)
+  ["--lang"] -> Misused("`--lang` needs a language")
+  ["--lang", lang, ...rest] -> read_setup(rest, Setup { ...so_far, language: Some(lang) })
+  ["--yes", ...rest] -> read_setup(rest, Setup { ...so_far, assume_yes: true })
+  ["-y", ...rest] -> read_setup(rest, Setup { ...so_far, assume_yes: true })
+  [other, ...rest] -> if starts_with(other, "-") {
+    Misused("`kalku init` does not take #{other}")
+  } else {
+    read_setup(rest, Setup { ...so_far, root: other })
+  }
+}
+
+# ---- run ----------------------------------------------------------------
+
+fn measuring(args: [String]) : Command = read_wanted(
+  args,
+  Wanted { files: [], limit: None, aloud: false }
+)
+
+fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
+  [] -> Measure(so_far)
+  ["--limit"] -> Misused("`--limit` needs a number")
+  ["--limit", n, ...rest] -> match to_int(n) {
+    None -> Misused("`--limit` takes a number, not `#{n}`")
+    Some(limit) -> read_wanted(rest, Wanted { ...so_far, limit: Some(limit) })
+  }
+  ["--verbose", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
+  ["-v", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
+  [other, ...rest] -> if starts_with(other, "-") {
+    Misused("`kalku run` does not take #{other}")
+  } else {
+    read_wanted(rest, Wanted { ...so_far, files: so_far.files ++ [other] })
+  }
 }
 
 #[doc("The `--version` line.")]
@@ -38,8 +99,11 @@ kalku — mutation testing for humans, CI, and coding agents.
 
 usage: kalku <command> [options]
 
-commands (not implemented yet):
-  run      cast wekufe over a project and report survivors
+commands:
+  init [dir]       set a project up: detect its language, write `.kalku.toml`
+  run [files...]   cast wekufe over those files and report survivors
+
+not implemented yet:
   serve    keep warm sessions for fast incremental runs
   cast     re-cast chosen wekufe
   show     show one wekufe in full
@@ -47,6 +111,10 @@ commands (not implemented yet):
   info     built-in documentation
 
 options:
+  --lang <name>    the project's language, when init should not guess
+  -y, --yes        do not ask before writing
+  --limit <n>      cast at most n wekufe (0 for all of them)
+  -v, --verbose    say what the run is doing while it does it
   -h, --help       show this help
   -V, --version    show the version
 """

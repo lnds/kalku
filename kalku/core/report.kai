@@ -96,13 +96,13 @@ fn block(s: Survivor) : [String] =
     ++ [covered_by(s), "  #{hint_for(s.site)}", ""]
 
 fn covered_by(s: Survivor) : String =
-  if is_empty(s.tests) { "  no test covers it" } else { "  covered by #{named(s.tests)}" }
+  if is_empty(s.tests) { "  no test covers it" } else { "  covered by #{counted(s.tests)}" }
 
 # Named while the list is short enough to read, counted past that. Not
 # the first few of a long list: without coverage to select by, the order
 # is the suite's, and the three it would name have nothing to do with the
 # site — which reads as an attribution kalku did not make.
-fn named(tests: [String]) : String = if length(tests) <= SHOWN_TESTS {
+fn counted(tests: [String]) : String = if length(tests) <= SHOWN_TESTS {
   join(tests, ", ")
 } else {
   "#{length(tests)} tests"
