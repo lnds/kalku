@@ -67,3 +67,44 @@ test "a compile-error rate exactly at the limit does not accuse the spells" {
   let over = Counts { ...empty(), killed: 3, compile_error: 2 }
   assert spells_look_wrong(over, 0.2)
 }
+
+# Tier 1 as algebra rather than as a sentence: a timeout, a crash or a
+# wekufe that would not compile cannot move the score, because the score
+# is killed over killed plus survived and nothing else.
+
+fn counted(killed: Int, survived: Int, aside: [Verdict]) : Counts =
+  tally_of(
+    repeat_verdict(Cast(Killed), killed) ++ repeat_verdict(Cast(Survived), survived) ++ aside
+  )
+
+fn score_of(killed: Int, survived: Int, aside: [Verdict]) : Real =
+  score(counted(killed, survived, aside)).unwrap_or(0.0 - 1.0)
+
+check "a score is a share: between nothing and everything" with k: Int, s: Int {
+  let killed = abs(k) % 50
+  let survived = abs(s) % 50
+  killed + survived == 0
+    or score_of(killed, survived, []) >= 0.0 and score_of(killed, survived, []) <= 1.0
+}
+
+check "nothing that never entered the score can move it" with k: Int, s: Int, n: Int {
+  let killed = 1 + abs(k) % 50
+  let survived = abs(s) % 50
+  let aside = repeat_verdict(Cast(Timeout), abs(n) % 5)
+    ++ repeat_verdict(Cast(Crashed), abs(n) % 3)
+    ++ repeat_verdict(Cast(CompileError), abs(n) % 7)
+    ++ repeat_verdict(Cast(NoCoverage), abs(n) % 4)
+    ++ repeat_verdict(EquivalentBy(Bytecode), abs(n) % 2)
+  score_of(killed, survived, aside) == score_of(killed, survived, [])
+}
+
+check "one more kill never lowers a score, and one more survivor never raises it" with k: Int, s: Int {
+  let killed = abs(k) % 50
+  let survived = abs(s) % 50
+  score_of(killed + 1, survived, []) >= score_of(killed, survived, [])
+    and score_of(killed, survived + 1, []) <= score_of(killed, survived, [])
+}
+
+check "a run with nothing to kill has no score at all" with n: Int {
+  score(counted(0, 0, repeat_verdict(Cast(Timeout), abs(n) % 9))) == None
+}
