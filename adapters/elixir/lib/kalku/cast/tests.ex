@@ -22,11 +22,17 @@ defmodule Kalku.Cast.Tests do
     modules = Kalku.Baseline.loaded_modules()
 
     cond do
-      modules == [] -> %{outcome: "survived", message: "no test modules are loaded"}
-      ids == [] -> %{outcome: "survived", message: "no test covers this line"}
+      modules == [] -> unjudged("no test modules are loaded in this kalku")
+      ids == [] -> %{outcome: "no_coverage"}
       true -> measure(root, ids, modules)
     end
   end
+
+  # Nothing ran, so nothing was measured. `survived` here would count a
+  # hole nobody looked for as a hole somebody looked for and did not find,
+  # which is the one mistake that makes every other number worthless.
+  # `crashed` says what is true: this cast produced no verdict.
+  defp unjudged(why), do: %{outcome: "crashed", message: why}
 
   defp measure(root, ids, modules) do
     {:ok, _} = Collector.start(false)
@@ -46,10 +52,8 @@ defmodule Kalku.Cast.Tests do
   end
 
   # A wekufe that no test even reached did not survive scrutiny; it was
-  # never looked at. Saying `survived` there would count a hole nobody
-  # measured as a hole somebody measured.
-  defp ran_anything([], ids),
-    do: %{outcome: "survived", message: "none of #{length(ids)} selected test(s) ran"}
+  # never looked at.
+  defp ran_anything([], ids), do: unjudged("none of the #{length(ids)} selected test(s) ran")
 
   defp ran_anything(_ran, _ids), do: %{outcome: "survived"}
 

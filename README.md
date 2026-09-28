@@ -95,6 +95,42 @@ make ci        # kaikai side: format check, lint, build, tests, km quality gate
 make check     # everything: `make ci` plus the Elixir kalku's tests
 ```
 
+### Measuring an Elixir project
+
+There is no CLI yet, so a run is steered by the environment. The Elixir
+kalku runs *inside* the project it measures, so that project depends on
+it, the way the `green` fixture does:
+
+```elixir
+# mix.exs
+{:kalku_elixir, path: "/path/to/kalku/adapters/elixir", only: :test, runtime: false}
+```
+
+Then, from the root of that project:
+
+```sh
+export MIX_BUILD_PATH=/tmp/kalku-reni/build    # the build goes in the reni, never in _build
+KALKU_KALKU=/path/to/kalku/adapters/elixir/bin/kalku-elixir \
+KALKU_ROOT=. KALKU_FILES=lib/thing.ex KALKU_LIMIT=6 KALKU_WORKERS=1 \
+KALKU_RENI=/tmp/kalku-reni KALKU_TIMEOUT_MS=60000 \
+  /path/to/kalku/_build/kalku run
+```
+
+```
+lib/green.ex:4  compare  Green.classify/1
+  - >=
+  + >
+  covered by 4 tests
+  No test tells `>=` apart from `>` in `Green.classify/1`. Add a case at the boundary where the two sides are equal.
+
+score 60% · 3 killed · 2 survived · 1 compile error
+```
+
+One worker for now: each kalku needs a build path of its own, and there
+is one `MIX_BUILD_PATH` to give. The kaikai side also does not yet use
+the per-test coverage this kalku measures, so every wekufe is cast
+against the whole suite.
+
 ### kalku measured by kalku
 
 `make self-mutate` casts wekufe into kalku's own sources through the

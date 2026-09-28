@@ -67,6 +67,40 @@ defmodule Kalku.CastTest do
       assert by_wekufe["after-all"]["outcome"] == "killed"
     end
 
+    # The kaikai side asks one kalku for the baseline and hands every
+    # worker the answer, so a kalku in a pool is asked to cast without ever
+    # having been asked for a baseline. It still has to be able to kill.
+    test "a kalku that was only prepared can still kill", %{reni: reni} do
+      done =
+        reply(
+          summon(reni, "green", [
+            request("prepare", 2),
+            cast("killed", 3, @seed, "1", @covering)
+          ]),
+          "cast_done"
+        )
+
+      assert done["outcome"] == "killed"
+      assert done["killed_by"] == "test/green_test.exs:9"
+    end
+
+    # Nothing ran, so nothing was measured. `survived` here would count a
+    # hole nobody looked for as one somebody looked for and did not find,
+    # which is the mistake that makes every other number worthless.
+    test "a cast whose tests never ran does not claim the wekufe survived", %{reni: reni} do
+      done =
+        reply(
+          summon(reni, "green", [
+            request("prepare", 2),
+            cast("unjudged", 3, @seed, "1", ["test/no_such_test.exs:1"])
+          ]),
+          "cast_done"
+        )
+
+      assert done["outcome"] == "crashed"
+      assert done["message"] =~ "selected test"
+    end
+
     # A wekufe the suite genuinely does not notice. `classify` is mutated
     # from `>=` to `>`, and the tests only ever pass 1 and -1 — never the
     # zero where the two differ.

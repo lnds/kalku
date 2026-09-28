@@ -21,7 +21,7 @@ defmodule Kalku.Prepare do
   Returns `{:ok, %{duration_ms: ms, modules: n}}`, or `{:error, code,
   message}` naming what made it impossible.
   """
-  def run(reni, env \\ %{}) do
+  def run(root, reni, env \\ %{}) do
     started = System.monotonic_time(:millisecond)
 
     with :ok <- test_env(),
@@ -29,6 +29,7 @@ defmodule Kalku.Prepare do
          :ok <- partition(env),
          {:ok, modules} <- compile(),
          :ok <- start_apps(),
+         :ok <- suite(root),
          :ok <- Kalku.Runtime.mark(Mix.Project.config()[:app]) do
       {:ok, %{duration_ms: System.monotonic_time(:millisecond) - started, modules: modules}}
     end
@@ -36,6 +37,15 @@ defmodule Kalku.Prepare do
 
   @doc "Where the build is going, which is the reni or nowhere."
   def build_path, do: Mix.Project.build_path()
+
+  # The suite is loaded here rather than by the first baseline, because a
+  # kalku in a pool is never asked for a baseline: the kaikai side asks one
+  # kalku and shares the answer. A worker with no suite loaded cannot judge
+  # a wekufe, and a kalku that cannot judge must not be the one to say a
+  # wekufe survived. It is loaded before the clean-state mark is taken, so
+  # a later `reset` puts the runtime back to a state that still has it.
+  defp suite(root) when is_binary(root) and root != "", do: Kalku.Baseline.load_suite(root)
+  defp suite(_), do: :ok
 
   # A build path outside the reni means the kalku was summoned without the
   # environment the protocol promises it. Compiling anyway would write into

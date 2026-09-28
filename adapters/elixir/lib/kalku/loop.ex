@@ -153,8 +153,8 @@ defmodule Kalku.Loop do
      state}
   end
 
-  defp dispatch("prepare", id, _body, %{reni: reni, env: env} = state) do
-    case Prepare.run(reni, env) do
+  defp dispatch("prepare", id, _body, %{root: root, reni: reni, env: env} = state) do
+    case Prepare.run(root, reni, env) do
       {:ok, %{duration_ms: ms, modules: modules}} ->
         {:reply, reply("prepared", id, %{"duration_ms" => ms, "modules" => modules}),
          %{state | prepared: true}}

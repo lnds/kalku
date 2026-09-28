@@ -27,11 +27,19 @@ defmodule Kalku.Baseline.Recorder do
 
   @impl true
   def handle_cast({:test_finished, %ExUnit.Test{} = test}, state) do
-    Collector.record(record(test), [])
+    if ran?(test), do: Collector.record(record(test), [])
     {:noreply, state}
   end
 
   def handle_cast(_event, state), do: {:noreply, state}
+
+  # ExUnit announces a test it skipped or excluded as finished, like any
+  # other. Counting those as tests that ran is what lets a cast whose
+  # selection matched nothing report every wekufe as a survivor, and it is
+  # what makes a skipped test look like a guard in a baseline.
+  defp ran?(%ExUnit.Test{state: {:skipped, _}}), do: false
+  defp ran?(%ExUnit.Test{state: {:excluded, _}}), do: false
+  defp ran?(%ExUnit.Test{}), do: true
 
   defp record(%ExUnit.Test{} = test) do
     file = to_string(test.tags[:file])

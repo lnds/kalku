@@ -7,7 +7,7 @@ defmodule Kalku.PrepareTest do
 
   describe "the reni is checked, not assumed" do
     test "a build path outside the reni refuses to compile anything" do
-      {:error, code, message} = Prepare.run("/tmp/a-reni-this-build-is-not-in")
+      {:error, code, message} = Prepare.run(".", "/tmp/a-reni-this-build-is-not-in")
 
       assert code == "reni_not_isolated"
       assert message =~ Path.expand(Prepare.build_path())
@@ -15,7 +15,7 @@ defmodule Kalku.PrepareTest do
     end
 
     test "a kalku summoned with no reni refuses too" do
-      assert {:error, "reni_not_isolated", message} = Prepare.run(nil)
+      assert {:error, "reni_not_isolated", message} = Prepare.run(".", nil)
       assert message =~ "no reni"
     end
 
@@ -23,7 +23,7 @@ defmodule Kalku.PrepareTest do
     # the directory that contains it.
     test "a build path inside the reni is accepted" do
       reni = Path.dirname(Path.expand(Prepare.build_path()))
-      assert {:ok, %{modules: modules}} = Prepare.run(reni)
+      assert {:ok, %{modules: modules}} = Prepare.run(".", reni)
       assert modules > 0
     end
   end
