@@ -15,13 +15,13 @@ a test rather than a race.
 #[doc("Where a session is, exactly as *Session states* draws it.")]
 #[derive(Eq, Show)]
 pub type State
-  = Cold
-  | Preparing
-  | Baselining
-  | Ready
-  | Running
-  | Failed(String)
-  | Closed
+  = SessionCold
+  | SessionPreparing
+  | SessionBaselining
+  | SessionReady
+  | SessionRunning
+  | SessionFailed(String)
+  | SessionClosed
 
 #[doc("What happened to a session.")]
 #[derive(Eq, Show)]
@@ -41,7 +41,7 @@ pub type Event
 pub type Session = { root: String, state: State, queued: Int }
 
 #[doc("A session nobody has asked anything of yet.")]
-pub fn opened(root: String) : Session = Session { root: root, state: Cold, queued: 0 }
+pub fn opened(root: String) : Session = Session { root: root, state: SessionCold, queued: 0 }
 
 #[doc("""
 Where an event takes a session.
@@ -55,66 +55,69 @@ starts over from cold — the failure was about the project as it was, and
 the point of asking again is that it may not be any more.
 """)]
 pub fn step(s: Session, e: Event) : Session {
-  case s, Shut -> Session { ...s, state: Closed, queued: 0 }
-  case s, Broke(why) -> Session { ...s, state: Failed(why), queued: 0 }
+  case s, Shut -> Session { ...s, state: SessionClosed, queued: 0 }
+  case s, Broke(why) -> Session { ...s, state: SessionFailed(why), queued: 0 }
   case s, Asked -> asked(s)
-  case s, Prepared -> if s.state == Preparing { Session { ...s, state: Baselining } } else { s }
-  case s, BaselineGreen -> if s.state == Baselining { Session { ...s, state: Running } } else { s }
-  case s, BaselineRed(why) -> if s.state == Baselining {
-    Session { ...s, state: Failed(why), queued: 0 }
+  case s, Prepared ->
+    if s.state == SessionPreparing { Session { ...s, state: SessionBaselining } } else { s }
+  case s, BaselineGreen ->
+    if s.state == SessionBaselining { Session { ...s, state: SessionRunning } } else { s }
+  case s, BaselineRed(why) -> if s.state == SessionBaselining {
+    Session { ...s, state: SessionFailed(why), queued: 0 }
   } else {
     s
   }
   case s, Finished -> finished(s)
   case s, Cancelled ->
-    if s.state == Running { Session { ...s, state: Ready, queued: 0 } } else { s }
-  case s, WentIdle -> if s.state == Ready { Session { ...s, state: Closed } } else { s }
+    if s.state == SessionRunning { Session { ...s, state: SessionReady, queued: 0 } } else { s }
+  case s, WentIdle ->
+    if s.state == SessionReady { Session { ...s, state: SessionClosed } } else { s }
 }
 
 # A run asked of a warm session starts at once; asked of a busy one it
 # waits; asked of a failed or closed one it starts over from cold, which
 # is what gives a project a second chance after a bad state.
 fn asked(s: Session) : Session = match s.state {
-  Cold -> Session { ...s, state: Preparing }
-  Ready -> Session { ...s, state: Running }
-  Running -> Session { ...s, queued: s.queued + 1 }
-  Preparing -> Session { ...s, queued: s.queued + 1 }
-  Baselining -> Session { ...s, queued: s.queued + 1 }
-  Failed(_) -> Session { root: s.root, state: Preparing, queued: 0 }
-  Closed -> Session { root: s.root, state: Preparing, queued: 0 }
+  SessionCold -> Session { ...s, state: SessionPreparing }
+  SessionReady -> Session { ...s, state: SessionRunning }
+  SessionRunning -> Session { ...s, queued: s.queued + 1 }
+  SessionPreparing -> Session { ...s, queued: s.queued + 1 }
+  SessionBaselining -> Session { ...s, queued: s.queued + 1 }
+  SessionFailed(_) -> Session { root: s.root, state: SessionPreparing, queued: 0 }
+  SessionClosed -> Session { root: s.root, state: SessionPreparing, queued: 0 }
 }
 
 # A finished run leaves the session warm, and takes the next waiting run
 # with it rather than making the client ask again.
-fn finished(s: Session) : Session = if s.state != Running {
+fn finished(s: Session) : Session = if s.state != SessionRunning {
   s
 } else if s.queued > 0 {
   Session { ...s, queued: s.queued - 1 }
 } else {
-  Session { ...s, state: Ready, queued: 0 }
+  Session { ...s, state: SessionReady, queued: 0 }
 }
 
 #[doc("True when a run asked for now would have to wait.")]
-pub fn busy(s: Session) : Bool = s.state == Running or s.queued > 0
+pub fn busy(s: Session) : Bool = s.state == SessionRunning or s.queued > 0
 
 #[doc("True when the kalku of this session are warm and a run can start at once.")]
-pub fn warm(s: Session) : Bool = s.state == Ready
+pub fn warm(s: Session) : Bool = s.state == SessionReady
 
 #[doc("Why a session failed, if it did.")]
 pub fn failure(s: Session) : Option[String] = match s.state {
-  Failed(why) -> Some(why)
+  SessionFailed(why) -> Some(why)
   _ -> None
 }
 
 #[doc("The state's name, as `status` reports it.")]
 pub fn state_name(s: State) : String {
-  case Cold -> "cold"
-  case Preparing -> "preparing"
-  case Baselining -> "baseline"
-  case Ready -> "ready"
-  case Running -> "running"
-  case Failed(_) -> "failed"
-  case Closed -> "closed"
+  case SessionCold -> "cold"
+  case SessionPreparing -> "preparing"
+  case SessionBaselining -> "baseline"
+  case SessionReady -> "ready"
+  case SessionRunning -> "running"
+  case SessionFailed(_) -> "failed"
+  case SessionClosed -> "closed"
 }
 
 # ---- many sessions ------------------------------------------------------
@@ -149,7 +152,7 @@ pub fn remember(all: Sessions, s: Session) : Sessions =
 
 #[doc("Sessions that are closed are no longer the server's to hold.")]
 pub fn forget_closed(all: Sessions) : Sessions =
-  Sessions { open: filter(all.open, s => s.state != Closed) }
+  Sessions { open: filter(all.open, s => s.state != SessionClosed) }
 
 #[doc("How many sessions the server is holding.")]
 pub fn how_many(all: Sessions) : Int = length(all.open)

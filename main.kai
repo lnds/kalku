@@ -3,8 +3,11 @@
 import actor
 import os.args
 import fs.file
+import fs.dir
+import os.process as proc
 import kalku.wire.enums
 import kalku.core.report
+import kalku.core.score
 import kalku.core.report_agent
 import kalku.core.report_json
 import kalku.core.report_github
@@ -18,9 +21,11 @@ import kalku.orchestrator.pool
 import kalku.orchestrator.measure
 import kalku.orchestrator.telling
 import kalku.settling
+import kalku.serving
+import kalku.orchestrator.server
 import kalku.cli
 
-fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock {
+fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix {
   match cli.parse_args(args.argv()) {
     ShowVersion -> {
       Stdout.print(cli.version_line())
@@ -35,6 +40,7 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     Display(wekufe, shape) -> shown(wekufe, shape)
     Recast(wanted) -> recast_here(wanted)
     Propose(wekufe, reason) -> proposed(wekufe, reason)
+    Serve -> serving_here()
     Measure(wanted) -> run_here(wanted)
     Misused(why) -> {
       Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
@@ -300,3 +306,118 @@ fn proposal_of(r: Remembered, reason: String) : String = join(
   ],
   "\n"
 )
+
+# ---- the server ---------------------------------------------------------
+
+# A server that casts wekufe on request is remote code execution by
+# definition, so the socket is a file only its owner can open, under a
+# directory the system already keeps private.
+fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix {
+  let mine = my_uid()
+  let path = socket_path(Env.get("XDG_RUNTIME_DIR"), asked_temp(), mine)
+  match serve_at(path, mine, root => run_for(root)) {
+    Err(why) -> {
+      Stderr.eprint("kalku: #{why}")
+      2
+    }
+    Ok(_) -> 0
+  }
+}
+
+fn asked_temp() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
+
+# kaikai's stdlib cannot say what uid this process runs as
+# (lnds/kaikai#2232), so it is asked of the system. Read once, at the
+# start: it is what every later connection is checked against.
+fn my_uid() : Int / Process = match proc.start_piped("/usr/bin/id", ["-u"]) {
+  Err(_) -> 0 - 1
+  Ok(child) -> {
+    let said = drain_all(child, "")
+    let _ = proc.wait(child)
+    to_int(trim(said)).unwrap_or(0 - 1)
+  }
+}
+
+fn drain_all(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drain_all(child, so_far ++ chunk) }
+}
+
+# What a client gets back for a `run`. The events arrive together rather
+# than as the run makes them: streaming them needs the run and the socket
+# to be different fibers, which is what warm sessions bring.
+#
+# Cold every time, for now: the project is prepared, measured and let go
+# of. What a server saves today is the client having to be kalku itself.
+fn run_for(root: String) : [ServerEvent] / Stdout + Stderr + Env + File + Process + Spawn + Clock {
+  let at = Wanted { files: [], limit: None, aloud: false, shape: AsHuman }
+  match settings_in(root) {
+    Err(why) -> [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })]
+    Ok(c) -> found_events(
+      with_mailbox {
+        untold(() => measure(asking_at(c, root, every_source(root))))
+      }
+    )
+  }
+}
+
+# A server is asked about a root rather than standing in one: the config
+# comes from there, the kalku is summoned there, and the paths a run
+# reports stay the project's own.
+fn asking_at(c: Config, root: String, files: [String]) : Asking = Asking {
+  spec: PoolSpec {
+    ...pool_of(c),
+    command: "/bin/sh",
+    args: ["-c", summoning(c, root)],
+    root: root
+  },
+  files: files | (f => shortened(f, root)),
+  only: [],
+  spells: c.spells,
+  exclude_calls: c.exclude_calls,
+  limit: 0,
+  timeout_floor_ms: c.timeout_floor_ms
+}
+
+# The summoning script is the project's, and it expects to be run from
+# the project: a kalku that builds elsewhere measures elsewhere.
+fn summoning(c: Config, root: String) : String =
+  "cd '#{root}' && exec '#{c.summon.unwrap_or("")}'"
+
+fn shortened(path: String, root: String) : String =
+  if starts_with(path, "#{root}/") { slice(path, length(root) + 1, length(path)) } else { path }
+
+# A server is asked about a root rather than standing in one, so the
+# config is read from there.
+fn settings_in(root: String) : Result[Config, String] / File {
+  let path = "#{root}/#{CONFIG_PATH}"
+  if file.exists(path) {
+    read_settings(file.read(path))
+  } else {
+    Err("no #{CONFIG_PATH} in #{root}; run `kalku init` there")
+  }
+}
+
+# Every source file the project has, which is what `scope: all` means. A
+# kalku is asked for sites by file, and this is the list it is asked for.
+fn every_source(root: String) : [String] / File =
+  filter(dir.walk("#{root}/lib"), f => ends_with(f, ".ex") or ends_with(f, ".kai"))
+
+fn found_events(found: Found) : [ServerEvent] = match found.report {
+  None -> [
+    ErrorEv(ErrorMsg {
+      code: "not_measured",
+      message: found.failure.unwrap_or("nothing measured"),
+      fatal: false
+    })
+  ]
+  Some(r) -> [PhaseEv(PhaseMsg { phase: PhaseReporting }), report_event(r)]
+}
+
+fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
+  score: score(r.counts),
+  counts: r.counts,
+  survivors_on_changed_lines: r.on_changed_lines,
+  suppression_changes: r.suppressions,
+  exit: exit_code(r.blockers)
+})
