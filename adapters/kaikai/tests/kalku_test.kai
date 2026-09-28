@@ -135,3 +135,17 @@ test "the package under test is never written to" {
   assert file.read("#{TINY}/tiny.kai") == before
   assert not file.exists("#{TINY}/.kai-cache")
 }
+
+# A wekufe can take the runtime down with it: `n % 0` traps, and the tests
+# that would have judged it never run. Their silence is not the suite
+# failing to notice — it is the kalku failing to measure, and saying
+# `survived` here would be the loudest possible lie.
+test "a wekufe that stops the run is not a wekufe that survived" {
+  let said = told([
+    hello(),
+    "{\"type\":\"prepare\",\"id\":2}",
+    cast(3, "trapping", 794, 796, "0")
+  ])
+
+  assert outcome_of(said, "trapping") == "crashed"
+}
