@@ -136,6 +136,12 @@ fn value_of[t](table: [(String, t)], v: JsonValue, path: String, what: String) :
     _ -> Err(JsonError { path: path, expected: what, found: json_shape_name(v) })
   }
 
+#[doc("Every spell there is, in the order they are documented.")]
+pub fn every_spell() : [Spell] = spells() | (.snd)
+
+#[doc("Every outcome there is, in the order they are documented.")]
+pub fn every_outcome() : [Outcome] = outcomes() | (.snd)
+
 #[doc("The wire name of a spell.")]
 pub fn spell_name(s: Spell) : String = name_of(spells(), s)
 

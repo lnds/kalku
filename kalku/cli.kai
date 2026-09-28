@@ -12,6 +12,7 @@ pub type Command
   | ShowHelp
   | Initialise(Setup)
   | Measure(Wanted)
+  | Inform(Asked)
   | Pending(String)
   | Unknown(String)
   | Misused(String)
@@ -24,8 +25,12 @@ pub type Setup = { root: String, language: Option[String], assume_yes: Bool }
 #[derive(Eq, Show)]
 pub type Wanted = { files: [String], limit: Option[Int], aloud: Bool }
 
+#[doc("What `info` was asked for: a topic, and how to print it.")]
+#[derive(Eq, Show)]
+pub type Asked = { topic: Option[String], as_json: Bool, snippet_only: Bool }
+
 # Commands that are part of the design but not built yet.
-const PENDING : [String] = ["serve", "cast", "show", "merge", "info"]
+const PENDING : [String] = ["serve", "cast", "show", "merge"]
 
 #[doc("Read the arguments (program name excluded) into a `Command`.")]
 pub fn parse_args(argv: [String]) : Command {
@@ -37,6 +42,7 @@ pub fn parse_args(argv: [String]) : Command {
   case ["-V", ...] -> ShowVersion
   case ["init", ...rest] -> initialising(rest)
   case ["run", ...rest] -> measuring(rest)
+  case ["info", ...rest] -> informing(rest)
   case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
 }
 
@@ -87,6 +93,22 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   }
 }
 
+# ---- info ---------------------------------------------------------------
+
+fn informing(args: [String]) : Command =
+  read_asked(args, Asked { topic: None, as_json: false, snippet_only: false })
+
+fn read_asked(args: [String], so_far: Asked) : Command = match args {
+  [] -> Inform(so_far)
+  ["--json", ...rest] -> read_asked(rest, Asked { ...so_far, as_json: true })
+  ["--snippet", ...rest] -> read_asked(rest, Asked { ...so_far, snippet_only: true })
+  [other, ...rest] -> if starts_with(other, "-") {
+    Misused("`kalku info` does not take #{other}")
+  } else {
+    read_asked(rest, Asked { ...so_far, topic: Some(other) })
+  }
+}
+
 #[doc("The `--version` line.")]
 pub fn version_line() : String = "kalku #{version.VERSION}"
 
@@ -102,18 +124,20 @@ usage: kalku <command> [options]
 commands:
   init [dir]       set a project up: detect its language, write `.kalku.toml`
   run [files...]   cast wekufe over those files and report survivors
+  info [topic]     what kalku knows about spells, outcomes, formats, agents
 
 not implemented yet:
   serve    keep warm sessions for fast incremental runs
   cast     re-cast chosen wekufe
   show     show one wekufe in full
   merge    combine sharded reports
-  info     built-in documentation
 
 options:
   --lang <name>    the project's language, when init should not guess
   -y, --yes        do not ask before writing
   --limit <n>      cast at most n wekufe (0 for all of them)
+  --json           print an info topic as JSON
+  --snippet        print only the lines an agent pastes into CLAUDE.md
   -v, --verbose    say what the run is doing while it does it
   -h, --help       show this help
   -V, --version    show the version

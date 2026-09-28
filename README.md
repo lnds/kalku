@@ -29,7 +29,8 @@ It targets Elixir first. It is written in [kaikai](https://github.com/lnds/kaika
 | **Session and cache keys** — one warm session per project, incremental re-casting | done |
 | Per-test coverage *used* by a run (a cast still runs the whole suite) | not yet |
 | `--since`, `--watch`, `--ci`, and the gate on changed lines | not yet |
-| **Server** (`kalku serve`), **MCP**, `kalku info` | not yet |
+| **`kalku info`** — spells, outcomes, formats and the agent loop, in the binary | done |
+| **Server** (`kalku serve`), **MCP** | not yet |
 
 Both kalku are driven end to end by their own test suites, over real pipes, against real fixture projects — and kalku measures its own suite through the kaikai one (`make self-mutate`).
 
@@ -70,6 +71,8 @@ Warm workers are the point. A timeout is aborted inside the running VM, and a wo
 kalku init                     # detect the language and set this project up
 kalku run lib/thing.ex         # measure those files
 kalku run lib/a.ex --limit 6 --verbose
+kalku info outcomes            # what kalku knows about itself
+kalku info agents --snippet    # the lines to paste into CLAUDE.md
 ```
 
 `init` reads the project's own markers — `mix.exs`, `kai.toml` — says what
