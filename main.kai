@@ -317,7 +317,7 @@ fn proposal_of(r: Remembered, reason: String) : String = join(
 fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix {
   let mine = my_uid()
   let path = socket_path(Env.get("XDG_RUNTIME_DIR"), asked_temp(), mine)
-  match serve_at(path, mine, root => run_for(root)) {
+  match serve_at(path, mine, (root, say) => run_for(root, say)) {
     Err(why) -> {
       Stderr.eprint("kalku: #{why}")
       2
@@ -351,16 +351,39 @@ fn drain_all(child: Child, so_far: String) : String / Process = match proc.read_
 #
 # Cold every time, for now: the project is prepared, measured and let go
 # of. What a server saves today is the client having to be kalku itself.
-fn run_for(root: String) : [ServerEvent] / Stdout + Stderr + Env + File + Process + Spawn + Clock {
-  let at = Wanted { files: [], limit: None, aloud: false, shape: AsHuman }
-  match settings_in(root) {
-    Err(why) -> [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })]
-    Ok(c) -> found_events(
-      with_mailbox {
-        untold(() => measure(asking_at(c, root, every_source(root))))
-      }
-    )
+fn run_for(
+  root: String,
+  say: (ServerEvent) -> Unit / NetUnix
+) : [ServerEvent] / Stderr + Env + File + Process + Spawn + Clock + NetUnix = match settings_in(
+  root
+) {
+  Err(why) -> [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })]
+  Ok(c) -> found_events(
+    with_mailbox {
+      streamed(say, () => measure(asking_at(c, root, every_source(root))))
+    }
+  )
+}
+
+# The run says what it is doing as it does it, and a client hears it then
+# rather than at the end: the notes the orchestrator already makes become
+# the events the protocol has for them.
+fn streamed[a, e](
+  say: (ServerEvent) -> Unit / NetUnix,
+  body: () -> a / Telling + e
+) : a / NetUnix + e = handle {
+  body()
+} with Telling {
+  tell_of(_line, resume) -> resume(())
+  entered(phase, resume) -> {
+    say(PhaseEv(PhaseMsg { phase: phase }))
+    resume(())
   }
+  got_through(done, total, resume) -> {
+    say(ProgressEv(ProgressMsg { done: done, total: total }))
+    resume(())
+  }
+  return(x) -> x
 }
 
 # A server is asked about a root rather than standing in one: the config
@@ -413,7 +436,7 @@ fn found_events(found: Found) : [ServerEvent] = match found.report {
       fatal: false
     })
   ]
-  Some(r) -> [PhaseEv(PhaseMsg { phase: PhaseReporting }), report_event(r)]
+  Some(r) -> [report_event(r)]
 }
 
 fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {

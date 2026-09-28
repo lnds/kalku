@@ -98,9 +98,11 @@ fn interview(
 ) : Result[Known, String] / Process + Clock + Actor[OrchMsg] + Telling {
   greet(k, asking)!
   await_kind(k, "ready")!
+  Telling.entered(PhasePreparing)
   Telling.tell_of("preparing #{asking.spec.root}; this builds the project and can take minutes")
   tell(k, 2, Prepare)!
   await_kind(k, "prepared")!
+  Telling.entered(PhaseBaselining)
   Telling.tell_of("running the suite once, for a baseline")
   tell(k, 3, Baseline)!
   let baseline = await_kind(k, "baseline_done")!
@@ -237,10 +239,12 @@ fn casting_them(
   let known = wanted_only(asking, all_known)
   let ready = plan(inputs_for(asking, known), _id => None)
   let casts = repeated(limited(ready.to_cast, asking.limit))
+  Telling.entered(PhaseCasting)
   Telling.tell_of(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
   )
   let casting = agreed(cast_all(asking.spec, casts))
+  Telling.entered(PhaseReporting)
   Found {
     report: Some(report_of(ready, casting, known)),
     failure: None,

@@ -1,3 +1,4 @@
+import kalku.wire.enums
 import kalku.orchestrator.telling
 
 # Reading the account back is what a handler is for: no process, no
@@ -6,6 +7,8 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
   body()
 } with Telling([]) {
   tell_of(line, resume) -> resume((), state ++ [line])
+  entered(phase, resume) -> resume((), state ++ ["entered #{phase_name(phase)}"])
+  got_through(done, total, resume) -> resume((), state ++ ["#{done} of #{total}"])
   return(_x) -> state
 }
 
