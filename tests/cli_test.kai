@@ -84,3 +84,25 @@ test "run takes the shape it should print in" {
   assert cli.parse_args(["run", "--format", "yaml"])
     == Misused("`--format` takes human, agent, json or github, not `yaml`")
 }
+
+# The loop: a survivor is named, a test is written, that one wekufe is
+# re-cast. Naming files instead would re-measure everything.
+test "cast names wekufe, show names one, and both need a name" {
+  assert cli.parse_args(["cast", "w1", "w2"])
+    == Recast(Wanted { files: ["w1", "w2"], limit: None, aloud: false, shape: AsHuman })
+  assert cli.parse_args(["cast"]) == Misused("`kalku cast` needs a wekufe to re-cast")
+  assert cli.parse_args(["show", "w1"]) == Display("w1", AsHuman)
+  assert cli.parse_args(["show", "w1", "--format", "json"]) == Display("w1", AsJson)
+  assert cli.parse_args(["show"]) == Misused("`kalku show` needs a wekufe to show")
+}
+
+# An equivalent without a reason is a hole somebody talked themselves out
+# of, so the reason is not optional.
+test "proposing an equivalent needs a wekufe and a reason" {
+  assert cli.parse_args(["propose-equivalent", "w1", "--reason", "logging only"])
+    == Propose("w1", "logging only")
+  assert cli.parse_args(["propose-equivalent", "w1"])
+    == Misused("`kalku propose-equivalent` needs a `--reason`")
+  assert cli.parse_args(["propose-equivalent", "--reason", "why"])
+    == Misused("`kalku propose-equivalent` needs a wekufe")
+}

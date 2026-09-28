@@ -22,6 +22,7 @@ import kalku.core.verdict
 import kalku.core.planner
 import kalku.core.gate
 import kalku.core.report
+import kalku.core.remembering
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
@@ -32,6 +33,7 @@ import kalku.orchestrator.telling
 pub type Asking = {
   spec: PoolSpec,
   files: [String],
+  only: [String],
   spells: [Spell],
   exclude_calls: [String],
   limit: Int,
@@ -50,7 +52,7 @@ pub type Known = {
 
 #[doc("What a run found, or why it could not look.")]
 #[derive(Eq, Show)]
-pub type Found = { report: Option[Report], failure: Option[String] }
+pub type Found = { report: Option[Report], failure: Option[String], cast: [Remembered] }
 
 #[doc("""
 Measure a project and report what survived.
@@ -62,8 +64,8 @@ would be a number nobody should believe.
 """)]
 pub fn measure(asking: Asking) : Found / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
   match discover(asking) {
-    Err(why) -> Found { report: None, failure: Some(why) }
-    Ok(known) -> Found { report: Some(cast_them(asking, known)), failure: None }
+    Err(why) -> Found { report: None, failure: Some(why), cast: [] }
+    Ok(known) -> casting_them(asking, known)
   }
 }
 
@@ -215,18 +217,53 @@ fn reply_kind(r: KalkuReply) : String {
 
 # ---- casting -------------------------------------------------------------
 
-fn cast_them(
+# A run measures every site it was given; a re-cast measures the ones it
+# was named, and nothing else.
+fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) {
+  known
+} else {
+  Known {
+    sites: filter(known.sites, s => contains(asking.only, s.site_id)),
+    tests: known.tests,
+    coverage: known.coverage,
+    durations: known.durations
+  }
+}
+
+fn casting_them(
   asking: Asking,
-  known: Known
-) : Report / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
+  all_known: Known
+) : Found / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
+  let known = wanted_only(asking, all_known)
   let ready = plan(inputs_for(asking, known), _id => None)
   let casts = limited(ready.to_cast, asking.limit)
   Telling.tell_of(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
   )
   let casting = cast_all(asking.spec, casts)
-  report_of(ready, casting, known)
+  Found {
+    report: Some(report_of(ready, casting, known)),
+    failure: None,
+    cast: written_down(casting, known)
+  }
 }
+
+# What a run leaves for the next question: every wekufe it cast, where it
+# was, what came of it, and which tests judged it.
+fn written_down(casting: Casting, known: Known) : [Remembered] = flat_map(
+  casting.verdicts,
+  v => match find(known.sites, s => s.site_id == v.wekufe) {
+    Some(cast_at) -> [
+      Remembered {
+        wekufe: v.wekufe,
+        site: cast_at,
+        outcome: v.outcome,
+        tests: v.tests
+      }
+    ]
+    None -> []
+  }
+)
 
 # With coverage, the plan casts each wekufe against the tests that reach
 # its line; without it, against all of them. Both are honest — guessing
@@ -242,7 +279,7 @@ fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
   timeout_floor_ms: asking.timeout_floor_ms
 }
 
-fn limited(casts: [Cast], limit: Int) : [Cast] = if limit <= 0 {
+fn limited(casts: [Wekufe], limit: Int) : [Wekufe] = if limit <= 0 {
   casts
 } else {
   enumerate(casts) |? (c => c.fst < limit) | (.snd)
@@ -255,7 +292,7 @@ fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
   let uncovered = ready.no_coverage | (_s => of_outcome(NoCoverage))
   Report {
     counts: tally(verdicts ++ uncovered),
-    survivors: survivors_of(ready, casting, known),
+    survivors: survivors_of(casting, known),
     on_changed_lines: 0,
     suppressions: SuppressionChanges {
       equivalent_added: 0,
@@ -289,27 +326,29 @@ fn troubles_of(casting: Casting, known: Known) : [Trouble] = flat_map(
 
 fn scoring(o: Outcome) : Bool = o == Killed or o == Survived or o == Equivalent
 
-fn survivors_of(ready: Plan, casting: Casting, known: Known) : [Survivor] = flat_map(
+fn survivors_of(casting: Casting, known: Known) : [Survivor] = flat_map(
   casting.verdicts,
-  v => if v.outcome == Survived { site_named(ready, known, v.wekufe) } else { [] }
+  v => if v.outcome == Survived { site_named(known, v.wekufe, v.tests) } else { [] }
 )
 
 # The tests that judged it are the ones the plan sent with it, which is
 # what the coverage chose — or the whole suite, where there is none.
 # Reporting none would read as "nothing looked", which is the opposite of
 # what happened.
-fn site_named(ready: Plan, known: Known, wekufe: String) : [Survivor] = match find(
+fn site_named(known: Known, wekufe: String, tests: [String]) : [Survivor] = match find(
   known.sites,
   s => s.site_id == wekufe
 ) {
-  Some(s) -> [Survivor { site: s, tests: judged_by(ready, wekufe, known) }]
+  Some(s) -> [Survivor { site: s, tests: if is_empty(tests) { known.tests } else { tests } }]
   None -> []
 }
 
-fn judged_by(ready: Plan, wekufe: String, known: Known) : [String] = match find(
-  ready.to_cast,
-  c => c.site.site_id == wekufe
+# What judged a wekufe is what the verdict says judged it: the plan chose
+# the tests, the scheduler sent them, and the verdict carries them back.
+fn judged_for(casting: Casting, wekufe: String, known: Known) : [String] = match find(
+  casting.verdicts,
+  v => v.wekufe == wekufe
 ) {
-  Some(c) -> c.tests
+  Some(v) -> v.tests
   None -> known.tests
 }

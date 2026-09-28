@@ -19,8 +19,16 @@ import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.escalation
 import kalku.orchestrator.ward
 
+# `tests` travels with the job because the verdict has to say what judged
+# it, and the plan that chose them is out of reach once the cast is out.
 #[doc("One cast a kalku is working on, and when its patience runs out.")]
-pub type Job = { id: Int, wekufe: String, deadline: Instant, awaiting: Awaiting }
+pub type Job = {
+  id: Int,
+  wekufe: String,
+  tests: [String],
+  deadline: Instant,
+  awaiting: Awaiting
+}
 
 #[doc("What a slot is doing.")]
 pub type Doing = Greeting(Instant) | Readying(Instant) | Idle | Working(Job) | Lost(String)

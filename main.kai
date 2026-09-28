@@ -11,6 +11,8 @@ import kalku.core.report_github
 import kalku.core.config
 import kalku.core.setting_up
 import kalku.core.info
+import kalku.core.remembering
+import kalku.core.showing
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.measure
@@ -30,6 +32,9 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     }
     Initialise(setup) -> settle(setup.root, setup.language, setup.assume_yes)
     Inform(asked) -> told_about(asked)
+    Display(wekufe, shape) -> shown(wekufe, shape)
+    Recast(wanted) -> recast_here(wanted)
+    Propose(wekufe, reason) -> proposed(wekufe, reason)
     Measure(wanted) -> run_here(wanted)
     Misused(why) -> {
       Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
@@ -108,6 +113,7 @@ fn measured(
         2
       }
       Some(r) -> {
+        remember(found.cast)
         Stdout.print(printed(r, shape))
         exit_code(r.blockers)
       }
@@ -157,21 +163,140 @@ fn read_settings(text: String) : Result[Config, String] = match config.parse(tex
   }
 }
 
+# The kalku a project summons and the workspace it works in, both from
+# what `kalku init` wrote down.
+fn pool_of(c: Config) : PoolSpec = PoolSpec {
+  command: c.summon.unwrap_or(""),
+  args: [],
+  workers: c.workers.unwrap_or(1),
+  root: ".",
+  reni: c.reni.unwrap_or("/tmp/kalku/reni"),
+  inline_limit_bytes: 65536,
+  env: StrMap { entries: [] },
+  greeting_ms: 60000,
+  summons_allowed: 2
+}
+
 fn asking_for(c: Config, wanted: Wanted) : Asking = Asking {
-  spec: PoolSpec {
-    command: c.summon.unwrap_or(""),
-    args: [],
-    workers: c.workers.unwrap_or(1),
-    root: ".",
-    reni: c.reni.unwrap_or("/tmp/kalku/reni"),
-    inline_limit_bytes: 65536,
-    env: StrMap { entries: [] },
-    greeting_ms: 60000,
-    summons_allowed: 2
-  },
+  spec: pool_of(c),
   files: wanted.files,
+  only: [],
   spells: c.spells,
   exclude_calls: c.exclude_calls,
   limit: wanted.limit.unwrap_or(0),
   timeout_floor_ms: c.timeout_floor_ms
 }
+
+# ---- the agent loop -----------------------------------------------------
+
+# What a run wrote down about this project, or nothing when none has run.
+fn ledger() : [Remembered] / File =
+  if file.exists(LEDGER_PATH) { read_all(file.read(LEDGER_PATH)) } else { [] }
+
+fn remember(rs: [Remembered]) : Unit / File {
+  let was = if file.exists(LEDGER_PATH) { file.read(LEDGER_PATH) } else { "" }
+  file.write(LEDGER_PATH, was ++ join(rs | line_of, "\n") ++ "\n")
+}
+
+# One wekufe in full: what it is, what came of it, and what came of it
+# before. A wekufe nobody has cast is not a wekufe kalku knows.
+# A wekufe nobody has cast is a name kalku cannot place, and saying so is
+# the only honest answer to a question about it.
+fn unheard_of(wekufe: String) : Int / Stderr {
+  Stderr.eprint("kalku: nothing known about `#{wekufe}`; run `kalku run <files>` first")
+  2
+}
+
+fn shown(wekufe: String, shape: Shape) : Int / Stdout + Stderr + File {
+  let all = ledger()
+  match latest(all, wekufe) {
+    None -> unheard_of(wekufe)
+    Some(r) -> {
+      let before = history(all, wekufe)
+      Stdout.print(if shape == AsHuman {
+        showing.as_text(r, before)
+      } else {
+        showing.as_json(r, before)
+      })
+      0
+    }
+  }
+}
+
+# Re-casting names wekufe, and a name becomes a site through the ledger:
+# a wekufe kalku has never cast is a name it cannot place, which is said
+# rather than guessed at.
+fn recast_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock =
+  match settings() {
+    Err(why) -> {
+      Stderr.eprint("kalku: #{why}")
+      2
+    }
+    Ok(c) -> {
+      let all = ledger()
+      let unknown = strangers(all, wanted.files)
+      if not is_empty(unknown) {
+        {
+          Stderr.eprint("kalku: never cast: #{join(unknown, ", ")}")
+          2
+        }
+      } else {
+        measured(asking_again(c, sites_for(all, wanted.files), wanted), wanted)
+      }
+    }
+  }
+
+# The files those sites live in, because a kalku is asked for sites by
+# file and the plan is narrowed to the wekufe that were named.
+fn asking_again(c: Config, sites: [Site], wanted: Wanted) : Asking = Asking {
+  spec: pool_of(c),
+  files: uniq(sites | (.file)),
+  only: sites | (.site_id),
+  spells: c.spells,
+  exclude_calls: c.exclude_calls,
+  limit: 0,
+  timeout_floor_ms: c.timeout_floor_ms
+}
+
+# Proposed, never applied: an agent may say why a wekufe cannot be told
+# apart, and a person decides whether that is true. `.kalku/equivalent`
+# is not written here, ever.
+fn proposed(wekufe: String, reason: String) : Int / Stdout + Stderr + File {
+  let all = ledger()
+  match latest(all, wekufe) {
+    None -> unheard_of(wekufe)
+    Some(r) -> if r.outcome != Survived {
+      {
+        Stderr.eprint(
+          "kalku: `#{wekufe}` is #{outcome_name(r.outcome)}, not survived; only a survivor can be equivalent"
+        )
+        2
+      }
+    } else {
+      {
+        append_proposal(r, reason)
+        Stdout.print("kalku: proposed, for review in #{PROPOSED_PATH}")
+        0
+      }
+    }
+  }
+}
+
+#[doc("Where proposals wait for a person. Never `.kalku/equivalent` itself.")]
+const PROPOSED_PATH : String = ".kalku/equivalent.proposed"
+
+fn append_proposal(r: Remembered, reason: String) : Unit / File {
+  let was = if file.exists(PROPOSED_PATH) { file.read(PROPOSED_PATH) } else { "" }
+  file.write(PROPOSED_PATH, was ++ proposal_of(r, reason))
+}
+
+# The syntax `.kalku/equivalent` uses, so accepting one is a move between
+# files rather than a rewrite: the semantic key, then the reason.
+fn proposal_of(r: Remembered, reason: String) : String = join(
+  [
+    "# #{where_of(r.site)}",
+    "#{r.site.file} #{r.site.enclosing.unwrap_or("?")} #{r.site.ordinal.unwrap_or(1)} #{spell_name(r.site.spell)}: #{trim(reason)}",
+    ""
+  ],
+  "\n"
+)

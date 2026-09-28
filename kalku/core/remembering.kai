@@ -1,0 +1,78 @@
+#[doc("""
+What a run leaves behind, so the next question has an answer.
+
+An agent's loop is: find a survivor, write a test, re-cast that one
+wekufe. Re-casting one means knowing which site it was — and a wekufe id
+is a name, not a location. A run therefore writes down what it cast: the
+site, what came of it, and which tests judged it.
+
+Appended rather than rewritten, one line per cast. The order of the lines
+is the order things happened, which is all a history needs and is one
+fewer thing to get wrong than a timestamp — a file kalku has no business
+trusting the clock for.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("One cast, as it is written down.")]
+#[derive(Json, Eq, Show)]
+pub type Remembered = {
+  wekufe: String,
+  site: Site,
+  outcome: Outcome,
+  tests: [String]
+}
+
+#[doc("Where a project's runs are written, under the project's own `.kalku`.")]
+pub const LEDGER_PATH : String = ".kalku/runs.ndjson"
+
+#[doc("One remembered cast as a line.")]
+pub fn line_of(r: Remembered) : String = json_encode(to_json(r))
+
+#[doc("Everything a ledger holds; a line that will not decode is skipped rather than fatal.")]
+pub fn read_all(text: String) : [Remembered] = flat_map(lines(text), of_line)
+
+fn of_line(line: String) : [Remembered] = if is_empty(trim(line)) {
+  []
+} else {
+  match json_decode(line) {
+    None -> []
+    Some(v) -> match remembered_of_json(v, "") {
+      Ok(r) -> [r]
+      Err(_) -> []
+    }
+  }
+}
+
+#[doc("""
+The last thing known about a wekufe, or nothing when it is a stranger.
+
+The last, because a wekufe is re-cast as the suite around it changes and
+what is true of it is what was true most recently.
+""")]
+pub fn latest(all: [Remembered], wekufe: String) : Option[Remembered] =
+  last(filter(all, r => r.wekufe == wekufe))
+
+#[doc("Every outcome a wekufe has had, oldest first.")]
+pub fn history(all: [Remembered], wekufe: String) : [Outcome] =
+  filter(all, r => r.wekufe == wekufe) | (.outcome)
+
+#[doc("The sites named by these wekufe, in the order they were named.")]
+pub fn sites_for(all: [Remembered], wekufe: [String]) : [Site] = flat_map(
+  wekufe,
+  w => match latest(all, w) {
+    Some(r) -> [r.site]
+    None -> []
+  }
+)
+
+#[doc("Which of these wekufe the ledger has never heard of.")]
+pub fn strangers(all: [Remembered], wekufe: [String]) : [String] =
+  filter(wekufe, w => is_none(latest(all, w)))
+
+fn last(rs: [Remembered]) : Option[Remembered] = match reverse(rs) {
+  [] -> None
+  [newest, ..._] -> Some(newest)
+}
