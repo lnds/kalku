@@ -80,24 +80,12 @@ jobs:
             --verify-tag \
             dist/*.tar.gz dist/*.sha256 dist/kalku.rb
 
-      # The tap is a separate repository, so this step does nothing where
-      # a token for it is not set; the formula is on the release either
-      # way. The check is in the script because the `secrets` context is
-      # not available to a step's `if`.
-      - name: Update the Homebrew tap
+      # The tap updates itself from this release: `lnds/homebrew-kalku`
+      # picks the formula up from the assets with its own token, so no
+      # credential for another repository is kept here.
+      - name: Ask the tap to pick the formula up
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "no HOMEBREW_TAP_TOKEN: the formula is on the release, the tap is untouched"
-            exit 0
-          fi
-          git clone "https://x-access-token:$GH_TOKEN@github.com/lnds/homebrew-kalku.git" tap
-          mkdir -p tap/Formula
-          cp dist/kalku.rb tap/Formula/kalku.rb
-          cd tap
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-          git add Formula/kalku.rb
-          git diff --cached --quiet || git commit -m "kalku ${GITHUB_REF_NAME#v}"
-          git push
+          gh workflow run update.yml --repo lnds/homebrew-kalku 2>/dev/null \
+            || echo "the tap will pick it up on its next scheduled run"
