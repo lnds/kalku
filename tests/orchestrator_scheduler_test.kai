@@ -27,12 +27,12 @@ fn pool_of(script: String, workers: Int, summons: Int) : PoolSpec = PoolSpec {
 
 # What a run says about itself is not what these tests are about, so the
 # account is dropped rather than printed.
-fn casting(spec: PoolSpec, cs: [Cast]) : Casting / Process + Spawn + Clock + Actor[OrchMsg] =
+fn casting(spec: PoolSpec, cs: [Wekufe]) : Casting / Process + Spawn + Clock + Actor[OrchMsg] =
   untold(() => cast_all(spec, cs))
 
-fn casts(n: Int, timeout_ms: Int) : [Cast] =
+fn casts(n: Int, timeout_ms: Int) : [Wekufe] =
   enumerate(repeat(0, n))
-    | (i => Cast {
+    | (i => Wekufe {
       site: site_named("w#{i.fst}"),
       tests: ["test/a_test.kai"],
       timeout_ms: timeout_ms

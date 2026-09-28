@@ -1,0 +1,65 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.remembering
+
+fn site_at(file: String, line: Int) : Site = Site {
+  site_id: "#{file}:#{line}",
+  file: file,
+  enclosing: Some("A.f/1"),
+  ordinal: Some(1),
+  span: Span { start: Position { line: line, col: 3, byte: 40 }, end: None },
+  spell: Compare,
+  original: Some(">="),
+  replacement: ">",
+  reload: ModuleOnly
+}
+
+fn cast_of(wekufe: String, line: Int, outcome: Outcome) : Remembered = Remembered {
+  wekufe: wekufe,
+  site: site_at("lib/a.ex", line),
+  outcome: outcome,
+  tests: ["test/a_test.exs:4"]
+}
+
+fn ledger() : [Remembered] = [
+  cast_of("w1", 4, Survived),
+  cast_of("w2", 9, Killed),
+  cast_of("w1", 4, Killed)
+]
+
+# A line is written and read back whole: the site is what lets a later
+# `cast` find the wekufe again, so losing a field of it loses the wekufe.
+test "a cast written down reads back as it was" {
+  let one = cast_of("w1", 4, Survived)
+
+  assert read_all(line_of(one)) == [one]
+}
+
+test "a ledger of many lines reads back in order" {
+  let text = join(ledger() | line_of, "\n")
+
+  assert (read_all(text) | (.wekufe)) == ["w1", "w2", "w1"]
+}
+
+# A half-written line is what a killed run leaves behind, and it is not a
+# reason to refuse to answer anything at all.
+test "a line that will not decode is skipped, not fatal" {
+  let text = "#{line_of(cast_of("w1", 4, Killed))}\nnot json at all\n"
+
+  assert length(read_all(text)) == 1
+}
+
+# What is true of a wekufe is what was true most recently: it is re-cast
+# as the suite around it changes.
+test "the last word about a wekufe is the one that counts" {
+  assert latest(ledger(), "w1").map(.outcome) == Some(Killed)
+  assert history(ledger(), "w1") == [Survived, Killed]
+  assert latest(ledger(), "never-cast") == None
+}
+
+# `cast` names wekufe; what it needs is sites, and the ledger is where a
+# name becomes a place.
+test "a wekufe's name becomes the site it was cast at" {
+  assert (sites_for(ledger(), ["w2", "w1"]) | (.span.start.line)) == [9, 4]
+  assert strangers(ledger(), ["w1", "stranger", "w2"]) == ["stranger"]
+}

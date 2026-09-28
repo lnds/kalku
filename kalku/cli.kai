@@ -13,6 +13,9 @@ pub type Command
   | Initialise(Setup)
   | Measure(Wanted)
   | Inform(Asked)
+  | Recast(Wanted)
+  | Display(String, Shape)
+  | Propose(String, String)
   | Pending(String)
   | Unknown(String)
   | Misused(String)
@@ -23,7 +26,11 @@ pub type Setup = { root: String, language: Option[String], assume_yes: Bool }
 
 #[doc("What `run` was asked to measure: which files, and how much of them.")]
 #[derive(Eq, Show)]
-pub type Wanted = { files: [String], limit: Option[Int], aloud: Bool }
+pub type Wanted = { files: [String], limit: Option[Int], aloud: Bool, shape: Shape }
+
+#[doc("How a run prints what it found.")]
+#[derive(Eq, Show)]
+pub type Shape = AsHuman | AsAgent | AsJson | AsGithub
 
 #[doc("What `info` was asked for: a topic, and how to print it.")]
 #[derive(Eq, Show)]
@@ -43,6 +50,9 @@ pub fn parse_args(argv: [String]) : Command {
   case ["init", ...rest] -> initialising(rest)
   case ["run", ...rest] -> measuring(rest)
   case ["info", ...rest] -> informing(rest)
+  case ["cast", ...rest] -> recasting(rest)
+  case ["show", ...rest] -> displaying(rest)
+  case ["propose-equivalent", ...rest] -> proposing(rest, "", "")
   case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
 }
 
@@ -74,7 +84,7 @@ fn read_setup(args: [String], so_far: Setup) : Command = match args {
 
 fn measuring(args: [String]) : Command = read_wanted(
   args,
-  Wanted { files: [], limit: None, aloud: false }
+  Wanted { files: [], limit: None, aloud: false, shape: AsHuman }
 )
 
 fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
@@ -84,6 +94,11 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
     None -> Misused("`--limit` takes a number, not `#{n}`")
     Some(limit) -> read_wanted(rest, Wanted { ...so_far, limit: Some(limit) })
   }
+  ["--format"] -> Misused("`--format` needs a name: human, agent, json or github")
+  ["--format", name, ...rest] -> match shape_of(name) {
+    None -> Misused("`--format` takes human, agent, json or github, not `#{name}`")
+    Some(shape) -> read_wanted(rest, Wanted { ...so_far, shape: shape })
+  }
   ["--verbose", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
   ["-v", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
   [other, ...rest] -> if starts_with(other, "-") {
@@ -91,6 +106,69 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   } else {
     read_wanted(rest, Wanted { ...so_far, files: so_far.files ++ [other] })
   }
+}
+
+# ---- the agent loop -----------------------------------------------------
+
+# `cast` names wekufe where `run` names files; everything else about them
+# is the same, so they are read into the same shape.
+fn recasting(args: [String]) : Command = match read_wanted(
+  args,
+  Wanted { files: [], limit: None, aloud: false, shape: AsHuman }
+) {
+  Measure(w) -> if is_empty(w.files) {
+    Misused("`kalku cast` needs a wekufe to re-cast")
+  } else {
+    Recast(w)
+  }
+  other -> other
+}
+
+fn displaying(args: [String]) : Command = read_shown(args, "", AsHuman)
+
+fn read_shown(args: [String], wekufe: String, shape: Shape) : Command = match args {
+  [] -> if is_empty(wekufe) {
+    Misused("`kalku show` needs a wekufe to show")
+  } else {
+    Display(wekufe, shape)
+  }
+  ["--format"] -> Misused("`--format` needs a name: human, agent, json or github")
+  ["--format", name, ...rest] -> match shape_of(name) {
+    None -> Misused("`--format` takes human, agent, json or github, not `#{name}`")
+    Some(asked) -> read_shown(rest, wekufe, asked)
+  }
+  [other, ...rest] -> if starts_with(other, "-") {
+    Misused("`kalku show` does not take #{other}")
+  } else {
+    read_shown(rest, other, shape)
+  }
+}
+
+# A reason is the whole point: an equivalent without one is a hole
+# somebody talked themselves out of.
+fn proposing(args: [String], wekufe: String, reason: String) : Command = match args {
+  [] -> if is_empty(wekufe) {
+    Misused("`kalku propose-equivalent` needs a wekufe")
+  } else if is_empty(trim(reason)) {
+    Misused("`kalku propose-equivalent` needs a `--reason`")
+  } else {
+    Propose(wekufe, reason)
+  }
+  ["--reason"] -> Misused("`--reason` needs the reason itself")
+  ["--reason", why, ...rest] -> proposing(rest, wekufe, why)
+  [other, ...rest] -> if starts_with(other, "-") {
+    Misused("`kalku propose-equivalent` does not take #{other}")
+  } else {
+    proposing(rest, other, reason)
+  }
+}
+
+fn shape_of(name: String) : Option[Shape] = match name {
+  "human" -> Some(AsHuman)
+  "agent" -> Some(AsAgent)
+  "json" -> Some(AsJson)
+  "github" -> Some(AsGithub)
+  _ -> None
 }
 
 # ---- info ---------------------------------------------------------------
@@ -124,20 +202,23 @@ usage: kalku <command> [options]
 commands:
   init [dir]       set a project up: detect its language, write `.kalku.toml`
   run [files...]   cast wekufe over those files and report survivors
+  cast <wekufe>    re-cast these, after a test was written
+  show <wekufe>    one wekufe in full: site, diff, tests, hint, history
+  propose-equivalent <wekufe> --reason <why>
   info [topic]     what kalku knows about spells, outcomes, formats, agents
 
 not implemented yet:
   serve    keep warm sessions for fast incremental runs
-  cast     re-cast chosen wekufe
-  show     show one wekufe in full
   merge    combine sharded reports
 
 options:
   --lang <name>    the project's language, when init should not guess
   -y, --yes        do not ask before writing
   --limit <n>      cast at most n wekufe (0 for all of them)
+  --format <name>  human (the default), agent, json, or github
   --json           print an info topic as JSON
   --snippet        print only the lines an agent pastes into CLAUDE.md
+  --reason <why>   why a wekufe cannot be told apart from the original
   -v, --verbose    say what the run is doing while it does it
   -h, --help       show this help
   -V, --version    show the version
