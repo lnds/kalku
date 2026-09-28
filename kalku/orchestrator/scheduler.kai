@@ -76,8 +76,12 @@ fn run_plan(
   })
   dismiss_all(done.slots, 0)
   banish_all(done.slots)
-  hear_last_words(living(done.slots))
-  Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled }
+  let heard = hear_last_words(done.slots)
+  Casting {
+    verdicts: done.verdicts,
+    failure: said_in_full(done, heard),
+    cancelled: done.cancelled
+  }
 }
 
 #[doc("How long the run waits for its readers to notice that their kalku is gone.")]
@@ -86,26 +90,44 @@ pub const LAST_WORDS_MS : Int = 2000
 # A reader outlives the kalku it was reading: killing the child makes the
 # read fail, and the reader says so once before it ends. The run waits for
 # that word from each of them, so it leaves no fiber talking to a mailbox
-# that is no longer there.
-fn hear_last_words(lives: [Life]) : Unit / Clock + Actor[OrchMsg] =
-  wait_out(lives, deadline_in(millis(LAST_WORDS_MS)))
+# that is no longer there — and keeps what they were still carrying, which
+# is what a kalku wrote about itself on the way down.
+fn hear_last_words(slots: [Slot]) : [Slot] / Clock + Actor[OrchMsg] =
+  wait_out(slots, living(slots), deadline_in(millis(LAST_WORDS_MS)))
 
-fn wait_out(lives: [Life], until: Instant) : Unit / Clock + Actor[OrchMsg] =
+fn wait_out(slots: [Slot], lives: [Life], until: Instant) : [Slot] / Clock + Actor[OrchMsg] =
   if is_empty(lives) or (not instant_lt(monotonic(), until)) {
-    ()
+    slots
   } else {
     match receive_timeout(elapsed_since(monotonic(), until)) {
-      None -> ()
-      Some(Cancel) -> wait_out(lives, until)
+      None -> slots
+      Some(Cancel) -> wait_out(slots, lives, until)
       Some(Wire(life, what)) -> wait_out(
-        if spoke_last(what) {
-          filter(lives, l => l != life)
-        } else {
-          lives
-        },
+        kept(slots, life, what),
+        if spoke_last(what) { filter(lives, l => l != life) } else { lives },
         until
       )
     }
+  }
+
+# A chunk of stderr that arrives while the run is winding down belongs to
+# the slot that wrote it, wherever its epitaph is written later.
+fn kept(slots: [Slot], life: Life, what: FromKalku) : [Slot] = match what {
+  Wrote(chunk) -> match slot_living(slots, life) {
+    Some(slot) -> put(slots, noted(slot, chunk))
+    None -> slots
+  }
+  _ -> slots
+}
+
+# Composed here rather than where the slot was given up on: what a kalku
+# wrote about itself arrives after its death is noticed, so a sentence
+# written at that moment would quote a silence that was not one.
+fn said_in_full(done: Run, heard: [Slot]) : Option[String] =
+  if (not is_empty(heard)) and all_gone(heard) {
+    Some(join(epitaphs(heard), "; "))
+  } else {
+    done.failure
   }
 
 fn spoke_last(what: FromKalku) : Bool = match what {

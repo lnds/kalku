@@ -136,6 +136,20 @@ pub fn kill_now(k: Kalku) : Unit / Process {
   ()
 }
 
+#[doc("""
+Stop the kalku without reaping it.
+
+Reaping closes the pipes with the child, and a kalku often writes its
+last word — why it could not compile, what it crashed on — a moment
+before it dies. Its reader needs that pipe to stay readable long enough
+to deliver it. The ward reaps what is left when the run ends, so nothing
+outlives it either way.
+""")]
+pub fn silence(k: Kalku) : Unit / Process {
+  let _ = proc.kill(k.child, SIGKILL)
+  ()
+}
+
 #[doc("Reap a kalku that is expected to be leaving of its own accord.")]
 pub fn reap(k: Kalku) : Option[Exit] / Process = match proc.wait(k.child) {
   Ok(status) -> Some(status)
