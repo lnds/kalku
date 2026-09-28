@@ -82,6 +82,7 @@ pub fn summary_line(r: Report) : String {
       ++ aside("no coverage", c.no_coverage)
       ++ aside("compile error", c.compile_error)
       ++ aside("crashed", c.crashed)
+      ++ aside("nondeterministic", c.nondeterministic)
       ++ equivalents(c.equivalent),
     " · "
   )

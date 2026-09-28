@@ -212,6 +212,7 @@ cold ──prepare──► preparing ──ok──► baseline ──green─�
 | `compile_error` | the wekufe does not compile | excluded |
 | `crashed` | the cast produced no verdict: the kalku died, or it could not run the tests it was given | reported apart |
 | `equivalent` | proven by identical bytecode, or declared with a written reason | excluded |
+| `nondeterministic` | cast several times and did not agree with itself | reported apart |
 
 **Score = killed / (killed + survived).** Timeouts, crashes, and missing coverage are shown next to the score, never folded into it: an infinite loop is not a failing assertion, and pretending it is inflates the number. A `compile_error` rate above a threshold is itself a warning: it means a spell is proposing nonsense for that language.
 
@@ -231,6 +232,27 @@ The shared catalog, in order of diagnostic value:
 | `call` | a step that silently does nothing | drop a pipe stage (`\|> f()`), `f(x)` → `x` |
 
 A language may add spells; each new spell gets a shared name in the protocol and fixtures in its adapter. Sites are never proposed inside tests, comments, docs, or string contents.
+
+### Concurrency spells
+
+Every spell above is local and syntactic: it changes an expression and asks whether a test notices. None changes *when* something happens, *who* waits for it, or *what happens when it dies* — so a project whose concurrency is untested scores the same as one whose concurrency is covered. On the BEAM that is the most expensive blind spot there is.
+
+| Spell | Defect it simulates | Elixir forms |
+|---|---|---|
+| `await` | a wait that is no longer a wait | `after N` → `after 0`, `Task.await(t, N)` → `:infinity`, `GenServer.call` → `cast`, a `:timeout` option → `:infinity` |
+| `supervise` | a failure that is no longer contained | `:one_for_one` ↔ `:one_for_all` ↔ `:rest_for_one`, `restart: :permanent` → `:temporary`, drop `Process.link/1`, drop `trap_exit: true` |
+
+These break assumptions the rest of kalku rests on, so four rules come with them.
+
+**A hang is not a kill, and it is not silence either.** Remove a deadline and the likely outcome is that the suite stops rather than fails, which is `timeout` — outside the score by design, because an infinite loop is not a failing assertion. For this family the timeout is itself the finding, and it is reported as one: *the suite hangs rather than failing when this wait is removed*. A suite that hangs has not noticed anything; counting it as a kill would be the inflation this project exists to avoid.
+
+**A flaky kill is a dishonest kill.** A concurrency wekufe can die on one run and live on the next, so one cast is not evidence. A wekufe from this family is cast until its outcome agrees with itself — three times by default — and an outcome that does not agree is reported as `nondeterministic`, a category of its own, next to the score rather than in it. A result that changes when nothing changed is a fact about the suite worth reporting and worth nobody's trust as a measurement.
+
+**They are opt-in.** Speed is the product, and these wekufe are slower than any other: some wait out a deadline, some wait out a restart backoff, and each is cast several times. A project asks for them by name — `spells = ["arm", "compare", "await", "supervise"]` — and they want a raised timeout floor. A default run is unchanged.
+
+**Expect declared equivalents.** `after :infinity` in a process that is always messaged first is equivalent, and no bytecode comparison will prove it. The reason line on a declared equivalent matters more here than anywhere else, which is why it is required and why suppressions are reported under their own heading.
+
+`order` — swapping two independent sends — stays out of the catalog until someone prototypes it. It is the most likely of the three to be equivalent by construction and the most likely to be flaky, and a spell whose usual answer is *it depends on the scheduler* measures nothing.
 
 ## Equivalent wekufe
 

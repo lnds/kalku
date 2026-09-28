@@ -27,6 +27,8 @@ pub fn hint_for(site: Site) : String = match site.spell {
   Negate -> "No test takes the other branch of this condition#{of_enclosing(site)}."
   Literal -> literal_hint(site)
   Call -> call_hint(site)
+  Await -> await_hint(site)
+  Supervise -> supervise_hint(site)
   Foreign -> foreign_hint(site)
 }
 
@@ -72,3 +74,15 @@ fn here(site: Site) : String = match site.enclosing {
   Some(decl) -> " in `#{decl}`"
   None -> ""
 }
+
+# A wait that nobody observes expiring is a deadline the suite has never
+# seen fire. The sentence names the wait rather than the syntax, because
+# what a reader has to write is a test that lets it expire.
+fn await_hint(site: Site) : String =
+  "No test observes what happens when this wait expires#{of_enclosing(site)}. Add one that lets the deadline fire."
+
+# A supervision decision nobody asserts is a failure path nobody has
+# looked at: what the system does when this process dies is whatever the
+# code happens to say.
+fn supervise_hint(site: Site) : String =
+  "No test asserts what happens when this process dies#{of_enclosing(site)}. Kill it in a test and say what should survive."

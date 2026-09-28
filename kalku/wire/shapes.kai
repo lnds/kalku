@@ -76,6 +76,7 @@ pub type Counts = {
   no_coverage: Int,
   compile_error: Int,
   crashed: Int,
+  nondeterministic: Int,
   equivalent: EquivalentCounts
 }
 

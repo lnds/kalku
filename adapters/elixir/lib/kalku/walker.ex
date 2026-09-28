@@ -6,7 +6,7 @@ defmodule Kalku.Walker do
   or text that only reaches a `raise`.
   """
 
-  alias Kalku.{Arms, Spells}
+  alias Kalku.{Arms, Concurrency, Spells}
 
   defstruct module: [],
             fun: nil,
@@ -99,7 +99,9 @@ defmodule Kalku.Walker do
   defp clauses(kw), do: List.wrap(kw(kw, :do))
 
   defp here(node, ctx, src) do
-    Enum.flat_map(ctx.spells, fn spell -> Spells.candidates(spell, node, ctx, src) end)
+    Enum.flat_map(ctx.spells, fn spell ->
+      Spells.candidates(spell, node, ctx, src) ++ Concurrency.candidates(spell, node, ctx, src)
+    end)
   end
 
   # ---- helpers -----------------------------------------------------------
