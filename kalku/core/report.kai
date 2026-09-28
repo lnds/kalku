@@ -32,16 +32,18 @@ pub type Report = {
   on_changed_lines: Int,
   suppressions: SuppressionChanges,
   troubles: [Trouble],
+  uncovered: [Site],
   blockers: [Blocker]
 }
 
 #[doc("A wekufe that produced nothing to score, and what the kalku said about it.")]
 #[derive(Eq, Show)]
-pub type Trouble = { wekufe: String, outcome: Outcome, said: Option[String] }
+pub type Trouble = { wekufe: String, at: Option[Site], outcome: Outcome, said: Option[String] }
 
 #[doc("The whole report as a person reads it: survivors, then the summary, then what was suppressed.")]
 pub fn human(r: Report) : String = join(
   survivor_blocks(r)
+    ++ uncovered_block(r)
     ++ trouble_blocks(r)
     ++ [summary_line(r)]
     ++ suppression_block(r)
@@ -50,11 +52,14 @@ pub fn human(r: Report) : String = join(
 )
 
 #[doc("Where a survivor lives, which spell made it, and in which declaration.")]
-pub fn location(s: Survivor) : String {
-  let at = "#{s.site.file}:#{s.site.span.start.line}"
-  match s.site.enclosing {
-    Some(decl) -> "#{at}  #{spell_name(s.site.spell)}  #{decl}"
-    None -> "#{at}  #{spell_name(s.site.spell)}"
+pub fn location(s: Survivor) : String = where_of(s.site)
+
+#[doc("Where a site is, which spell made it, and in which declaration.")]
+pub fn where_of(site: Site) : String {
+  let at = "#{site.file}:#{site.span.start.line}"
+  match site.enclosing {
+    Some(decl) -> "#{at}  #{spell_name(site.spell)}  #{decl}"
+    None -> "#{at}  #{spell_name(site.spell)}"
   }
 }
 
@@ -108,6 +113,16 @@ fn counted(tests: [String]) : String = if length(tests) <= SHOWN_TESTS {
   "#{length(tests)} tests"
 }
 
+# A line no test reaches is a hole too, and a larger one than a wekufe
+# that survived: there was nothing to notice it. It is named rather than
+# counted, because the fix is the same — write a test — and the reader
+# needs to know where.
+fn uncovered_block(r: Report) : [String] = if is_empty(r.uncovered) {
+  []
+} else {
+  ["no test reaches these:"] ++ (r.uncovered | (s => "  #{where_of(s)}")) ++ [""]
+}
+
 # An outcome that never enters the score still has to be actionable: a
 # compile error or a crash whose reason nobody printed is a number that
 # leaves a reader with nothing to fix.
@@ -118,7 +133,14 @@ fn trouble_blocks(r: Report) : [String] = if is_empty(r.troubles) {
 }
 
 fn trouble_lines(t: Trouble) : [String] =
-  ["  #{t.wekufe}  #{outcome_name(t.outcome)}"] ++ (said_by(t) | (line => "    #{line}"))
+  ["  #{named_at(t)}  #{outcome_name(t.outcome)}"] ++ (said_by(t) | (line => "    #{line}"))
+
+# A wekufe id is a hash; where it was cast is a file and a line, and only
+# one of those is something a reader can open.
+fn named_at(t: Trouble) : String = match t.at {
+  Some(site) -> where_of(site)
+  None -> t.wekufe
+}
 
 # A toolchain's diagnostic can run to hundreds of lines; the first few
 # name the file and the error, which is what a reader needs.

@@ -68,14 +68,22 @@ defmodule Kalku.Baseline do
   def measure_each(tests, modules) do
     for test <- tests do
       Cover.reset()
-      run_only(test.line, modules)
+      run_only(test, modules)
       %{test | lines: Cover.covered()}
     end
   end
 
-  # ExUnit selects by line the way `mix test path:LINE` does.
-  defp run_only(line, modules) do
-    ExUnit.configure(exclude: [:test], include: [line: line], max_cases: 1)
+  # By file and line together, the way `mix test path:LINE` does. By line
+  # alone, every test written on that line of any file runs too, and each
+  # of them is then credited with the lines the others executed — an
+  # attribution kalku would not be able to stand behind.
+  defp run_only(test, modules) do
+    ExUnit.configure(
+      exclude: [:test],
+      include: [{:location, {test.file, test.line}}],
+      max_cases: 1
+    )
+
     ExUnit.run(modules)
   after
     ExUnit.configure(exclude: [], include: [])

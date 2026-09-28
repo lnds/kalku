@@ -38,9 +38,15 @@ pub type Asking = {
   timeout_floor_ms: Int
 }
 
+# `durations` holds pairs, which have no `Eq`, so this record derives
+# nothing.
 #[doc("What the first kalku answered: what can be broken, and what judges it.")]
-#[derive(Eq, Show)]
-pub type Known = { sites: [Site], tests: [String] }
+pub type Known = {
+  sites: [Site],
+  tests: [String],
+  coverage: Option[[CoverageEntry]],
+  durations: [(String, Int)]
+}
 
 #[doc("What a run found, or why it could not look.")]
 #[derive(Eq, Show)]
@@ -108,14 +114,31 @@ fn interview(
       exclude_calls: asking.exclude_calls
     })
   )!
-  Ok(Known { sites: sites_of(await_kind(k, "sites_found")!)!, tests: suite })
+  Ok(Known {
+    sites: sites_of(await_kind(k, "sites_found")!)!,
+    tests: suite,
+    coverage: coverage_of(baseline),
+    durations: durations_of(baseline)
+  })
 }
 
-# The suite as the kalku enumerated it. Without coverage to narrow them
-# down, every test judges every wekufe — slow, and the only honest
-# reading of "this kalku does not measure coverage".
+# The suite as the kalku enumerated it. Which of those tests judge a
+# given wekufe is the coverage's business; without coverage, all of them
+# do — slow, and the only honest reading of "this kalku cannot say".
 fn suite_of(reply: KalkuReply) : [String] = match reply {
   BaselineDone(m) -> m.tests | (.test_id)
+  _ -> []
+}
+
+fn coverage_of(reply: KalkuReply) : Option[[CoverageEntry]] = match reply {
+  BaselineDone(m) -> m.coverage
+  _ -> None
+}
+
+# What each test costs, which is what a wekufe's deadline is built from:
+# a cast is given a few times the time the tests it runs took.
+fn durations_of(reply: KalkuReply) : [(String, Int)] = match reply {
+  BaselineDone(m) -> m.tests | (t => (t.test_id, t.duration_ms))
   _ -> []
 }
 
@@ -205,14 +228,14 @@ fn cast_them(
   report_of(ready, casting, known)
 }
 
-# Without per-test coverage the plan cannot select tests, so a cast runs
-# the whole suite. That is slow and honest; guessing at coverage would be
-# fast and wrong.
+# With coverage, the plan casts each wekufe against the tests that reach
+# its line; without it, against all of them. Both are honest — guessing
+# at coverage would be fast and wrong.
 fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
   sites: known.sites,
-  coverage: None,
+  coverage: known.coverage,
   all_tests: known.tests,
-  durations: [],
+  durations: known.durations,
   suppressed_ids: [],
   exclude: [],
   reach: Everything,
@@ -232,14 +255,15 @@ fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
   let uncovered = ready.no_coverage | (_s => of_outcome(NoCoverage))
   Report {
     counts: tally(verdicts ++ uncovered),
-    survivors: survivors_of(casting, known),
+    survivors: survivors_of(ready, casting, known),
     on_changed_lines: 0,
     suppressions: SuppressionChanges {
       equivalent_added: 0,
       exclude_added: [],
       exclude_calls_added: []
     },
-    troubles: troubles_of(casting),
+    troubles: troubles_of(casting, known),
+    uncovered: ready.no_coverage,
     blockers: []
   }
 }
@@ -247,29 +271,45 @@ fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
 # An outcome outside the score is carried with whatever the kalku said
 # about it: a `compile_error` a reader cannot explain is the one result
 # that helps nobody.
-fn troubles_of(casting: Casting) : [Trouble] = flat_map(
+fn troubles_of(casting: Casting, known: Known) : [Trouble] = flat_map(
   casting.verdicts,
   v => if scoring(v.outcome) {
     []
   } else {
-    [Trouble { wekufe: v.wekufe, outcome: v.outcome, said: v.said }]
+    [
+      Trouble {
+        wekufe: v.wekufe,
+        at: find(known.sites, s => s.site_id == v.wekufe),
+        outcome: v.outcome,
+        said: v.said
+      }
+    ]
   }
 )
 
 fn scoring(o: Outcome) : Bool = o == Killed or o == Survived or o == Equivalent
 
-fn survivors_of(casting: Casting, known: Known) : [Survivor] = flat_map(
+fn survivors_of(ready: Plan, casting: Casting, known: Known) : [Survivor] = flat_map(
   casting.verdicts,
-  v => if v.outcome == Survived { site_named(known, v.wekufe) } else { [] }
+  v => if v.outcome == Survived { site_named(ready, known, v.wekufe) } else { [] }
 )
 
-# The tests that judged it are the ones that ran, and without coverage
-# that is the whole suite. Reporting none would read as "nothing looked",
-# which is the opposite of what happened.
-fn site_named(known: Known, wekufe: String) : [Survivor] = match find(
+# The tests that judged it are the ones the plan sent with it, which is
+# what the coverage chose — or the whole suite, where there is none.
+# Reporting none would read as "nothing looked", which is the opposite of
+# what happened.
+fn site_named(ready: Plan, known: Known, wekufe: String) : [Survivor] = match find(
   known.sites,
   s => s.site_id == wekufe
 ) {
-  Some(s) -> [Survivor { site: s, tests: known.tests }]
+  Some(s) -> [Survivor { site: s, tests: judged_by(ready, wekufe, known) }]
   None -> []
+}
+
+fn judged_by(ready: Plan, wekufe: String, known: Known) : [String] = match find(
+  ready.to_cast,
+  c => c.site.site_id == wekufe
+) {
+  Some(c) -> c.tests
+  None -> known.tests
 }
