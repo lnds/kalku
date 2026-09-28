@@ -101,7 +101,9 @@ pub fn covering(site: Site, inputs: Inputs) : [String] = match inputs.coverage {
 }
 
 #[doc("How long a wekufe may run: a multiple of what its tests cost, never below the floor.")]
-pub fn timeout_for(site: Site, tests: [String], inputs: Inputs) : Int {
+pub fn timeout_for(site: Site, tests: [String], inputs: Inputs) : Int
+  ensures result >= inputs.timeout_floor_ms
+{
   let budget = TIMEOUT_FACTOR * sum(tests | (t => duration_of(t, inputs.durations)))
   let floor = max_int(budget, inputs.timeout_floor_ms)
   match site.reload {

@@ -49,3 +49,34 @@ test "one shard of one is a valid run, and so is the last shard of many" {
   assert not valid(2, 1)
   assert not valid(5, 4)
 }
+
+# The three things sharding promises, as algebra rather than as sentences
+# about 200 ids: every wekufe lands somewhere, nowhere twice, and the
+# same place whoever asks.
+
+check "every wekufe lands in a shard, and only in one" with id: String, n: Int {
+  let count = 1 + abs(n) % 8
+  let mine = filter([1..count], i => owns(id, i, count))
+  length(mine) == 1
+}
+
+check "a shard index is within the count it was asked for" with id: String, n: Int {
+  let count = 1 + abs(n) % 8
+  shard_of(id, count) >= 1 and shard_of(id, count) <= count
+}
+
+check "the same id lands in the same shard, however often it is asked" with id: String {
+  shard_of(id, 4) == shard_of(id, 4)
+}
+
+check "a shard of one owns everything" with id: String {
+  owns(id, 1, 1)
+}
+
+# Sharding is on the path of every run that splits across CI jobs, and it
+# hashes every wekufe id twice — once to place it, once to ask whether
+# this shard owns it. Worth knowing what that costs before anyone is
+# tempted to cache it.
+bench "placing 200 wekufe in 4 shards" {
+  [1..4] | (i => length(owned_by(i, 4)))
+}
