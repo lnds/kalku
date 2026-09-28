@@ -23,6 +23,7 @@ import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.escalation
 import kalku.orchestrator.ward
+import kalku.orchestrator.telling
 
 #[doc("What one wekufe came to.")]
 #[derive(Eq, Show)]
@@ -51,12 +52,13 @@ kalku is left to carry it.
 pub fn cast_all(
   spec: PoolSpec,
   casts: [Cast]
-) : Casting / Process + Spawn + Clock + Actor[OrchMsg] = warded(() => run_plan(spec, casts))
+) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Telling =
+  warded(() => run_plan(spec, casts))
 
 fn run_plan(
   spec: PoolSpec,
   casts: [Cast]
-) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
+) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
   let slots = fill(spec)
   let done = turn(Run {
     spec: spec,
@@ -143,7 +145,7 @@ type Run = {
   cancelled: Bool
 }
 
-fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
+fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
   let busy = dispatch(run)
   if over(busy) { busy } else { turn(listen(busy)) }
 }
@@ -153,7 +155,7 @@ fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
 fn over(run: Run) : Bool =
   is_some(run.failure) or waiting_on(run.slots) == 0 and (run.cancelled or is_empty(run.queue))
 
-fn listen(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
+fn listen(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling =
   match receive_timeout(patience(run)) {
     None -> expire(run)
     Some(Cancel) -> Run { ...run, cancelled: true, queue: [] }
@@ -165,15 +167,18 @@ fn listen(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
 
 # ---- dispatch -----------------------------------------------------------
 
-fn dispatch(run: Run) : Run / Process + Clock = match (run.queue, idle(run.slots)) {
+fn dispatch(run: Run) : Run / Process + Clock + Telling = match (run.queue, idle(run.slots)) {
   ([], _) -> run
   (_, []) -> run
   ([c, ...rest], [slot, ..._]) -> dispatch(hand(Run { ...run, queue: rest }, slot, c))
 }
 
-fn hand(run: Run, slot: Slot, c: Cast) : Run / Process + Clock {
+fn hand(run: Run, slot: Slot, c: Cast) : Run / Process + Clock + Telling {
   let id = run.next_id
   tell(slot, id, Cast(CastMsg { wekufe: c.site.site_id, site: c.site, tests: c.tests }))
+  Telling.tell_of(
+    "worker #{slot.worker} casts #{c.site.file}:#{c.site.span.start.line} #{spell_name(c.site.spell)} against #{length(c.tests)} test(s)"
+  )
   let job = Job {
     id: id,
     wekufe: c.site.site_id,
@@ -187,7 +192,7 @@ fn hand(run: Run, slot: Slot, c: Cast) : Run / Process + Clock {
 
 fn heard_from(run: Run, slot: Slot, what: FromKalku) : Run / Process + Spawn + Clock + Actor[
   OrchMsg
-] + Ward {
+] + Ward + Telling {
   case run, slot, Said(line) -> match heard(line) {
     Ok(m) -> said(run, slot, m.body)
     Err(e) -> react(run, slot, on_noise(awaiting_of(slot), kind_name(e.kind)))
@@ -201,7 +206,7 @@ fn said(
   run: Run,
   slot: Slot,
   reply: KalkuReply
-) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling =
   match reply {
     Ready(m) -> greeted(run, slot, m)
     Prepared(_) -> ready_for_work(run, slot)
@@ -234,10 +239,11 @@ fn ready_for_work(run: Run, slot: Slot) : Run =
 
 # ---- deadlines ----------------------------------------------------------
 
-fn expire(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward = match overdue(run) {
-  None -> run
-  Some(slot) -> expire(react(run, slot, due_reaction(slot)))
-}
+fn expire(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling =
+  match overdue(run) {
+    None -> run
+    Some(slot) -> expire(react(run, slot, due_reaction(slot)))
+  }
 
 fn due_reaction(slot: Slot) : Reaction = on_deadline(awaiting_of(slot), slot.caps)
 
@@ -279,7 +285,7 @@ fn react(
   run: Run,
   slot: Slot,
   r: Reaction
-) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
   let recorded = record(run, slot, r)
   match r.next {
     Keep -> recorded
@@ -290,13 +296,22 @@ fn react(
   }
 }
 
-fn record(run: Run, slot: Slot, r: Reaction) : Run = match (r.outcome, slot.doing) {
-  (Some(o), Working(job)) -> Run {
-    ...run,
-    verdicts: run.verdicts ++ [Verdict { wekufe: job.wekufe, outcome: o, said: r.said }]
+fn record(run: Run, slot: Slot, r: Reaction) : Run / Telling = match (r.outcome, slot.doing) {
+  (Some(o), Working(job)) -> {
+    Telling.tell_of(
+      "worker #{slot.worker}: #{job.wekufe} #{outcome_name(o)} (#{length(run.verdicts) + 1} of #{cast_count(run)})"
+    )
+    Run {
+      ...run,
+      verdicts: run.verdicts ++ [Verdict { wekufe: job.wekufe, outcome: o, said: r.said }]
+    }
   }
   _ -> run
 }
+
+# What the run set out to cast: what is done, what is in flight, and what
+# is still queued.
+fn cast_count(run: Run) : Int = length(run.verdicts) + waiting_on(run.slots) + length(run.queue)
 
 # Chasing keeps the job so the wekufe still has a name if the chase fails.
 fn chase(run: Run, slot: Slot, request: KalkuRequest, awaiting: Awaiting) : Run / Process + Clock {
@@ -313,7 +328,7 @@ fn recycle(
   run: Run,
   slot: Slot,
   why: String
-) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
   banish(slot)
   let fresh = refill(run.spec, slot, why)
   let slots = put(run.slots, fresh)

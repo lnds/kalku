@@ -7,6 +7,7 @@ import kalku.core.report
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.measure
+import kalku.orchestrator.telling
 import kalku.cli
 
 fn main() : Int / Stdout + Stderr + Env + Process + Spawn + Clock {
@@ -36,7 +37,8 @@ fn main() : Int / Stdout + Stderr + Env + Process + Spawn + Clock {
 # server come next; this is the claim the project makes about itself, so
 # it is the part that has to work first.
 fn run_here() : Int / Stdout + Stderr + Env + Process + Spawn + Clock = with_mailbox {
-  let found = measure(asking_for(asked_root(), asked_files()))
+  let asking = asking_for(asked_root(), asked_files())
+  let found = telling(asked_aloud(), () => measure(asking))
   match found.failure {
     Some(why) -> {
       Stderr.eprint("kalku: #{why}")
@@ -84,6 +86,11 @@ fn asked_root() : String / Env = Env.get("KALKU_ROOT").unwrap_or(".")
 # Outside the package it measures, always: a reni inside it would be
 # copied into itself.
 fn asked_reni() : String / Env = Env.get("KALKU_RENI").unwrap_or("/tmp/kalku-self/reni")
+
+# A run is minutes of silence otherwise, and a kalku rebuilding a package
+# looks exactly like a kalku that has hung. The account goes to stderr, so
+# a report being piped somewhere stays a report.
+fn asked_aloud() : Bool / Env = is_some(Env.get("KALKU_VERBOSE"))
 
 # Which kalku to summon. The kaikai one by default, because measuring
 # kalku is what this program can do without being told anything; any
