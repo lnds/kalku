@@ -16,7 +16,7 @@ KKALKU_SRC := $(wildcard adapters/kaikai/*.kai) $(wildcard adapters/kaikai/kaika
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir fmt fmt-check lint km ci check bench clean self-mutate
+.PHONY: all build test test-kaikai test-elixir fmt fmt-check lint km ci check properties bench clean self-mutate
 
 all: build
 
@@ -28,14 +28,16 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 
 test: test-kaikai test-elixir
 
-test-kaikai: $(FAKE) $(KKALKU) check
+test-kaikai: $(FAKE) $(KKALKU) properties
 	$(KAI) test
 	$(KAI) test ./tests/fake_kalku
 	cd adapters/kaikai && $(KAI) test .
 
 # Properties, one file at a time: `kai check` in package mode does not
 # find a `check` under `tests/`, and a property nobody runs is a comment.
-check:
+# Named `properties` rather than `check`, which is already the target
+# that runs everything including the Elixir side.
+properties:
 	@for f in $(wildcard tests/*_test.kai); do $(KAI) check $$f || exit 1; done
 
 # Not a gate: a benchmark fails nothing, it just says what something
