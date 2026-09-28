@@ -12,7 +12,7 @@ Coding agents write tests fast, but a test can run a line without checking anyth
 
 It targets Elixir first. It is written in [kaikai](https://github.com/lnds/kaikai) and uses kalku to test its own code.
 
-> **Status: pre-alpha, and installed from source.** There is no release and no package yet: you build the binary, and an Elixir project points at this checkout. Everything below runs today; [what is done and what is not](#what-works-today) is at the end.
+> **Status: pre-alpha.** The Elixir kalku is on [Hex](https://hex.pm/packages/kalku_elixir); the `kalku` binary is still built from source. Everything below runs today; [what is done and what is not](#what-works-today) is at the end.
 
 ## Install
 
@@ -34,7 +34,7 @@ depends on it, for tests only:
 
 ```elixir
 # mix.exs, in deps/0
-{:kalku_elixir, path: "/path/to/kalku/adapters/elixir", only: :test, runtime: false}
+{:kalku_elixir, "~> 0.1", only: :test, runtime: false}
 ```
 
 Then, from the root of that project:
@@ -179,7 +179,8 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | `--since`, `--watch`, `--ci`, and the gate on changed lines | not yet |
 | `merge` — combining sharded reports | not yet |
-| A release, a binary to download, and `kalku_elixir` on Hex | not yet |
+| **`kalku_elixir` on Hex** — the Elixir kalku installs like any dependency | done |
+| A release of the `kalku` binary, to install without building kaikai | not yet |
 
 Both kalku are driven end to end by their own test suites, over real pipes, against real fixture projects — and kalku measures its own suite through the kaikai one (`make self-mutate`).
 
