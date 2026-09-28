@@ -38,7 +38,7 @@ measuring stay apart.
 pub fn serve_at[e](
   path: String,
   mine: Int,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e
 ) : Result[Unit, String] / NetUnix + File + Stderr + e {
   let _ = dir.create_dir(holding(path))
   let _ = if file.exists(path) { clear_stale(path) } else { () }
@@ -82,7 +82,7 @@ fn attend[e](
   l: Listener,
   serving: Serving,
   mine: Int,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e
 ) : Result[Unit, String] / NetUnix + Stderr + e = match NetUnix.accept(l) {
   Err(e) -> Err("cannot accept: #{e}")
   Ok(c) -> {
@@ -103,14 +103,14 @@ fn converse[e](
   c: Conn,
   serving: Serving,
   mine: Int,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e
 ) : Serving / NetUnix + Stderr + e = read_on(c, serving, mine, run_it, framer(MAX_LINE_BYTES))
 
 fn read_on[e](
   c: Conn,
   serving: Serving,
   mine: Int,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e,
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
   f: Framer
 ) : Serving / NetUnix + Stderr + e = match NetUnix.recv(c, CHUNK) {
   Err(_) -> serving
@@ -129,7 +129,7 @@ fn answer_each[e](
   c: Conn,
   serving: Serving,
   mine: Int,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e,
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
   frames: [Frame]
 ) : Serving / NetUnix + Stderr + e = match frames {
   [] -> serving
@@ -140,7 +140,7 @@ fn answered[e](
   c: Conn,
   serving: Serving,
   mine: Int,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e,
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
   fr: Frame
 ) : Serving / NetUnix + Stderr + e = match fr {
   TooLong -> {
@@ -176,7 +176,7 @@ fn serve_one[e](
   c: Conn,
   serving: Serving,
   mine: Int,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e,
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
   id: Int,
   request: ClientRequest
 ) : Serving / NetUnix + Stderr + e = match refusal_for(request, its_owner(c, mine)) {
@@ -190,7 +190,7 @@ fn serve_one[e](
 fn carry_out[e](
   c: Conn,
   serving: Serving,
-  run_it: (String, (ServerEvent) -> Unit / NetUnix) -> [ServerEvent] / e,
+  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
   id: Int,
   request: ClientRequest
 ) : Serving / NetUnix + Stderr + e = match request {
@@ -199,15 +199,10 @@ fn carry_out[e](
     serving
   }
   RunReq(m) -> {
-    let started = with_session(
-      serving.sessions,
-      Project { ...session_for(serving.sessions, m.root), state: SessionRunning }
-    )
-    each(run_it(m.root, e => tell(c, id, e)), e => tell(c, id, e))
-    Serving {
-      ...serving,
-      sessions: with_session(started, done_with(session_for(started, m.root)))
-    }
+    let mine = session_for(serving.sessions, m.root)
+    let after = run_it(Project { ...mine, state: SessionRunning }, e => tell(c, id, e))
+    each(after.snd, e => tell(c, id, e))
+    Serving { ...serving, sessions: with_session(serving.sessions, done_with(after.fst)) }
   }
   CancelReq(m) -> {
     tell(c, id, CancelledEv(CancelledMsg { run: m.run }))

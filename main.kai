@@ -8,6 +8,9 @@ import os.process as proc
 import kalku.wire.enums
 import kalku.core.report
 import kalku.core.score
+import kalku.core.cache
+import kalku.core.planner
+import kalku.orchestrator.scheduler
 import kalku.core.report_agent
 import kalku.core.report_json
 import kalku.core.report_github
@@ -317,7 +320,13 @@ fn proposal_of(r: Remembered, reason: String) : String = join(
 fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix {
   let mine = my_uid()
   let path = socket_path(Env.get("XDG_RUNTIME_DIR"), asked_temp(), mine)
-  match serve_at(path, mine, (root, say) => run_for(root, say)) {
+  # The mailbox and the ward belong to the server, not to a run: the
+  # kalku a run leaves warm keep talking to this mailbox, and whatever is
+  # still alive when the server ends is killed by this ward.
+  let ending = with_mailbox {
+    warded(() => serve_at(path, mine, (p, say) => run_for(p, say)))
+  }
+  match ending {
     Err(why) -> {
       Stderr.eprint("kalku: #{why}")
       2
@@ -325,6 +334,17 @@ fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock
     Ok(_) -> 0
   }
 }
+
+# A run over a project's own kalku: the warm ones when they were compiled
+# from exactly this project, a fresh pool when they were not.
+fn run_for(
+  p: Project,
+  say: (ServerEvent) -> Unit / NetUnix
+) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix =
+  match settings_in(p.root) {
+    Err(why) -> (p, [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })])
+    Ok(c) -> measured_over(p, c, say)
+  }
 
 fn asked_temp() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
 
@@ -346,25 +366,6 @@ fn drain_all(child: Child, so_far: String) : String / Process = match proc.read_
 }
 
 # What a client gets back for a `run`. The events arrive together rather
-# than as the run makes them: streaming them needs the run and the socket
-# to be different fibers, which is what warm sessions bring.
-#
-# Cold every time, for now: the project is prepared, measured and let go
-# of. What a server saves today is the client having to be kalku itself.
-fn run_for(
-  root: String,
-  say: (ServerEvent) -> Unit / NetUnix
-) : [ServerEvent] / Stderr + Env + File + Process + Spawn + Clock + NetUnix = match settings_in(
-  root
-) {
-  Err(why) -> [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })]
-  Ok(c) -> found_events(
-    with_mailbox {
-      streamed(say, () => measure(asking_at(c, root, every_source(root))))
-    }
-  )
-}
-
 # The run says what it is doing as it does it, and a client hears it then
 # rather than at the end: the notes the orchestrator already makes become
 # the events the protocol has for them.
@@ -402,6 +403,15 @@ fn asking_at(c: Config, root: String, files: [String]) : Asking = Asking {
   exclude_calls: c.exclude_calls,
   limit: 0,
   timeout_floor_ms: c.timeout_floor_ms
+}
+
+# The pool for a project: the same kalku the CLI would summon, started
+# where the project is.
+fn pool_at(c: Config, root: String) : PoolSpec = PoolSpec {
+  ...pool_of(c),
+  command: "/bin/sh",
+  args: ["-c", summoning(c, root)],
+  root: root
 }
 
 # The summoning script is the project's, and it expects to be run from
@@ -596,3 +606,77 @@ fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File
   let was = if file.exists(path) { file.read(path) } else { "" }
   file.write(path, was ++ proposal_of(r, reason))
 }
+
+# ---- measuring over a warm pool -----------------------------------------
+
+# The kalku a project keeps are only worth keeping while they hold a copy
+# of exactly that project. The fingerprint is what says so, and it covers
+# what a measurement depends on: the sources and the tests.
+fn measured_over(
+  p: Project,
+  c: Config,
+  say: (ServerEvent) -> Unit / NetUnix
+) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
+  let files = every_source(p.root)
+  let now = fingerprint(read_hashes(files ++ every_test(p.root)))
+  let asking = asking_at(c, p.root, files)
+  # Asked before the pool is opened, and never while it is being opened:
+  # a kalku greeting its way to `ready` talks into the same mailbox this
+  # is waiting on, and two conversations in one mailbox is how a run
+  # waits forever for a reply it has already discarded.
+  let found = streamed(say, () => discover(asking))
+  match found {
+    Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
+    Ok(known) -> cast_it(warm_pool(p, c, now, say), asking, known, say)
+  }
+}
+
+fn cast_it(
+  p: Project,
+  asking: Asking,
+  known: measure.Known,
+  say: (ServerEvent) -> Unit / NetUnix
+) : (Project, [ServerEvent]) / Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
+  let plan_of_it = plan(inputs_for(asking, known), _id => None)
+  let casts = repeated(plan_of_it.to_cast)
+  let done = streamed(say, () => cast_over(asking.spec, p.slots, casts, p.next_id))
+  let report = report_of(plan_of_it, agreed(done.fst), known)
+  (
+    Project { ...p, slots: done.snd, next_id: done.trd },
+    [report_event(report)]
+  )
+}
+
+# A pool is opened when there is none, and replaced when the project it
+# was compiled from is not the project on disk any more. Measuring with a
+# kalku that holds last week's code is measuring last week's code.
+fn warm_pool(
+  p: Project,
+  c: Config,
+  now: String,
+  say: (ServerEvent) -> Unit / NetUnix
+) : Project / Stderr + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix = if still_warm(
+  p,
+  now
+) {
+  p
+} else {
+  {
+    each(p.slots, s => banish(s))
+    say(PhaseEv(PhaseMsg { phase: PhasePreparing }))
+    Project { ...p, slots: open_pool(pool_at(c, p.root)), fingerprint: now, next_id: 1 }
+  }
+}
+
+# The paths a walk gives back are absolute, and joining them to the root
+# again names a file that does not exist — which hashes to the same
+# nothing every time, and a fingerprint that never changes is a warm pool
+# that is never renewed.
+fn read_hashes(files: [String]) : [FileHash] / File =
+  files | (f => FileHash { file: f, hash: hash_of(read_or_empty(f)) })
+
+fn read_or_empty(path: String) : String / File =
+  if file.exists(path) { file.read(path) } else { "" }
+
+fn every_test(root: String) : [String] / File =
+  filter(dir.walk("#{root}/test"), f => ends_with(f, "_test.exs"))

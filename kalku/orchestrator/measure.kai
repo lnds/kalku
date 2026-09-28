@@ -177,18 +177,34 @@ fn tell(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Proce
 
 # One reply of the kind asked for. Anything else the kalku says on the
 # way — progress, a line that will not decode — is not the answer.
+# Only this kalku's words are this kalku's answer. A mailbox is shared —
+# a server keeps other kalku warm on it — and reading someone else's
+# `ready` as the answer to your own `hello` is how a run waits forever
+# for a reply it already threw away.
 fn await_kind(k: Kalku, kind: String) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] =
   match receive_timeout(seconds(600)) {
     None -> Err("the kalku said nothing while we waited for `#{kind}`")
     Some(Cancel) -> Err("the run was cancelled")
-    Some(Wire(_life, Said(line))) -> match heard(line) {
-      Err(e) -> Err("the kalku wrote a line this side cannot read: #{e.detail}")
-      Ok(m) -> judge(k, kind, m.body)
+    Some(Wire(life, what)) -> if life == k.life {
+      from_ours(k, kind, what)
+    } else {
+      await_kind(k, kind)
     }
-    Some(Wire(_life, Closed)) -> Err("the kalku closed its pipe before saying `#{kind}`")
-    Some(Wire(_life, Unreadable(why))) -> Err(why)
-    Some(Wire(_life, Wrote(_chunk))) -> await_kind(k, kind)
   }
+
+fn from_ours(
+  k: Kalku,
+  kind: String,
+  what: FromKalku
+) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] = match what {
+  Said(line) -> match heard(line) {
+    Err(e) -> Err("the kalku wrote a line this side cannot read: #{e.detail}")
+    Ok(m) -> judge(k, kind, m.body)
+  }
+  Closed -> Err("the kalku closed its pipe before saying `#{kind}`")
+  Unreadable(why) -> Err(why)
+  Wrote(_chunk) -> await_kind(k, kind)
+}
 
 fn judge(k: Kalku, kind: String, body: KalkuReply) : Result[KalkuReply, String] / Clock + Actor[
   OrchMsg
@@ -272,7 +288,7 @@ fn written_down(casting: Casting, known: Known) : [Remembered] = flat_map(
 # With coverage, the plan casts each wekufe against the tests that reach
 # its line; without it, against all of them. Both are honest — guessing
 # at coverage would be fast and wrong.
-fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
+pub fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
   sites: known.sites,
   coverage: known.coverage,
   all_tests: known.tests,
@@ -291,7 +307,7 @@ fn limited(casts: [Wekufe], limit: Int) : [Wekufe] = if limit <= 0 {
 
 # A wekufe with no verdict was never answered for, which is a crash as
 # far as a report is concerned: it is counted, never quietly dropped.
-fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
+pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
   let verdicts = casting.verdicts | (v => of_outcome(v.outcome))
   let uncovered = ready.no_coverage | (_s => of_outcome(NoCoverage))
   Report {
@@ -360,7 +376,7 @@ fn judged_for(casting: Casting, wekufe: String, known: Known) : [String] = match
 # A wekufe whose outcome depends on how things were scheduled is cast
 # more than once, and the queue is where that happens: the scheduler
 # hands out casts and knows nothing about why two of them are the same.
-fn repeated(casts: [Wekufe]) : [Wekufe] = flat_map(casts, again)
+pub fn repeated(casts: [Wekufe]) : [Wekufe] = flat_map(casts, again)
 
 fn again(c: Wekufe) : [Wekufe] = repeat(c, max_casts(c.casts))
 
@@ -370,7 +386,7 @@ fn max_casts(n: Int) : Int = if n < 1 { 1 } else { n }
 # came to the same thing every time is believed; one that did not is
 # `nondeterministic`, which is a fact about the suite and not a
 # measurement of it.
-fn agreed(casting: Casting) : Casting = Casting {
+pub fn agreed(casting: Casting) : Casting = Casting {
   ...casting,
   verdicts: uniq(casting.verdicts | (.wekufe)) | (w => settled(casting.verdicts, w))
 }
