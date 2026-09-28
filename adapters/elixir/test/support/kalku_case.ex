@@ -67,12 +67,12 @@ defmodule Kalku.KalkuCase do
   end
 
   @doc "A `hello` naming this reni."
-  def hello(reni) do
+  def hello(reni, root \\ ".") do
     JSON.encode!(%{
       "type" => "hello",
       "id" => 1,
       "protocol" => 1,
-      "root" => ".",
+      "root" => root,
       "reni" => reni,
       "worker" => 0,
       "inline_limit_bytes" => 65_536,

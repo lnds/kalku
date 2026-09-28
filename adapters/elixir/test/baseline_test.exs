@@ -75,6 +75,24 @@ defmodule Kalku.BaselineTest do
 
     # A line nobody runs has no entry: the question is which tests cover a
     # line, and for an uncovered line the honest answer is none.
+    # A root that reaches the project through a symlink — `/tmp` is one on
+    # macOS — used to leave every coverage entry absolute, matching no
+    # site, so every wekufe came back uncovered.
+    test "coverage is relative to the project however the root was named", %{reni: reni} do
+      lines =
+        drive_in(project("green"), reni, [
+          hello(reni, Path.expand(project("green"))),
+          request("prepare", 2),
+          request("baseline", 3),
+          request("shutdown", 4)
+        ])
+
+      done = reply(lines, "baseline_done")
+
+      assert Enum.all?(done["coverage"], &(&1["file"] == "lib/green.ex"))
+      assert Enum.all?(done["tests"], &(not String.starts_with?(&1["file"], "/")))
+    end
+
     test "a line no test runs is absent rather than empty", %{reni: reni} do
       done = reply(run(reni, "green", ["baseline"]), "baseline_done")
       lines = Enum.map(done["coverage"], & &1["line"])
