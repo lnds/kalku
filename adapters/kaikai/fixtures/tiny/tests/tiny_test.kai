@@ -16,3 +16,8 @@ test "total adds" {
 test "clamp keeps a positive number" {
   assert clamp(5) == 5
 }
+
+test "wrapping stays inside the range" {
+  assert wrapped(12) == 2
+  assert wrapped(7) == 7
+}
