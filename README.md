@@ -20,8 +20,9 @@ It targets Elixir first. It is written in [kaikai](https://github.com/lnds/kaika
 brew install lnds/kalku/kalku
 ```
 
-macOS on Apple Silicon and Linux on x86_64, which are the platforms
-[kaikai](https://github.com/lnds/kaikai) publishes a toolchain for. The
+macOS on Apple Silicon and Linux on x86_64 with GLIBC 2.38 or newer —
+the platforms [kaikai](https://github.com/lnds/kaikai) publishes a
+toolchain for, and its floor is kalku's floor. The
 same tarballs are on every [release](https://github.com/lnds/kalku/releases):
 unpack it and put `kalku` and `kalku-kaikai` on your `PATH`.
 

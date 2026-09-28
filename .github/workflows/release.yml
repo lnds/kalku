@@ -22,7 +22,10 @@ jobs:
         include:
           - runner: macos-14
             platform: darwin-arm64
-          - runner: ubuntu-22.04
+          # 24.04, not an older LTS: kaikai's own binary needs GLIBC
+          # 2.38, so the compiler does not start on 22.04 and the
+          # binaries it produces inherit that floor anyway.
+          - runner: ubuntu-24.04
             platform: linux-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
