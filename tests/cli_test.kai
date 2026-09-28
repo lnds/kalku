@@ -13,12 +13,47 @@ test "help and version flags" {
   assert cli.parse_args(["-V"]) == ShowVersion
 }
 
-test "designed commands are pending, others unknown" {
-  assert cli.parse_args(["run", "--since", "main"]) == Pending("run")
+test "commands still to come are pending, others unknown" {
   assert cli.parse_args(["serve"]) == Pending("serve")
   assert cli.parse_args(["nope"]) == Unknown("nope")
 }
 
 test "the version line carries VERSION" {
   assert cli.version_line() == "kalku #{version.VERSION}"
+}
+
+# `kalku init` in the directory one is standing in is the whole point, so
+# everything it takes is optional.
+test "init defaults to here, guessing the language, asking first" {
+  assert cli.parse_args(["init"])
+    == Initialise(Setup { root: ".", language: None, assume_yes: false })
+}
+
+test "init takes a directory, a language and a yes" {
+  assert cli.parse_args(["init", "../thing", "--lang", "elixir", "--yes"])
+    == Initialise(Setup { root: "../thing", language: Some("elixir"), assume_yes: true })
+  assert cli.parse_args(["init", "-y"])
+    == Initialise(Setup { root: ".", language: None, assume_yes: true })
+}
+
+# A flag with a missing or unreadable value is told, never guessed at: a
+# run that quietly measured something else is worse than one that stopped.
+test "a flag without its value is a misuse, not a default" {
+  assert cli.parse_args(["init", "--lang"]) == Misused("`--lang` needs a language")
+  assert cli.parse_args(["run", "--limit"]) == Misused("`--limit` needs a number")
+  assert cli.parse_args(["run", "--limit", "many"])
+    == Misused("`--limit` takes a number, not `many`")
+  assert cli.parse_args(["init", "--wat"]) == Misused("`kalku init` does not take --wat")
+}
+
+test "run takes the files to measure, and how much of them" {
+  assert cli.parse_args(["run", "lib/a.ex", "lib/b.ex"])
+    == Measure(Wanted { files: ["lib/a.ex", "lib/b.ex"], limit: None, aloud: false })
+  assert cli.parse_args(["run", "--limit", "6", "-v", "lib/a.ex"])
+    == Measure(Wanted { files: ["lib/a.ex"], limit: Some(6), aloud: true })
+}
+
+# The files a run measures come from the config when none are named.
+test "run with nothing named is still a run" {
+  assert cli.parse_args(["run"]) == Measure(Wanted { files: [], limit: None, aloud: false })
 }

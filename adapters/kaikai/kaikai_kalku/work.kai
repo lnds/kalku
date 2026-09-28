@@ -31,9 +31,25 @@ pub type Ran = {
   passed: Int,
   failed: Int,
   first_failure: Option[String],
-  broke: Option[String],
+  mishap: Option[Mishap],
   tests: [TestTiming]
 }
+
+#[doc("""
+Why a run produced no verdict, which is never the same as a verdict.
+
+`NoBuild` is the wekufe's own doing and belongs to it: it did not
+compile. `CutShort` is the kalku's failure to measure — the run stopped
+before its last test — and a wekufe measured by a run that stopped is a
+wekufe nobody measured.
+""")]
+#[derive(Eq, Show)]
+pub type Mishap = NoBuild(String) | CutShort(String)
+
+# The stdlib gives `Exit` neither `Eq` nor `Show`, so this record cannot
+# derive them either.
+#[doc("What a command came to: everything it wrote, and how it ended.")]
+pub type Came = { said: String, exit: Exit }
 
 #[doc("""
 Copy the package into the reni, and warm the build cache there.
@@ -98,7 +114,7 @@ fn fill(root: String, copy: String) : Result[Work, String] / Process + File {
   }
 }
 
-fn copy_worth_having(root: String, copy: String) : Result[String, String] / Process + File {
+fn copy_worth_having(root: String, copy: String) : Result[Came, String] / Process + File {
   let entries = filter(dir.list_dir(root), worth_copying)
   if is_empty(entries) {
     Err("#{root} holds nothing to copy")
@@ -118,12 +134,12 @@ pub fn sites_in(w: Work, which: String, spells: [Spell]) : Result[[Site], String
   # cache where it runs, and that cache does not belong in someone's tree.
   match run_in(w, ["kai", "mutate", "--list", "--json", "--module", which]) {
     Err(e) -> Err(e)
-    Ok(out) -> Ok(filter(flat_map(lines(out), site_of), s => contains(spells, s.spell)))
+    Ok(came) -> Ok(filter(flat_map(lines(came.said), site_of), s => contains(spells, s.spell)))
   }
 }
 
 #[doc("Run the whole suite in the copy, for a baseline.")]
-pub fn test_all(w: Work) : Ran / Process = read_run(run_in(w, ["kai", "test", "--json", "."]))
+pub fn test_all(w: Work) : Ran / Process = read_run(run_in(w, ["kai", "test", "--json", "."]), 0)
 
 #[doc("""
 Run only these tests in the copy.
@@ -134,7 +150,10 @@ report every wekufe as a survivor, which is the loudest possible lie.
 pub fn test_only(w: Work, ids: [String]) : Ran / Process = if is_empty(ids) {
   test_all(w)
 } else {
-  read_run(run_in(w, ["kai", "test", "--json"] ++ flat_map(ids, id => ["--only", id]) ++ ["."]))
+  read_run(
+    run_in(w, ["kai", "test", "--json"] ++ flat_map(ids, id => ["--only", id]) ++ ["."]),
+    length(ids)
+  )
 }
 
 #[doc("Write a wekufe's source over the copy's file, keeping what was there.")]
@@ -163,14 +182,14 @@ pub fn source_of(w: Work, which: String) : String / File = file.read("#{w.copy}/
 # id like `tests/x_test.kai:a test with spaces`, and pasting that into a
 # shell line unquoted hands the words to the shell — which is both a
 # broken command and, with a hostile file name, a way to run one.
-fn run_in(w: Work, argv: [String]) : Result[String, String] / Process =
+fn run_in(w: Work, argv: [String]) : Result[Came, String] / Process =
   run(["/bin/sh", "-c", "cd #{quoted(w.copy)} && #{join(argv | quoted, " ")} 2>&1"])
 
 # Single quotes hold everything except a single quote, which is closed,
 # escaped and reopened.
 fn quoted(word: String) : String = "'#{replace(word, "'", "'\\''")}'"
 
-fn run(argv: [String]) : Result[String, String] / Process = match argv {
+fn run(argv: [String]) : Result[Came, String] / Process = match argv {
   [] -> Err("nothing to run")
   [cmd, ...args] -> match proc.start_piped(cmd, args) {
     Err(e) -> Err(e)
@@ -178,13 +197,16 @@ fn run(argv: [String]) : Result[String, String] / Process = match argv {
   }
 }
 
-fn drain(child: Child, so_far: String) : Result[String, String] / Process =
+# How the process ended is kept, not discarded: a runtime that a wekufe
+# took down writes nothing about it, and the exit status is all there is
+# to tell that apart from a suite that simply passed.
+fn drain(child: Child, so_far: String) : Result[Came, String] / Process =
   match proc.read_stdout(child) {
     Err(e) -> Err(e)
     Ok(chunk) -> if is_empty(chunk) {
-      {
-        let _ = proc.wait(child)
-        Ok(so_far)
+      match proc.wait(child) {
+        Err(e) -> Err(e)
+        Ok(exit) -> Ok(Came { said: so_far, exit: exit })
       }
     } else {
       drain(child, so_far ++ chunk)
@@ -197,23 +219,59 @@ fn drain(child: Child, so_far: String) : Result[String, String] / Process =
 # writes one summary per test module, so reading "the" summary reads one
 # module and calls it the suite — which turns a wekufe a later module
 # killed into a survivor.
-fn read_run(out: Result[String, String]) : Ran = match out {
-  Err(e) -> broken(e)
-  Ok(text) -> {
-    let said = lines(text)
+fn read_run(out: Result[Came, String], wanted: Int) : Ran = match out {
+  Err(e) -> broken(NoBuild(e))
+  Ok(came) -> {
+    let said = lines(came.said)
     let judged = flat_map(said, judged_of)
-    if is_empty(judged) { broken(diagnostic(said)) } else { tallied(judged) }
+    if is_empty(judged) {
+      broken(NoBuild(diagnostic(said)))
+    } else {
+      read_all(came, judged, wanted)
+    }
   }
 }
 
-fn broken(why: String) : Ran =
-  Ran { passed: 0, failed: 0, first_failure: None, broke: Some(why), tests: [] }
+# A run that ended before its last test is not a run that found nothing
+# wrong. A wekufe can take the runtime down with it — kaikai traps on
+# `mod by zero`, and the module being tested dies without any test
+# reporting a failure — so what ran is counted against what was asked for,
+# and a short run is the kalku's failure to measure rather than the
+# suite's failure to notice.
+fn read_all(came: Came, judged: [Judged], wanted: Int) : Ran {
+  let ran = length(judged)
+  if wanted > 0 and ran < wanted {
+    broken(CutShort("#{ran} of #{wanted} selected test(s) ran: #{ended(came.exit)}"))
+  } else if no_failures(judged) and (not finished(came.exit)) {
+    broken(CutShort("#{ran} test(s) ran and none failed, yet #{ended(came.exit)}"))
+  } else {
+    tallied(judged)
+  }
+}
+
+fn no_failures(judged: [Judged]) : Bool = is_empty(judged |? (.failed))
+
+# `kai test` exits non-zero for a failing test too, so this is only ever
+# read where no test failed: there, a non-zero status is the runtime
+# saying it stopped rather than finished.
+fn finished(exit: Exit) : Bool = match exit {
+  Exited(code) -> code == 0
+  Signaled(_) -> false
+}
+
+fn ended(exit: Exit) : String = match exit {
+  Exited(code) -> "the run exited with status #{code}"
+  Signaled(signo) -> "the run was killed by signal #{signo}"
+}
+
+fn broken(why: Mishap) : Ran =
+  Ran { passed: 0, failed: 0, first_failure: None, mishap: Some(why), tests: [] }
 
 fn tallied(judged: [Judged]) : Ran = Ran {
   passed: length(judged |? (j => not j.failed)),
   failed: length(judged |? (.failed)),
   first_failure: first_failed(judged),
-  broke: None,
+  mishap: None,
   tests: judged | (.timing)
 }
 

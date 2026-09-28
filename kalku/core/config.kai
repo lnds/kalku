@@ -17,6 +17,9 @@ import kalku.core.gate
 #[doc("What a project asked for, with kalku's defaults filled in.")]
 #[derive(Eq, Show)]
 pub type Config = {
+  language: Option[String],
+  summon: Option[String],
+  reni: Option[String],
   workers: Option[Int],
   spells: [Spell],
   exclude: [String],
@@ -35,6 +38,9 @@ pub fn all_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call]
 
 #[doc("What a run does when `.kalku.toml` is absent or empty: every spell, nothing excluded, no floor to meet.")]
 pub fn defaults() : Config = Config {
+  language: None,
+  summon: None,
+  reni: None,
   workers: None,
   spells: all_spells(),
   exclude: [],
@@ -72,6 +78,9 @@ fn of_toml(root: TomlValue) : Result[Config, [ConfigProblem]] {
   let score = table_at(root, "score")
   let spells = read_spells(run)
   let config = Config {
+    language: string_at(root, "language"),
+    summon: string_at(root, "summon"),
+    reni: string_at(root, "reni"),
     workers: int_at(run, "workers"),
     spells: spells.snd,
     exclude: strings_at(run, "exclude"),
@@ -147,6 +156,11 @@ fn value_at(table: TomlValue, key: String) : Option[TomlValue] =
 
 fn int_at(table: TomlValue, key: String) : Option[Int] = match value_at(table, key) {
   Some(TInt(n)) -> Some(n)
+  _ -> None
+}
+
+fn string_at(table: TomlValue, key: String) : Option[String] = match value_at(table, key) {
+  Some(TStr(s)) -> Some(s)
   _ -> None
 }
 

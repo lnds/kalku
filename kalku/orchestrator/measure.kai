@@ -25,6 +25,7 @@ import kalku.core.report
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
+import kalku.orchestrator.telling
 
 #[doc("What to measure, and with what.")]
 #[derive(Eq, Show)]
@@ -53,7 +54,7 @@ will not start, a project that will not compile, a suite that is already
 red. None of them produce a score, because a score built on any of them
 would be a number nobody should believe.
 """)]
-pub fn measure(asking: Asking) : Found / Process + Spawn + Clock + Actor[OrchMsg] {
+pub fn measure(asking: Asking) : Found / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
   match discover(asking) {
     Err(why) -> Found { report: None, failure: Some(why) }
     Ok(known) -> Found { report: Some(cast_them(asking, known)), failure: None }
@@ -67,7 +68,9 @@ What can be broken in this project, asked of one kalku.
 rather than about any wekufe: a suite that cannot build, or that is
 already failing, ends the run here.
 """)]
-pub fn discover(asking: Asking) : Result[Known, String] / Process + Spawn + Clock + Actor[OrchMsg] {
+pub fn discover(
+  asking: Asking
+) : Result[Known, String] / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
   let life = Life { worker: 0, summons: 1 }
   match summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args }) {
     Err(e) -> Err(e)
@@ -81,15 +84,21 @@ pub fn discover(asking: Asking) : Result[Known, String] / Process + Spawn + Cloc
   }
 }
 
-fn interview(k: Kalku, asking: Asking) : Result[Known, String] / Process + Clock + Actor[OrchMsg] {
+fn interview(
+  k: Kalku,
+  asking: Asking
+) : Result[Known, String] / Process + Clock + Actor[OrchMsg] + Telling {
   greet(k, asking)!
   await_kind(k, "ready")!
+  Telling.tell_of("preparing #{asking.spec.root}; this builds the project and can take minutes")
   tell(k, 2, Prepare)!
   await_kind(k, "prepared")!
+  Telling.tell_of("running the suite once, for a baseline")
   tell(k, 3, Baseline)!
   let baseline = await_kind(k, "baseline_done")!
   refuse_red(baseline)!
   let suite = suite_of(baseline)
+  Telling.tell_of("the suite is green: #{length(suite)} test(s)")
   tell(
     k,
     4,
@@ -183,9 +192,16 @@ fn reply_kind(r: KalkuReply) : String {
 
 # ---- casting -------------------------------------------------------------
 
-fn cast_them(asking: Asking, known: Known) : Report / Process + Spawn + Clock + Actor[OrchMsg] {
+fn cast_them(
+  asking: Asking,
+  known: Known
+) : Report / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
   let ready = plan(inputs_for(asking, known), _id => None)
-  let casting = cast_all(asking.spec, limited(ready.to_cast, asking.limit))
+  let casts = limited(ready.to_cast, asking.limit)
+  Telling.tell_of(
+    "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
+  )
+  let casting = cast_all(asking.spec, casts)
   report_of(ready, casting, known)
 }
 
