@@ -210,7 +210,7 @@ cold ──prepare──► preparing ──ok──► baseline ──green─�
 | `timeout` | exceeded its timeout | reported apart |
 | `no_coverage` | no test executes the site | reported apart |
 | `compile_error` | the wekufe does not compile | excluded |
-| `crashed` | the kalku died for a reason other than a timeout | reported apart |
+| `crashed` | the cast produced no verdict: the kalku died, or it could not run the tests it was given | reported apart |
 | `equivalent` | proven by identical bytecode, or declared with a written reason | excluded |
 
 **Score = killed / (killed + survived).** Timeouts, crashes, and missing coverage are shown next to the score, never folded into it: an infinite loop is not a failing assertion, and pretending it is inflates the number. A `compile_error` rate above a threshold is itself a warning: it means a spell is proposing nonsense for that language.

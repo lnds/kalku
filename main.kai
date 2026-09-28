@@ -57,8 +57,8 @@ fn run_here() : Int / Stdout + Stderr + Env + Process + Spawn + Clock = with_mai
 
 fn asking_for(root: String, files: [String]) : Asking / Env = Asking {
   spec: PoolSpec {
-    command: "adapters/kaikai/bin/kalku-kaikai",
-    args: [],
+    command: asked_kalku(),
+    args: asked_args(),
     workers: asked_workers(),
     root: root,
     reni: asked_reni(),
@@ -71,12 +71,7 @@ fn asking_for(root: String, files: [String]) : Asking / Env = Asking {
   spells: [Arm, Compare, Connect, Negate, Literal, Call],
   exclude_calls: [],
   limit: asked_limit(),
-  timeout_floor_ms: 
-  # A cast here rebuilds kalku and runs its suite, which is minutes. The
-  # kaikai kalku has no warm runtime and no coverage to select by, so the
-  # floor has to be honest about that rather than turn slow into
-  # `timeout`.
-  900000
+  timeout_floor_ms: asked_floor()
 }
 
 # The pure core first: it is where a surviving wekufe says the most about
@@ -89,6 +84,28 @@ fn asked_root() : String / Env = Env.get("KALKU_ROOT").unwrap_or(".")
 # Outside the package it measures, always: a reni inside it would be
 # copied into itself.
 fn asked_reni() : String / Env = Env.get("KALKU_RENI").unwrap_or("/tmp/kalku-self/reni")
+
+# Which kalku to summon. The kaikai one by default, because measuring
+# kalku is what this program can do without being told anything; any
+# other language is its kalku's executable, and `adapters/<lang>/bin/`
+# is where each one ships the summoning that keeps its toolchain's noise
+# off the protocol.
+fn asked_kalku() : String / Env =
+  Env.get("KALKU_KALKU").unwrap_or("adapters/kaikai/bin/kalku-kaikai")
+
+fn asked_args() : [String] / Env = match Env.get("KALKU_KALKU_ARGS") {
+  Some(list) -> filter(split(list, " "), a => not is_empty(a))
+  None -> []
+}
+
+# How long a cast may take before it is a `timeout` rather than a slow
+# test. Fifteen minutes suits a kalku that rebuilds a package and runs its
+# whole suite for every wekufe; a kalku with a warm runtime wants seconds,
+# and the floor is where that is said.
+fn asked_floor() : Int / Env = match Env.get("KALKU_TIMEOUT_MS") {
+  Some(text) -> to_int(text).unwrap_or(900000)
+  None -> 900000
+}
 
 # One kalku builds and tests in its own copy of the package; two do it at
 # the same time. Askable because a run that differs only in this is how a

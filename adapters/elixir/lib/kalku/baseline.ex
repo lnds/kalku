@@ -39,6 +39,24 @@ defmodule Kalku.Baseline do
   end
 
   @doc """
+  Loads the suite into this runtime without running it.
+
+  What `prepare` owes a kalku that will only ever be asked to cast: the
+  modules a cast runs against are the ones loaded here, and a kalku in a
+  pool is never asked for a baseline — the kaikai side asks one kalku for
+  it and gives every worker the answer. Without this, such a worker has no
+  suite to judge with, and a kalku with nothing to judge with must not be
+  the one to say a wekufe survived.
+  """
+  def load_suite(root) do
+    with {:ok, files} <- test_files(root),
+         :ok <- start_exunit(false),
+         {:ok, _modules} <- load(root, files) do
+      :ok
+    end
+  end
+
+  @doc """
   Runs each test again on its own, to learn which lines it executes.
 
   A second pass, and deliberately so: `:cover` counts per line rather
