@@ -2,6 +2,8 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.client_msg
 import kalku.core.session
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
 import kalku.orchestrator.server
 
 fn a_run(root: String) : ClientRequest =
@@ -64,4 +66,45 @@ test "a connection from another user is refused, whatever it asks" {
 test "a run without a root is a request that cannot be served" {
   assert is_some(refusal_for(a_run("  "), true))
   assert refusal_for(a_run("/p"), true) == None
+}
+
+fn a_slot(worker: Int, doing: Doing) : Slot = Slot {
+  worker: worker,
+  kalku: None,
+  summons: 1,
+  caps: [],
+  doing: doing,
+  wrote: ""
+}
+
+fn warm(slots: [Slot], fingerprint: String) : Project = Project {
+  root: "/p",
+  state: SessionReady,
+  runs: 1,
+  slots: slots,
+  fingerprint: fingerprint,
+  next_id: 7
+}
+
+# A kalku holds a compiled copy of a project. The moment the project is
+# not that copy any more, measuring with it is measuring the wrong code —
+# which is the whole reason a warm pool needs a condition at all.
+test "a warm pool is trusted only while the project is what it was" {
+  let pool = [a_slot(0, Idle)]
+
+  assert still_warm(warm(pool, "abc"), "abc")
+  assert not still_warm(warm(pool, "abc"), "def")
+}
+
+test "a project with no kalku, or none left alive, is not warm" {
+  assert not still_warm(warm([], "abc"), "abc")
+  assert not still_warm(warm([a_slot(0, Lost("died"))], "abc"), "abc")
+  assert still_warm(warm([a_slot(0, Lost("died")), a_slot(1, Idle)], "abc"), "abc")
+}
+
+# A session that has never run has no fingerprint, and an empty one must
+# not match an empty project: nothing is warm before the first run.
+test "a cold session is never warm, whatever it is compared against" {
+  assert not still_warm(session_for([], "/p"), "")
+  assert not still_warm(session_for([], "/p"), "abc")
 }

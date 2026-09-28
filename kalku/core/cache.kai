@@ -85,6 +85,20 @@ again rather than read from the cache.
 pub fn changed(before: [FileHash], now: [FileHash]) : [String] =
   flat_map(now, f => if is_unchanged(before, f) { [] } else { [f.file] })
 
+#[doc("""
+One short name for the state of a set of files.
+
+What a warm session is checked against: a kalku holds a compiled copy of
+a project, and the moment any of those files differ it is holding the
+wrong one. Cheaper than compiling, and honest about what it covers — the
+files it was given, and nothing else.
+""")]
+pub fn fingerprint(files: [FileHash]) : String =
+  digest(join(sort(files | (f => "#{f.file}=#{f.hash}")), "\n"))
+
+#[doc("The hash of one file's contents, as the cache spells it.")]
+pub fn hash_of(text: String) : String = digest(text)
+
 #[doc("True when this file's contents are what they were.")]
 pub fn is_unchanged(before: [FileHash], f: FileHash) : Bool = match find(
   before,
