@@ -27,7 +27,12 @@ import kalku.orchestrator.telling
 
 #[doc("What one wekufe came to.")]
 #[derive(Eq, Show)]
-pub type Verdict = { wekufe: String, outcome: Outcome, said: Option[String] }
+pub type Verdict = {
+  wekufe: String,
+  outcome: Outcome,
+  tests: [String],
+  said: Option[String]
+}
 
 #[doc("""
 What a run produced: every wekufe that was dispatched, and why the run
@@ -51,13 +56,13 @@ kalku is left to carry it.
 """)]
 pub fn cast_all(
   spec: PoolSpec,
-  casts: [Cast]
+  casts: [Wekufe]
 ) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Telling =
   warded(() => run_plan(spec, casts))
 
 fn run_plan(
   spec: PoolSpec,
-  casts: [Cast]
+  casts: [Wekufe]
 ) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
   let slots = fill(spec)
   let done = turn(Run {
@@ -120,7 +125,7 @@ fn living(slots: [Slot]) : [Life] =
 
 # A run with nothing to cast with does not wait to find that out: with no
 # slot to answer and no deadline to expire, waiting would be forever.
-fn no_kalku(slots: [Slot], casts: [Cast]) : Option[String] =
+fn no_kalku(slots: [Slot], casts: [Wekufe]) : Option[String] =
   if is_empty(casts) or (not all_gone(slots)) {
     None
   } else {
@@ -138,7 +143,7 @@ fn no_kalku_reason(slots: [Slot]) : String = if is_empty(slots) {
 type Run = {
   spec: PoolSpec,
   slots: [Slot],
-  queue: [Cast],
+  queue: [Wekufe],
   verdicts: [Verdict],
   next_id: Int,
   failure: Option[String],
@@ -173,7 +178,7 @@ fn dispatch(run: Run) : Run / Process + Clock + Telling = match (run.queue, idle
   ([c, ...rest], [slot, ..._]) -> dispatch(hand(Run { ...run, queue: rest }, slot, c))
 }
 
-fn hand(run: Run, slot: Slot, c: Cast) : Run / Process + Clock + Telling {
+fn hand(run: Run, slot: Slot, c: Wekufe) : Run / Process + Clock + Telling {
   let id = run.next_id
   tell(slot, id, Cast(CastMsg { wekufe: c.site.site_id, site: c.site, tests: c.tests }))
   Telling.tell_of(
@@ -182,6 +187,7 @@ fn hand(run: Run, slot: Slot, c: Cast) : Run / Process + Clock + Telling {
   let job = Job {
     id: id,
     wekufe: c.site.site_id,
+    tests: c.tests,
     deadline: deadline_in(millis(c.timeout_ms)),
     awaiting: AwaitingCast
   }
@@ -303,7 +309,10 @@ fn record(run: Run, slot: Slot, r: Reaction) : Run / Telling = match (r.outcome,
     )
     Run {
       ...run,
-      verdicts: run.verdicts ++ [Verdict { wekufe: job.wekufe, outcome: o, said: r.said }]
+      verdicts: run.verdicts
+        ++ [
+          Verdict { wekufe: job.wekufe, outcome: o, tests: job.tests, said: r.said }
+        ]
     }
   }
   _ -> run

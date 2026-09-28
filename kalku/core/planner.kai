@@ -20,7 +20,7 @@ pub type Reach = Everything | Touched([FileChange]) | Listed([String])
 
 #[doc("One wekufe to cast: the site, the tests that would notice, and its timeout.")]
 #[derive(Eq, Show)]
-pub type Cast = { site: Site, tests: [String], timeout_ms: Int }
+pub type Wekufe = { site: Site, tests: [String], timeout_ms: Int }
 
 #[doc("A site whose outcome is already known, and the outcome.")]
 #[derive(Eq, Show)]
@@ -28,7 +28,7 @@ pub type Known = { site: Site, outcome: Outcome }
 
 #[doc("What a run will do, and what it will not: every site lands in exactly one bucket.")]
 #[derive(Eq, Show)]
-pub type Plan = { to_cast: [Cast], no_coverage: [Site], suppressed: [Site], cached: [Known] }
+pub type Plan = { to_cast: [Wekufe], no_coverage: [Site], suppressed: [Site], cached: [Known] }
 
 #[doc("""
 What the planner needs. `coverage` is absent when the kalku cannot report
@@ -44,6 +44,16 @@ pub type Inputs = {
   reach: Reach,
   timeout_floor_ms: Int
 }
+
+#[doc("""
+Which tests the plan chose for each wekufe, by its site id.
+
+Asked of the planner rather than read off a `Cast` elsewhere: a module
+that also knows the protocol has a `Cast` of its own, and taking a field
+off the wrong one is a panic rather than a type error (lnds/kaikai#2200).
+""")]
+pub fn tests_by_wekufe(p: Plan) : [(String, [String])] =
+  p.to_cast | (c => (c.site.site_id, c.tests))
 
 #[doc("A site whose module others depend on at compile time pays for their rebuild too.")]
 pub const DEPENDENTS_FACTOR : Int = 2
@@ -86,12 +96,12 @@ pub fn timeout_for(site: Site, tests: [String], inputs: Inputs) : Int {
 
 # ---- buckets -----------------------------------------------------------
 
-fn castable(site: Site, inputs: Inputs) : [Cast] {
+fn castable(site: Site, inputs: Inputs) : [Wekufe] {
   let tests = covering(site, inputs)
   if is_empty(tests) {
     []
   } else {
-    [Cast { site: site, tests: tests, timeout_ms: timeout_for(site, tests, inputs) }]
+    [Wekufe { site: site, tests: tests, timeout_ms: timeout_for(site, tests, inputs) }]
   }
 }
 
@@ -141,9 +151,9 @@ fn consume(rest: String, parts: [String], first: Bool) : Bool = match parts {
 
 # Fewest covering tests first, then the cheapest, then the id: a hole shows
 # up sooner, and the same inputs always give the same plan.
-fn order(casts: [Cast]) : [Cast] = sort_by(casts, compare_casts)
+fn order(casts: [Wekufe]) : [Wekufe] = sort_by(casts, compare_casts)
 
-fn compare_casts(a: Cast, b: Cast) : Int {
+fn compare_casts(a: Wekufe, b: Wekufe) : Int {
   let by_tests = length(a.tests) - length(b.tests)
   let by_budget = a.timeout_ms - b.timeout_ms
   if by_tests != 0 {

@@ -1,0 +1,58 @@
+#[doc("""
+One wekufe in full, for whoever is about to do something about it.
+
+A report leads with survivors and says the least that is useful about
+each. This is the other question — *tell me everything about this one* —
+asked after a report, usually by an agent deciding what test to write, or
+by a person who does not believe the report.
+
+Everything here comes from what a run wrote down: the site, what came of
+it, which tests judged it, and what has come of it before. Nothing is
+recomputed, so nothing can disagree with the run it describes.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.hint
+import kalku.core.report
+import kalku.core.remembering
+
+#[doc("Everything known about one wekufe, as a person reads it.")]
+pub fn as_text(r: Remembered, before: [Outcome]) : String = join(
+  [where_of(r.site), ""]
+    ++ (diff_of(r.site) | (line => "  #{line}"))
+    ++ ["", "  outcome   #{outcome_name(r.outcome)}", "  judged by #{judges(r.tests)}"]
+    ++ story(before)
+    ++ ["", "  #{hint_for(r.site)}"],
+  "\n"
+)
+
+#[doc("The same, as a program reads it.")]
+pub fn as_json(r: Remembered, before: [Outcome]) : String = json_encode(
+  JObj([
+    ("wekufe", JStr(r.wekufe)),
+    ("file", JStr(r.site.file)),
+    ("line", JNum(r.site.span.start.line)),
+    ("spell", JStr(spell_name(r.site.spell))),
+    ("outcome", JStr(outcome_name(r.outcome))),
+    ("tests", JArr(r.tests | (t => JStr(t)))),
+    ("history", JArr(before | (o => JStr(outcome_name(o))))),
+    ("hint", JStr(hint_for(r.site)))
+  ])
+)
+
+fn judges(tests: [String]) : String = if is_empty(tests) {
+  "no test at all"
+} else {
+  join(tests, ", ")
+}
+
+# A wekufe that has been cast once has no story yet, and a line saying so
+# would be noise. Two outcomes in a row that differ is the interesting
+# case: a survivor somebody closed, or a kill that came undone.
+fn story(before: [Outcome]) : [String] = if length(before) < 2 {
+  []
+} else {
+  ["  before    #{join(before | outcome_name, " → ")}"]
+}
