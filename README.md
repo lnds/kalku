@@ -238,6 +238,12 @@ credential for another repository kept here.
 
 `make dist` builds the same tarball locally, for this machine's platform.
 
+The tag publishes both halves: the binaries here, and `kalku_elixir` to
+Hex from the same version (`HEX_API_KEY` as a secret; without it the step
+says so rather than failing). They are installed separately, so a version
+they do not share is a version someone has to reconcile — and the
+handshake refuses a mismatch by naming which half to move.
+
 ### kalku measured by kalku
 
 `make self-mutate` casts wekufe into kalku's own sources through the

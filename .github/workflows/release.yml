@@ -63,6 +63,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '27'
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -82,6 +87,30 @@ jobs:
             --notes "Install: \`brew install lnds/kalku/kalku\`, or download a tarball below and put \`kalku\` and \`kalku-kaikai\` on your PATH." \
             --verify-tag \
             dist/*.tar.gz dist/*.sha256 dist/kalku.rb
+
+      # The Elixir kalku is half of what a release is, and it is installed
+      # from Hex rather than from here. Publishing it by hand is how the
+      # two halves drift apart, so the tag publishes both or neither.
+      - name: Publish the Elixir kalku to Hex
+        working-directory: adapters/elixir
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: |
+          if [ -z "${HEX_API_KEY:-}" ]; then
+            echo "no HEX_API_KEY: kalku_elixir was not published, and the halves will differ"
+            exit 0
+          fi
+          v="$(sed -n 's/.*@version "\(.*\)"/\1/p' mix.exs | head -1)"
+          if [ "$v" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "mix.exs says $v, the tag says ${GITHUB_REF_NAME#v}" >&2
+            exit 1
+          fi
+          # Already there: a re-run of this workflow is not a reason to fail.
+          if mix hex.info kalku_elixir "$v" >/dev/null 2>&1; then
+            echo "kalku_elixir $v is already on Hex"
+          else
+            mix hex.publish package --yes
+          fi
 
       # The tap updates itself from this release: `lnds/homebrew-kalku`
       # picks the formula up from the assets with its own token, so no

@@ -131,7 +131,14 @@ test "a kalku that speaks another protocol version is refused" {
       }
     }
   }
-  assert told == ["speaks protocol 99, this kalku speaks 1"]
+  # A kalku from the future means this binary is the old half, and the
+  # refusal has to say which one to move: the two are installed apart.
+  let refusal = match told {
+    [only] -> only
+    _ -> "#{told}"
+  }
+  assert is_some(index_of(refusal, "speaks protocol 99, this kalku speaks 1"))
+  assert is_some(index_of(refusal, "brew upgrade kalku"))
 }
 
 # Garbage on stdout is a protocol error naming the line, not a silent skip:
