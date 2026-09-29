@@ -42,7 +42,7 @@ measuring stay apart.
 pub fn serve_at[e](
   path: String,
   mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+  run_it: (Project, RunMsg, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
 ) : Result[Unit, String] / NetUnix + File + Stderr + Spawn + Actor[OrchMsg] + e {
   let _ = dir.create_dir(holding(path))
   let _ = if file.exists(path) { clear_stale(path) } else { () }
@@ -242,7 +242,7 @@ the run, anything else refused with a reason.
 """)]
 fn session_loop[e](
   serving: Serving,
-  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+  run_it: (Project, RunMsg, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
 ) : Result[Unit, String] / NetUnix + Stderr + Spawn + Actor[OrchMsg] + e = match Actor.receive() {
   Aside(_who, back, line) -> session_loop(asked_of(serving, back, line, run_it), run_it)
   _ -> session_loop(serving, run_it)
@@ -252,7 +252,7 @@ fn asked_of[e](
   serving: Serving,
   back: Pid[OrchMsg],
   line: String,
-  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+  run_it: (Project, RunMsg, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
 ) : Serving / Stderr + Spawn + Actor[OrchMsg] + e = match decode_client_request(line) {
   Err(err) -> {
     answer(back, 0, unreadable(err))
@@ -272,7 +272,7 @@ fn done_for[e](
   back: Pid[OrchMsg],
   id: Int,
   request: ClientRequest,
-  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+  run_it: (Project, RunMsg, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
 ) : Serving / Stderr + Spawn + Actor[OrchMsg] + e = match request {
   StatusReq -> {
     answer(back, id, sessions_event(serving.sessions))
@@ -280,7 +280,7 @@ fn done_for[e](
   }
   RunReq(m) -> {
     let ours = session_for(serving.sessions, m.root)
-    let after = run_it(Project { ...ours, state: SessionRunning }, e => answer(back, id, e))
+    let after = run_it(Project { ...ours, state: SessionRunning }, m, e => answer(back, id, e))
     each(after.snd, e => answer(back, id, e))
     Serving { ...serving, sessions: with_session(serving.sessions, done_with(after.fst)) }
   }

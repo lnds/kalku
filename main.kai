@@ -388,7 +388,7 @@ fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock
   # kalku a run leaves warm keep talking to this mailbox, and whatever is
   # still alive when the server ends is killed by this ward.
   let ending = with_mailbox {
-    warded(() => serve_at(path, mine, (p, say) => run_for(p, say)))
+    warded(() => serve_at(path, mine, (p, asked, say) => run_for(p, asked, say)))
   }
   match ending {
     Err(why) -> {
@@ -403,11 +403,15 @@ fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock
 # from exactly this project, a fresh pool when they were not.
 fn run_for(
   p: Project,
+  asked: RunMsg,
   say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix =
   match settings_in(p.root) {
     Err(why) -> (p, [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })])
-    Ok(c) -> measured_over(p, c, say)
+    Ok(c) -> match measurable(p.root, asked, every_source(p.root)) {
+      Err(no) -> (p, [no])
+      Ok(files) -> measured_over(p, c, files, say)
+    }
   }
 
 fn asked_temp() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
@@ -706,10 +710,13 @@ fn answered_mid_run(p: Project, m: OrchMsg) : Unit / Actor[OrchMsg] = match m {
 fn measured_over(
   p: Project,
   c: Config,
+  files: [String],
   say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
-  let files = every_source(p.root)
-  let now = fingerprint(read_hashes(files ++ every_test(p.root)))
+  # The fingerprint covers the project, not the request: warm kalku hold a
+  # copy of all of it, and a file this run does not measure can still be
+  # the one that made them stale.
+  let now = fingerprint(read_hashes(every_source(p.root) ++ every_test(p.root)))
   # A run that cannot read what the project declared does not start: the
   # alternative is measuring while ignoring a suppression, and reporting
   # a hole somebody already decided was not one.
