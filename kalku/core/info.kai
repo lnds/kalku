@@ -61,7 +61,10 @@ pub fn snippet() : String = join(
     "After writing or changing tests, run `kalku run <files> --format agent`",
     "and close the survivors with tests that pass on the original code.",
     "Never edit `.kalku/equivalent`, `exclude`, or `exclude_calls` to make a",
-    "survivor go away: propose an equivalent with a reason instead."
+    "survivor go away: propose an equivalent with a reason instead.",
+    "Put the proposals somewhere a person reads them before they take",
+    "effect — a pull request, not a commit to the main branch. A",
+    "suppression nobody read is a hole nobody knows about."
   ],
   "\n"
 )
@@ -207,6 +210,13 @@ fn agents_topic() : Topic = Topic {
       term: "equivalents",
       meaning: "proposed with a written reason, never declared to make a hole go away",
       detail: Some("suppressions a change adds are reported under their own heading")
+    },
+    Entry {
+      term: "reviewed",
+      meaning: "proposals go where someone reads them before they count",
+      detail: Some(
+        "a pull request rather than a commit to the main branch: the report lists what a change suppressed, which is worth nothing if nobody is reading the change"
+      )
     },
     Entry {
       term: "snippet",

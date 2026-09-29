@@ -62,3 +62,11 @@ test "the snippet tells an agent what to do and what not to" {
   assert has(snippet(), "pass on the original code")
   assert has(snippet(), "propose an equivalent with a reason")
 }
+
+# An agent that does everything else right can still commit its proposals
+# straight to the main branch, which walks past the one moment the design
+# set aside for someone to read them.
+test "the snippet says where a proposal goes to be read" {
+  assert has(snippet(), "pull request")
+  assert has(snippet(), "not a commit to the main branch")
+}
