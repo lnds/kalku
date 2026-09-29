@@ -335,7 +335,7 @@ fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) 
 fn casting_them(
   asking: Asking,
   all_known: Known
-) : Found / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
+) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling {
   let known = wanted_only(asking, all_known)
   let ready = plan(inputs_for(asking, known), _id => None)
   let casts = repeated(limited(ready.to_cast, asking.limit))

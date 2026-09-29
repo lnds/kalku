@@ -20,6 +20,7 @@ import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.planner
 import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.attending
 import kalku.orchestrator.pool
 import kalku.orchestrator.escalation
 import kalku.orchestrator.ward
@@ -57,7 +58,7 @@ kalku is left to carry it.
 pub fn cast_all(
   spec: PoolSpec,
   casts: [Wekufe]
-) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Telling =
+) : Casting / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling =
   warded(() => run_plan(spec, casts))
 
 #[doc("""
@@ -84,7 +85,7 @@ pub fn cast_over(
   slots: [Slot],
   casts: [Wekufe],
   from_id: Int
-) : (Casting, [Slot], Int) / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
+) : (Casting, [Slot], Int) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
   let done = turn(Run {
     spec: spec,
     slots: slots,
@@ -104,7 +105,7 @@ pub fn cast_over(
 fn run_plan(
   spec: PoolSpec,
   casts: [Wekufe]
-) : Casting / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
+) : Casting / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
   let slots = fill(spec)
   let done = turn(Run {
     spec: spec,
@@ -133,7 +134,7 @@ pub const LAST_WORDS_MS : Int = 2000
 # that word from each of them, so it leaves no fiber talking to a mailbox
 # that is no longer there — and keeps what they were still carrying, which
 # is what a kalku wrote about itself on the way down.
-fn hear_last_words(slots: [Slot]) : [Slot] / Clock + Actor[OrchMsg] {
+fn hear_last_words(slots: [Slot]) : [Slot] / Clock + Attending + Actor[OrchMsg] {
   let heard = wait_out(slots, living(slots), deadline_in(millis(LAST_WORDS_MS)))
   if any(heard, still_silent) {
     linger(heard, deadline_in(millis(LINGER_MS)))
@@ -151,7 +152,7 @@ pub const LINGER_MS : Int = 200
 # was abandoned with nothing to show for it.
 fn still_silent(s: Slot) : Bool = is_gone(s) and is_none(own_words(s))
 
-fn linger(slots: [Slot], until: Instant) : [Slot] / Clock + Actor[OrchMsg] =
+fn linger(slots: [Slot], until: Instant) : [Slot] / Clock + Attending + Actor[OrchMsg] =
   if not instant_lt(monotonic(), until) {
     slots
   } else {
@@ -159,10 +160,18 @@ fn linger(slots: [Slot], until: Instant) : [Slot] / Clock + Actor[OrchMsg] =
       None -> slots
       Some(Cancel) -> linger(slots, until)
       Some(Wire(life, what)) -> linger(kept(slots, life, what), until)
+      Some(stray) -> {
+        Attending.not_mine(stray)
+        linger(slots, until)
+      }
     }
   }
 
-fn wait_out(slots: [Slot], lives: [Life], until: Instant) : [Slot] / Clock + Actor[OrchMsg] =
+fn wait_out(
+  slots: [Slot],
+  lives: [Life],
+  until: Instant
+) : [Slot] / Clock + Attending + Actor[OrchMsg] =
   if is_empty(lives) or (not instant_lt(monotonic(), until)) {
     slots
   } else {
@@ -174,6 +183,10 @@ fn wait_out(slots: [Slot], lives: [Life], until: Instant) : [Slot] / Clock + Act
         if spoke_last(what) { filter(lives, l => l != life) } else { lives },
         until
       )
+      Some(stray) -> {
+        Attending.not_mine(stray)
+        wait_out(slots, lives, until)
+      }
     }
   }
 
@@ -248,7 +261,7 @@ type Run = {
   cancelled: Bool
 }
 
-fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
+fn turn(run: Run) : Run / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
   let busy = dispatch(run)
   if over(busy) { busy } else { turn(listen(busy)) }
 }
@@ -258,13 +271,21 @@ fn turn(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Tell
 fn over(run: Run) : Bool =
   is_some(run.failure) or waiting_on(run.slots) == 0 and (run.cancelled or is_empty(run.queue))
 
-fn listen(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling =
-  match receive_timeout(patience(run)) {
+fn listen(
+  run: Run
+) : Run / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling =
+  match receive_timeout(
+    patience(run)
+  ) {
     None -> expire(run)
     Some(Cancel) -> Run { ...run, cancelled: true, queue: [] }
     Some(Wire(life, what)) -> match slot_living(run.slots, life) {
       None -> run
       Some(slot) -> heard_from(run, slot, what)
+    }
+    Some(stray) -> {
+      Attending.not_mine(stray)
+      listen(run)
     }
   }
 

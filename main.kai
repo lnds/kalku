@@ -718,11 +718,16 @@ fn measured_over(
   # a kalku greeting its way to `ready` talks into the same mailbox this
   # is waiting on, and two conversations in one mailbox is how a run
   # waits forever for a reply it has already discarded.
-  let found = attended(m => answered_mid_run(p, m), () => streamed(say, () => discover(asking)))
-  match found {
-    Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
-    Ok(known) -> cast_it(warm_pool(p, c, now, say), asking, known, say)
-  }
+  # Around the whole of it, not only the discovery: a client can speak at
+  # any moment of a run, and the moments that take longest — opening a
+  # pool, casting — are exactly the ones it will ask about.
+  attended(
+    m => answered_mid_run(p, m),
+    () => match streamed(say, () => discover(asking)) {
+      Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
+      Ok(known) -> cast_it(warm_pool(p, c, now, say), asking, known, say)
+    }
+  )
 }
 
 fn cast_it(
@@ -730,7 +735,7 @@ fn cast_it(
   asking: Asking,
   known: measure.Known,
   say: (ServerEvent) -> Unit / Actor[OrchMsg]
-) : (Project, [ServerEvent]) / Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
+) : (Project, [ServerEvent]) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + NetUnix {
   let plan_of_it = plan(inputs_for(asking, known), _id => None)
   let casts = repeated(plan_of_it.to_cast)
   let done = streamed(say, () => cast_over(asking.spec, p.slots, casts, p.next_id))
