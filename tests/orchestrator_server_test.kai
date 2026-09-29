@@ -108,3 +108,67 @@ test "a cold session is never warm, whatever it is compared against" {
   assert not still_warm(session_for([], "/p"), "")
   assert not still_warm(session_for([], "/p"), "abc")
 }
+
+fn asking_for_scope(scope: Scope, shard: Option[Shard]) : RunMsg =
+  RunMsg { root: "/p", scope: scope, format: Human, shard: shard }
+
+fn whole() : [String] = ["/p/lib/a.ex", "/p/lib/b.ex"]
+
+# A client that names a file gets that file measured. Measuring the whole
+# project instead returns a score about sites nobody asked about, which
+# is the one thing a score must never be.
+test "the files a client named are the files a run measures" {
+  assert measurable("/p", asking_for_scope(Files(["lib/a.ex"]), None), whole())
+    == Ok(["/p/lib/a.ex"])
+}
+
+test "asking for the whole project measures the whole project" {
+  assert measurable("/p", asking_for_scope(All, None), whole()) == Ok(whole())
+}
+
+# A path a client already gave in full is not made longer.
+test "a file named in full is left as it is" {
+  assert measurable("/p", asking_for_scope(Files(["/elsewhere/c.ex"]), None), whole())
+    == Ok(["/elsewhere/c.ex"])
+}
+
+# Refused rather than widened: answering `since` by measuring everything
+# is worse than saying it is not served, because the answer looks like one.
+test "a scope kalku does not serve is refused, and says what it does serve" {
+  match measurable("/p", asking_for_scope(Since("main"), None), whole()) {
+    Err(ErrorEv(e)) -> {
+      assert e.code == "not_implemented"
+      assert is_some(index_of(e.message, "since main"))
+      assert is_some(index_of(e.message, "name the files"))
+      assert not e.fatal
+    }
+    other -> {
+      assert other == Ok([])
+    }
+  }
+}
+
+# A sharded run over a server measured everything on every shard, which
+# is the opposite of what sharding is for.
+test "a sharded run is refused until it shards" {
+  match measurable("/p", asking_for_scope(All, Some(Shard { index: 1, count: 4 })), whole()) {
+    Err(ErrorEv(e)) -> {
+      assert e.code == "not_implemented"
+      assert is_some(index_of(e.message, "sharded"))
+    }
+    other -> {
+      assert other == Ok([])
+    }
+  }
+}
+
+test "naming no files is a bad request, not the whole project" {
+  match measurable("/p", asking_for_scope(Files([]), None), whole()) {
+    Err(ErrorEv(e)) -> {
+      assert e.code == "bad_request"
+    }
+    other -> {
+      assert other == Ok([])
+    }
+  }
+}
