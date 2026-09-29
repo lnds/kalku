@@ -1,3 +1,14 @@
+## v0.1.3 (2026-09-29)
+
+### Added
+
+- **init**: declare the dependency instead of asking for it (#76)
+
+### Fixed
+
+- **elixir**: measure a real project, and use the coverage it measures (#78)
+- **release**: keep the two halves in step, and say which one to move (#77)
+
 ## v0.1.2 (2026-09-28)
 
 ### Fixed
