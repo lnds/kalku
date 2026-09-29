@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: The design
+    url: https://github.com/lnds/kalku/blob/main/docs/design.md
+    about: Architecture, outcomes, spells, equivalents and how a run works.
+  - name: The protocol
+    url: https://github.com/lnds/kalku/blob/main/docs/protocol.md
+    about: The wire format between the kaikai side and each kalku.
