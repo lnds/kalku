@@ -1,0 +1,48 @@
+#[doc("""
+What a run does with a message that is not its kalku's.
+
+A run waits on a mailbox, and kaikai's `receive` takes whatever is in it:
+there is no selective receive to pick out the replies a run is waiting
+for. Inside a server that mailbox belongs to a session, and a client can
+ask a question — what is happening, stop — while the run is still going.
+Dropping those messages is what makes a client wait for an answer that
+will never come.
+
+An effect rather than a branch, for the same reason `Telling` is one: the
+orchestrator has no business knowing that a server exists. A run says
+*this one is not mine*; a server answers it from the state it holds, and
+a command line drops it, because on a command line nothing else is
+talking into that mailbox.
+""")]
+
+import kalku.orchestrator.kalku_proc
+
+#[doc("A message that arrived mid-run and belongs to whoever is hosting the run.")]
+pub effect Attending {
+  not_mine(m: OrchMsg) : Unit
+}
+
+#[doc("""
+Run with nothing else listening, which is what a command line is.
+
+The message is dropped, deliberately: the only sender is a kalku this run
+has stopped caring about — one it killed, whose reader says so once —
+and there is nobody else to hand it to.
+""")]
+pub fn alone[a, e](body: () -> a / Attending + e) : a / e = handle {
+  body()
+} with Attending {
+  not_mine(_m, resume) -> resume(())
+  return(x) -> x
+}
+
+#[doc("Run with every stray message handed to `hear`, which is what a server does.")]
+pub fn attended[a, e](hear: (OrchMsg) -> Unit / e, body: () -> a / Attending + e) : a / e = handle {
+  body()
+} with Attending {
+  not_mine(m, resume) -> {
+    hear(m)
+    resume(())
+  }
+  return(x) -> x
+}

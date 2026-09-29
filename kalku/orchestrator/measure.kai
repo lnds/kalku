@@ -21,6 +21,7 @@ import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.verdict
 import kalku.core.planner
+import kalku.core.equivalent
 import kalku.core.costing
 import kalku.core.gate
 import kalku.core.report
@@ -38,6 +39,8 @@ pub type Asking = {
   only: [String],
   spells: [Spell],
   exclude_calls: [String],
+  exclude: [String],
+  equivalents: [equivalent.Entry],
   limit: Int,
   timeout_floor_ms: Int
 }
@@ -359,11 +362,22 @@ pub fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
   coverage: known.coverage,
   all_tests: known.tests,
   durations: known.durations,
-  suppressed_ids: [],
-  exclude: [],
+  suppressed_ids: suppressed_by(asking.equivalents, known.sites),
+  exclude: asking.exclude,
   reach: Everything,
   timeout_floor_ms: asking.timeout_floor_ms
 }
+
+# What the project declared equivalent, as the sites it points at. An
+# entry that names no site suppresses nothing — an orphan is reported
+# rather than obeyed, because a suppression nobody can point at cannot be
+# told from a hole somebody hid.
+pub fn suppressed_by(entries: [equivalent.Entry], sites: [Site]) : [String] =
+  match_sites(entries, sites).suppressed | (.site_id)
+
+#[doc("Entries that point at no site in this run.")]
+pub fn orphans_among(entries: [equivalent.Entry], sites: [Site]) : [equivalent.Entry] =
+  match_sites(entries, sites).orphans
 
 fn limited(casts: [Wekufe], limit: Int) : [Wekufe] = if limit <= 0 {
   casts
@@ -376,8 +390,12 @@ fn limited(casts: [Wekufe], limit: Int) : [Wekufe] = if limit <= 0 {
 pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
   let verdicts = casting.verdicts | (v => of_outcome(v.outcome))
   let uncovered = ready.no_coverage | (_s => of_outcome(NoCoverage))
+  # A site the project declared equivalent is counted and named, never
+  # silently missing: a suppression that leaves no trace in the report
+  # cannot be told from a hole somebody hid.
+  let declared = ready.suppressed | (_s => EquivalentBy(Declared))
   Report {
-    counts: tally(verdicts ++ uncovered),
+    counts: tally(verdicts ++ uncovered ++ declared),
     survivors: survivors_of(casting, known),
     on_changed_lines: 0,
     suppressions: SuppressionChanges {

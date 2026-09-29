@@ -2,6 +2,7 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.equivalent
 import kalku.core.equivalent_parse
+import kalku.orchestrator.measure
 
 fn site_at(
   file: String,
@@ -156,4 +157,29 @@ test "an entry renders the way the file spells it, so it round-trips" {
   let rendered = map(entries_of("#{SEMANTIC}\n"), show_entry)
   assert rendered == [SEMANTIC]
   assert entries_of("#{SEMANTIC}\n") == entries_of("#{head(rendered).unwrap_or("")}\n")
+}
+
+# The file is read into a plan, or it is decoration. A declared entry
+# has to reach the run as a site the plan will not cast, and an entry
+# that points at nothing has to come back as an orphan rather than
+# quietly suppressing something else.
+test "what a project declared reaches a run as the sites it suppresses" {
+  let here = site_at("lib/c.ex", Some("C.limit/0"), Literal, Some("100"), Some(1), 5)
+  let elsewhere = site_at("lib/c.ex", Some("C.big?/1"), Compare, Some(">="), Some(1), 2)
+  let read = parse("lib/c.ex  C.limit/0  literal  \"100\"  #1  # a placeholder nobody cares about")
+  let declared = read.unwrap_or([])
+
+  assert suppressed_by(declared, [here, elsewhere]) == ["id-lib/c.ex-5"]
+  assert orphans_among(declared, [here, elsewhere]) == []
+}
+
+# A suppression nobody can point at cannot be told from a hole somebody
+# hid, so it suppresses nothing and is reported as what it is.
+test "an entry that names no site suppresses nothing" {
+  let here = site_at("lib/c.ex", Some("C.limit/0"), Literal, Some("100"), Some(1), 5)
+  let read = parse("lib/c.ex  C.deleted/0  literal  \"1\"  #1  # this function is gone")
+  let gone = read.unwrap_or([])
+
+  assert suppressed_by(gone, [here]) == []
+  assert length(orphans_among(gone, [here])) == 1
 }
