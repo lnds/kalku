@@ -62,3 +62,74 @@ test "an Elixir project is told what to add, and only when it is missing" {
 }
 
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+fn mix_exs() : String = """
+defmodule Thing.MixProject do
+  use Mix.Project
+
+  def project do
+    [app: :thing, version: "0.1.0", deps: deps()]
+  end
+
+  defp deps do
+    [{:jason, "~> 1.4"}]
+  end
+end
+"""
+
+# The dependency goes inside the list `deps` returns, which is the shape
+# every Mix project shares.
+test "init declares the dependency in the build file" {
+  let line = "{:kalku_elixir, \"~> 0.1\", only: :test, runtime: false}"
+  let written = with_dependency(mix_exs(), line).unwrap_or("")
+
+  assert has(written, line)
+  assert has(written, "{:jason, \"~> 1.4\"}")
+  assert index_of(written, "kalku_elixir") > index_of(written, "defp deps do")
+  assert index_of(written, "kalku_elixir") < index_of(written, "\nend")
+}
+
+# An entry with nothing after it needs no comma, so what init writes reads
+# as though a hand had written it.
+test "an empty deps list gets an entry without a dangling comma" {
+  let written = with_dependency("defp deps do\n    []\n  end\n", "{:k, \"~> 1\"}").unwrap_or("")
+
+  assert has(written, "{:k, \"~> 1\"}")
+  assert not has(written, "},")
+}
+
+# The file belongs to its owner, so the entry takes the shape the list
+# already had rather than imposing one: a formatter finds nothing to
+# reflow after init has been here.
+test "the entry keeps the shape the list was written in" {
+  let one = with_dependency("defp deps do\n    [{:jason, \"~> 1.4\"}]\n  end\n", "{:k, \"~> 1\"}")
+  assert one == Ok("defp deps do\n    [{:k, \"~> 1\"}, {:jason, \"~> 1.4\"}]\n  end\n")
+
+  let many = with_dependency(
+    "defp deps do\n    [\n      {:jason, \"~> 1.4\"}\n    ]\n  end\n",
+    "{:k, \"~> 1\"}"
+  )
+  assert many
+    == Ok("defp deps do\n    [\n      {:k, \"~> 1\"},\n      {:jason, \"~> 1.4\"}\n    ]\n  end\n")
+}
+
+# Guessing at a build file that is not shaped like the others would be
+# worse than saying so, because the guess edits somebody's code.
+test "a build file init does not recognise is left alone, with a reason" {
+  assert with_dependency("defmodule A do\nend\n", "{:k, \"~> 1\"}")
+    == Err("no `deps do` with a list in it")
+  assert with_dependency("defp deps do\n    [{:kalku_elixir, \"~> 0.1\"}]\n  end\n", "x")
+    == Err("it already depends on kalku_elixir")
+}
+
+# `index_of` answers in bytes, so a build file with an accent anywhere
+# before the list would be cut mid-character by an offset meant for
+# codepoints — and the file would come out corrupted.
+test "a build file with multibyte text survives the insertion" {
+  let source = "# año\ndefp deps do\n    [{:jason, \"~> 1.4\"}]\n  end\n"
+  let written = with_dependency(source, "{:k, \"~> 1\"}").unwrap_or("")
+
+  assert has(written, "# año")
+  assert has(written, "{:k, \"~> 1\"}")
+  assert has(written, "{:jason, \"~> 1.4\"}")
+}
