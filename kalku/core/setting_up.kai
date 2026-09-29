@@ -155,7 +155,13 @@ mkdir -p "$MIX_BUILD_PATH"
 MIX_BUILD_PATH="$(cd "$MIX_BUILD_PATH" && pwd -P)"
 export MIX_BUILD_PATH
 
+# Both, and in this order. `deps.compile` leaves a path dependency for
+# the project's own build, and `mix kalku.serve` would then compile it
+# while the protocol is already running — mix announces what it compiles
+# on stdout, and stdout is the protocol.
 mix deps.compile >&2 </dev/null
+mix compile >&2 </dev/null
+
 exec mix kalku.serve "$@"
 """
 
