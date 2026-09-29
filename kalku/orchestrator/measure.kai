@@ -343,7 +343,7 @@ fn casting_them(
   Telling.tell_of(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
   )
-  Telling.tell_of(what_it_costs(casts, known.durations, asking.spec.workers))
+  Telling.will_cost(length(casts), estimate_ms(casts, known.durations, asking.spec.workers))
   let casting = agreed(cast_all(asking.spec, casts))
   Telling.entered(PhaseReporting)
   Found {

@@ -13,6 +13,7 @@ may be piping into something.
 """)]
 
 import kalku.wire.enums
+import kalku.core.costing
 
 #[doc("""
 A running account of what the orchestrator is doing.
@@ -25,6 +26,7 @@ pub effect Telling {
   tell_of(line: String) : Unit
   entered(phase: Phase) : Unit
   got_through(done: Int, total: Int) : Unit
+  will_cost(casts: Int, estimate_ms: Int) : Unit
 }
 
 #[doc("Run with every note on stderr.")]
@@ -43,6 +45,10 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     Stderr.eprint("kalku: #{done} of #{total}")
     resume(())
   }
+  will_cost(_casts, estimate_ms, resume) -> {
+    Stderr.eprint("kalku: #{what_it_costs(estimate_ms)}")
+    resume(())
+  }
   return(x) -> x
 }
 
@@ -53,6 +59,7 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   tell_of(_line, resume) -> resume(())
   entered(_phase, resume) -> resume(())
   got_through(_done, _total, resume) -> resume(())
+  will_cost(_casts, _estimate_ms, resume) -> resume(())
   return(x) -> x
 }
 

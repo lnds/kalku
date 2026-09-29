@@ -56,14 +56,16 @@ pub fn how_long(ms: Int) : String = if ms < 1000 {
   plural(rounded_div(ms, 3600000), "hour")
 }
 
-#[doc("The whole sentence a run prints before it starts casting.")]
-pub fn what_it_costs(casts: [Wekufe], durations: [(String, Int)], workers: Int) : String {
-  let ms = estimate_ms(casts, durations, workers)
-  if ms < 1000 {
-    "this should be quick"
-  } else {
-    "about #{how_long(ms)} at the rate the baseline ran, plus loading each wekufe"
-  }
+#[doc("""
+The whole sentence a run prints before it starts casting.
+
+It takes the estimate rather than computing it, so the number a person
+reads and the number a client is sent are the same one.
+""")]
+pub fn what_it_costs(ms: Int) : String = if ms < 1000 {
+  "this should be quick"
+} else {
+  "about #{how_long(ms)} at the rate the baseline ran, plus loading each wekufe"
 }
 
 fn plural(n: Int, unit: String) : String = if n == 1 { "1 #{unit}" } else { "#{n} #{unit}s" }
