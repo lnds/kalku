@@ -1,3 +1,15 @@
+## v0.2.0 (2026-09-29)
+
+### Added
+
+- **scheduler**: say how far a run has got, to whoever is listening (#98)
+- **protocol**: tell a client what a run is about to cost (#95)
+- **server**: a fiber for each client, and a session that answers while it measures (#90)
+
+### Fixed
+
+- **server**: measure what the client asked for, and refuse what is not served (#94)
+
 ## v0.1.4 (2026-09-29)
 
 ### Added
