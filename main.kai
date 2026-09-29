@@ -11,6 +11,7 @@ import kalku.core.score
 import kalku.core.cache
 import kalku.core.planner
 import kalku.orchestrator.scheduler
+import kalku.orchestrator.attending
 import kalku.core.report_agent
 import kalku.core.report_json
 import kalku.core.report_github
@@ -114,7 +115,7 @@ fn measured(
   wanted: Wanted
 ) : Int / Stdout + Stderr + File + Process + Spawn + Clock = with_mailbox {
   let shape = wanted.shape
-  let found = telling(wanted.aloud, () => measure(asking))
+  let found = alone(() => telling(wanted.aloud, () => measure(asking)))
   match found.failure {
     Some(why) -> {
       Stderr.eprint("kalku: #{why}")
@@ -568,7 +569,7 @@ fn measured_for(
       Ok(declared) -> as_agent(
         id,
         with_mailbox {
-          untold(() => measure(asking_at(cfg, root_of(c), c.wekufe, declared)))
+          alone(() => untold(() => measure(asking_at(cfg, root_of(c), c.wekufe, declared))))
         }
       )
     }
@@ -594,8 +595,10 @@ fn recast_for(
           Ok(declared) -> as_agent(
             id,
             with_mailbox {
-              untold(
-                () => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe), declared))
+              alone(
+                () => untold(
+                  () => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe), declared))
+                )
               )
             }
           )
@@ -696,7 +699,7 @@ fn measured_over(
   # a kalku greeting its way to `ready` talks into the same mailbox this
   # is waiting on, and two conversations in one mailbox is how a run
   # waits forever for a reply it has already discarded.
-  let found = streamed(say, () => discover(asking))
+  let found = alone(() => streamed(say, () => discover(asking)))
   match found {
     Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
     Ok(known) -> cast_it(warm_pool(p, c, now, say), asking, known, say)

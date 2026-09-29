@@ -1,0 +1,72 @@
+#[doc("""
+What a server does with a client that speaks while a run is going.
+
+A run owns a mailbox, and inside a server that mailbox belongs to a
+session other clients can write to. Those lines arrive as `Aside`, which
+the orchestrator carries and never reads. Reading them is this module's
+work, and it is only ever three answers:
+
+  - **what is happening**, answered from the state the host already
+    holds, because a client that cannot ask that has nothing to do but
+    wait blindly;
+  - **stop**, which the run itself must see, so it is passed along
+    rather than answered here;
+  - **anything else**, refused while a run is going, because a project
+    has one set of warm kalku and two runs would measure each other.
+
+Nothing here performs an effect: it decides what to say, and the caller
+says it. That is what makes every case below a test rather than a race.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.client_msg
+import kalku.wire.client_codec
+import kalku.orchestrator.server
+
+#[doc("What a host should do about a line that arrived mid-run.")]
+#[derive(Eq, Show)]
+pub type Answer
+  = Reply(Int, ServerEvent)
+  | StopTheRun(Int)
+  | SayNothing
+
+#[doc("""
+What to do with one line a client sent while a run was going.
+
+`busy` is the state to report, which the host knows and this does not:
+it is the session's own account of itself, so `status` mid-run says
+*running* rather than a guess.
+""")]
+pub fn heard_mid_run(line: String, busy: [Project]) : Answer = match decode_client_request(line) {
+  Err(e) -> Reply(
+    0,
+    ErrorEv(ErrorMsg {
+      code: "bad_request",
+      message: "#{kind_name(e.kind)}: #{e.detail}",
+      fatal: false
+    })
+  )
+  Ok(m) -> about(m.id, m.body, busy)
+}
+
+fn about(id: Int, request: ClientRequest, busy: [Project]) : Answer {
+  case id, StatusReq, busy -> Reply(id, sessions_event(busy))
+  case id, CancelReq(_), _ -> StopTheRun(id)
+  case id, RunReq(_), _ -> Reply(
+    id,
+    ErrorEv(ErrorMsg {
+      code: "busy",
+      message: "this project is being measured; its kalku serve one run at a time",
+      fatal: false
+    })
+  )
+  case id, _, _ -> Reply(
+    id,
+    ErrorEv(ErrorMsg {
+      code: "busy",
+      message: "this project is being measured; ask again when the run is over",
+      fatal: false
+    })
+  )
+}

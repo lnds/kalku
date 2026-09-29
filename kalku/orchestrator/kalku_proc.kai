@@ -35,9 +35,15 @@ A message to the fiber that owns the kalku: which kalku, and what it did.
 
 `Cancel` is the one message that comes from outside: whoever asked for the
 run wants it stopped, and the outcomes recorded so far are kept.
+
+`Aside` is a message this side does not read. A run holds a mailbox, and
+where that mailbox belongs to a server a client can write to it while the
+run is going — to ask what is happening, or to start another. Two numbers
+and a line: who is asking, in whatever way the host numbers its callers,
+and what they said. The orchestrator parses none of it. Handing it back
+through `Attending` is how it stays ignorant of servers.
 """)]
-#[derive(Eq, Show)]
-pub type OrchMsg = Wire(Life, FromKalku) | Cancel
+pub type OrchMsg = Wire(Life, FromKalku) | Cancel | Aside(Int, Pid[OrchMsg], String)
 
 #[doc("""
 Which summoning of which worker: a kalku's identity for as long as it
