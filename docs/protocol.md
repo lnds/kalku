@@ -426,7 +426,15 @@ Events, terminal event `report`:
 |---|---|
 | `phase` | Phase |
 
-`progress` has the same shape as in the kalku protocol.
+| `progress` | Type | Meaning |
+|---|---|---|
+| `done` | int | wekufe cast so far |
+| `total` | int | wekufe this run will cast |
+| `estimate_ms`? | int | how long the casting is likely to take; sent once, before the first wekufe |
+
+`estimate_ms` is the baseline's own test durations — what the tests that judge each planned wekufe took — shared out over the run's workers. It counts the tests and nothing else, so it is a floor rather than a promise: loading a wekufe into a warm kalku costs something the kaikai side cannot know without measuring it. A client with no terminal to watch reads the number and can show it, or refuse the run, instead of waiting out a surprise.
+
+Unlike the kalku protocol's `progress`, which reports how far one long request has got, this one is about the casting.
 
 | `outcome` | Type | Meaning |
 |---|---|---|
@@ -452,6 +460,7 @@ Events, terminal event `report`:
 ```json
 {"type":"run","id":1,"root":"/home/u/my_app","scope":{"since":"main"},"format":"json"}
 {"type":"phase","id":1,"phase":"baseline"}
+{"type":"progress","id":1,"done":0,"total":480,"estimate_ms":540000}
 {"type":"progress","id":1,"done":120,"total":480}
 {"type":"outcome","id":1,"wekufe":"c1f37a90e2b4","site":{"site_id":"c1f37a90e2b4","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.next_token/2","ordinal":1,"span":{"start":{"line":42,"col":7,"byte":1180},"end":{"line":42,"col":9,"byte":1182}},"spell":"compare","original":">=","replacement":">","reload":"module"},"outcome":"survived","covering_tests":["test/my_app/parser_test.exs:18"],"hint":"No test tells i >= 0 apart from i > 0. Add a case at the boundary where they are equal.","duration_ms":41}
 {"type":"report","id":1,"score":0.83,"counts":{"killed":380,"survived":78,"timeout":6,"no_coverage":14,"compile_error":2,"crashed":0,"nondeterministic":0,"equivalent":{"bytecode":9,"declared":5}},"survivors_on_changed_lines":3,"suppression_changes":{"equivalent_added":2,"exclude_added":[],"exclude_calls_added":["MyApp.Metrics.*"]},"exit":1}

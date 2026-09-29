@@ -96,7 +96,7 @@ pub type SessionInfo = { root: String, state: SessionState, kalku: Int, idle_s: 
 #[derive(Json, Eq, Show)]
 pub type HistoryEntry = { at: String, outcome: Outcome }
 
-#[doc("A long request's progress; a notification in the kalku protocol, an event in the client protocol.")]
+#[doc("A long request's progress, as a kalku notifies the kaikai side of it.")]
 #[derive(Json, Eq, Show)]
 pub type ProgressMsg = { done: Int, total: Int }
 

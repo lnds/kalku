@@ -42,6 +42,20 @@ pub type ClientRequest
 #[derive(Json, Eq, Show)]
 pub type PhaseMsg = { phase: Phase }
 
+#[doc("""
+`progress`: how far a run has got, and what the rest of it is about to
+cost.
+
+Its own shape rather than the kalku protocol's `progress`, because the two
+carry different things: a kalku reports how far one long request has got,
+while a run reports how far the casting has got and, once, before the
+first wekufe, what the whole of it is about to cost. A client with no
+terminal to watch reads that number and can refuse the run instead of
+waiting out a surprise.
+""")]
+#[derive(Json, Eq, Show)]
+pub type RunProgressMsg = { done: Int, total: Int, estimate_ms: Option[Int] }
+
 #[doc("`outcome`: what happened to one wekufe.")]
 #[derive(Json, Eq, Show)]
 pub type OutcomeMsg = {
@@ -99,7 +113,7 @@ pub type CancelledMsg = { run: Int }
 #[derive(Eq, Show)]
 pub type ServerEvent
   = PhaseEv(PhaseMsg)
-  | ProgressEv(ProgressMsg)
+  | ProgressEv(RunProgressMsg)
   | OutcomeEv(OutcomeMsg)
   | TestRejectedEv(TestRejectedMsg)
   | ReportEv(ReportMsg)

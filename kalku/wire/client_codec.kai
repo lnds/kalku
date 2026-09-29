@@ -78,7 +78,7 @@ pub fn decode_event(line: String) : Result[Msg[ServerEvent], ProtocolError] {
 
 fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] = match kind {
   "phase" -> body(phasemsg_of_json(v, ""), m => PhaseEv(m))
-  "progress" -> body(progressmsg_of_json(v, ""), m => ProgressEv(m))
+  "progress" -> body(runprogressmsg_of_json(v, ""), m => ProgressEv(m))
   "outcome" -> body(outcomemsg_of_json(v, ""), m => OutcomeEv(m))
   "test_rejected" -> body(testrejectedmsg_of_json(v, ""), m => TestRejectedEv(m))
   "report" -> body(reportmsg_of_json(v, ""), m => ReportEv(m))
@@ -90,12 +90,18 @@ fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] =
   _ -> unknown(kind)
 }
 
-# A site is absent exactly when the wekufe is gone.
+# A site is absent exactly when the wekufe is gone, and a run never
+# counted or estimated its way below zero.
 fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
   OutcomeEv(m) ->
     require(
       is_some(m.site) != (m.outcome == Gone),
       "outcome: site goes with every outcome but gone"
+    )
+  ProgressEv(m) ->
+    require(
+      m.done >= 0 and m.total >= 0 and m.estimate_ms.unwrap_or(0) >= 0,
+      "progress: neither a count nor an estimate is negative"
     )
   _ -> Ok(())
 }

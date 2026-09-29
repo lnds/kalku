@@ -9,6 +9,8 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
   tell_of(line, resume) -> resume((), state ++ [line])
   entered(phase, resume) -> resume((), state ++ ["entered #{phase_name(phase)}"])
   got_through(done, total, resume) -> resume((), state ++ ["#{done} of #{total}"])
+  will_cost(casts, estimate_ms, resume) ->
+    resume((), state ++ ["#{casts} casts, #{estimate_ms}ms"])
   return(_x) -> state
 }
 
@@ -19,6 +21,13 @@ fn phases() : Unit / Telling {
 
 test "an account is heard in the order it was said" {
   assert heard(phases) == ["preparing", "casting 2 of 6"]
+}
+
+# The cost is a note of its own rather than a sentence, because two kinds
+# of listener render it differently: a person reads words, a client reads
+# the number and can refuse the run over it.
+test "what a run will cost is heard as numbers, not as prose" {
+  assert heard(() => Telling.will_cost(480, 540000)) == ["480 casts, 540000ms"]
 }
 
 # A quiet run is not a run that says nothing to nobody: the notes are
