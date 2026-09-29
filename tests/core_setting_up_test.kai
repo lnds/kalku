@@ -50,6 +50,19 @@ test "the reni is not written into the file everyone shares" {
   assert has(plan.config, "/tmp/kalku/thing")
 }
 
+# A path dependency left uncompiled by `deps.compile` gets compiled by
+# `mix kalku.serve` instead — while the protocol is already running, with
+# mix announcing each one on stdout. Compiling twice up front costs
+# nothing and keeps the channel clean.
+test "the summoning compiles the project too, not only its dependencies" {
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+
+  assert has(plan.summoner, "mix deps.compile >&2")
+  assert has(plan.summoner, "mix compile >&2")
+  assert index_of(plan.summoner, "mix compile >&2")
+    < index_of(plan.summoner, "exec mix kalku.serve")
+}
+
 # stdout carries the protocol: a summoning that let a build write there
 # would have the worker banished for nonsense it never meant to write.
 test "the summoning keeps the build off the protocol channel" {
