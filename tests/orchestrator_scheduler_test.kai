@@ -128,7 +128,11 @@ test "a kalku that writes a line this side cannot read is banished, its wekufe c
 test "a protocol version this side cannot speak fails the run with a readable reason" {
   let done = with_mailbox { casting(pool_of("pool_mismatch.ndjson", 1, 3), casts(2, 5000)) }
   assert done.verdicts == []
-  assert done.failure == Some("worker 0 speaks protocol 99, this kalku speaks 1")
+  # The two halves are installed apart, so the reason names both versions
+  # and which one to move; the numbers alone are not something to act on.
+  let why = done.failure.unwrap_or("")
+  assert is_some(index_of(why, "worker 0 speaks protocol 99, this kalku speaks 1"))
+  assert is_some(index_of(why, "brew upgrade kalku"))
 }
 
 # A kalku that dies on startup would otherwise be summoned forever.
