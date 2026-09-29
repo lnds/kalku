@@ -114,6 +114,25 @@ fn reported(state: State) : SessionState {
 }
 
 #[doc("""
+True when this event ends what a request had to say.
+
+A conversation asks and then listens, and it has to know when to go back
+to listening to its client instead. Every request ends in exactly one of
+these: the report a run produces, the sessions a status asks for, the
+acknowledgement of a cancellation, one wekufe shown or proposed, or an
+error. The rest — phases, progress, outcomes — are a run thinking aloud.
+""")]
+pub fn ends_an_answer(e: ServerEvent) : Bool {
+  case ReportEv(_) -> true
+  case SessionsEv(_) -> true
+  case CancelledEv(_) -> true
+  case WekufeEv(_) -> true
+  case ProposedEv(_) -> true
+  case ErrorEv(_) -> true
+  case _ -> false
+}
+
+#[doc("""
 What to say about a line that is not a request kalku can read.
 
 The same answer wherever it is noticed — reading a client's first line,
