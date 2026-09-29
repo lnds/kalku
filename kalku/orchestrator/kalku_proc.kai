@@ -18,6 +18,7 @@ import kalku.wire.kalku_msg
 import kalku.wire.kalku_codec
 import kalku.wire.framing
 import kalku.wire.version
+import kalku.version
 
 #[doc("""
 What a kalku's readers saw.
@@ -113,13 +114,33 @@ Why a `ready` was not accepted, or `None` when it was.
 
 A version kalku cannot speak is fatal: a run that guessed at the meaning
 of a message would report numbers nobody can trust.
+
+The two halves are installed separately — this binary, and the kalku the
+project depends on — so the refusal names both versions and which way to
+move. A protocol number alone tells whoever reads it nothing they can act
+on.
 """)]
 pub fn ready_refused(m: ReadyMsg) : Option[String] =
   if not compatible(m.version) {
-    Some("speaks protocol #{m.version}, this kalku speaks #{PROTOCOL_VERSION}")
+    Some(
+      "speaks protocol #{m.version}, this kalku speaks #{PROTOCOL_VERSION}."
+        ++ " #{mend(m)}"
+    )
   } else {
     None
   }
+
+# Which half is behind decides the advice, and a kalku from the future
+# means the binary is the old one. Said in terms of what someone types,
+# not of protocol numbers.
+fn mend(m: ReadyMsg) : String = if m.version > PROTOCOL_VERSION {
+  "The kalku is newer: update kalku itself (`brew upgrade kalku`)."
+    ++ " It is #{VERSION}, and #{m.language} kalku #{m.adapter} wants more."
+} else {
+  "The kalku is older: update the #{m.language} kalku your project depends on"
+    ++ " (it is #{m.adapter}, and kalku #{VERSION} needs one that speaks"
+    ++ " protocol #{PROTOCOL_VERSION})."
+}
 
 #[doc("True when the kalku said it can do this.")]
 pub fn can(m: ReadyMsg, c: Capability) : Bool = contains(m.capabilities, c)
