@@ -114,6 +114,48 @@ fn reported(state: State) : SessionState {
 }
 
 #[doc("""
+What a request asks to have measured, or why it cannot be.
+
+A scope kalku does not serve is refused rather than widened: answering a
+`since` by measuring the whole project returns a score about sites nobody
+asked about, which is worse than saying it is not served yet. `all` is
+the project, which the caller has walked for us.
+""")]
+pub fn measurable(
+  root: String,
+  asked: RunMsg,
+  whole: [String]
+) : Result[[String], ServerEvent] = match asked.shard {
+  Some(_) -> Err(not_served("a sharded run"))
+  None -> within(root, asked.scope, whole)
+}
+
+fn within(root: String, scope: Scope, whole: [String]) : Result[[String], ServerEvent] =
+  match scope {
+    All -> Ok(whole)
+    Files(named) -> if is_empty(named) {
+      Err(ErrorEv(ErrorMsg { code: "bad_request", message: "`files` named none", fatal: false }))
+    } else {
+      Ok(named | (f => full_path(root, f)))
+    }
+    Since(r) -> Err(not_served("`since #{r}`"))
+  }
+
+fn not_served(what: String) : ServerEvent = ErrorEv(ErrorMsg {
+  code: "not_implemented",
+  message: "#{what} is not served yet; ask for the whole project or name the files",
+  fatal: false
+})
+
+# A client names files the way it reads them in a report: relative to the
+# project. What a run is given is where they are.
+fn full_path(root: String, f: String) : String = if starts_with(f, "/") {
+  f
+} else {
+  "#{root}/#{f}"
+}
+
+#[doc("""
 True when this event ends what a request had to say.
 
 A conversation asks and then listens, and it has to know when to go back
