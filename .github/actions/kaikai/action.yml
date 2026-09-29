@@ -1,0 +1,35 @@
+name: kaikai
+description: The pinned kaikai toolchain, km, and whatever the last run already compiled.
+
+runs:
+  using: composite
+  steps:
+    - name: Install kaikai (pinned)
+      shell: bash
+      run: |
+        v="$(cat .kaikai-version)"
+        curl -fsSL https://raw.githubusercontent.com/kaikailang-org/kaikai/main/install.sh \
+          | KAIKAI_DIST_BASE="https://github.com/kaikailang-org/kaikai/releases/download/v$v" sh
+        echo "$HOME/.kaikai/bin" >> "$GITHUB_PATH"
+
+    - name: Install km
+      shell: bash
+      run: |
+        curl -fsSL https://github.com/lnds/kimun/releases/download/v0.26.0/km-x86_64-unknown-linux-gnu.tar.gz \
+          | tar -xz -C /usr/local/bin km
+
+    # What a compiler already worked out about unchanged code. Keyed on
+    # the toolchain and the sources, so a cache is only ever reused for
+    # the compiler that wrote it; older ones are a warm start to be
+    # corrected rather than an answer to be trusted.
+    - name: Reuse what was already compiled
+      uses: actions/cache@v4
+      with:
+        path: .kai-cache
+        key: kai-${{ runner.os }}-${{ hashFiles('.kaikai-version') }}-${{ hashFiles('**/*.kai', 'kai.toml') }}
+        restore-keys: |
+          kai-${{ runner.os }}-${{ hashFiles('.kaikai-version') }}-
+
+    - name: Check toolchain
+      shell: bash
+      run: kai --version && km --version
