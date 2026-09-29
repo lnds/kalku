@@ -1,3 +1,18 @@
+## v0.1.4 (2026-09-29)
+
+### Added
+
+- **run**: say what a run is about to cost, before it spends it (#80)
+
+### Fixed
+
+- **core**: let what a project declared reach the run that measures it (#84)
+- **elixir**: say why a kalku died, and stop corrupting the channel (#87)
+
+### Changed
+
+- **ci**: stop rebuilding what nothing changed, and answer the cheap questions first (#89)
+
 ## v0.1.3 (2026-09-29)
 
 ### Added
