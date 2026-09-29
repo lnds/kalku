@@ -21,6 +21,7 @@ import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.verdict
 import kalku.core.planner
+import kalku.core.costing
 import kalku.core.gate
 import kalku.core.report
 import kalku.core.remembering
@@ -283,6 +284,7 @@ fn casting_them(
   Telling.tell_of(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
   )
+  Telling.tell_of(what_it_costs(casts, known.durations, asking.spec.workers))
   let casting = agreed(cast_all(asking.spec, casts))
   Telling.entered(PhaseReporting)
   Found {
