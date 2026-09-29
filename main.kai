@@ -105,13 +105,7 @@ fn run_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + Spa
         2
       }
     } else {
-      match declared_equivalents(".") {
-        Err(why) -> {
-          Stderr.eprint("kalku: #{why}")
-          2
-        }
-        Ok(declared) -> measured(asking_for(c, wanted, declared), wanted)
-      }
+      with_declared(".", declared => measured(asking_for(c, wanted, declared), wanted))
     }
   }
 
@@ -202,19 +196,45 @@ fn pool_of(c: Config) : PoolSpec / Env = PoolSpec {
 }
 
 fn asking_for(c: Config, wanted: Wanted, declared: [equivalent.Entry]) : Asking / Env = Asking {
-  spec: pool_of(c),
-  files: wanted.files,
+  ...asking_of(c, pool_of(c), wanted.files, declared),
+  limit: wanted.limit.unwrap_or(0)
+}
+
+# What every run is asked, whoever asks it: the project's spells and
+# exclusions, and what it declared equivalent. The caller says which
+# kalku to summon and which files to measure.
+fn asking_of(
+  c: Config,
+  spec: PoolSpec,
+  files: [String],
+  declared: [equivalent.Entry]
+) : Asking = Asking {
+  spec: spec,
+  files: files,
   only: [],
   spells: c.spells,
   exclude_calls: c.exclude_calls,
   exclude: c.exclude,
   equivalents: declared,
-  limit: wanted.limit.unwrap_or(0),
+  limit: 0,
   timeout_floor_ms: c.timeout_floor_ms
 }
 
 #[doc("Where a project writes down what it has decided cannot be told apart.")]
 const EQUIVALENT_PATH : String = ".kalku/equivalent"
+
+# Read once, refused once: a suppression file nobody can parse stops the
+# command rather than being measured around.
+fn with_declared[e](
+  root: String,
+  go: ([equivalent.Entry]) -> Int / e
+) : Int / Stderr + File + e = match declared_equivalents(root) {
+  Err(why) -> {
+    Stderr.eprint("kalku: #{why}")
+    2
+  }
+  Ok(declared) -> go(declared)
+}
 
 # Suppressions are input, not an invariant: a file somebody typed is read
 # into a Result whose error names the line, never into a panic. A run
@@ -288,16 +308,13 @@ fn recast_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + 
           2
         }
       } else {
-        match declared_equivalents(".") {
-          Err(why) -> {
-            Stderr.eprint("kalku: #{why}")
-            2
-          }
-          Ok(declared) -> measured(
+        with_declared(
+          ".",
+          declared => measured(
             asking_again(c, sites_for(all, wanted.files), wanted, declared),
             wanted
           )
-        }
+        )
       }
     }
   }
@@ -309,18 +326,10 @@ fn asking_again(
   sites: [Site],
   wanted: Wanted,
   declared: [equivalent.Entry]
-) : Asking / Env =
-  Asking {
-    spec: pool_of(c),
-    files: uniq(sites | (.file)),
-    only: sites | (.site_id),
-    spells: c.spells,
-    exclude_calls: c.exclude_calls,
-    exclude: c.exclude,
-    equivalents: declared,
-    limit: 0,
-    timeout_floor_ms: c.timeout_floor_ms
-  }
+) : Asking / Env = Asking {
+  ...asking_of(c, pool_of(c), uniq(sites | (.file)), declared),
+  only: sites | (.site_id)
+}
 
 # Proposed, never applied: an agent may say why a wekufe cannot be told
 # apart, and a person decides whether that is true. `.kalku/equivalent`
@@ -449,20 +458,7 @@ fn asking_at(
   files: [String],
   declared: [equivalent.Entry]
 ) : Asking / Env = Asking {
-  spec: PoolSpec {
-    ...pool_of(c),
-    command: "/bin/sh",
-    args: ["-c", summoning(c, root)],
-    root: root
-  },
-  files: files | (f => shortened(f, root)),
-  only: [],
-  spells: c.spells,
-  exclude_calls: c.exclude_calls,
-  exclude: c.exclude,
-  equivalents: declared,
-  limit: 0,
-  timeout_floor_ms: c.timeout_floor_ms
+  ...asking_of(c, pool_at(c, root), files | (f => shortened(f, root)), declared)
 }
 
 # The pool for a project: the same kalku the CLI would summon, started
