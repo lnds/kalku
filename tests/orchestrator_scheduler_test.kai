@@ -32,6 +32,25 @@ fn pool_of(script: String, workers: Int, summons: Int) : PoolSpec = PoolSpec {
 fn casting(spec: PoolSpec, cs: [Wekufe]) : Casting / Process + Spawn + Clock + Actor[OrchMsg] =
   alone(() => untold(() => cast_all(spec, cs)))
 
+# Only the progress notes, so what is asserted is how far a run says it
+# has got and not the sentences around it. A real run through a real pool,
+# because the link worth testing is the one between the loop that records
+# a verdict and the note a client hears.
+fn how_far(
+  spec: PoolSpec,
+  cs: [Wekufe]
+) : [(Int, Int)] / Process + Spawn + Clock + Actor[OrchMsg] = alone(
+  () => handle {
+    cast_all(spec, cs)
+  } with Telling([]) {
+    tell_of(_line, resume) -> resume((), state)
+    entered(_phase, resume) -> resume((), state)
+    got_through(done, total, resume) -> resume((), state ++ [(done, total)])
+    will_cost(_casts, _estimate_ms, resume) -> resume((), state)
+    return(_x) -> state
+  }
+)
+
 fn casts(n: Int, timeout_ms: Int) : [Wekufe] =
   enumerate(repeat(0, n))
     | (i => Wekufe {
@@ -162,6 +181,22 @@ test "a cancelled run stops dispatching and returns what it had" {
 
 # A pool of no workers has nobody to answer and no deadline to expire, so
 # a run that waited for one would wait forever. It says so instead.
+# A hundred casts is a percent each, so every one is worth a note. The
+# total holds still at what the run will cast: a slot being summoned has a
+# deadline and no wekufe, and a total that counted it would start above the
+# plan and shrink as the workers are born. Without this the op existed and
+# nothing ever raised it.
+test "a run says how far it has got, and the cast that ends it is in there" {
+  let notes = with_mailbox {
+    how_far(pool_of("pool_happy.ndjson", 4, 1), casts(100, 5000))
+  }
+
+  assert list.length(notes) == 100
+  assert all(notes, n => n.snd == 100)
+  assert is_some(find(notes, n => n.fst == 100))
+  assert is_some(find(notes, n => n.fst == 1))
+}
+
 test "a run with no kalku at all fails instead of waiting" {
   let done = with_mailbox { casting(pool_of("pool_happy.ndjson", 0, 1), casts(3, 5000)) }
   assert done.verdicts == []

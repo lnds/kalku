@@ -29,6 +29,26 @@ pub effect Telling {
   will_cost(casts: Int, estimate_ms: Int) : Unit
 }
 
+#[doc("""
+Whether a run has got far enough for another note.
+
+A note per cast is a note every few milliseconds on a fast suite, and a
+client reading that is reading the progress rather than the run. A note
+per percent is at most a hundred of them however big the run is, and the
+last cast always gets one, so a bar a client drew reaches its end.
+
+A count that could not describe a run — nothing cast, or more cast than
+planned — is worth no note rather than a panic: losing a measurement over
+an arithmetic slip on a progress figure would be the tail wagging the dog.
+""")]
+pub fn worth_saying(done: Int, total: Int) : Bool = if total <= 0 or done <= 0 {
+  false
+} else if done >= total {
+  true
+} else {
+  done * 100 / total != (done - 1) * 100 / total
+}
+
 #[doc("Run with every note on stderr.")]
 pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
   body()

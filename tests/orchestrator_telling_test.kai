@@ -30,6 +30,43 @@ test "what a run will cost is heard as numbers, not as prose" {
   assert heard(() => Telling.will_cost(480, 540000)) == ["480 casts, 540000ms"]
 }
 
+# The last cast always gets a note, whatever the size of the run: a client
+# that drew a bar from these numbers has to be able to finish it.
+test "the cast that ends a run is always worth a note" {
+  assert worth_saying(1, 1)
+  assert worth_saying(7, 7)
+  assert worth_saying(4376, 4376)
+}
+
+# A run small enough that every cast is more than a percent of it hears
+# about every cast; a big one hears about the steps.
+test "a note is worth making once the run has moved a percent" {
+  assert worth_saying(1, 10)
+  assert worth_saying(3, 10)
+  assert not worth_saying(1, 1000)
+  assert worth_saying(10, 1000)
+}
+
+# A figure that could not describe a run is worth no note. This is a
+# guard rather than a contract on purpose: a run must not lose what it
+# measured over an arithmetic slip in a progress count.
+test "a count that describes no run says nothing" {
+  assert not worth_saying(0, 480)
+  assert not worth_saying(5, 0)
+  assert not worth_saying(0 - 1, 480)
+}
+
+fn notes_over(total: Int) : Int =
+  list.length(enumerate(repeat(0, total)) |? (i => worth_saying(i.fst + 1, total)))
+
+# Whatever the size of a run, a client hears about it a bounded number of
+# times — which is the whole reason the threshold exists — and hears about
+# its end exactly once.
+check "a run of any size is reported at most a hundred times" with n: Int {
+  let total = 1 + abs(n) % 5000
+  notes_over(total) <= 100 and worth_saying(total, total)
+}
+
 # A quiet run is not a run that says nothing to nobody: the notes are
 # made and dropped, and what the body returns is untouched.
 test "a quiet run drops the account and keeps the answer" {
