@@ -6,13 +6,15 @@ refused — live in `kalku.orchestrator.server`, where they are tested
 without a socket. This is the part that cannot be: binding the file,
 accepting a connection, reading until a line is whole.
 
-One client at a time, on purpose while a run is the only thing a server
-does: a second client waiting is a second client that will be answered,
-and a half-built session shared between two of them is a measurement
-nobody can trust. Concurrency arrives with warm sessions, which is what
-makes it worth the risk.
+A client each, and one run between them. Accepting happens in a fiber of
+its own and every connection gets another, so a client that connects
+while a project is being measured is answered rather than queued behind
+it. The runs themselves stay in single file, in the fiber that owns the
+warm kalku: a project has one set of them, and two runs would measure
+each other.
 """)]
 
+import actor
 import net.unix as sock
 import fs.file
 import fs.dir
@@ -23,7 +25,9 @@ import kalku.wire.client_msg
 import kalku.wire.client_codec
 import kalku.wire.framing
 import kalku.core.session
+import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.server
+import kalku.orchestrator.attending_to
 
 #[doc("How much of a client's line is read at a time.")]
 pub const CHUNK : Int = 65536
@@ -38,15 +42,21 @@ measuring stay apart.
 pub fn serve_at[e](
   path: String,
   mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e
-) : Result[Unit, String] / NetUnix + File + Stderr + e {
+  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+) : Result[Unit, String] / NetUnix + File + Stderr + Spawn + Actor[OrchMsg] + e {
   let _ = dir.create_dir(holding(path))
   let _ = if file.exists(path) { clear_stale(path) } else { () }
   match NetUnix.listen(path, sock.owner_only) {
     Err(e) -> Err("cannot listen on #{path}: #{e}")
     Ok(l) -> {
       Stderr.eprint("kalku: serving on #{path}")
-      let ending = attend(l, Serving { path: path, sessions: [] }, mine, run_it)
+      # Accepting belongs in a fiber of its own. In this one the warm
+      # kalku live, and a run holds it for minutes; a listener sharing it
+      # would be a listener that stops listening whenever anything is
+      # being measured.
+      let me = Actor.self()
+      let _acceptor = spawn_actor(() => accepting(l, me, mine, 1))
+      let ending = session_loop(Serving { path: path, sessions: [] }, run_it)
       NetUnix.close_listener(l)
       ending
     }
@@ -78,17 +88,18 @@ fn last_slash(path: String) : Option[Int] = match index_of(path, "/") {
   }
 }
 
-fn attend[e](
+# Accept, hand the connection to a fiber, accept again. Nothing here
+# waits on what a client asked for, which is the whole point of it.
+fn accepting(
   l: Listener,
-  serving: Serving,
+  session: Pid[OrchMsg],
   mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e
-) : Result[Unit, String] / NetUnix + Stderr + e = match NetUnix.accept(l) {
-  Err(e) -> Err("cannot accept: #{e}")
+  next: Int
+) : Unit / NetUnix + Spawn + Actor[OrchMsg] = match NetUnix.accept(l) {
+  Err(_) -> ()
   Ok(c) -> {
-    let after = converse(c, serving, mine, run_it)
-    NetUnix.close(c)
-    attend(l, after, mine, run_it)
+    let _talking = spawn_actor(() => with_mailbox { conversing(c, next, session, mine) })
+    accepting(l, session, mine, next + 1)
   }
 }
 
@@ -97,129 +108,6 @@ fn attend[e](
 fn its_owner(c: Conn, mine: Int) : Bool / NetUnix = match NetUnix.peer_uid(c) {
   Ok(uid) -> uid == mine
   Err(_) -> false
-}
-
-fn converse[e](
-  c: Conn,
-  serving: Serving,
-  mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e
-) : Serving / NetUnix + Stderr + e = read_on(c, serving, mine, run_it, framer(MAX_LINE_BYTES))
-
-fn read_on[e](
-  c: Conn,
-  serving: Serving,
-  mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
-  f: Framer
-) : Serving / NetUnix + Stderr + e = match NetUnix.recv(c, CHUNK) {
-  Err(_) -> serving
-  Ok(data) -> if is_empty(data) {
-    serving
-  } else {
-    {
-      let fed = feed(f, as_text(data))
-      let after = answer_each(c, serving, mine, run_it, fed.frames)
-      read_on(c, after, mine, run_it, fed.framer)
-    }
-  }
-}
-
-fn answer_each[e](
-  c: Conn,
-  serving: Serving,
-  mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
-  frames: [Frame]
-) : Serving / NetUnix + Stderr + e = match frames {
-  [] -> serving
-  [fr, ...rest] -> answer_each(c, answered(c, serving, mine, run_it, fr), mine, run_it, rest)
-}
-
-fn answered[e](
-  c: Conn,
-  serving: Serving,
-  mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
-  fr: Frame
-) : Serving / NetUnix + Stderr + e = match fr {
-  TooLong -> {
-    tell(
-      c,
-      0,
-      ErrorEv(ErrorMsg {
-        code: "too_long",
-        message: "a line longer than #{MAX_LINE_BYTES} bytes",
-        fatal: true
-      })
-    )
-    serving
-  }
-  Line(line) -> match decode_client_request(line) {
-    Err(e) -> {
-      tell(
-        c,
-        0,
-        ErrorEv(ErrorMsg {
-          code: "bad_request",
-          message: "#{kind_name(e.kind)}: #{e.detail}",
-          fatal: false
-        })
-      )
-      serving
-    }
-    Ok(m) -> serve_one(c, serving, mine, run_it, m.id, m.body)
-  }
-}
-
-fn serve_one[e](
-  c: Conn,
-  serving: Serving,
-  mine: Int,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
-  id: Int,
-  request: ClientRequest
-) : Serving / NetUnix + Stderr + e = match refusal_for(request, its_owner(c, mine)) {
-  Some(no) -> {
-    tell(c, id, no)
-    serving
-  }
-  None -> carry_out(c, serving, run_it, id, request)
-}
-
-fn carry_out[e](
-  c: Conn,
-  serving: Serving,
-  run_it: (Project, (ServerEvent) -> Unit / NetUnix) -> (Project, [ServerEvent]) / e,
-  id: Int,
-  request: ClientRequest
-) : Serving / NetUnix + Stderr + e = match request {
-  StatusReq -> {
-    tell(c, id, sessions_event(serving.sessions))
-    serving
-  }
-  RunReq(m) -> {
-    let mine = session_for(serving.sessions, m.root)
-    let after = run_it(Project { ...mine, state: SessionRunning }, e => tell(c, id, e))
-    each(after.snd, e => tell(c, id, e))
-    Serving { ...serving, sessions: with_session(serving.sessions, done_with(after.fst)) }
-  }
-  CancelReq(m) -> {
-    tell(c, id, CancelledEv(CancelledMsg { run: m.run }))
-    serving
-  }
-  other -> {
-    tell(
-      c,
-      id,
-      ErrorEv(ErrorMsg {
-        code: "not_implemented",
-        message: "`#{other}` is not served yet",
-        fatal: false
-      })
-    )
-    serving
-  }
 }
 
 fn done_with(s: Project) : Project = Project { ...s, state: SessionReady, runs: s.runs + 1 }
@@ -237,3 +125,184 @@ fn tell(c: Conn, id: Int, e: ServerEvent) : Unit / NetUnix {
   let _ = NetUnix.send(c, bytes(said(id, e)) | byte_to_int)
   ()
 }
+
+# ---- one client ---------------------------------------------------------
+
+#[doc("""
+One client, in a fiber of its own: read a line, hand it to the session,
+write back what the session says.
+
+The session owns the warm kalku and cannot own this socket too, so it
+answers by sending lines here. Listening stops at the event that ends an
+answer, and then this goes back to listening to its client — which is
+what makes a second question possible while the first is still being
+worked on somewhere else.
+""")]
+fn conversing(
+  c: Conn,
+  id: Int,
+  session: Pid[OrchMsg],
+  mine: Int
+) : Unit / NetUnix + Actor[OrchMsg] = if its_owner(c, mine) {
+  {
+    hearing(c, id, session, framer(MAX_LINE_BYTES))
+    NetUnix.close(c)
+  }
+} else {
+  {
+    let _ = NetUnix.send(
+      c,
+      bytes(
+        said(
+          0,
+          ErrorEv(ErrorMsg { code: "not_yours", message: "this socket is not yours", fatal: true })
+        )
+      )
+        | byte_to_int
+    )
+    NetUnix.close(c)
+  }
+}
+
+fn hearing(
+  c: Conn,
+  id: Int,
+  session: Pid[OrchMsg],
+  f: Framer
+) : Unit / NetUnix + Actor[OrchMsg] = match NetUnix.recv(c, CHUNK) {
+  Err(_) -> ()
+  Ok(data) -> if is_empty(data) {
+    ()
+  } else {
+    {
+      let fed = feed(f, as_text(data))
+      each(fed.frames, fr => asked_about(c, id, session, fr))
+      hearing(c, id, session, fed.framer)
+    }
+  }
+}
+
+fn asked_about(
+  c: Conn,
+  id: Int,
+  session: Pid[OrchMsg],
+  fr: Frame
+) : Unit / NetUnix + Actor[OrchMsg] = match fr {
+  TooLong -> say_to(
+    c,
+    said(
+      0,
+      ErrorEv(ErrorMsg {
+        code: "too_long",
+        message: "a line longer than #{MAX_LINE_BYTES} bytes",
+        fatal: true
+      })
+    )
+  )
+  Line(line) -> {
+    Actor.send(session, Aside(id, Actor.self(), line))
+    until_answered(c)
+  }
+}
+
+# Everything the session sends until it says the answer is over. A line
+# from anywhere else is not possible here: this mailbox belongs to one
+# connection, and only the session was given its address.
+fn until_answered(c: Conn) : Unit / NetUnix + Actor[OrchMsg] = match Actor.receive() {
+  Aside(_who, _back, line) -> {
+    say_to(c, line)
+    if ends_the_answer(line) { () } else { until_answered(c) }
+  }
+  _ -> ()
+}
+
+fn say_to(c: Conn, line: String) : Unit / NetUnix {
+  let _ = NetUnix.send(c, bytes(line) | byte_to_int)
+  ()
+}
+
+# Read back from the line, because what travels between the fibers is
+# the text a client will receive rather than the event it was made from.
+fn ends_the_answer(line: String) : Bool = match decode_event(trim(line)) {
+  Ok(m) -> ends_an_answer(m.body)
+  Err(_) -> true
+}
+
+# ---- the session --------------------------------------------------------
+
+#[doc("""
+The fiber that holds a project's warm kalku, and measures with them.
+
+Runs happen here and nowhere else, which is what keeps them in single
+file: a project has one set of warm kalku, and two runs over them would
+measure each other. What arrives while a run is going reaches this fiber
+as an `Aside` through `Attending`, and `attending_to` decides what to
+say — status from the state this fiber holds, a cancellation passed to
+the run, anything else refused with a reason.
+""")]
+fn session_loop[e](
+  serving: Serving,
+  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+) : Result[Unit, String] / NetUnix + Stderr + Spawn + Actor[OrchMsg] + e = match Actor.receive() {
+  Aside(_who, back, line) -> session_loop(asked_of(serving, back, line, run_it), run_it)
+  _ -> session_loop(serving, run_it)
+}
+
+fn asked_of[e](
+  serving: Serving,
+  back: Pid[OrchMsg],
+  line: String,
+  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+) : Serving / Stderr + Spawn + Actor[OrchMsg] + e = match decode_client_request(line) {
+  Err(err) -> {
+    answer(back, 0, unreadable(err))
+    serving
+  }
+  Ok(m) -> match refusal_for(m.body, true) {
+    Some(no) -> {
+      answer(back, m.id, no)
+      serving
+    }
+    None -> done_for(serving, back, m.id, m.body, run_it)
+  }
+}
+
+fn done_for[e](
+  serving: Serving,
+  back: Pid[OrchMsg],
+  id: Int,
+  request: ClientRequest,
+  run_it: (Project, (ServerEvent) -> Unit / Actor[OrchMsg]) -> (Project, [ServerEvent]) / e
+) : Serving / Stderr + Spawn + Actor[OrchMsg] + e = match request {
+  StatusReq -> {
+    answer(back, id, sessions_event(serving.sessions))
+    serving
+  }
+  RunReq(m) -> {
+    let ours = session_for(serving.sessions, m.root)
+    let after = run_it(Project { ...ours, state: SessionRunning }, e => answer(back, id, e))
+    each(after.snd, e => answer(back, id, e))
+    Serving { ...serving, sessions: with_session(serving.sessions, done_with(after.fst)) }
+  }
+  CancelReq(m) -> {
+    answer(back, id, CancelledEv(CancelledMsg { run: m.run }))
+    serving
+  }
+  other -> {
+    answer(
+      back,
+      id,
+      ErrorEv(ErrorMsg {
+        code: "not_implemented",
+        message: "`#{other}` is not served yet",
+        fatal: false
+      })
+    )
+    serving
+  }
+}
+
+# An answer travels as the line a client will read: the connection's
+# fiber owns the socket, and this one owns the kalku.
+fn answer(back: Pid[OrchMsg], id: Int, e: ServerEvent) : Unit / Actor[OrchMsg] =
+  Actor.send(back, Aside(0, back, said(id, e)))

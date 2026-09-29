@@ -11,6 +11,8 @@ import kalku.core.score
 import kalku.core.cache
 import kalku.core.planner
 import kalku.orchestrator.scheduler
+import kalku.orchestrator.attending
+import kalku.orchestrator.attending_to
 import kalku.core.report_agent
 import kalku.core.report_json
 import kalku.core.report_github
@@ -114,7 +116,7 @@ fn measured(
   wanted: Wanted
 ) : Int / Stdout + Stderr + File + Process + Spawn + Clock = with_mailbox {
   let shape = wanted.shape
-  let found = telling(wanted.aloud, () => measure(asking))
+  let found = alone(() => telling(wanted.aloud, () => measure(asking)))
   match found.failure {
     Some(why) -> {
       Stderr.eprint("kalku: #{why}")
@@ -401,7 +403,7 @@ fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock
 # from exactly this project, a fresh pool when they were not.
 fn run_for(
   p: Project,
-  say: (ServerEvent) -> Unit / NetUnix
+  say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix =
   match settings_in(p.root) {
     Err(why) -> (p, [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })])
@@ -432,9 +434,9 @@ fn drain_all(child: Child, so_far: String) : String / Process = match proc.read_
 # rather than at the end: the notes the orchestrator already makes become
 # the events the protocol has for them.
 fn streamed[a, e](
-  say: (ServerEvent) -> Unit / NetUnix,
+  say: (ServerEvent) -> Unit / Actor[OrchMsg],
   body: () -> a / Telling + e
-) : a / NetUnix + e = handle {
+) : a / Actor[OrchMsg] + e = handle {
   body()
 } with Telling {
   tell_of(_line, resume) -> resume(())
@@ -463,11 +465,16 @@ fn asking_at(
 
 # The pool for a project: the same kalku the CLI would summon, started
 # where the project is.
+# The reni belongs to the project being measured, not to wherever the
+# server happens to be standing: a server measures projects that are not
+# its own, and two of them sharing a reni is two of them compiling over
+# each other's build.
 fn pool_at(c: Config, root: String) : PoolSpec / Env = PoolSpec {
   ...pool_of(c),
   command: "/bin/sh",
   args: ["-c", summoning(c, root)],
-  root: root
+  root: root,
+  reni: c.reni.unwrap_or(reni_here(root))
 }
 
 # The summoning script is the project's, and it expects to be run from
@@ -568,7 +575,7 @@ fn measured_for(
       Ok(declared) -> as_agent(
         id,
         with_mailbox {
-          untold(() => measure(asking_at(cfg, root_of(c), c.wekufe, declared)))
+          alone(() => untold(() => measure(asking_at(cfg, root_of(c), c.wekufe, declared))))
         }
       )
     }
@@ -594,8 +601,10 @@ fn recast_for(
           Ok(declared) -> as_agent(
             id,
             with_mailbox {
-              untold(
-                () => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe), declared))
+              alone(
+                () => untold(
+                  () => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe), declared))
+                )
               )
             }
           )
@@ -680,11 +689,24 @@ fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File
 
 # The kalku a project keeps are only worth keeping while they hold a copy
 # of exactly that project. The fingerprint is what says so, and it covers
+# A client that speaks while this project is being measured. Status is
+# answered from what this fiber knows, a cancellation is left for the run
+# itself, and a second run is refused: one set of warm kalku measures one
+# thing at a time.
+fn answered_mid_run(p: Project, m: OrchMsg) : Unit / Actor[OrchMsg] = match m {
+  Aside(_who, back, line) -> match heard_mid_run(line, [p]) {
+    Reply(id, e) -> Actor.send(back, Aside(0, back, said(id, e)))
+    StopTheRun(_id) -> Actor.send(Actor.self(), Cancel)
+    SayNothing -> ()
+  }
+  _ -> ()
+}
+
 # what a measurement depends on: the sources and the tests.
 fn measured_over(
   p: Project,
   c: Config,
-  say: (ServerEvent) -> Unit / NetUnix
+  say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
   let files = every_source(p.root)
   let now = fingerprint(read_hashes(files ++ every_test(p.root)))
@@ -696,19 +718,24 @@ fn measured_over(
   # a kalku greeting its way to `ready` talks into the same mailbox this
   # is waiting on, and two conversations in one mailbox is how a run
   # waits forever for a reply it has already discarded.
-  let found = streamed(say, () => discover(asking))
-  match found {
-    Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
-    Ok(known) -> cast_it(warm_pool(p, c, now, say), asking, known, say)
-  }
+  # Around the whole of it, not only the discovery: a client can speak at
+  # any moment of a run, and the moments that take longest — opening a
+  # pool, casting — are exactly the ones it will ask about.
+  attended(
+    m => answered_mid_run(p, m),
+    () => match streamed(say, () => discover(asking)) {
+      Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
+      Ok(known) -> cast_it(warm_pool(p, c, now, say), asking, known, say)
+    }
+  )
 }
 
 fn cast_it(
   p: Project,
   asking: Asking,
   known: measure.Known,
-  say: (ServerEvent) -> Unit / NetUnix
-) : (Project, [ServerEvent]) / Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
+  say: (ServerEvent) -> Unit / Actor[OrchMsg]
+) : (Project, [ServerEvent]) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + NetUnix {
   let plan_of_it = plan(inputs_for(asking, known), _id => None)
   let casts = repeated(plan_of_it.to_cast)
   let done = streamed(say, () => cast_over(asking.spec, p.slots, casts, p.next_id))
@@ -726,7 +753,7 @@ fn warm_pool(
   p: Project,
   c: Config,
   now: String,
-  say: (ServerEvent) -> Unit / NetUnix
+  say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : Project / Stderr + Process + Spawn + Clock + Env + Actor[OrchMsg] + Ward + NetUnix =
   if still_warm(
     p,

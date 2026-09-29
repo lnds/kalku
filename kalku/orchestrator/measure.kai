@@ -27,6 +27,7 @@ import kalku.core.gate
 import kalku.core.report
 import kalku.core.remembering
 import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.attending
 import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
@@ -67,7 +68,9 @@ will not start, a project that will not compile, a suite that is already
 red. None of them produce a score, because a score built on any of them
 would be a number nobody should believe.
 """)]
-pub fn measure(asking: Asking) : Found / Process + Spawn + Clock + File + Actor[OrchMsg] + Telling {
+pub fn measure(
+  asking: Asking
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling {
   match discover(asking) {
     Err(why) -> Found { report: None, failure: Some(why), cast: [] }
     Ok(known) -> casting_them(asking, known)
@@ -83,7 +86,7 @@ already failing, ends the run here.
 """)]
 pub fn discover(
   asking: Asking
-) : Result[Known, String] / Process + Spawn + Clock + File + Actor[OrchMsg] + Telling {
+) : Result[Known, String] / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling {
   let life = Life { worker: 0, summons: 1 }
   match summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args }) {
     Err(e) -> Err(e)
@@ -104,7 +107,7 @@ pub fn discover(
 fn interview(
   k: Kalku,
   asking: Asking
-) : Result[Known, String] / Process + Clock + File + Actor[OrchMsg] + Telling {
+) : Result[Known, String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   greet(k, asking)!
   await_kind(k, "ready")!
   Telling.entered(PhasePreparing)
@@ -213,8 +216,10 @@ fn tell(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Proce
 # a server keeps other kalku warm on it — and reading someone else's
 # `ready` as the answer to your own `hello` is how a run waits forever
 # for a reply it already threw away.
-fn await_kind(k: Kalku, kind: String) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] =
-  await_with(k, kind, [])
+fn await_kind(
+  k: Kalku,
+  kind: String
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = await_with(k, kind, [])
 
 # A kalku that dies before it answers has usually said why on stderr: a
 # stack trace, a missing module, a build that would not run. Dropping
@@ -225,12 +230,23 @@ fn await_with(
   k: Kalku,
   kind: String,
   said: [String]
-) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] = match receive_timeout(seconds(600)) {
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = match receive_timeout(
+  seconds(600)
+) {
   None -> Err(with_last_words("the kalku said nothing while we waited for `#{kind}`", said))
   Some(Cancel) -> Err("the run was cancelled")
   Some(Wire(life, what)) -> if life == k.life {
     from_ours(k, kind, what, said)
   } else {
+    # Another kalku of this project's own pool, greeting a mailbox this
+    # run shares with it. Its own business, and never anybody else's.
+    await_with(k, kind, said)
+  }
+  Some(stray) -> {
+    # A line from whoever is hosting the run, which this side does not
+    # read. Dropping it leaves a client waiting on an answer that will
+    # never come, and on a command line there is nobody to hand it to.
+    Attending.not_mine(stray)
     await_with(k, kind, said)
   }
 }
@@ -259,7 +275,7 @@ fn from_ours(
   kind: String,
   what: FromKalku,
   said: [String]
-) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] = match what {
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = match what {
   Said(line) -> match heard(line) {
     Err(e) -> Err(
       with_last_words("the kalku wrote a line this side cannot read: #{e.detail}", said)
@@ -276,7 +292,7 @@ fn judge(
   kind: String,
   body: KalkuReply,
   said: [String]
-) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] = match body {
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = match body {
   KalkuError(e) -> Err("#{e.code}: #{e.message}")
   Progress(_) -> await_with(k, kind, said)
   answered -> if reply_kind(answered) == kind {
@@ -319,7 +335,7 @@ fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) 
 fn casting_them(
   asking: Asking,
   all_known: Known
-) : Found / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
+) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling {
   let known = wanted_only(asking, all_known)
   let ready = plan(inputs_for(asking, known), _id => None)
   let casts = repeated(limited(ready.to_cast, asking.limit))

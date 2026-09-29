@@ -1,0 +1,78 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.client_msg
+import kalku.core.session
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.server
+import kalku.orchestrator.attending_to
+
+fn running_on(root: String) : [Project] = [
+  Project {
+    root: root,
+    state: SessionRunning,
+    runs: 1,
+    slots: [],
+    fingerprint: "abc",
+    next_id: 2
+  }
+]
+
+# The shapes the protocol's own fixtures use, so a test cannot pass on a
+# request the wire would reject.
+fn a_status(id: Int) : String = "{\"type\":\"status\",\"id\":#{id}}"
+
+fn a_cancel(id: Int) : String = "{\"type\":\"cancel\",\"id\":#{id},\"run\":1}"
+
+fn a_run(id: Int) : String =
+  "{\"type\":\"run\",\"id\":#{id},\"root\":\"/p\",\"scope\":{\"all\":true},\"format\":\"human\"}"
+
+# The one question a client needs answered *during* a run: a client that
+# cannot ask what is happening has nothing to do but wait blindly.
+test "status is answered mid-run, from what the session says about itself" {
+  match heard_mid_run(a_status(7), running_on("/p")) {
+    Reply(id, SessionsEv(m)) -> {
+      assert id == 7
+      assert length(m.sessions) == 1
+      assert (m.sessions | (.state)) == [StateRunning]
+    }
+    other -> {
+      assert other == SayNothing
+    }
+  }
+}
+
+# Stopping is the run's own business: answering it here would tell a
+# client the run had stopped while it went on running.
+test "a cancellation is passed to the run, not answered in its place" {
+  assert heard_mid_run(a_cancel(3), running_on("/p")) == StopTheRun(3)
+}
+
+# A project has one set of warm kalku, and two runs would measure each
+# other. The refusal says why, because `busy` with no reason reads as a
+# bug in the server.
+test "a second run on a busy project is refused, with a reason" {
+  match heard_mid_run(a_run(9), running_on("/p")) {
+    Reply(id, ErrorEv(e)) -> {
+      assert id == 9
+      assert e.code == "busy"
+      assert not e.fatal
+      assert is_some(index_of(e.message, "one run at a time"))
+    }
+    other -> {
+      assert other == SayNothing
+    }
+  }
+}
+
+# A line nobody can parse is still an answer owed to whoever sent it.
+test "a line that is not a request is refused rather than dropped" {
+  match heard_mid_run("{not json", running_on("/p")) {
+    Reply(_, ErrorEv(e)) -> {
+      assert e.code == "bad_request"
+    }
+    other -> {
+      assert other == SayNothing
+    }
+  }
+}

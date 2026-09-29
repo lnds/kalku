@@ -120,7 +120,7 @@ test "a kalku that speaks another protocol version is refused" {
         let _h = ask(k, 1, hello())
         let line = match receive_timeout(PATIENCE) {
           Some(Wire(_, Said(l))) -> l
-          other -> "#{other}"
+          _ -> "nothing the kalku said"
         }
         let refusal = match ready_of(line) {
           Some(m) -> ready_refused(m).unwrap_or("accepted")

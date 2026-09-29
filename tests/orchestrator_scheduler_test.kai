@@ -5,6 +5,7 @@ import kalku.wire.shapes
 import kalku.core.planner
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
+import kalku.orchestrator.attending
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
 
@@ -26,9 +27,10 @@ fn pool_of(script: String, workers: Int, summons: Int) : PoolSpec = PoolSpec {
 }
 
 # What a run says about itself is not what these tests are about, so the
-# account is dropped rather than printed.
+# account is dropped rather than printed — and so is anything a host
+# would have been handed, since here there is no host.
 fn casting(spec: PoolSpec, cs: [Wekufe]) : Casting / Process + Spawn + Clock + Actor[OrchMsg] =
-  untold(() => cast_all(spec, cs))
+  alone(() => untold(() => cast_all(spec, cs)))
 
 fn casts(n: Int, timeout_ms: Int) : [Wekufe] =
   enumerate(repeat(0, n))
