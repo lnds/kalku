@@ -39,14 +39,7 @@ it is the session's own account of itself, so `status` mid-run says
 *running* rather than a guess.
 """)]
 pub fn heard_mid_run(line: String, busy: [Project]) : Answer = match decode_client_request(line) {
-  Err(e) -> Reply(
-    0,
-    ErrorEv(ErrorMsg {
-      code: "bad_request",
-      message: "#{kind_name(e.kind)}: #{e.detail}",
-      fatal: false
-    })
-  )
+  Err(e) -> Reply(0, unreadable(e))
   Ok(m) -> about(m.id, m.body, busy)
 }
 

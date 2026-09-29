@@ -157,15 +157,7 @@ fn answered[e](
   }
   Line(line) -> match decode_client_request(line) {
     Err(e) -> {
-      tell(
-        c,
-        0,
-        ErrorEv(ErrorMsg {
-          code: "bad_request",
-          message: "#{kind_name(e.kind)}: #{e.detail}",
-          fatal: false
-        })
-      )
+      tell(c, 0, unreadable(e))
       serving
     }
     Ok(m) -> serve_one(c, serving, mine, run_it, m.id, m.body)

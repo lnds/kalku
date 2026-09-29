@@ -114,6 +114,19 @@ fn reported(state: State) : SessionState {
 }
 
 #[doc("""
+What to say about a line that is not a request kalku can read.
+
+The same answer wherever it is noticed — reading a client's first line,
+or reading one that arrived mid-run — because it is the same fact about
+the same line.
+""")]
+pub fn unreadable(e: ProtocolError) : ServerEvent = ErrorEv(ErrorMsg {
+  code: "bad_request",
+  message: "#{kind_name(e.kind)}: #{e.detail}",
+  fatal: false
+})
+
+#[doc("""
 Why a request cannot be served, or nothing when it can.
 
 A run for a root the server is already running is not refused: it waits,
