@@ -51,8 +51,8 @@ defmodule Kalku.Prepare do
   # environment the protocol promises it. Compiling anyway would write into
   # the user's project.
   defp inside_reni(reni) when is_binary(reni) and reni != "" do
-    build = Path.expand(build_path())
-    home = Path.expand(reni)
+    build = resolved(build_path())
+    home = resolved(reni)
 
     if build == home or String.starts_with?(build, home <> "/") do
       :ok
@@ -64,6 +64,44 @@ defmodule Kalku.Prepare do
   end
 
   defp inside_reni(_), do: {:error, "reni_not_isolated", "no reni was given in `hello`"}
+
+  # A path with its symlinks followed. `Path.expand/1` resolves `.` and
+  # `..` but walks through a link as though it were a directory, and a
+  # temporary directory on macOS is reached through one: `/var` is a link
+  # to `private/var`. Two names for the same directory are the same
+  # directory, and a check that says otherwise refuses a kalku that was
+  # summoned correctly.
+  defp resolved(path) do
+    path
+    |> Path.expand()
+    |> Path.split()
+    |> Enum.reduce("/", fn
+      "/", acc -> acc
+      segment, acc -> follow(Path.join(acc, segment))
+    end)
+  end
+
+  # Links can point at links; the depth is a guard against a cycle, which
+  # is a broken filesystem rather than a path worth following forever.
+  defp follow(path, depth \\ 0)
+  defp follow(path, depth) when depth > 16, do: path
+
+  defp follow(path, depth) do
+    case :file.read_link(path) do
+      {:ok, target} ->
+        target = List.to_string(target)
+
+        case Path.type(target) do
+          :absolute -> target
+          _ -> Path.join(Path.dirname(path), target)
+        end
+        |> Path.expand()
+        |> follow(depth + 1)
+
+      _ ->
+        path
+    end
+  end
 
   defp test_env do
     if Mix.env() == :test do

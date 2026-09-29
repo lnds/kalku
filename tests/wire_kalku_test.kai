@@ -63,3 +63,31 @@ test "there is a fixture file for every kalku message type" {
   assert length(fixture_files("kalku/requests")) == 10
   assert length(fixture_files("kalku/replies")) == 12
 }
+
+# A kalku hands coverage over inline when it is small and in a file when
+# it is not — which is every project big enough to be worth measuring.
+# A reader that knows only the inline form loses exactly those projects'
+# coverage, and then casts every wekufe against the whole suite while
+# calling that suite the tests that cover it.
+test "coverage spilled to a file decodes to the same entries as inline" {
+  let text = """[{"file":"lib/a.ex","line":7,"tests":["test/a_test.exs:3"]},
+                 {"file":"lib/b.ex","line":9,"tests":["test/b_test.exs:4","test/b_test.exs:8"]}]"""
+
+  assert decode_coverage(text)
+    == Ok([
+      CoverageEntry { file: "lib/a.ex", line: 7, tests: ["test/a_test.exs:3"] },
+      CoverageEntry { file: "lib/b.ex", line: 9, tests: ["test/b_test.exs:4", "test/b_test.exs:8"] }
+    ])
+}
+
+test "an empty coverage file is no coverage, not a failure" {
+  assert decode_coverage("[]") == Ok([])
+}
+
+# Guessing at a coverage file that is not what it claims would put
+# numbers nobody can trace behind a survivor's `covered by`.
+test "a coverage file that is not an array of entries is refused" {
+  assert is_err(decode_coverage("{\"file\":\"lib/a.ex\"}"))
+  assert is_err(decode_coverage("not json at all"))
+  assert is_err(decode_coverage("[{\"file\":\"lib/a.ex\"}]"))
+}

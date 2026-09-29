@@ -142,6 +142,15 @@ MIX_BUILD_PATH="@RENI@/build"
 export MIX_ENV MIX_BUILD_PATH
 
 mkdir -p "$MIX_BUILD_PATH"
+
+# The path with every symlink resolved, because mix writes relative
+# symlinks into it — a dependency's `priv` — and counts the levels from
+# the path it was given. On macOS a temporary directory lives under
+# `/var`, which is itself a link to `private/var`, so a path counted
+# there comes out one level short and the links dangle.
+MIX_BUILD_PATH="$(cd "$MIX_BUILD_PATH" && pwd -P)"
+export MIX_BUILD_PATH
+
 mix deps.compile >&2 </dev/null
 exec mix kalku.serve "$@"
 """
