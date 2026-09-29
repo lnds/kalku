@@ -423,9 +423,16 @@ fn react(
 
 fn record(run: Run, slot: Slot, r: Reaction) : Run / Telling = match (r.outcome, slot.doing) {
   (Some(o), Working(job)) -> {
-    Telling.tell_of(
-      "worker #{slot.worker}: #{job.wekufe} #{outcome_name(o)} (#{length(run.verdicts) + 1} of #{cast_count(run)})"
-    )
+    let done = length(run.verdicts) + 1
+    Telling.tell_of("worker #{slot.worker}: #{job.wekufe} #{outcome_name(o)}")
+    # How far the run has got is its own note: one line per wekufe says
+    # what happened to that wekufe, and this says where the run is. A
+    # client hears the second one and needs no count of its own.
+    let _ = if worth_saying(done, cast_count(run)) {
+      Telling.got_through(done, cast_count(run))
+    } else {
+      ()
+    }
     Run {
       ...run,
       verdicts: run.verdicts
@@ -439,7 +446,23 @@ fn record(run: Run, slot: Slot, r: Reaction) : Run / Telling = match (r.outcome,
 
 # What the run set out to cast: what is done, what is in flight, and what
 # is still queued.
-fn cast_count(run: Run) : Int = length(run.verdicts) + waiting_on(run.slots) + length(run.queue)
+#
+# In flight means holding a wekufe, not merely holding a deadline: a slot
+# being summoned has a greeting deadline and no wekufe, and counting it
+# would make the total start above the plan and shrink as the workers are
+# born — a figure a client cannot draw a bar from.
+fn cast_count(run: Run) : Int =
+  length(run.verdicts) + in_flight(run.slots) + length(run.queue)
+
+fn in_flight(slots: [Slot]) : Int = length(
+  filter(
+    slots,
+    s => match s.doing {
+      Working(_) -> true
+      _ -> false
+    }
+  )
+)
 
 # Chasing keeps the job so the wekufe still has a name if the chase fails.
 fn chase(run: Run, slot: Slot, request: KalkuRequest, awaiting: Awaiting) : Run / Process + Clock {
