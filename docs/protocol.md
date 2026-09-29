@@ -460,6 +460,7 @@ Unlike the kalku protocol's `progress`, which reports how far one long request h
 ```json
 {"type":"run","id":1,"root":"/home/u/my_app","scope":{"since":"main"},"format":"json"}
 {"type":"phase","id":1,"phase":"baseline"}
+{"type":"phase","id":1,"phase":"cast"}
 {"type":"progress","id":1,"done":0,"total":480,"estimate_ms":540000}
 {"type":"progress","id":1,"done":120,"total":480}
 {"type":"outcome","id":1,"wekufe":"c1f37a90e2b4","site":{"site_id":"c1f37a90e2b4","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.next_token/2","ordinal":1,"span":{"start":{"line":42,"col":7,"byte":1180},"end":{"line":42,"col":9,"byte":1182}},"spell":"compare","original":">=","replacement":">","reload":"module"},"outcome":"survived","covering_tests":["test/my_app/parser_test.exs:18"],"hint":"No test tells i >= 0 apart from i > 0. Add a case at the boundary where they are equal.","duration_ms":41}
