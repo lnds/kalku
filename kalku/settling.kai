@@ -29,7 +29,7 @@ pub fn settle(
       2
     }
     Ok(known) -> {
-      let plan = plan_for(known, reni_for(temp_dir(), named_after(root)))
+      let plan = plan_for(known, reni_here(root))
       let wanted = dependency_wanted(root, plan)
       Stdout.print(intent(root, plan, wanted))
       if assume_yes or agreed() { write_it(root, plan, wanted) } else { declined() }
@@ -45,6 +45,18 @@ fn which_language(root: String, language: Option[String]) : Result[Known, Puzzle
     Some(name) -> named(name)
     None -> detect(dir.list_dir(root))
   }
+
+#[doc("""
+Where this project's reni goes on this machine.
+
+Derived rather than written down: a reni lives under the temporary
+directory, which is one machine's answer and not a project's. `init`
+writes a `.kalku.toml` that is shared through the repository, and a path
+from the machine that ran it means nothing on anyone else's — worse, it
+means something wrong on the machine it came from once the directory is
+swept.
+""")]
+pub fn reni_here(root: String) : String / Env = reni_for(temp_dir(), named_after(root))
 
 # The reni is named after the project, and a project named `.` is
 # whatever directory one is standing in — which the shell knows and this

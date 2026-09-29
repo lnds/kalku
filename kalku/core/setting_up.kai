@@ -107,9 +107,13 @@ language = "#{known.language}"
 # path, an environment — is written down where it can be read.
 summon = "#{SUMMONER_PATH}"
 
-# Outside the project: a run's artefacts are not the project's, and a
-# kalku that copies the tree would otherwise copy this into itself.
-reni = "#{reni}"
+# Where a run's artefacts go. Left to kalku, which puts them under this
+# machine's temporary directory, outside the project — a run's artefacts
+# are not the project's, and a kalku that copies the tree would otherwise
+# copy them into itself. On this machine that is:
+#   #{reni}
+# Set it here only to override that, and remember this file is shared:
+# a path from one machine means nothing on another.
 
 [run]
 # One worker while a kalku has a single build path to give.

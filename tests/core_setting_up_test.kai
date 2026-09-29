@@ -32,12 +32,22 @@ test "the reni is outside the project and named after it" {
   assert reni_for("/tmp/", "thing") == "/tmp/kalku/thing"
 }
 
-test "what init writes says where the reni is and how to summon the kalku" {
+test "what init writes says how to summon the kalku" {
   let plan = plan_for(elixir(), "/tmp/kalku/thing")
 
   assert has(plan.config, "language = \"elixir\"")
-  assert has(plan.config, "reni = \"/tmp/kalku/thing\"")
   assert has(plan.config, "summon = \".kalku/summon\"")
+}
+
+# `.kalku.toml` is shared through the repository and a reni is one
+# machine's temporary directory. Writing the path in means the next
+# person to clone the project reads a directory that is not theirs, and
+# the run they get is not the run this file describes.
+test "the reni is not written into the file everyone shares" {
+  let plan = plan_for(elixir(), "/tmp/kalku/thing")
+
+  assert not has(plan.config, "reni = ")
+  assert has(plan.config, "/tmp/kalku/thing")
 }
 
 # stdout carries the protocol: a summoning that let a build write there
