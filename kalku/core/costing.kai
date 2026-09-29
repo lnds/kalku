@@ -1,0 +1,80 @@
+#[doc("""
+What a run is about to cost, said before it is spent.
+
+A run knows this by the time it starts casting: the baseline has told it
+how long every test took, and the plan has told it which tests judge each
+wekufe. Multiplying the two is arithmetic, not a guess — which is why the
+number is worth printing and why it is phrased as what it is, the rate
+the baseline ran at.
+
+It counts the tests and nothing else. Loading a wekufe into a warm kalku
+costs something too, and that is not a number this side can know without
+measuring it, so the estimate is a floor rather than a promise and says
+so in the words around it.
+""")]
+
+import kalku.core.planner
+
+#[doc("""
+How long the tests of these wekufe took in the baseline, in milliseconds.
+
+The work, before it is shared out: one wekufe costs what the tests that
+judge it cost. A cast that fails stops at the first failing test, so this
+is the most those tests can cost, not the least.
+""")]
+pub fn tests_ms(casts: [Wekufe], durations: [(String, Int)]) : Int =
+  sum(casts | (c => judged_by(c.tests, durations)))
+
+fn judged_by(tests: [String], durations: [(String, Int)]) : Int =
+  sum(tests | (t => duration_of(t, durations)))
+
+#[doc("""
+How long a run is likely to take, in milliseconds.
+
+Workers share the work, so they divide it; a run with none is a run that
+casts nothing.
+""")]
+pub fn estimate_ms(casts: [Wekufe], durations: [(String, Int)], workers: Int) : Int
+  requires workers >= 0
+  ensures result >= 0
+= if workers <= 0 { 0 } else { tests_ms(casts, durations) / workers }
+
+#[doc("""
+That estimate in the words someone can act on.
+
+Rounded to what the number deserves: nobody waits differently for eight
+minutes than for eight and a half, and a figure with more precision than
+the thing it estimates invites trust it has not earned.
+""")]
+pub fn how_long(ms: Int) : String = if ms < 1000 {
+  "no time at all"
+} else if ms < 60000 {
+  "under a minute"
+} else if ms < 5400000 {
+  plural(rounded_div(ms, 60000), "minute")
+} else {
+  plural(rounded_div(ms, 3600000), "hour")
+}
+
+#[doc("The whole sentence a run prints before it starts casting.")]
+pub fn what_it_costs(casts: [Wekufe], durations: [(String, Int)], workers: Int) : String {
+  let ms = estimate_ms(casts, durations, workers)
+  if ms < 1000 {
+    "this should be quick"
+  } else {
+    "about #{how_long(ms)} at the rate the baseline ran, plus loading each wekufe"
+  }
+}
+
+fn plural(n: Int, unit: String) : String = if n == 1 { "1 #{unit}" } else { "#{n} #{unit}s" }
+
+# Half up, so an estimate never rounds its way down to nothing.
+fn rounded_div(n: Int, by: Int) : Int = (n + by / 2) / by
+
+fn duration_of(test_id: String, durations: [(String, Int)]) : Int = match find(
+  durations,
+  d => d.fst == test_id
+) {
+  Some(found) -> found.snd
+  None -> 0
+}

@@ -1,0 +1,91 @@
+import kalku.core.costing
+import kalku.core.planner
+import kalku.wire.shapes
+import kalku.wire.enums
+
+fn at(line: Int) : Site = Site {
+  site_id: "s#{line}",
+  file: "lib/a.ex",
+  enclosing: Some("A.f/1"),
+  ordinal: Some(1),
+  span: Span { start: Position { line: line, col: 1, byte: 0 }, end: None },
+  spell: Literal,
+  original: Some("1"),
+  replacement: "0",
+  reload: ModuleOnly
+}
+
+fn cast_of(line: Int, tests: [String]) : Wekufe = Wekufe {
+  site: at(line),
+  tests: tests,
+  timeout_ms: 60000,
+  casts: 1
+}
+
+fn took(ms: Int) : [(String, Int)] = [("t1", ms), ("t2", ms * 2)]
+
+# A wekufe costs what the tests that judge it cost: that is the whole
+# arithmetic, and it is why the number is worth printing rather than
+# guessing at.
+test "the work is the tests that judge each wekufe" {
+  let casts = [cast_of(1, ["t1"]), cast_of(2, ["t1", "t2"])]
+
+  assert tests_ms(casts, took(100)) == 100 + 100 + 200
+}
+
+# A test the baseline never timed contributes nothing rather than a
+# number nobody measured.
+test "a test with no timing costs nothing, not a guess" {
+  assert tests_ms([cast_of(1, ["unknown"])], took(100)) == 0
+  assert tests_ms([], took(100)) == 0
+}
+
+test "workers share the work" {
+  let casts = [cast_of(1, ["t1", "t2"]), cast_of(2, ["t1", "t2"])]
+
+  assert estimate_ms(casts, took(100), 1) == 600
+  assert estimate_ms(casts, took(100), 2) == 300
+  assert estimate_ms(casts, took(100), 0) == 0
+}
+
+# The words carry as much precision as the estimate has earned, and no
+# more: nobody waits differently for eight minutes than for eight and a
+# half.
+test "the estimate is said in units someone can act on" {
+  assert how_long(0) == "no time at all"
+  assert how_long(900) == "no time at all"
+  assert how_long(30000) == "under a minute"
+  assert how_long(60000) == "1 minute"
+  assert how_long(510000) == "9 minutes"
+  assert how_long(7200000) == "2 hours"
+}
+
+# Rounding half up, so a run that takes a minute and a half is never
+# announced as one that takes one.
+test "an estimate never rounds its way down to nothing" {
+  assert how_long(90000) == "2 minutes"
+  assert how_long(61000) == "1 minute"
+}
+
+test "a run with nothing to cast promises nothing" {
+  assert what_it_costs([], took(100), 1) == "this should be quick"
+}
+
+test "a run that will take a while says so, and says what the number is" {
+  let many = repeat(cast_of(1, ["t1", "t2"]), 100)
+  let said = what_it_costs(many, took(1000), 1)
+
+  assert is_some(index_of(said, "5 minutes"))
+  assert is_some(index_of(said, "at the rate the baseline ran"))
+  assert is_some(index_of(said, "plus loading each wekufe"))
+}
+
+# More workers never make a run cost more, and neither does dropping a
+# wekufe from it. An estimate that broke either rule would be describing
+# something other than the run.
+check "work never grows by adding a worker" with a: Int, b: Int {
+  let casts = [cast_of(1, ["t1"]), cast_of(2, ["t2"])]
+  let one = 1 + abs(a) % 8
+  let more = one + abs(b) % 8
+  estimate_ms(casts, took(100), more) <= estimate_ms(casts, took(100), one)
+}
