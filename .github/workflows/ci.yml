@@ -37,29 +37,26 @@ jobs:
       - id: project
         run: echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
+  # Format, lint and the quality gate: seconds of work, in a job of their
+  # own so a slip in any of them is a red cross in a minute rather than
+  # one reported from behind a quarter hour of tests.
+  kaikai-checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/kaikai
+      - run: make fmt-check lint km
+
   kaikai-side:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install kaikai (pinned)
-        run: |
-          v="$(cat .kaikai-version)"
-          curl -fsSL https://raw.githubusercontent.com/kaikailang-org/kaikai/main/install.sh \
-            | KAIKAI_DIST_BASE="https://github.com/kaikailang-org/kaikai/releases/download/v$v" sh
-          echo "$HOME/.kaikai/bin" >> "$GITHUB_PATH"
-
-      - name: Install km
-        run: |
-          curl -fsSL https://github.com/lnds/kimun/releases/download/v0.26.0/km-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz -C /usr/local/bin km
-
-      - name: Check toolchain
-        run: kai --version && km --version
-
-      - run: make ci
+      - uses: ./.github/actions/kaikai
+      - run: make build test-kaikai
 
   elixir-kalku:
     needs: changes
@@ -81,10 +78,10 @@ jobs:
   # The one required check: green when every job that ran passed or was skipped.
   ci-ok:
     if: always()
-    needs: [changes, kaikai-side, elixir-kalku]
+    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}"; do
             case "$r" in success|skipped) ;; *) echo "a job ended in: $r"; exit 1 ;; esac
           done
