@@ -158,15 +158,11 @@ exec kalku-kaikai "$@"
 """
 
 # A kalku runs inside the project's own runtime, so the project has to
-# depend on it. Shown rather than written: this is the owner's build
-# file, and kalku does not edit it without being told to.
+# depend on it. One line, from the package registry: a project that
+# depends on a checkout of this repository depends on wherever that
+# checkout happened to be.
 fn dependency_for(known: Known) : Option[String] = if known.language == "elixir" {
-  Some("""
-{:kalku_elixir,
- git: "https://github.com/lnds/kalku.git",
- sparse: "adapters/elixir",
- only: :test,
- runtime: false}""")
+  Some("{:kalku_elixir, \"~> 0.1\", only: :test, runtime: false}")
 } else {
   None
 }
@@ -174,3 +170,64 @@ fn dependency_for(known: Known) : Option[String] = if known.language == "elixir"
 #[doc("True when this project already depends on the kalku it needs.")]
 pub fn depends_already(known: Known, build_file: String) : Bool =
   known.language != "elixir" or is_some(index_of(build_file, "kalku_elixir"))
+
+#[doc("""
+The build file with the dependency declared in it, or why it was left
+alone.
+
+The insertion goes just inside the list a project's `deps` returns, which
+is the one shape every Mix project shares. A build file that does not
+have that shape is somebody's own code doing something else with it, and
+guessing at it would be worse than saying so: the error is what init
+prints instead, with the line to add by hand.
+
+Byte offsets throughout, because `index_of` answers in bytes and a build
+file with an accent in a comment would otherwise be cut mid-character.
+""")]
+pub fn with_dependency(build_file: String, line: String) : Result[String, String] =
+  if is_some(index_of(build_file, "kalku_elixir")) {
+    Err("it already depends on kalku_elixir")
+  } else {
+    inserted_after_deps(build_file, line)
+  }
+
+fn inserted_after_deps(build_file: String, line: String) : Result[String, String] =
+  match opening_of_deps(build_file) {
+    None -> Err("no `deps do` with a list in it")
+    Some(at) -> spliced(build_file, at, entry_for(build_file, at, line))
+  }
+
+# The `[` that opens the list, as a byte offset one past it.
+fn opening_of_deps(build_file: String) : Option[Int] {
+  let from = index_of(build_file, "deps do")!
+  let rest = byte_slice(build_file, from, byte_length(build_file) - from)!
+  let bracket = index_of(rest, "[")!
+  Some(from + bracket + 1)
+}
+
+# The entry keeps the shape the list already had: one line stays one
+# and a list that was empty takes neither, so what comes out reads as
+# though a hand had written it and `mix format` has nothing to say.
+fn entry_for(build_file: String, at: Int, line: String) : String {
+  let after = byte_slice(build_file, at, byte_length(build_file) - at).unwrap_or("")
+  if starts_with(trim_left(after), "]") {
+    line
+  } else if on_one_line(after) {
+    "#{line}, "
+  } else {
+    "\n      #{line},"
+  }
+}
+
+# True when the list closes before its first line ends.
+fn on_one_line(after: String) : Bool = match (index_of(after, "]"), index_of(after, "\n")) {
+  (Some(close), Some(newline)) -> close < newline
+  (Some(_), None) -> true
+  _ -> false
+}
+
+fn spliced(build_file: String, at: Int, entry: String) : Result[String, String] =
+  match (byte_slice(build_file, 0, at), byte_slice(build_file, at, byte_length(build_file) - at)) {
+    (Some(before), Some(after)) -> Ok(before ++ entry ++ after)
+    _ -> Err("its `deps` list does not fall on a character boundary")
+  }

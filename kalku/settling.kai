@@ -6,7 +6,10 @@ where they are tested, and the file-touching stays in one place, where it
 can be read in full before anyone runs it against their project.
 
 Nothing here writes over something that is already there: a project that
-has been set up before is told so, and left as it is.
+has been set up before is told so, and left as it is. The one file that
+belongs to the owner rather than to kalku is the build file, and it is
+changed only by adding the line that makes the kalku reachable — after
+saying so, and never when its shape is not the one every project shares.
 """)]
 
 import fs.file
@@ -27,8 +30,9 @@ pub fn settle(
     }
     Ok(known) -> {
       let plan = plan_for(known, reni_for(temp_dir(), named_after(root)))
-      Stdout.print(intent(root, plan))
-      if assume_yes or agreed() { write_it(root, plan) } else { declined() }
+      let wanted = dependency_wanted(root, plan)
+      Stdout.print(intent(root, plan, wanted))
+      if assume_yes or agreed() { write_it(root, plan, wanted) } else { declined() }
     }
   }
 }
@@ -76,17 +80,29 @@ fn temp_dir() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
 
 # ---- asking -------------------------------------------------------------
 
-fn intent(root: String, plan: Plan) : String = join(
+fn intent(root: String, plan: Plan, wanted: Option[String]) : String = join(
   [
     "kalku: this looks like #{plan.known.language} (#{plan.known.marker} is here)",
     "",
     "It will write:",
     "  #{root}/#{CONFIG_PATH}     how a run is set up",
-    "  #{root}/#{SUMMONER_PATH}   how this project's kalku is summoned",
-    ""
-  ],
+    "  #{root}/#{SUMMONER_PATH}   how this project's kalku is summoned"
+  ]
+    ++ also_the_build_file(plan, wanted)
+    ++ [""],
   "\n"
 )
+
+# The build file is named in the question, not after the answer: a kalku
+# runs inside the project's runtime, so this line is what makes it
+# reachable at all, and it is still the owner's file.
+fn also_the_build_file(plan: Plan, wanted: Option[String]) : [String] = match wanted {
+  None -> []
+  Some(line) -> [
+    "  #{plan.known.marker}            this line in `deps`, so the kalku can be summoned:",
+    "                        #{line}"
+  ]
+}
 
 fn agreed() : Bool / Stdin + Stdout {
   Stdout.print("Write them? [y/N] ")
@@ -103,14 +119,18 @@ fn declined() : Int / Stdout {
 
 # ---- writing ------------------------------------------------------------
 
-fn write_it(root: String, plan: Plan) : Int / Stdout + Stderr + File + Process {
+fn write_it(
+  root: String,
+  plan: Plan,
+  wanted: Option[String]
+) : Int / Stdout + Stderr + File + Process {
   let config = "#{root}/#{CONFIG_PATH}"
   let summoner = "#{root}/#{SUMMONER_PATH}"
   keep(config, plan.config)
   let _ = dir.create_dir("#{root}/.kalku")
   keep(summoner, plan.summoner)
   make_runnable(summoner)
-  say_what_is_left(root, plan)
+  declare_dependency(root, plan, wanted)
   0
 }
 
@@ -132,29 +152,54 @@ fn make_runnable(path: String) : Unit / Process {
   ()
 }
 
-# The one thing kalku will not do for someone: edit the build file that
-# decides what their project depends on.
-fn say_what_is_left(root: String, plan: Plan) : Unit / Stdout + File = match plan.dependency {
-  None -> Stdout.print("\nkalku: ready. Try `kalku run <file>`.")
+# The line this project still needs, if it needs one: a language whose
+# kalku is a dependency, and a build file that does not name it yet.
+fn dependency_wanted(root: String, plan: Plan) : Option[String] / File = match plan.dependency {
+  None -> None
   Some(line) -> if depends_already(plan.known, build_file_of(root, plan.known)) {
-    Stdout.print("\nkalku: ready. Try `kalku run <file>`.")
+    None
   } else {
-    Stdout.print(
-      join(
-        [
-          "",
-          "One thing left, in #{plan.known.marker}: this kalku runs inside your",
-          "project's runtime, so your project has to depend on it. Add to `deps`:",
-          "",
-          line,
-          "",
-          "Then `mix deps.get`, and `kalku run <file>`."
-        ],
-        "\n"
-      )
-    )
+    Some(line)
   }
 }
+
+fn declare_dependency(
+  root: String,
+  plan: Plan,
+  wanted: Option[String]
+) : Unit / Stdout + File = match wanted {
+  None -> Stdout.print("\nkalku: ready. Try `kalku run <file>`.")
+  Some(line) -> {
+    let path = "#{root}/#{plan.known.marker}"
+    match with_dependency(build_file_of(root, plan.known), line) {
+      Ok(declared) -> {
+        file.write(path, declared)
+        Stdout.print("  wrote   #{path} (the dependency, in `deps`)")
+        Stdout.print("\nkalku: ready. Run `mix deps.get`, then `kalku run <file>`.")
+      }
+      Err(why) -> by_hand(plan, line, why)
+    }
+  }
+}
+
+# A build file kalku does not recognise is somebody's own code, and
+# editing it on a guess is worse than asking for a line: the reason is
+# printed too, so the ask does not look like a whim.
+fn by_hand(plan: Plan, line: String, why: String) : Unit / Stdout = Stdout.print(
+  join(
+    [
+      "",
+      "One thing left, in #{plan.known.marker} — kalku left it alone because",
+      "#{why}. This kalku runs inside your project's runtime, so your",
+      "project has to depend on it. Add to `deps`:",
+      "",
+      "    #{line}",
+      "",
+      "Then `mix deps.get`, and `kalku run <file>`."
+    ],
+    "\n"
+  )
+)
 
 fn build_file_of(root: String, known: Known) : String / File {
   let path = "#{root}/#{known.marker}"
