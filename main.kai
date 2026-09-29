@@ -15,6 +15,8 @@ import kalku.core.report_agent
 import kalku.core.report_json
 import kalku.core.report_github
 import kalku.core.config
+import kalku.core.equivalent
+import kalku.core.equivalent_parse as eqfile
 import kalku.core.setting_up
 import kalku.core.info
 import kalku.core.mcp
@@ -103,7 +105,13 @@ fn run_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + Spa
         2
       }
     } else {
-      measured(asking_for(c, wanted), wanted)
+      match declared_equivalents(".") {
+        Err(why) -> {
+          Stderr.eprint("kalku: #{why}")
+          2
+        }
+        Ok(declared) -> measured(asking_for(c, wanted, declared), wanted)
+      }
     }
   }
 
@@ -193,14 +201,37 @@ fn pool_of(c: Config) : PoolSpec / Env = PoolSpec {
   summons_allowed: 2
 }
 
-fn asking_for(c: Config, wanted: Wanted) : Asking / Env = Asking {
+fn asking_for(c: Config, wanted: Wanted, declared: [equivalent.Entry]) : Asking / Env = Asking {
   spec: pool_of(c),
   files: wanted.files,
   only: [],
   spells: c.spells,
   exclude_calls: c.exclude_calls,
+  exclude: c.exclude,
+  equivalents: declared,
   limit: wanted.limit.unwrap_or(0),
   timeout_floor_ms: c.timeout_floor_ms
+}
+
+#[doc("Where a project writes down what it has decided cannot be told apart.")]
+const EQUIVALENT_PATH : String = ".kalku/equivalent"
+
+# Suppressions are input, not an invariant: a file somebody typed is read
+# into a Result whose error names the line, never into a panic. A run
+# with an unreadable suppression file does not start, because measuring
+# while ignoring what a project declared is measuring something else.
+fn declared_equivalents(root: String) : Result[[equivalent.Entry], String] / File {
+  let path = if root == "." { EQUIVALENT_PATH } else { "#{root}/#{EQUIVALENT_PATH}" }
+  if file.exists(path) {
+    match eqfile.parse(file.read(path)) {
+      Ok(entries) -> Ok(entries)
+      Err(problems) -> Err(
+        join(["#{path}:"] ++ (problems | (p => "  line #{p.at}: #{p.message}")), "\n")
+      )
+    }
+  } else {
+    Ok([])
+  }
 }
 
 # ---- the agent loop -----------------------------------------------------
@@ -257,22 +288,39 @@ fn recast_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + 
           2
         }
       } else {
-        measured(asking_again(c, sites_for(all, wanted.files), wanted), wanted)
+        match declared_equivalents(".") {
+          Err(why) -> {
+            Stderr.eprint("kalku: #{why}")
+            2
+          }
+          Ok(declared) -> measured(
+            asking_again(c, sites_for(all, wanted.files), wanted, declared),
+            wanted
+          )
+        }
       }
     }
   }
 
 # The files those sites live in, because a kalku is asked for sites by
 # file and the plan is narrowed to the wekufe that were named.
-fn asking_again(c: Config, sites: [Site], wanted: Wanted) : Asking / Env = Asking {
-  spec: pool_of(c),
-  files: uniq(sites | (.file)),
-  only: sites | (.site_id),
-  spells: c.spells,
-  exclude_calls: c.exclude_calls,
-  limit: 0,
-  timeout_floor_ms: c.timeout_floor_ms
-}
+fn asking_again(
+  c: Config,
+  sites: [Site],
+  wanted: Wanted,
+  declared: [equivalent.Entry]
+) : Asking / Env =
+  Asking {
+    spec: pool_of(c),
+    files: uniq(sites | (.file)),
+    only: sites | (.site_id),
+    spells: c.spells,
+    exclude_calls: c.exclude_calls,
+    exclude: c.exclude,
+    equivalents: declared,
+    limit: 0,
+    timeout_floor_ms: c.timeout_floor_ms
+  }
 
 # Proposed, never applied: an agent may say why a wekufe cannot be told
 # apart, and a person decides whether that is true. `.kalku/equivalent`
@@ -395,7 +443,12 @@ fn streamed[a, e](
 # A server is asked about a root rather than standing in one: the config
 # comes from there, the kalku is summoned there, and the paths a run
 # reports stay the project's own.
-fn asking_at(c: Config, root: String, files: [String]) : Asking / Env = Asking {
+fn asking_at(
+  c: Config,
+  root: String,
+  files: [String],
+  declared: [equivalent.Entry]
+) : Asking / Env = Asking {
   spec: PoolSpec {
     ...pool_of(c),
     command: "/bin/sh",
@@ -406,6 +459,8 @@ fn asking_at(c: Config, root: String, files: [String]) : Asking / Env = Asking {
   only: [],
   spells: c.spells,
   exclude_calls: c.exclude_calls,
+  exclude: c.exclude,
+  equivalents: declared,
   limit: 0,
   timeout_floor_ms: c.timeout_floor_ms
 }
@@ -512,12 +567,15 @@ fn measured_for(
 } else {
   match settings_in(root_of(c)) {
     Err(why) -> refused(id, why)
-    Ok(cfg) -> as_agent(
-      id,
-      with_mailbox {
-        untold(() => measure(asking_at(cfg, root_of(c), c.wekufe)))
-      }
-    )
+    Ok(cfg) -> match declared_equivalents(root_of(c)) {
+      Err(why) -> refused(id, why)
+      Ok(declared) -> as_agent(
+        id,
+        with_mailbox {
+          untold(() => measure(asking_at(cfg, root_of(c), c.wekufe, declared)))
+        }
+      )
+    }
   }
 }
 
@@ -535,12 +593,17 @@ fn recast_for(
       if not is_empty(unknown) {
         refused(id, "never cast: #{join(unknown, ", ")}")
       } else {
-        as_agent(
-          id,
-          with_mailbox {
-            untold(() => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe))))
-          }
-        )
+        match declared_equivalents(root_of(c)) {
+          Err(why) -> refused(id, why)
+          Ok(declared) -> as_agent(
+            id,
+            with_mailbox {
+              untold(
+                () => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe), declared))
+              )
+            }
+          )
+        }
       }
     }
   }
@@ -596,8 +659,13 @@ fn as_agent(id: Option[Int], found: Found) : String / File = match found.report 
   Some(r) -> answered(id, agent(r, of_files(sources_of(r))))
 }
 
-fn narrowed(cfg: Config, root: String, sites: [Site]) : Asking / Env = Asking {
-  ...asking_at(cfg, root, uniq(sites | (.file))),
+fn narrowed(
+  cfg: Config,
+  root: String,
+  sites: [Site],
+  declared: [equivalent.Entry]
+) : Asking / Env = Asking {
+  ...asking_at(cfg, root, uniq(sites | (.file)), declared),
   only: sites | (.site_id)
 }
 
@@ -624,7 +692,10 @@ fn measured_over(
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
   let files = every_source(p.root)
   let now = fingerprint(read_hashes(files ++ every_test(p.root)))
-  let asking = asking_at(c, p.root, files)
+  # A run that cannot read what the project declared does not start: the
+  # alternative is measuring while ignoring a suppression, and reporting
+  # a hole somebody already decided was not one.
+  let asking = asking_at(c, p.root, files, declared_equivalents(p.root).unwrap_or([]))
   # Asked before the pool is opened, and never while it is being opened:
   # a kalku greeting its way to `ready` talks into the same mailbox this
   # is waiting on, and two conversations in one mailbox is how a run
