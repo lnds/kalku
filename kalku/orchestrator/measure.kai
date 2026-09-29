@@ -90,6 +90,10 @@ pub fn discover(
     Ok(k) -> {
       let me = Actor.self()
       let _reader = spawn_actor(() => read_loop(k, me))
+      # And its stderr, in its own fiber: a kalku that dies on the way to
+      # `ready` says why there, and a child filling one pipe while the
+      # parent drains the other deadlocks.
+      let _errs = spawn_actor(() => read_errs_loop(k, me))
       let answer = interview(k, asking)
       kill_now(k)
       answer
@@ -210,35 +214,71 @@ fn tell(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Proce
 # `ready` as the answer to your own `hello` is how a run waits forever
 # for a reply it already threw away.
 fn await_kind(k: Kalku, kind: String) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] =
-  match receive_timeout(seconds(600)) {
-    None -> Err("the kalku said nothing while we waited for `#{kind}`")
-    Some(Cancel) -> Err("the run was cancelled")
-    Some(Wire(life, what)) -> if life == k.life {
-      from_ours(k, kind, what)
-    } else {
-      await_kind(k, kind)
-    }
+  await_with(k, kind, [])
+
+# A kalku that dies before it answers has usually said why on stderr: a
+# stack trace, a missing module, a build that would not run. Dropping
+# those lines leaves `the kalku closed its pipe` and nothing to act on,
+# and the only way back to the reason is editing the summon script by
+# hand. They are kept as they arrive and quoted with whatever went wrong.
+fn await_with(
+  k: Kalku,
+  kind: String,
+  said: [String]
+) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] = match receive_timeout(seconds(600)) {
+  None -> Err(with_last_words("the kalku said nothing while we waited for `#{kind}`", said))
+  Some(Cancel) -> Err("the run was cancelled")
+  Some(Wire(life, what)) -> if life == k.life {
+    from_ours(k, kind, what, said)
+  } else {
+    await_with(k, kind, said)
   }
+}
+
+#[doc("How many of a dying kalku's last lines are worth quoting.")]
+const LAST_LINES : Int = 12
+
+fn with_last_words(why: String, said: [String]) : String = if is_empty(said) {
+  why
+} else {
+  join([why, "what it said before it went:"] ++ (kept(said) | (l => "  #{l}")), "\n")
+}
+
+# The last lines, because a stack trace ends where the reason is.
+fn kept(said: [String]) : [String] {
+  let worth = filter(said, l => not is_empty(trim(l)))
+  if length(worth) <= LAST_LINES {
+    worth
+  } else {
+    drop(worth, length(worth) - LAST_LINES)
+  }
+}
 
 fn from_ours(
   k: Kalku,
   kind: String,
-  what: FromKalku
+  what: FromKalku,
+  said: [String]
 ) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] = match what {
   Said(line) -> match heard(line) {
-    Err(e) -> Err("the kalku wrote a line this side cannot read: #{e.detail}")
-    Ok(m) -> judge(k, kind, m.body)
+    Err(e) -> Err(
+      with_last_words("the kalku wrote a line this side cannot read: #{e.detail}", said)
+    )
+    Ok(m) -> judge(k, kind, m.body, said)
   }
-  Closed -> Err("the kalku closed its pipe before saying `#{kind}`")
-  Unreadable(why) -> Err(why)
-  Wrote(_chunk) -> await_kind(k, kind)
+  Closed -> Err(with_last_words("the kalku closed its pipe before saying `#{kind}`", said))
+  Unreadable(why) -> Err(with_last_words(why, said))
+  Wrote(chunk) -> await_with(k, kind, said ++ lines(chunk))
 }
 
-fn judge(k: Kalku, kind: String, body: KalkuReply) : Result[KalkuReply, String] / Clock + Actor[
-  OrchMsg
-] = match body {
+fn judge(
+  k: Kalku,
+  kind: String,
+  body: KalkuReply,
+  said: [String]
+) : Result[KalkuReply, String] / Clock + Actor[OrchMsg] = match body {
   KalkuError(e) -> Err("#{e.code}: #{e.message}")
-  Progress(_) -> await_kind(k, kind)
+  Progress(_) -> await_with(k, kind, said)
   answered -> if reply_kind(answered) == kind {
     Ok(answered)
   } else {

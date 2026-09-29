@@ -15,9 +15,33 @@ defmodule Mix.Tasks.Kalku.Serve do
 
   @requirements []
 
+  # The floor this kalku is built on: `JSON` is in the standard library
+  # from 1.18, and the protocol is JSON. Below it the loop dies decoding
+  # its first message, which reaches the other side as a closed pipe and
+  # tells nobody that the version is the reason.
+  @elixir_floor "1.18.0"
+
   @impl true
   def run(_args) do
-    Mix.shell(Mix.Shell.Quiet)
-    Kalku.Loop.run()
+    case too_old() do
+      nil ->
+        Mix.shell(Mix.Shell.Quiet)
+        Kalku.Loop.run()
+
+      said ->
+        IO.puts(:stderr, said)
+        exit({:shutdown, 1})
+    end
+  end
+
+  defp too_old do
+    running = System.version()
+
+    if Version.match?(running, ">= #{@elixir_floor}") do
+      nil
+    else
+      "kalku_elixir needs Elixir #{@elixir_floor} or newer for the built-in JSON module; " <>
+        "this project runs #{running}. Upgrade Elixir, or pin kalku_elixir out of this project."
+    end
   end
 end

@@ -124,8 +124,11 @@ fn agreed() : Bool / Stdin + Stdout {
   }
 }
 
+# Nothing written and why, because the common way to reach here is a
+# script or an agent with no terminal to answer from: the prompt is read
+# as end of input, which is not a no so much as a nobody.
 fn declined() : Int / Stdout {
-  Stdout.print("kalku: nothing written.")
+  Stdout.print("kalku: nothing written. Pass `-y` to write them without being asked.")
   0
 }
 

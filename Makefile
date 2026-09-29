@@ -52,8 +52,14 @@ test-kaikai: $(FAKE) $(KKALKU) properties
 # find a `check` under `tests/`, and a property nobody runs is a comment.
 # Named `properties` rather than `check`, which is already the target
 # that runs everything including the Elixir side.
+#
+# Only the files that hold one. Every invocation compiles the package
+# again, so asking the other twenty-eight whether they have a property
+# costs a full build each to answer no.
+PROPERTY_SRC := $(shell grep -l '^check "' $(wildcard tests/*_test.kai))
+
 properties:
-	@for f in $(wildcard tests/*_test.kai); do $(KAI) check $$f || exit 1; done
+	@for f in $(PROPERTY_SRC); do $(KAI) check $$f || exit 1; done
 
 # Not a gate: a benchmark fails nothing, it just says what something
 # costs. Run it when a claim about speed needs a number.
@@ -85,6 +91,9 @@ lint:
 km:
 	@sh tools/km-gate.sh
 
+# Everything CI runs on the kaikai side, for a developer who wants it in
+# one command. CI itself splits this in two, so the cheap half answers
+# without waiting for the tests.
 ci: fmt-check lint build test-kaikai km
 
 check: ci test-elixir
