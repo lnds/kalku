@@ -174,21 +174,26 @@ fn read_settings(text: String) : Result[Config, String] = match config.parse(tex
   }
 }
 
-# The kalku a project summons and the workspace it works in, both from
-# what `kalku init` wrote down.
-fn pool_of(c: Config) : PoolSpec = PoolSpec {
+# The kalku a project summons and the workspace it works in: the kalku
+# from what `kalku init` wrote down, the workspace from this machine,
+# unless the project insists on one.
+#
+# Never one fixed path. A reni shared between projects is two projects
+# compiling over each other's build, and the first symptom is a
+# measurement that cannot be reproduced.
+fn pool_of(c: Config) : PoolSpec / Env = PoolSpec {
   command: c.summon.unwrap_or(""),
   args: [],
   workers: c.workers.unwrap_or(1),
   root: ".",
-  reni: c.reni.unwrap_or("/tmp/kalku/reni"),
+  reni: c.reni.unwrap_or(reni_here(".")),
   inline_limit_bytes: 65536,
   env: StrMap { entries: [] },
   greeting_ms: 60000,
   summons_allowed: 2
 }
 
-fn asking_for(c: Config, wanted: Wanted) : Asking = Asking {
+fn asking_for(c: Config, wanted: Wanted) : Asking / Env = Asking {
   spec: pool_of(c),
   files: wanted.files,
   only: [],
@@ -259,7 +264,7 @@ fn recast_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + 
 
 # The files those sites live in, because a kalku is asked for sites by
 # file and the plan is narrowed to the wekufe that were named.
-fn asking_again(c: Config, sites: [Site], wanted: Wanted) : Asking = Asking {
+fn asking_again(c: Config, sites: [Site], wanted: Wanted) : Asking / Env = Asking {
   spec: pool_of(c),
   files: uniq(sites | (.file)),
   only: sites | (.site_id),
@@ -390,7 +395,7 @@ fn streamed[a, e](
 # A server is asked about a root rather than standing in one: the config
 # comes from there, the kalku is summoned there, and the paths a run
 # reports stay the project's own.
-fn asking_at(c: Config, root: String, files: [String]) : Asking = Asking {
+fn asking_at(c: Config, root: String, files: [String]) : Asking / Env = Asking {
   spec: PoolSpec {
     ...pool_of(c),
     command: "/bin/sh",
@@ -407,7 +412,7 @@ fn asking_at(c: Config, root: String, files: [String]) : Asking = Asking {
 
 # The pool for a project: the same kalku the CLI would summon, started
 # where the project is.
-fn pool_at(c: Config, root: String) : PoolSpec = PoolSpec {
+fn pool_at(c: Config, root: String) : PoolSpec / Env = PoolSpec {
   ...pool_of(c),
   command: "/bin/sh",
   args: ["-c", summoning(c, root)],
@@ -591,7 +596,7 @@ fn as_agent(id: Option[Int], found: Found) : String / File = match found.report 
   Some(r) -> answered(id, agent(r, of_files(sources_of(r))))
 }
 
-fn narrowed(cfg: Config, root: String, sites: [Site]) : Asking = Asking {
+fn narrowed(cfg: Config, root: String, sites: [Site]) : Asking / Env = Asking {
   ...asking_at(cfg, root, uniq(sites | (.file))),
   only: sites | (.site_id)
 }
@@ -655,18 +660,19 @@ fn warm_pool(
   c: Config,
   now: String,
   say: (ServerEvent) -> Unit / NetUnix
-) : Project / Stderr + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix = if still_warm(
-  p,
-  now
-) {
-  p
-} else {
-  {
-    each(p.slots, s => banish(s))
-    say(PhaseEv(PhaseMsg { phase: PhasePreparing }))
-    Project { ...p, slots: open_pool(pool_at(c, p.root)), fingerprint: now, next_id: 1 }
+) : Project / Stderr + Process + Spawn + Clock + Env + Actor[OrchMsg] + Ward + NetUnix =
+  if still_warm(
+    p,
+    now
+  ) {
+    p
+  } else {
+    {
+      each(p.slots, s => banish(s))
+      say(PhaseEv(PhaseMsg { phase: PhasePreparing }))
+      Project { ...p, slots: open_pool(pool_at(c, p.root)), fingerprint: now, next_id: 1 }
+    }
   }
-}
 
 # The paths a walk gives back are absolute, and joining them to the root
 # again names a file that does not exist — which hashes to the same

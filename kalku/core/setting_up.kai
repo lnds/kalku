@@ -107,9 +107,13 @@ language = "#{known.language}"
 # path, an environment — is written down where it can be read.
 summon = "#{SUMMONER_PATH}"
 
-# Outside the project: a run's artefacts are not the project's, and a
-# kalku that copies the tree would otherwise copy this into itself.
-reni = "#{reni}"
+# Where a run's artefacts go. Left to kalku, which puts them under this
+# machine's temporary directory, outside the project — a run's artefacts
+# are not the project's, and a kalku that copies the tree would otherwise
+# copy them into itself. On this machine that is:
+#   #{reni}
+# Set it here only to override that, and remember this file is shared:
+# a path from one machine means nothing on another.
 
 [run]
 # One worker while a kalku has a single build path to give.
@@ -142,6 +146,15 @@ MIX_BUILD_PATH="@RENI@/build"
 export MIX_ENV MIX_BUILD_PATH
 
 mkdir -p "$MIX_BUILD_PATH"
+
+# The path with every symlink resolved, because mix writes relative
+# symlinks into it — a dependency's `priv` — and counts the levels from
+# the path it was given. On macOS a temporary directory lives under
+# `/var`, which is itself a link to `private/var`, so a path counted
+# there comes out one level short and the links dangle.
+MIX_BUILD_PATH="$(cd "$MIX_BUILD_PATH" && pwd -P)"
+export MIX_BUILD_PATH
+
 mix deps.compile >&2 </dev/null
 exec mix kalku.serve "$@"
 """

@@ -88,3 +88,33 @@ fn reply_body(kind: String, v: JsonValue) : Result[KalkuReply, ProtocolError] = 
   "error" -> body(errormsg_of_json(v, ""), m => KalkuError(m))
   _ -> unknown(kind)
 }
+
+#[doc("""
+Decode a spilled coverage file: the same entries a `baseline_done` would
+have carried inline, as a JSON array.
+
+A kalku hands coverage over in one of two ways — inline when it is
+small, in a file when it is not — and the two say the same thing. A
+reader that understands only the inline form silently loses the coverage
+of every project big enough to need the file, which is every project
+worth measuring.
+""")]
+pub fn decode_coverage(text: String) : Result[[CoverageEntry], ProtocolError] = match json_decode(
+  text
+) {
+  None -> fail(NotJson, "the coverage file is not valid JSON")
+  Some(JArr(items)) -> all_entries(items, 0, [])
+  Some(other) -> fail(NotObject, "coverage: expected an array, got #{json_shape_name(other)}")
+}
+
+fn all_entries(
+  items: [JsonValue],
+  at: Int,
+  so_far: [CoverageEntry]
+) : Result[[CoverageEntry], ProtocolError] = match items {
+  [] -> Ok(so_far)
+  [first, ...rest] -> match body(coverageentry_of_json(first, "coverage[#{at}]"), e => e) {
+    Err(e) -> Err(e)
+    Ok(entry) -> all_entries(rest, at + 1, so_far ++ [entry])
+  }
+}

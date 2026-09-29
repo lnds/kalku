@@ -26,6 +26,20 @@ defmodule Kalku.PrepareTest do
       assert {:ok, %{modules: modules}} = Prepare.run(".", reni)
       assert modules > 0
     end
+
+    # A reni reached through a symlink is the same reni: on macOS every
+    # temporary directory is, because `/var` is a link to `private/var`,
+    # and a check that compares the names rather than the directories
+    # refuses a kalku that was summoned correctly.
+    test "a reni named through a symlink is still the reni" do
+      reni = Path.dirname(Path.expand(Prepare.build_path()))
+      link = Path.join(System.tmp_dir!(), "kalku-reni-link-#{System.unique_integer([:positive])}")
+      File.rm(link)
+      :ok = File.ln_s(reni, link)
+      on_exit(fn -> File.rm(link) end)
+
+      assert {:ok, _} = Prepare.run(".", link)
+    end
   end
 
   describe "against a real project" do

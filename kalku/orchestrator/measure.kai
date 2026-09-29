@@ -14,6 +14,7 @@ the parallelism belongs.
 """)]
 
 import actor
+import fs.file
 import time
 import kalku.wire.enums
 import kalku.wire.shapes
@@ -62,7 +63,7 @@ will not start, a project that will not compile, a suite that is already
 red. None of them produce a score, because a score built on any of them
 would be a number nobody should believe.
 """)]
-pub fn measure(asking: Asking) : Found / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
+pub fn measure(asking: Asking) : Found / Process + Spawn + Clock + File + Actor[OrchMsg] + Telling {
   match discover(asking) {
     Err(why) -> Found { report: None, failure: Some(why), cast: [] }
     Ok(known) -> casting_them(asking, known)
@@ -78,7 +79,7 @@ already failing, ends the run here.
 """)]
 pub fn discover(
   asking: Asking
-) : Result[Known, String] / Process + Spawn + Clock + Actor[OrchMsg] + Telling {
+) : Result[Known, String] / Process + Spawn + Clock + File + Actor[OrchMsg] + Telling {
   let life = Life { worker: 0, summons: 1 }
   match summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args }) {
     Err(e) -> Err(e)
@@ -95,7 +96,7 @@ pub fn discover(
 fn interview(
   k: Kalku,
   asking: Asking
-) : Result[Known, String] / Process + Clock + Actor[OrchMsg] + Telling {
+) : Result[Known, String] / Process + Clock + File + Actor[OrchMsg] + Telling {
   greet(k, asking)!
   await_kind(k, "ready")!
   Telling.entered(PhasePreparing)
@@ -121,7 +122,7 @@ fn interview(
   Ok(Known {
     sites: sites_of(await_kind(k, "sites_found")!)!,
     tests: suite,
-    coverage: coverage_of(baseline),
+    coverage: coverage_from(baseline)!,
     durations: durations_of(baseline)
   })
 }
@@ -134,10 +135,33 @@ fn suite_of(reply: KalkuReply) : [String] = match reply {
   _ -> []
 }
 
-fn coverage_of(reply: KalkuReply) : Option[[CoverageEntry]] = match reply {
-  BaselineDone(m) -> m.coverage
-  _ -> None
+# Coverage arrives one of two ways: inline when it is small, and in a
+# file in the reni when it is not, which is every project big enough to
+# be worth measuring. Reading only the inline form loses the coverage of
+# exactly those projects, silently, and a run then casts every wekufe
+# against the whole suite while reporting that suite as the tests that
+# cover it.
+fn coverage_from(reply: KalkuReply) : Result[Option[[CoverageEntry]], String] / File = match reply {
+  BaselineDone(m) -> match (m.coverage, m.coverage_path) {
+    (Some(entries), _) -> Ok(Some(entries))
+    (None, Some(path)) -> spilled_coverage(path)
+    _ -> Ok(None)
+  }
+  _ -> Ok(None)
 }
+
+# A coverage file the kalku named and this side cannot read is a fault
+# worth stopping for: carrying on would measure the whole suite and call
+# it coverage.
+fn spilled_coverage(path: String) : Result[Option[[CoverageEntry]], String] / File =
+  if file.exists(path) {
+    match decode_coverage(file.read(path)) {
+      Ok(entries) -> Ok(Some(entries))
+      Err(e) -> Err("the coverage file #{path} could not be read: #{e.detail}")
+    }
+  } else {
+    Err("the kalku named a coverage file that is not there: #{path}")
+  }
 
 # What each test costs, which is what a wekufe's deadline is built from:
 # a cast is given a few times the time the tests it runs took.
