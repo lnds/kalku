@@ -445,7 +445,14 @@ fn streamed[a, e](
     resume(())
   }
   got_through(done, total, resume) -> {
-    say(ProgressEv(ProgressMsg { done: done, total: total }))
+    say(ProgressEv(RunProgressMsg { done: done, total: total, estimate_ms: None }))
+    resume(())
+  }
+  # A client with no terminal hears the cost as the run's first progress:
+  # nothing cast yet, this many to cast, and this long at the rate the
+  # baseline ran.
+  will_cost(casts, estimate_ms, resume) -> {
+    say(ProgressEv(RunProgressMsg { done: 0, total: casts, estimate_ms: Some(estimate_ms) }))
     resume(())
   }
   return(x) -> x

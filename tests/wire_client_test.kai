@@ -67,6 +67,23 @@ test "there is a fixture file for every client message type" {
   assert length(fixture_files("client/events")) == 10
 }
 
+fn progress_with(estimate: Option[Int]) : Result[Unit, ProtocolError] = match decode_event(
+  encode_event(1, ProgressEv(RunProgressMsg { done: 0, total: 480, estimate_ms: estimate }))
+) {
+  Ok(_) -> Ok(())
+  Err(e) -> Err(e)
+}
+
+# The estimate is what a client decides on — whether to wait out the run
+# or refuse it — so a number that could not describe a duration is refused
+# at the edge rather than shown to someone as a time.
+test "an estimate is a duration or it is not there at all" {
+  assert progress_with(Some(540000)) == Ok(())
+  assert progress_with(Some(0)) == Ok(())
+  assert progress_with(None) == Ok(())
+  assert progress_with(Some(0 - 1)) != Ok(())
+}
+
 fn run_with(shard: Option[Shard]) : Result[Unit, ProtocolError] = match decode_client_request(
   encode_client_request(1, RunReq(RunMsg { root: ".", scope: All, format: Human, shard: shard }))
 ) {

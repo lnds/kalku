@@ -68,12 +68,12 @@ test "an estimate never rounds its way down to nothing" {
 }
 
 test "a run with nothing to cast promises nothing" {
-  assert what_it_costs([], took(100), 1) == "this should be quick"
+  assert what_it_costs(estimate_ms([], took(100), 1)) == "this should be quick"
 }
 
 test "a run that will take a while says so, and says what the number is" {
   let many = repeat(cast_of(1, ["t1", "t2"]), 100)
-  let said = what_it_costs(many, took(1000), 1)
+  let said = what_it_costs(estimate_ms(many, took(1000), 1))
 
   assert is_some(index_of(said, "5 minutes"))
   assert is_some(index_of(said, "at the rate the baseline ran"))
