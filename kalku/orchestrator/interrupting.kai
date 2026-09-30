@@ -1,0 +1,40 @@
+#[doc("""
+Turning an interrupt into a cancellation, so an interrupted run cleans up
+after itself.
+
+A kalku leads its own process group, which is what lets a kill reach the
+runtime a launcher started. The cost is that an interrupt no longer
+reaches a kalku: Ctrl-C goes to the terminal's foreground group, and a
+kalku is not in it. Left alone, that would make the interrupt kill the one
+process that knows how to kill the others, and every kalku would be left
+holding the reni's build lock — the hang this whole mechanism exists to
+prevent.
+
+So the signal is trapped and sent on as `Cancel`, the message a run
+already understands: dispatching stops, what was measured is kept, and the
+scope unwinds through the ward, which kills each group on the way out. An
+interrupted run leaves nothing behind, which is the same promise as a run
+that ends.
+
+`SigTerm` as well as `SigInt`, because a supervisor stopping a server
+sends the first and a person at a terminal the second, and both have to
+leave the project as they found it.
+""")]
+
+import kalku.orchestrator.kalku_proc
+
+#[doc("""
+Trap the signals that mean *stop* and turn the first of them into
+`Cancel`.
+
+Blocks until one arrives, so it belongs in a fiber of its own; a run that
+ends first simply leaves it waiting. One signal is enough: a second one
+arriving while the run unwinds would be asking the cleanup to abandon
+itself.
+""")]
+pub fn as_cancellation(run: Pid[OrchMsg]) : Unit / Signal + Actor[OrchMsg] {
+  Signal.on(SigInt)
+  Signal.on(SigTerm)
+  let _which = Signal.await()
+  Actor.send(run, Cancel)
+}

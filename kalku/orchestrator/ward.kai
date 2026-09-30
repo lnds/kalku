@@ -31,7 +31,9 @@ pub fn without(watched: [Kalku], k: Kalku) : [Kalku] =
 Run `body` with a ward: whatever it summoned and did not banish is
 killed when the scope ends, however it ends.
 """)]
-pub fn warded[a, e](body: () -> a / Ward + Process + e) : a / Process + e = handle {
+pub fn warded[a, e](
+  body: () -> a / Ward + Process + Telling + Clock + e
+) : a / Process + Telling + Clock + e = handle {
   body()
 } with Ward {
   initially {

@@ -12,6 +12,8 @@ behind.
 """)]
 
 import os.process as proc
+import time
+import kalku.orchestrator.telling
 import kalku.wire.enums
 import kalku.wire.envelope
 import kalku.wire.kalku_msg
@@ -64,14 +66,26 @@ pub type KalkuSpec = { life: Life, command: String, args: [String] }
 pub type Kalku = { life: Life, child: Child }
 
 #[doc("""
-Summon a kalku with all three of its streams piped.
+Summon a kalku with all three of its streams piped, leading its own
+process group.
 
 stderr is piped rather than inherited so a kalku that fails to start can
 be quoted rather than paraphrased: the reason a project will not compile
 belongs in the run's diagnostic, not interleaved into kalku's own output.
+
+The group is what makes a kill reach the runtime. A kalku is started
+through a launcher — `mix` is a shell script that starts `erl` — so the
+process doing the work is a grandchild, and signalling the child alone
+leaves it alive holding the reni's build lock. Leading a group means the
+whole tree is reachable, however many launchers deep it is.
+
+A kalku leaves the terminal's foreground group by leading its own, so
+Ctrl-C no longer reaches it. That is why an interrupt is trapped and
+turned into `Cancel`: the ward is the one thing that decides when a kalku
+dies.
 """)]
 pub fn summon(spec: KalkuSpec) : Result[Kalku, String] / Process =
-  match Process.start_piped(spec.command, spec.args, true, true, true) {
+  match proc.start_in_group(spec.command, spec.args, true, true, true) {
     Err(e) -> Err("cannot summon worker #{spec.life.worker}: #{e}")
     Ok(child) -> Ok(Kalku { life: spec.life, child: child })
   }
@@ -152,16 +166,52 @@ fn mend(m: ReadyMsg) : String = if m.version > PROTOCOL_VERSION {
 pub fn can(m: ReadyMsg, c: Capability) : Bool = contains(m.capabilities, c)
 
 #[doc("""
-Kill the kalku and reap it, so no child outlives the run.
+Kill the kalku's whole process group and reap it, so nothing it started
+outlives the run.
 
 The polite `shutdown` belongs to the caller, who can wait for `bye`; this
 is what happens when politeness runs out.
+
+The group, not the child: a launcher's grandchild is what holds the reni's
+build lock, and a lock nobody will release turns the next run into a hang
+with no cause. And the kill is verified, because something that signals
+and does not look is a promise rather than a mechanism. A death is not
+instant, so the group is probed until it is empty or the grace runs out —
+and a group that survives `SIGKILL` is stuck in uninterruptible I/O,
+which is worth a loud line rather than silence.
 """)]
-pub fn kill_now(k: Kalku) : Unit / Process {
-  let _ = proc.kill(k.child, SIGKILL)
+pub fn kill_now(k: Kalku) : Unit / Process + Telling + Clock {
+  let _ = proc.kill_group(k.child, SIGKILL)
   let _ = proc.wait(k.child)
-  ()
+  if not group_gone(k, deadline_in(millis(REAPING_MS))) {
+    Telling.tell_of(
+      "worker #{k.life.worker} (pid #{k.child.pid}) survived being killed;"
+        ++ " something it started may still hold the reni's build lock"
+    )
+  } else {
+    ()
+  }
 }
+
+#[doc("How long a killed group is given to be gone before it is called a survivor.")]
+pub const REAPING_MS : Int = 2000
+
+# Probing with signal 0 rather than waiting: `wait` reaps a direct child,
+# and what has to be gone here is every process the group held.
+fn group_gone(k: Kalku, until: Instant) : Bool / Process + Clock =
+  match proc.kill_group(k.child, 0) {
+    Err(_) -> true
+    Ok(_) -> if instant_lt(monotonic(), until) {
+      {
+        sleep(millis(PROBE_MS))
+        group_gone(k, until)
+      }
+    } else {
+      false
+    }
+  }
+
+const PROBE_MS : Int = 20
 
 #[doc("""
 Stop the kalku without reaping it.
@@ -173,7 +223,7 @@ to deliver it. The ward reaps what is left when the run ends, so nothing
 outlives it either way.
 """)]
 pub fn silence(k: Kalku) : Unit / Process {
-  let _ = proc.kill(k.child, SIGKILL)
+  let _ = proc.kill_group(k.child, SIGKILL)
   ()
 }
 
