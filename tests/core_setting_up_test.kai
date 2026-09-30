@@ -70,8 +70,29 @@ test "the summoning keeps the build off the protocol channel" {
 
   assert has(plan.summoner, ">&2")
   assert has(plan.summoner, "</dev/null")
-  assert has(plan.summoner, "MIX_BUILD_PATH=\"/r/build\"")
   assert has(plan.summoner, "exec mix kalku.serve")
+}
+
+# The script goes into the repository, so a reni written into it is one
+# machine's temporary directory travelling to every other machine — and,
+# worse, one directory's: the reni is named after wherever `kalku init`
+# was standing. A run knows its own reni and hands it over.
+test "the reni is not written into the summoning either" {
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+
+  assert not has(plan.summoner, "/r")
+  assert has(plan.summoner, "RENI=\"${1:?")
+  assert has(plan.summoner, "MIX_BUILD_PATH=\"$RENI/build\"")
+}
+
+# Every summoning takes the reni first, whatever the language, so the
+# kaikai side has one way of starting a kalku rather than one per kalku.
+test "a summoning that needs no build path still takes the reni first" {
+  let plan = plan_for(find(catalogue(), k => k.language == "kaikai").unwrap_or(elixir()), "/r")
+
+  assert has(plan.summoner, "${1:?")
+  assert has(plan.summoner, "shift")
+  assert not has(plan.summoner, "/r")
 }
 
 # A kalku runs inside the project's runtime, so the project depends on
