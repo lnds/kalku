@@ -18,6 +18,7 @@ import kalku.core.report_json
 import kalku.core.report_github
 import kalku.core.config
 import kalku.core.equivalent
+import kalku.core.answering
 import kalku.core.equivalent_parse as eqfile
 import kalku.core.setting_up
 import kalku.core.info
@@ -48,6 +49,7 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     Display(wekufe, shape) -> shown(wekufe, shape)
     Recast(wanted) -> recast_here(wanted)
     Propose(wekufe, reason) -> proposed(wekufe, reason)
+    Answer(wekufe, yes, why) -> answered_by_hand(wekufe, yes, why)
     Serve -> serving_here()
     Mcp -> tooling()
     Measure(wanted) -> run_here(wanted)
@@ -366,8 +368,61 @@ fn proposed(wekufe: String, reason: String) : Int / Stdout + Stderr + File {
   }
 }
 
+# A person answers one proposal, by name. Accepting moves the argument
+# into the record every run reads; rejecting keeps it somewhere else, so
+# that a case argued twice is visible and the wekufe goes back to being a
+# survivor that wants a test.
+fn answered_by_hand(wekufe: String, yes: Bool, why: String) : Int / Stdout + Stderr + File {
+  let all = ledger()
+  match latest(all, wekufe) {
+    None -> unheard_of(wekufe)
+    Some(r) -> {
+      let queue = read_or_empty(PROPOSED_PATH)
+      match if yes { accepted(queue, r.site, why) } else { rejected(queue, r.site, why) } {
+        Err(u) -> {
+          Stderr.eprint("kalku: #{why_not(u)}")
+          2
+        }
+        Ok(a) -> {
+          file.write(PROPOSED_PATH, a.queue)
+          append_line(if yes { EQUIVALENT_PATH } else { REJECTED_PATH }, a.moved)
+          Stdout.print(
+            if yes {
+              "kalku: accepted into #{EQUIVALENT_PATH}; every run reads it from now on"
+            } else {
+              "kalku: turned down, written to #{REJECTED_PATH}; the wekufe wants a test again"
+            }
+          )
+          0
+        }
+      }
+    }
+  }
+}
+
+fn append_line(path: String, line: String) : Unit / File {
+  let was = read_or_empty(path)
+  let sep = if is_empty(trim(was)) { "" } else { "\n" }
+  file.write(path, "#{trim_right(was)}#{sep}#{line}\n")
+}
+
+fn trim_right(s: String) : String = if ends_with(s, "\n") {
+  trim_right(slice(s, 0, length(s) - 1))
+} else {
+  s
+}
+
 #[doc("Where proposals wait for a person. Never `.kalku/equivalent` itself.")]
 const PROPOSED_PATH : String = ".kalku/equivalent.proposed"
+
+#[doc("""
+Arguments that were made and turned down.
+
+A survivor that has been argued for and refused is a different thing from
+one nobody has looked at, and making the same case a second time should be
+something anyone can see.
+""")]
+const REJECTED_PATH : String = ".kalku/equivalent.rejected"
 
 fn append_proposal(r: Remembered, reason: String) : Unit / File {
   let was = if file.exists(PROPOSED_PATH) { file.read(PROPOSED_PATH) } else { "" }
