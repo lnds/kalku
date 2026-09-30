@@ -194,12 +194,21 @@ fn read_settings(text: String) : Result[Config, String] = match config.parse(tex
 # Never one fixed path. A reni shared between projects is two projects
 # compiling over each other's build, and the first symptom is a
 # measurement that cannot be reproduced.
-fn pool_of(c: Config) : PoolSpec / Env = PoolSpec {
+fn pool_of(c: Config) : PoolSpec / Env = summoning_in(c, ".", reni_of(c, "."))
+
+# Where a run's artefacts go: what the project asked for, or this machine's
+# own place for the project at that root.
+fn reni_of(c: Config, root: String) : String / Env = c.reni.unwrap_or(reni_here(root))
+
+# The reni reaches the summoning as its first argument, because the run is
+# what decides where it is. A script that was told at `kalku init` was told
+# on one machine, in one directory, and then committed.
+fn summoning_in(c: Config, root: String, reni: String) : PoolSpec = PoolSpec {
   command: c.summon.unwrap_or(""),
-  args: [],
+  args: [reni],
   workers: c.workers.unwrap_or(1),
-  root: ".",
-  reni: c.reni.unwrap_or(reni_here(".")),
+  root: root,
+  reni: reni,
   inline_limit_bytes: 65536,
   env: StrMap { entries: [] },
   greeting_ms: 60000,
@@ -491,18 +500,20 @@ fn asking_at(
 # server happens to be standing: a server measures projects that are not
 # its own, and two of them sharing a reni is two of them compiling over
 # each other's build.
-fn pool_at(c: Config, root: String) : PoolSpec / Env = PoolSpec {
-  ...pool_of(c),
-  command: "/bin/sh",
-  args: ["-c", summoning(c, root)],
-  root: root,
-  reni: c.reni.unwrap_or(reni_here(root))
+fn pool_at(c: Config, root: String) : PoolSpec / Env {
+  let reni = reni_of(c, root)
+  PoolSpec { ...summoning_in(c, root, reni), command: "/bin/sh", args: elsewhere(c, root, reni) }
 }
+
+# `sh -c` takes the arguments after the command, and `$0` is the name, so
+# the reni lands on `$@` exactly as it does when the script is run direct.
+fn elsewhere(c: Config, root: String, reni: String) : [String] =
+  ["-c", summoning(c, root), "kalku", reni]
 
 # The summoning script is the project's, and it expects to be run from
 # the project: a kalku that builds elsewhere measures elsewhere.
 fn summoning(c: Config, root: String) : String =
-  "cd '#{root}' && exec '#{c.summon.unwrap_or("")}'"
+  "cd '#{root}' && exec '#{c.summon.unwrap_or("")}' \"$@\""
 
 fn shortened(path: String, root: String) : String =
   if starts_with(path, "#{root}/") { slice(path, length(root) + 1, length(path)) } else { path }

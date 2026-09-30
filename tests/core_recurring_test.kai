@@ -1,0 +1,83 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.recurring
+
+fn site_of(spell: Spell, original: String, line: Int) : Site = Site {
+  site_id: "s#{line}",
+  file: "lib/billing.ex",
+  enclosing: Some("Billing.charge/2"),
+  ordinal: Some(1),
+  span: Span { start: Position { line: line, col: 5, byte: 0 }, end: None },
+  spell: spell,
+  original: Some(original),
+  replacement: "",
+  reload: ModuleOnly
+}
+
+fn calls(name: String, n: Int) : [Site] =
+  enumerate(repeat(0, n)) | (i => site_of(Call, "#{name}(amount)", 10 + i.fst))
+
+# `exclude_calls` matches the dotted name a call is written with, so what
+# is suggested has to be that name and not the call with its arguments.
+test "the name of a call is what stands before its arguments" {
+  assert called(site_of(Call, "Decimal.new(amount)", 4)) == Some("Decimal.new")
+  assert called(site_of(Call, "f(x)", 4)) == Some("f")
+  assert called(site_of(Call, ":telemetry.execute(a, b)", 4)) == Some(":telemetry.execute")
+}
+
+# A site with nothing to cut at names no call rather than guessing one.
+test "a call with no arguments to cut at names nothing" {
+  assert called(site_of(Call, "Decimal.new", 4)) == None
+  assert called(Site { ...site_of(Call, "x", 4), original: None }) == None
+}
+
+test "a call many survivors share is reported, most first" {
+  let sites = calls("Decimal.new", 7) ++ calls("Money.parse", 5) ++ calls("Repo.get", 2)
+  let found = repeated_calls(sites, 5)
+
+  assert length(found) == 2
+  assert found
+    == [
+      Recurring { call: "Decimal.new", count: 7 },
+      Recurring { call: "Money.parse", count: 5 }
+    ]
+}
+
+# Two survivors sharing a call is a coincidence. The suggestion has to be
+# rarer than the noise it points at, or it becomes the noise.
+test "a handful is a coincidence and says nothing" {
+  assert repeated_calls(calls("Repo.get", 4), WORTH_SAYING) == []
+  assert repeated_calls([], WORTH_SAYING) == []
+}
+
+# A survivor on a comparison says nothing about the function it sits in;
+# only a call says the same thing about that call every time.
+test "only the call spell is grouped" {
+  let others = enumerate(repeat(0, 9)) | (i => site_of(Compare, "a > b", 40 + i.fst))
+
+  assert repeated_calls(others, WORTH_SAYING) == []
+  assert repeated_calls(others ++ calls("Decimal.new", 6), WORTH_SAYING)
+    == [Recurring { call: "Decimal.new", count: 6 }]
+}
+
+# The advice names the line that would answer all of them, spelled the way
+# `.kalku.toml` needs it, and says what that line claims.
+test "the advice carries the line a project would write" {
+  let said = join(as_advice(Recurring { call: "Decimal.new", count: 7 }), "\n")
+
+  assert is_some(index_of(said, "7 survivors"))
+  assert is_some(index_of(said, "exclude_calls = [\"Decimal.new\"]"))
+  assert is_some(index_of(said, "[run]"))
+  assert is_some(index_of(said, "cannot produce a defect"))
+}
+
+# Whatever the run, a group that is reported really is that big, and a
+# call below the threshold is never named. The count is the arithmetic the
+# whole suggestion rests on.
+check "every group reported is at least the threshold and counted right" with n: Int {
+  let a = 1 + abs(n) % 9
+  let b = 1 + abs(n / 7) % 9
+  let found = repeated_calls(calls("A.one", a) ++ calls("B.two", b), WORTH_SAYING)
+  let expected = length(filter([a, b], k => k >= WORTH_SAYING))
+  length(found) == expected and all(found, g => g.count >= WORTH_SAYING)
+}

@@ -78,7 +78,7 @@ fn markers() : String = join(catalogue() | (.marker), " or ")
 pub fn plan_for(known: Known, reni: String) : Plan = Plan {
   known: known,
   config: config_text(known, reni),
-  summoner: summoner_text(known, reni),
+  summoner: summoner_text(known),
   dependency: dependency_for(known)
 }
 
@@ -126,8 +126,7 @@ timeout_floor_ms = 60000
 # A shebang is only a shebang on the first line: the kernel reads the
 # first two bytes, and a leading newline makes the file something no
 # `execve` will start.
-fn summoner_text(known: Known, reni: String) : String =
-  trim_left(replace(known.summon, "@RENI@", reni))
+fn summoner_text(known: Known) : String = trim_left(known.summon)
 
 # stdout carries the protocol, so everything a build prints goes to
 # stderr and nothing reads stdin. `exec` puts the kalku itself at the end
@@ -141,8 +140,14 @@ fn elixir_summoner() : String = """
 # is what keeps a run out of this project's own `_build`.
 set -eu
 
+# The reni is the first argument, handed over by the run that is starting
+# this kalku. It is not written into this file on purpose: this file goes
+# into the repository, and a path baked in here is a path from whatever
+# machine and whatever directory `kalku init` happened to run in.
+RENI="${1:?this script is summoned by kalku, which passes the reni as the first argument}"
+
 MIX_ENV=test
-MIX_BUILD_PATH="@RENI@/build"
+MIX_BUILD_PATH="$RENI/build"
 export MIX_ENV MIX_BUILD_PATH
 
 mkdir -p "$MIX_BUILD_PATH"
@@ -172,6 +177,12 @@ fn kaikai_summoner() : String = """
 # stdout carries the kalku protocol, so anything the toolchain prints on
 # the way up goes to stderr.
 set -eu
+
+# Every summoning is handed the reni first. This kalku is told where the
+# reni is through `hello` and keeps no build path of its own, so the
+# argument is taken off here rather than passed on.
+: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
+shift
 
 exec kalku-kaikai "$@"
 """
