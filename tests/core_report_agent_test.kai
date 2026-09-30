@@ -36,6 +36,7 @@ fn survivor(file: String, line: Int, spell: Spell, tests: [String]) : Survivor =
 
 fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   counts: counts,
+  planned: 0,
   survivors: survivors,
   on_changed_lines: 0,
   suppressions: SuppressionChanges {
