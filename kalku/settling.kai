@@ -143,22 +143,39 @@ fn write_it(
   let summoner = "#{root}/#{SUMMONER_PATH}"
   keep(config, plan.config)
   let _ = dir.create_dir("#{root}/.kalku")
-  keep(summoner, plan.summoner)
+  refresh(summoner, plan.summoner)
   make_runnable(summoner)
   declare_dependency(root, plan, wanted)
   0
 }
 
+# The summoning is the one file `init` will write over, and only when the
+# one that is there was written against a contract this kalku no longer
+# speaks. Keeping it would mean a project set up a year ago never receives
+# a fix to the summoning, which is how a fixed bug goes on being reported.
+fn refresh(path: String, content: String) : Unit / Stdout + File =
+  if not file.exists(path) {
+    put(path, content, "wrote  ")
+  } else if summon_is_current(file.read(path)) {
+    told("kept   ", "#{path} (already there)")
+  } else {
+    put(path, content, "renewed")
+  }
+
 # A project already set up is left alone: whoever edited these files meant
 # it, and overwriting them is not something an `init` should do twice.
 fn keep(path: String, content: String) : Unit / Stdout + File = if file.exists(path) {
-  Stdout.print("  kept    #{path} (already there)")
+  told("kept   ", "#{path} (already there)")
 } else {
-  {
-    file.write(path, content)
-    Stdout.print("  wrote   #{path}")
-  }
+  put(path, content, "wrote  ")
 }
+
+fn put(path: String, content: String, verb: String) : Unit / Stdout + File {
+  file.write(path, content)
+  told(verb, path)
+}
+
+fn told(verb: String, what: String) : Unit / Stdout = Stdout.print("  #{verb} #{what}")
 
 # A summoner that is not executable is a worker that will not start, and
 # the error it gives is about a pipe rather than about a mode bit.
