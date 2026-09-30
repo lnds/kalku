@@ -1,0 +1,28 @@
+import kalku.orchestrator.measure
+
+# `prepare` can honestly take minutes, and a run that says so once and
+# then goes quiet for ten of them cannot be told from one that has hung.
+# Saying how long it has been waiting turns a hang into a wait.
+test "a long wait says what it is waiting for and for how long" {
+  let said = still_waiting("prepared", 60000, [])
+
+  assert is_some(index_of(said, "still waiting for `prepared`"))
+  assert is_some(index_of(said, "60s"))
+  assert is_some(index_of(said, "slow one"))
+}
+
+# The commonest cause of the silence is a build lock held by a runtime
+# nobody killed, and the runtime announces that on its own channel. This
+# side already has the line; holding it until the kalku dies is holding it
+# forever, because a wait on a lock does not end.
+test "the kalku's own last word is quoted, which is where a lock shows up" {
+  let said = still_waiting(
+    "prepared",
+    120000,
+    ["Compiling 4 files", "Waiting for lock on the build directory"]
+  )
+
+  assert is_some(index_of(said, "Waiting for lock on the build directory"))
+  assert is_none(index_of(said, "Compiling 4 files"))
+  assert is_some(index_of(said, "120s"))
+}
