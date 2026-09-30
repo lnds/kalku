@@ -224,35 +224,84 @@ fn tell(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Proce
 fn await_kind(
   k: Kalku,
   kind: String
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = await_with(k, kind, [])
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling =
+  await_with(k, kind, [])
 
 # A kalku that dies before it answers has usually said why on stderr: a
 # stack trace, a missing module, a build that would not run. Dropping
 # those lines leaves `the kalku closed its pipe` and nothing to act on,
 # and the only way back to the reason is editing the summon script by
 # hand. They are kept as they arrive and quoted with whatever went wrong.
+#[doc("""
+How long a wait may go quiet before the run says it is still waiting.
+
+`prepare` can honestly take minutes, and a run that says so once and then
+goes silent for ten of them is indistinguishable from one that has hung.
+The commonest cause of the silence is a build lock held by a runtime
+nobody killed — a wait at 0% CPU with nothing on the channel — and that
+one is not a slow compile, it is a wait for something that will never
+happen. The run cannot tell them apart, but it can stop the person having
+to guess, and the kalku's own last words usually name the lock.
+""")]
+const QUIET_MS : Int = 20000
+
+#[doc("How long a kalku is given to answer before the run gives up on it.")]
+const PATIENCE_MS : Int = 600000
+
 fn await_with(
   k: Kalku,
   kind: String,
   said: [String]
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = match receive_timeout(
-  seconds(600)
-) {
-  None -> Err(with_last_words("the kalku said nothing while we waited for `#{kind}`", said))
-  Some(Cancel) -> Err("the run was cancelled")
-  Some(Wire(life, what)) -> if life == k.life {
-    from_ours(k, kind, what, said)
-  } else {
-    # Another kalku of this project's own pool, greeting a mailbox this
-    # run shares with it. Its own business, and never anybody else's.
-    await_with(k, kind, said)
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling =
+  waiting_for(k, kind, said, PATIENCE_MS)
+
+fn waiting_for(
+  k: Kalku,
+  kind: String,
+  said: [String],
+  left: Int
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling =
+  match receive_timeout(
+    millis(min(QUIET_MS, left))
+  ) {
+    None -> if left > QUIET_MS {
+      {
+        Telling.tell_of(still_waiting(kind, PATIENCE_MS - left + QUIET_MS, said))
+        waiting_for(k, kind, said, left - QUIET_MS)
+      }
+    } else {
+      Err(with_last_words("the kalku said nothing while we waited for `#{kind}`", said))
+    }
+    Some(Cancel) -> Err("the run was cancelled")
+    Some(Wire(life, what)) -> if life == k.life {
+      from_ours(k, kind, what, said)
+    } else {
+      # Another kalku of this project's own pool, greeting a mailbox this
+      # run shares with it. Its own business, and never anybody else's.
+      waiting_for(k, kind, said, left)
+    }
+    Some(stray) -> {
+      # A line from whoever is hosting the run, which this side does not
+      # read. Dropping it leaves a client waiting on an answer that will
+      # never come, and on a command line there is nobody to hand it to.
+      Attending.not_mine(stray)
+      waiting_for(k, kind, said, left)
+    }
   }
-  Some(stray) -> {
-    # A line from whoever is hosting the run, which this side does not
-    # read. Dropping it leaves a client waiting on an answer that will
-    # never come, and on a command line there is nobody to hand it to.
-    Attending.not_mine(stray)
-    await_with(k, kind, said)
+
+#[doc("""
+What a run says while a wait is still going.
+
+The kalku's own last line is quoted because that is where a build lock
+announces itself — a runtime waiting on one says so — and this side would
+otherwise hold that line until the kalku died, which for a lock is never.
+""")]
+pub fn still_waiting(kind: String, waited_ms: Int, said: [String]) : String {
+  let so_far = "still waiting for `#{kind}`; nothing heard for #{waited_ms / 1000}s"
+  let tail = filter(enumerate(said), i => i.fst == length(said) - 1) | (.snd)
+  match tail {
+    [line, ..._] -> "#{so_far}. The kalku last said: #{trim(line)}"
+    [] -> "#{so_far}. If this is a build, it is a slow one"
   }
 }
 
@@ -280,7 +329,7 @@ fn from_ours(
   kind: String,
   what: FromKalku,
   said: [String]
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = match what {
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling = match what {
   Said(line) -> match heard(line) {
     Err(e) -> Err(
       with_last_words("the kalku wrote a line this side cannot read: #{e.detail}", said)
@@ -297,7 +346,7 @@ fn judge(
   kind: String,
   body: KalkuReply,
   said: [String]
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] = match body {
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling = match body {
   KalkuError(e) -> Err("#{e.code}: #{e.message}")
   Progress(_) -> await_with(k, kind, said)
   answered -> if reply_kind(answered) == kind {
