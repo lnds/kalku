@@ -16,6 +16,7 @@ pub type Command
   | Recast(Wanted)
   | Display(String, Shape)
   | Propose(String, String)
+  | Answer(String, Bool, String)
   | Serve
   | Mcp
   | Pending(String)
@@ -55,6 +56,8 @@ pub fn parse_args(argv: [String]) : Command {
   case ["cast", ...rest] -> recasting(rest)
   case ["show", ...rest] -> displaying(rest)
   case ["propose-equivalent", ...rest] -> proposing(rest, "", "")
+  case ["accept", ...rest] -> answering(rest, "accept", true, "", "")
+  case ["reject", ...rest] -> answering(rest, "reject", false, "", "")
   case ["serve", ...] -> Serve
   case ["mcp", ...] -> Mcp
   case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
@@ -167,6 +170,37 @@ fn proposing(args: [String], wekufe: String, reason: String) : Command = match a
   }
 }
 
+# A person answers one proposal at a time, and says so by name. There is
+# deliberately no way to answer them all: the point of an agent proposing
+# and a person accepting is that each suppression was read by someone, and
+# a flag that took fourteen arguments in one keystroke would be the agent
+# accepting its own, with a step in front that fools nobody.
+fn answering(
+  args: [String],
+  verb: String,
+  yes: Bool,
+  wekufe: String,
+  why: String
+) : Command = match args {
+  [] -> if is_empty(wekufe) {
+    Misused("`kalku #{verb}` needs a wekufe")
+  } else {
+    Answer(wekufe, yes, why)
+  }
+  ["--reason"] -> Misused("`--reason` needs the reason itself")
+  ["--reason", w, ...rest] -> answering(rest, verb, yes, wekufe, w)
+  [other, ...rest] -> if other == "--all" {
+    Misused(
+      "`kalku #{verb}` takes one wekufe. Each suppression is read by someone,"
+        ++ " which is the whole of why an agent proposes and a person answers"
+    )
+  } else if starts_with(other, "-") {
+    Misused("`kalku #{verb}` does not take #{other}")
+  } else {
+    answering(rest, verb, yes, other, why)
+  }
+}
+
 fn shape_of(name: String) : Option[Shape] = match name {
   "human" -> Some(AsHuman)
   "agent" -> Some(AsAgent)
@@ -209,6 +243,8 @@ commands:
   cast <wekufe>    re-cast these, after a test was written
   show <wekufe>    one wekufe in full: site, diff, tests, hint, history
   propose-equivalent <wekufe> --reason <why>
+  accept <wekufe> [--reason <why>]   take a proposed equivalent into `.kalku/equivalent`
+  reject <wekufe> [--reason <why>]   turn one down; the wekufe wants a test again
   info [topic]     what kalku knows about spells, outcomes, formats, agents
 
   serve            answer the client protocol on a local socket
