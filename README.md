@@ -35,6 +35,44 @@ make install                  # PREFIX=/usr/local by default
 kalku info                    # check it answers
 ```
 
+### As an MCP server
+
+`kalku mcp` serves the four agent tools over stdio, so a coding agent can
+measure, re-cast and read a wekufe without shelling out. It takes no
+arguments and reads no configuration of its own: the project is whichever
+one the host is working in, or the `root` a tool call names.
+
+Claude Code:
+
+```sh
+claude mcp add kalku -- kalku mcp
+```
+
+Cursor, Windsurf, Zed, Claude Desktop and anything else that reads an
+`mcpServers` block:
+
+```json
+{
+  "mcpServers": {
+    "kalku": {
+      "command": "kalku",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+`kalku` has to be on the `PATH` the host starts with, which is not always
+the one your shell has — a GUI app on macOS does not read your profile. If
+the host cannot find it, give the absolute path from `which kalku`.
+
+The tools are `kalku_run`, `kalku_cast`, `kalku_show` and
+`kalku_propose_equivalent`. There is deliberately no tool that suppresses,
+excludes or ignores anything; see [For coding agents](#for-coding-agents).
+
+`kalku_run` runs the project's suite many times over and takes minutes, so
+point it at a file or two rather than at everything.
+
 ## Measure an Elixir project
 
 The Elixir kalku runs *inside* the project it measures — that is how it
@@ -124,7 +162,7 @@ kalku info agents --snippet             # lines to paste into CLAUDE.md / AGENTS
 ```
 
 - **Everything needed to act in one object:** file, line, enclosing function, the change, the source around it, the tests that cover it, and a hint. Hints come from a fixed template per spell (*"no test tells `i == 0` apart from `i > 0`"*), not from a model.
-- **MCP:** `kalku mcp` serves `kalku_run`, `kalku_cast`, `kalku_show` and `kalku_propose_equivalent` over stdio to Claude Code, Cursor and similar hosts — `claude mcp add kalku -- kalku mcp`. There is deliberately no tool that suppresses, excludes or ignores anything.
+- **MCP:** `kalku mcp` serves `kalku_run`, `kalku_cast`, `kalku_show` and `kalku_propose_equivalent` over stdio to Claude Code, Cursor and similar hosts. There is deliberately no tool that suppresses, excludes or ignores anything. [How to install it](#as-an-mcp-server).
 - **Guardrails:** an agent can only *propose* an equivalent mutant; a person has to accept it. Suppressions added in a pull request appear under their own heading in every report. A test only counts as killing a wekufe if it passes on the original code. A timeout never counts as a kill.
 
 ## How it works
