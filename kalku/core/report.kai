@@ -12,6 +12,7 @@ import kalku.wire.shapes
 import kalku.core.score
 import kalku.core.gate
 import kalku.core.hint
+import kalku.core.recurring
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
@@ -43,6 +44,7 @@ pub type Trouble = { wekufe: String, at: Option[Site], outcome: Outcome, said: O
 #[doc("The whole report as a person reads it: survivors, then the summary, then what was suppressed.")]
 pub fn human(r: Report) : String = join(
   survivor_blocks(r)
+    ++ pattern_block(r)
     ++ uncovered_block(r)
     ++ trouble_blocks(r)
     ++ [summary_line(r)]
@@ -118,6 +120,14 @@ fn counted(tests: [String]) : String = if length(tests) <= SHOWN_TESTS {
 # that survived: there was nothing to notice it. It is named rather than
 # counted, because the fix is the same — write a test — and the reader
 # needs to know where.
+# Said once, under the survivors it is about: eleven suppressions and one
+# line of configuration are not the same artefact, and a reader who has
+# just argued the same case five times should be told there is a line.
+fn pattern_block(r: Report) : [String] = flat_map(
+  repeated_calls(r.survivors | (.site), WORTH_SAYING),
+  as_advice
+)
+
 fn uncovered_block(r: Report) : [String] = if is_empty(r.uncovered) {
   []
 } else {
