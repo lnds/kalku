@@ -18,6 +18,7 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.verdict
 import kalku.core.score
+import kalku.core.recurring
 import kalku.core.gate
 import kalku.core.report
 import kalku.core.hint
@@ -112,10 +113,30 @@ fn summary_line(r: Report) : String = json_encode(
       ("survivors_on_changed_lines", JNum(r.on_changed_lines))
     ]
       ++ score_field(r.counts)
+      ++ repeated_field(r)
       ++ suppression_field(r.suppressions)
       ++ [("exit", JNum(exit_code(r.blockers)))]
   )
 )
+
+# A pattern travels only when there is one, and as a fact rather than as
+# advice: the agent is told that five survivors share a call, and decides.
+# It must not write the line itself — `exclude_calls` silences an operator
+# over a whole run, which is a bigger claim than any single equivalent and
+# belongs to whoever owns the project.
+fn repeated_field(r: Report) : [(String, JsonValue)] {
+  let groups = repeated_calls(r.survivors | (.site), WORTH_SAYING)
+  if is_empty(groups) {
+    []
+  } else {
+    [
+      (
+        "repeated_calls",
+        JArr(groups | (g => JObj([("call", JStr(g.call)), ("survivors", JNum(g.count))])))
+      )
+    ]
+  }
+}
 
 # A score that does not exist is absent, not zero: nothing could have
 # been killed, and zero would read as everything survived.
