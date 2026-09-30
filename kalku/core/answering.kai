@@ -1,0 +1,147 @@
+#[doc("""
+Answering a proposed equivalent.
+
+kalku is deliberate about who may declare a wekufe equivalent: an agent
+proposes, a person accepts. `propose-equivalent` wrote the proposal and
+stopped there, which left the person with a file to open and lines to move
+by hand — a chore imposed on the one step the design cares most about.
+
+Three rules hold this together, and they are why this is a module of its
+own rather than a few lines of file handling.
+
+**Nothing is accepted that nobody argued for.** Accepting a wekufe with no
+proposal is the hole the two-step exists to close, so a wekufe that is not
+in the queue is refused rather than written.
+
+**A rejection leaves a record.** A survivor that was argued for and turned
+down is a different thing from one nobody has looked at, and arguing the
+same case twice should be visible.
+
+**There is no way to answer them all at once.** The point of the two step
+is that each suppression was read by someone; a flag that accepted
+fourteen arguments in one keystroke is the same as letting the agent
+accept them itself, with an extra step that fools nobody.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("What a queue of proposals came to once one of them was answered.")]
+#[derive(Eq, Show)]
+pub type Answered = { moved: String, queue: String, note: String }
+
+#[doc("Why a proposal could not be answered.")]
+#[derive(Eq, Show)]
+pub type Unanswerable = NotProposed(String) | NothingProposed
+
+#[doc("""
+The `.kalku/equivalent` line a site would have, which is also the line a
+proposal is written as.
+
+Accepting is then a move between files rather than a rewrite: the same
+text, read by the same parser, having crossed from a queue into the
+record every run reads.
+""")]
+pub fn line_for(site: Site, reason: String) : String =
+  "#{site.file} #{site.enclosing.unwrap_or("?")} #{site.ordinal.unwrap_or(1)}"
+    ++ " #{spell_name(site.spell)}: #{trim(reason)}"
+
+#[doc("The key part of a line: everything before the reason.")]
+pub fn key_of(line: String) : String = match index_of(line, ":") {
+  None -> trim(line)
+  Some(at) -> trim(slice(line, 0, at))
+}
+
+#[doc("""
+The line in the queue that argues for this site, if one does.
+
+Matched on the key rather than the whole line, because the reason is the
+proposer's prose and a person answering is answering the site.
+""")]
+pub fn proposal_for(queue: String, site: Site) : Option[String] {
+  let want = key_of(line_for(site, ""))
+  find(lines(queue), l => (not is_comment(l)) and (not is_empty(trim(l))) and key_of(l) == want)
+}
+
+fn is_comment(l: String) : Bool = starts_with(trim(l), "#")
+
+#[doc("""
+The queue with that proposal taken out, and the comment that stood above
+it taken with it.
+
+A `# lib/a.ex:42 compare` line is the proposal's own heading; leaving it
+behind would grow a file of headings for arguments that are no longer
+there.
+""")]
+pub fn without(queue: String, line: String) : String {
+  let kept = dropped(lines(queue), trim(line), [])
+  join(kept, "\n")
+}
+
+fn dropped(rest: [String], target: String, kept: [String]) : [String] = match rest {
+  [] -> kept
+  [l, ...more] -> if trim(l) == target {
+    dropped(more, target, drop_heading(kept))
+  } else {
+    dropped(more, target, kept ++ [l])
+  }
+}
+
+# The heading is the comment immediately above, and only that one.
+fn drop_heading(kept: [String]) : [String] = match last(kept) {
+  Some(prev) -> if is_comment(prev) { slice_list(kept, 0, length(kept) - 1) } else { kept }
+  None -> kept
+}
+
+fn slice_list(xs: [String], from: Int, to: Int) : [String] =
+  enumerate(xs) |? (i => i.fst >= from and i.fst < to) | (.snd)
+
+#[doc("""
+Accept the proposal for this site: it leaves the queue and joins the
+record every run reads.
+
+`witness` is the second reason — what convinced the person, as opposed to
+what the proposer argued. It is optional and recorded when given, because
+an audit of a suppression wants to know who was convinced and not only who
+asked.
+""")]
+pub fn accepted(
+  queue: String,
+  site: Site,
+  witness: String
+) : Result[Answered, Unanswerable] = match proposal_for(queue, site) {
+  None -> if is_empty(trim(queue)) { Err(NothingProposed) } else { Err(NotProposed(site.file)) }
+  Some(line) -> Ok(Answered {
+    moved: if is_empty(trim(witness)) { trim(line) } else { "#{trim(line)} (#{trim(witness)})" },
+    queue: without(queue, line),
+    note: "accepted"
+  })
+}
+
+#[doc("""
+Reject it: it leaves the queue, and what it argued is kept.
+
+The wekufe goes back to being a survivor that wants a test, and the
+argument is written down so that making it a second time is visible.
+""")]
+pub fn rejected(queue: String, site: Site, why: String) : Result[Answered, Unanswerable] =
+  match proposal_for(queue, site) {
+    None -> if is_empty(trim(queue)) { Err(NothingProposed) } else { Err(NotProposed(site.file)) }
+    Some(line) -> Ok(Answered {
+      moved: if is_empty(trim(why)) {
+        trim(line)
+      } else {
+        "#{trim(line)} (turned down: #{trim(why)})"
+      },
+      queue: without(queue, line),
+      note: "rejected"
+    })
+  }
+
+#[doc("What to say when a proposal cannot be answered.")]
+pub fn why_not(u: Unanswerable) : String = match u {
+  NothingProposed -> "nothing has been proposed; an equivalent is argued for before it is accepted"
+  NotProposed(file) ->
+    "no proposal argues for that wekufe in #{file}."
+      ++ " An agent proposes with `kalku propose-equivalent`, and a person answers"
+}
