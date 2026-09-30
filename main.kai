@@ -163,10 +163,25 @@ fn of_files(sources: [(String, [String])]) : (String) -> [String] =
 
 # ---- what a run was asked for -------------------------------------------
 
-fn settings() : Result[Config, String] / File = if file.exists(CONFIG_PATH) {
-  read_settings(file.read(CONFIG_PATH))
-} else {
-  Err("no #{CONFIG_PATH} here; run `kalku init` to set this project up")
+fn settings() : Result[Config, String] / File = settings_in(".")
+
+# A summoning is written into the project once and kept for as long as the
+# project lives, so a fix to it reaches nobody who already ran `init`. The
+# script says which contract it was written against, and a run that cannot
+# use it says so here — where the reason can be given — rather than deep in
+# a `prepare` that only knows the build path came out wrong.
+fn usable(c: Config, root: String) : Result[Config, String] / File {
+  let path = "#{root}/#{c.summon.unwrap_or("")}"
+  if is_none(c.summon) or (not file.exists(path)) {
+    Ok(c)
+  } else if summon_is_current(file.read(path)) {
+    Ok(c)
+  } else {
+    Err(
+      "#{c.summon.unwrap_or("")} was written for an older kalku and this one"
+        ++ " cannot use it. Run `kalku init` to renew it."
+    )
+  }
 }
 
 fn read_settings(text: String) : Result[Config, String] = match config.parse(text) {
@@ -512,7 +527,7 @@ fn shortened(path: String, root: String) : String =
 fn settings_in(root: String) : Result[Config, String] / File {
   let path = "#{root}/#{CONFIG_PATH}"
   if file.exists(path) {
-    read_settings(file.read(path))
+    usable(read_settings(file.read(path))!, root)
   } else {
     Err("no #{CONFIG_PATH} in #{root}; run `kalku init` there")
   }
