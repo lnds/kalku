@@ -59,7 +59,11 @@ defmodule Kalku.Prepare do
     else
       {:error, "reni_not_isolated",
        "the build path is #{build}, outside the reni #{home}; " <>
-         "summon this kalku with MIX_BUILD_PATH inside the reni"}
+         "summon this kalku with MIX_BUILD_PATH inside the reni. " <>
+         "A `.kalku/summon` written before kalku 0.2.1 has a reni baked " <>
+         "into it from whatever machine and directory `kalku init` ran " <>
+         "in; re-run `kalku init` to get one that takes the reni from " <>
+         "the run instead."}
     end
   end
 
