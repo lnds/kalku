@@ -1,0 +1,99 @@
+#[doc("""
+Survivors that are the same argument made many times.
+
+An agent measuring one Elixir module left fourteen proposed equivalents,
+and eleven were the same sentence: a constructor whose mutation cannot
+produce a defect anyone could observe in that project. It was not being
+lazy — as far as it could tell, eleven survivors meant eleven decisions.
+
+`.kalku.toml` has `exclude_calls` for exactly this, and nothing in kalku
+said so. Eleven entries in `.kalku/equivalent` and one line of
+configuration are not the same artefact: the line is read every run, lives
+in the repository, and someone can argue with it, while eleven entries are
+eleven decisions nobody will revisit. Pointing at the pattern is how a
+project's suppressions stay small enough to stay honest.
+
+This only counts and names. Writing the line is the project owner's:
+`exclude_calls` silences a whole operator over a whole run, which is a
+bigger claim than any single equivalent.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+
+#[doc("A call that many surviving wekufe have in common, and how many.")]
+#[derive(Eq, Show)]
+pub type Recurring = { call: String, count: Int }
+
+#[doc("""
+How many survivors on one call it takes before the pattern is worth a
+sentence.
+
+Two survivors sharing a call is a coincidence and saying so would be
+noise; the suggestion has to be rarer than the thing it points at. Five is
+the point where writing the same argument out by hand starts to cost more
+than reading one line of configuration.
+""")]
+pub const WORTH_SAYING : Int = 5
+
+#[doc("""
+The name a call site is calling, as `exclude_calls` would have to spell it.
+
+A call site's original text is the call in full — `Decimal.new(amount)` —
+and the name is what stands before the arguments. A call with no
+parentheses is never a site, so there is always something to cut at.
+""")]
+pub fn called(site: Site) : Option[String] = match site.original {
+  None -> None
+  Some(text) -> match index_of(text, "(") {
+    None -> None
+    Some(at) -> {
+      let name = trim(slice(text, 0, at))
+      if is_empty(name) { None } else { Some(name) }
+    }
+  }
+}
+
+#[doc("""
+The calls that at least `least` surviving wekufe share, most first.
+
+Only the `call` spell: a survivor on a comparison says nothing about the
+function it sits in, while several survivors on one call say the same
+thing about that call every time.
+""")]
+pub fn repeated_calls(sites: [Site], least: Int) : [Recurring] {
+  let names = flat_map(
+    filter(sites, s => s.spell == Call),
+    s => match called(s) {
+      Some(n) -> [n]
+      None -> []
+    }
+  )
+  let groups = uniq(names) | (n => Recurring { call: n, count: length(filter(names, m => m == n)) })
+  # Most first, and ties by name, so one run's advice reads the same as
+  # the next one's.
+  sort_by(
+    filter(groups, g => g.count >= least),
+    (a, b) => if a.count != b.count {
+      b.count - a.count
+    } else {
+      if a.call < b.call { 0 - 1 } else { 1 }
+    }
+  )
+}
+
+#[doc("""
+The sentence a report makes of one such group.
+
+It names the count, the call, and the one line that would answer all of
+them — and says what that line claims, because `exclude_calls` is a
+statement about the project, not a way to make a number go up.
+""")]
+pub fn as_advice(r: Recurring) : [String] = [
+  "#{r.count} survivors are `call` on `#{r.call}`. If mutating that call",
+  "cannot produce a defect a test could see here, say so once:",
+  "",
+  "    [run]",
+  "    exclude_calls = [\"#{r.call}\"]",
+  ""
+]
