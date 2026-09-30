@@ -1,0 +1,125 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.answering
+
+fn site_at(file: String, fun: String, ordinal: Int, spell: Spell) : Site = Site {
+  site_id: "w1",
+  file: file,
+  enclosing: Some(fun),
+  ordinal: Some(ordinal),
+  span: Span { start: Position { line: 42, col: 5, byte: 0 }, end: None },
+  spell: spell,
+  original: Some("a > b"),
+  replacement: "a >= b",
+  reload: ModuleOnly
+}
+
+fn a_site() : Site = site_at("lib/billing.ex", "Billing.charge/2", 1, Compare)
+
+fn queue_of(lines: [String]) : String = join(lines, "\n") ++ "\n"
+
+fn a_queue() : String = queue_of([
+  "# lib/billing.ex:42 compare",
+  "lib/billing.ex Billing.charge/2 1 compare: the wrapper changes the type, not the value",
+  "# lib/other.ex:9 arm",
+  "lib/other.ex Other.sum/2 1 arm: addition here is commutative"
+])
+
+# Accepting is a move between files, not a rewrite: the same text, read by
+# the same parser, having crossed from a queue into the record every run
+# reads.
+test "an accepted proposal keeps the argument that was made for it" {
+  match accepted(a_queue(), a_site(), "") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(a) -> {
+      assert a.moved
+        == "lib/billing.ex Billing.charge/2 1 compare: the wrapper changes the type, not the value"
+      assert a.note == "accepted"
+    }
+  }
+}
+
+# The heading is the proposal's own; leaving it behind would grow a file
+# of headings for arguments that are no longer there.
+test "answering takes the proposal's heading with it" {
+  match accepted(a_queue(), a_site(), "") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(a) -> {
+      assert is_none(index_of(a.queue, "lib/billing.ex:42"))
+      assert is_none(index_of(a.queue, "Billing.charge/2"))
+      assert is_some(index_of(a.queue, "lib/other.ex:9"))
+      assert is_some(index_of(a.queue, "Other.sum/2"))
+    }
+  }
+}
+
+# An audit of a suppression wants to know who was convinced, not only who
+# asked, so a second reason is recorded when one is given.
+test "what convinced the person is recorded beside what was argued" {
+  match accepted(a_queue(), a_site(), "checked the callers; nothing reads the type") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(a) -> {
+      assert is_some(index_of(a.moved, "(checked the callers; nothing reads the type)"))
+    }
+  }
+}
+
+# Accepting something nobody argued for is the hole the two-step exists to
+# close, so it is refused rather than written.
+test "a wekufe nobody argued for cannot be accepted" {
+  let elsewhere = site_at("lib/nowhere.ex", "Nowhere.f/0", 1, Literal)
+
+  assert accepted(a_queue(), elsewhere, "") == Err(NotProposed("lib/nowhere.ex"))
+  assert accepted("", a_site(), "") == Err(NothingProposed)
+  assert rejected("   \n", a_site(), "") == Err(NothingProposed)
+}
+
+# A survivor that was argued for and turned down is a different thing from
+# one nobody has looked at.
+test "a rejection keeps what was argued, and why it was refused" {
+  match rejected(a_queue(), a_site(), "the callers do read the type") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(a) -> {
+      assert a.note == "rejected"
+      assert is_some(index_of(a.moved, "turned down: the callers do read the type"))
+      assert is_none(index_of(a.queue, "Billing.charge/2"))
+    }
+  }
+}
+
+# The key is matched, not the whole line: a person answers a site, and the
+# reason belongs to whoever proposed it.
+test "a proposal is found by its site, whatever it argued" {
+  let other_words = queue_of([
+    "lib/billing.ex Billing.charge/2 1 compare: something else entirely"
+  ])
+
+  assert is_some(proposal_for(other_words, a_site()))
+  assert key_of("lib/a.ex A.f/1 2 arm: because") == "lib/a.ex A.f/1 2 arm"
+}
+
+# The spell is part of the key: two wekufe on one line are two decisions.
+test "two spells on one site are two proposals" {
+  let both = queue_of([
+    "lib/billing.ex Billing.charge/2 1 compare: one argument",
+    "lib/billing.ex Billing.charge/2 1 literal: a different argument"
+  ])
+
+  match accepted(both, a_site(), "") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(a) -> {
+      assert is_some(index_of(a.moved, "compare"))
+      assert is_some(index_of(a.queue, "literal: a different argument"))
+    }
+  }
+}
