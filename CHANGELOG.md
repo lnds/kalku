@@ -1,3 +1,20 @@
+## v0.3.0 (2026-10-01)
+
+### Added
+
+- **gate**: apply the floor a project configured, and refuse a partial one (#115)
+- **orchestrator**: say that a wait is still a wait, and quote the kalku (#111)
+- **cli**: let a person answer a proposed equivalent (#110)
+- **report**: say once when many survivors share a call (#107)
+
+### Fixed
+
+- **orchestrator**: kill what a kalku started, and verify that it died (#99)
+- **elixir**: withhold coverage this kalku cannot stand behind (#109)
+- **init**: give the summoning a contract, so a fix to it reaches projects (#108)
+- **report**: a run that measured part of a file says so before its score (#112)
+- **init**: let the run say where the reni is, instead of the script (#105)
+
 ## v0.2.0 (2026-09-29)
 
 ### Added

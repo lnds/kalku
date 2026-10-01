@@ -1,2 +1,2 @@
 #[doc("kalku's release version, kept in sync with `VERSION` by `cz bump`.")]
-pub const VERSION : String = "0.2.0"
+pub const VERSION : String = "0.3.0"
