@@ -29,6 +29,7 @@ pub type Survivor = { site: Site, tests: [String] }
 #[derive(Eq, Show)]
 pub type Report = {
   counts: Counts,
+  planned: Int,
   survivors: [Survivor],
   on_changed_lines: Int,
   suppressions: SuppressionChanges,
@@ -79,7 +80,8 @@ pub fn diff_of(site: Site) : [String] {
 pub fn summary_line(r: Report) : String {
   let c = r.counts
   join(
-    ["score #{score_text(c)}", "#{c.killed} killed", "#{c.survived} survived"]
+    partial(r)
+      ++ ["score #{score_text(c)}", "#{c.killed} killed", "#{c.survived} survived"]
       ++ aside("timeout", c.timeout)
       ++ aside("no coverage", c.no_coverage)
       ++ aside("compile error", c.compile_error)
@@ -88,6 +90,24 @@ pub fn summary_line(r: Report) : String {
       ++ equivalents(c.equivalent),
     " · "
   )
+}
+
+# A run that cast part of what it planned reports a score over that part,
+# and says so first. A number that answers a question nobody asked is the
+# dishonesty this whole tool exists to avoid, and a reader who takes a
+# limited run's score for the file's score has been misled by silence.
+fn partial(r: Report) : [String] {
+  let cast = r.counts.killed
+    + r.counts.survived
+    + r.counts.timeout
+    + r.counts.compile_error
+    + r.counts.crashed
+    + r.counts.nondeterministic
+  if r.planned <= 0 or cast >= r.planned {
+    []
+  } else {
+    ["PARTIAL: #{cast} of #{r.planned} planned wekufe"]
+  }
 }
 
 # ---- blocks ------------------------------------------------------------
