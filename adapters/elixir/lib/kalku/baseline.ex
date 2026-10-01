@@ -28,9 +28,13 @@ defmodule Kalku.Baseline do
     with {:ok, files} <- test_files(root),
          :ok <- start_exunit(measuring),
          {:ok, modules} <- load(root, files) do
+      if measuring, do: Cover.reset()
       ExUnit.run(modules)
+      # What the suite as a whole reached. Per-test attribution has to add
+      # up to this, and where it does not, something swallowed it.
+      whole = if measuring, do: MapSet.new(Cover.covered()), else: MapSet.new()
       tests = Collector.taken()
-      measured = if measuring, do: measure_each(tests, modules), else: tests
+      measured = if measuring, do: attributed(tests, modules, whole), else: tests
       Collector.stop()
       Cover.stop()
       Kalku.Runtime.mark(Mix.Project.config()[:app])
@@ -54,6 +58,54 @@ defmodule Kalku.Baseline do
          {:ok, _modules} <- load(root, files) do
       :ok
     end
+  end
+
+  # Coverage this kalku cannot stand behind is not reported at all.
+  #
+  # Running the suite whole and then each test alone measures the same
+  # thing twice, so the two have to agree: every line the suite reached,
+  # some test reached. A line the suite executed that no single test is
+  # credited with is attribution that went missing — which is what happens
+  # when a mocking library replaces one of the project's own modules and
+  # `:cover` loses what it instrumented.
+  #
+  # kalku cannot tell a lost line from a line no test truly reaches, and
+  # must not guess: reporting the attribution anyway judges each wekufe
+  # against too few tests, and a wekufe no test was aimed at survives. A
+  # survivor that is not a hole is the one thing a run must never produce.
+  #
+  # So the whole attribution is withheld and every wekufe faces the whole
+  # suite: slower, and true. The protocol already has this — a kalku
+  # without `per_test_coverage` works exactly this way.
+  defp attributed(tests, modules, whole) do
+    measured = measure_each(tests, modules)
+    attributed = for t <- measured, l <- t.lines, into: MapSet.new(), do: l
+
+    case MapSet.difference(whole, attributed) do
+      %MapSet{} = lost ->
+        if MapSet.size(lost) == 0 do
+          measured
+        else
+          IO.puts(:stderr, unattributable(lost))
+          for t <- measured, do: %{t | lines: []}
+        end
+    end
+  end
+
+  defp unattributable(lost) do
+    where =
+      lost
+      |> Enum.map(fn {file, line} -> "#{Path.basename(file)}:#{line}" end)
+      |> Enum.sort()
+      |> Enum.take(4)
+      |> Enum.join(", ")
+
+    "kalku: per-test coverage is not reportable for this run. " <>
+      "The suite reached #{MapSet.size(lost)} line(s) that no single test is " <>
+      "credited with (#{where}), so the attribution is incomplete — a module " <>
+      "replaced while the suite ran, as a mocking library does, is the usual " <>
+      "cause. Every wekufe will be cast against the whole suite instead, so " <>
+      "this run is slower and every survivor is real."
   end
 
   @doc """

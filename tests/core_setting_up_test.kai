@@ -177,3 +177,29 @@ test "a build file with multibyte text survives the insertion" {
   assert has(written, "{:k, \"~> 1\"}")
   assert has(written, "{:jason, \"~> 1.4\"}")
 }
+
+# The summoning lives in the project for as long as the project does, so
+# every fix to it reaches only the projects that run `init` again — and
+# nothing ever told them to. The contract is how a run can tell.
+test "a summoning says which contract it was written against" {
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+
+  assert has(plan.summoner, contract_line(SUMMON_CONTRACT))
+  assert contract_of(plan.summoner) == Some(SUMMON_CONTRACT)
+  assert summon_is_current(plan.summoner)
+}
+
+test "every language's summoning declares one" {
+  each(catalogue(), k => {
+    let plan = plan_for(k, "/r")
+    assert summon_is_current(plan.summoner)
+  })
+}
+
+# A script from before the contract existed, and one from a contract this
+# kalku no longer speaks, are both refused rather than run and puzzled over.
+test "a summoning from an older kalku is not current" {
+  assert not summon_is_current("#!/bin/sh\nexec mix kalku.serve\n")
+  assert not summon_is_current("#!/bin/sh\n# kalku-summon-contract: 0\n")
+  assert contract_of("#!/bin/sh\n") == None
+}

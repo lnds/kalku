@@ -28,6 +28,36 @@ pub type Puzzle = Unknown(String) | Undetected | Ambiguous([String])
 #[doc("Where the summoning script a project gets is written.")]
 pub const SUMMONER_PATH : String = ".kalku/summon"
 
+#[doc("""
+What this kalku expects a summoning to do.
+
+The script is written once, into the project, and a project set up a year
+ago keeps the script it was given. Every fix to the summoning — what it
+sends to stderr, what it is handed on the command line — reaches only the
+projects that run `init` again, and nothing told them to. So the script
+carries the contract it was written against, a run refuses one it does
+not recognise, and `init` replaces an old one instead of keeping it.
+
+Bumped when the script's obligations change, not when its wording does.
+""")]
+pub const SUMMON_CONTRACT : Int = 1
+
+#[doc("The line that says which contract a summoning was written against.")]
+pub fn contract_line(n: Int) : String = "# kalku-summon-contract: #{n}"
+
+#[doc("Which contract a summoning claims, or `None` when it claims none.")]
+pub fn contract_of(script: String) : Option[Int] = match find(
+  lines(script),
+  l => starts_with(trim(l), "# kalku-summon-contract:")
+) {
+  None -> None
+  Some(l) -> to_int(trim(slice(trim(l), 25, length(trim(l)))))
+}
+
+#[doc("True when a summoning is one this kalku knows how to use.")]
+pub fn summon_is_current(script: String) : Bool =
+  contract_of(script) == Some(SUMMON_CONTRACT)
+
 #[doc("Where a project's configuration is written.")]
 pub const CONFIG_PATH : String = ".kalku.toml"
 
@@ -133,6 +163,7 @@ fn summoner_text(known: Known) : String = trim_left(known.summon)
 # of the pipe, with no shell left to outlive it.
 fn elixir_summoner() : String = """
 #!/bin/sh
+# kalku-summon-contract: 1
 # Summons the Elixir kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol, so the build's output goes to stderr
@@ -172,6 +203,7 @@ exec mix kalku.serve "$@"
 
 fn kaikai_summoner() : String = """
 #!/bin/sh
+# kalku-summon-contract: 1
 # Summons the kaikai kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol, so anything the toolchain prints on
