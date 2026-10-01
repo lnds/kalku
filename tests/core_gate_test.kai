@@ -9,12 +9,12 @@ fn counts_of(killed: Int, survived: Int) : Counts =
 fn clean() : Counts = counts_of(9, 1)
 
 test "a clean run passes" {
-  assert blockers(clean(), 0, no_policy(), None) == []
+  assert blockers(clean(), 0, no_policy(), None, false) == []
   assert exit_code([]) == 0
 }
 
 test "a survivor on a changed line blocks the change" {
-  let bs = blockers(clean(), 3, no_policy(), None)
+  let bs = blockers(clean(), 3, no_policy(), None, false)
   assert bs == [SurvivorsOnChangedLines(3)]
   assert exit_code(bs) == 1
   assert explain(SurvivorsOnChangedLines(3)) == "3 wekufe survived on lines this change touched"
@@ -22,21 +22,27 @@ test "a survivor on a changed line blocks the change" {
 
 test "the global score is guarded apart from the change" {
   let policy = Policy { threshold: Some(0.95), baseline: None }
-  let bs = blockers(clean(), 0, policy, None)
+  let bs = blockers(clean(), 0, policy, None, false)
   assert bs == [BelowThreshold(0.9, 0.95)]
   assert exit_code(bs) == 1
 }
 
 test "the ratchet blocks a score that fell below the stored baseline" {
   let policy = Policy { threshold: None, baseline: Some(0.95) }
-  assert blockers(clean(), 0, policy, None) == [BelowBaseline(0.9, 0.95)]
-  assert blockers(clean(), 0, Policy { threshold: None, baseline: Some(0.5) }, None) == []
+  assert blockers(clean(), 0, policy, None, false) == [BelowBaseline(0.9, 0.95)]
+  assert blockers(clean(), 0, Policy { threshold: None, baseline: Some(0.5) }, None, false) == []
 }
 
 # "your tests have holes" and "kalku could not measure" are different failures.
 test "a run that could not measure exits 2, and says so first" {
   let bs =
-    blockers(clean(), 3, Policy { threshold: Some(0.99), baseline: None }, Some("the suite is red"))
+    blockers(
+      clean(),
+      3,
+      Policy { threshold: Some(0.99), baseline: None },
+      Some("the suite is red"),
+      false
+    )
   assert bs == [CouldNotMeasure("the suite is red")]
   assert exit_code(bs) == 2
   assert explain(CouldNotMeasure("the suite is red")) == "could not measure: the suite is red"
@@ -44,12 +50,47 @@ test "a run that could not measure exits 2, and says so first" {
 
 test "a run with nothing to kill is not below any floor" {
   let policy = Policy { threshold: Some(0.9), baseline: Some(0.9) }
-  assert blockers(tally([Cast(Timeout)]), 0, policy, None) == []
+  assert blockers(tally([Cast(Timeout)]), 0, policy, None, false) == []
 }
 
 test "every floor that is broken is reported, not only the first" {
   let policy = Policy { threshold: Some(0.95), baseline: Some(0.99) }
-  let bs = blockers(clean(), 2, policy, None)
+  let bs = blockers(clean(), 2, policy, None, false)
   assert length(bs) == 3
   assert exit_code(bs) == 1
+}
+
+# A score over part of a plan is not the score of the thing a floor is
+# about, and a threshold does not read the word PARTIAL the way a person
+# does. So the gate declines that judgement rather than making it on the
+# wrong number — the failure a project must never have is a build that
+# went green over a slice of its code.
+test "a partial run is not judged against a floor" {
+  let policy = Policy { threshold: Some(0.8), baseline: None }
+  let bs = blockers(clean(), 0, policy, None, true)
+
+  assert length(bs) == 1
+  assert any(
+    bs,
+    b => match b {
+      CouldNotMeasure(why) -> is_some(index_of(why, "--limit 0"))
+      _ -> false
+    }
+  )
+  assert exit_code(bs) == 2
+}
+
+# Nothing was claimed, so nothing is declined: a partial run that is held
+# to no floor passes, and the report says it was partial.
+test "a partial run with no floor is not blocked at all" {
+  assert blockers(clean(), 0, no_policy(), None, true) == []
+}
+
+# A survivor found is a hole whether or not the rest of the plan was cast.
+# Declining the floor must not throw away what was measured.
+test "a partial run still blocks on survivors it did find" {
+  let policy = Policy { threshold: Some(0.8), baseline: None }
+  let bs = blockers(clean(), 3, policy, None, true)
+
+  assert any(bs, b => b == SurvivorsOnChangedLines(3))
 }

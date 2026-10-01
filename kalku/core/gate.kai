@@ -35,12 +35,34 @@ pub fn blockers(
   counts: Counts,
   survivors_on_changed_lines: Int,
   policy: Policy,
-  trouble: Option[String]
+  trouble: Option[String],
+  partial: Bool
 ) : [Blocker] =
   match trouble {
     Some(why) -> [CouldNotMeasure(why)]
-    None -> holes(survivors_on_changed_lines) ++ floors(score(counts), policy)
+    None -> holes(survivors_on_changed_lines) ++ judged(score(counts), policy, partial)
   }
+
+# A survivor found is a hole whether or not the rest of the plan was cast,
+# so what was measured still blocks. What cannot stand is the comparison
+# against a floor: a score over part of a plan is not the score of the
+# thing the floor is about, and a threshold does not read the word
+# PARTIAL the way a person does. So the gate declines that one judgement
+# rather than making it on the wrong number.
+fn judged(got: Option[Real], policy: Policy, partial: Bool) : [Blocker] =
+  if partial and holds_a_floor(policy) {
+    [
+      CouldNotMeasure(
+        "the run was partial, and a score over part of a plan cannot be held"
+          ++ " to a floor. Measure all of it with `--limit 0`"
+      )
+    ]
+  } else {
+    floors(got, policy)
+  }
+
+# Only a run that is being held to something has anything to decline.
+fn holds_a_floor(p: Policy) : Bool = is_some(p.threshold) or is_some(p.baseline)
 
 #[doc("The exit code for a set of blockers: 2 when nothing could be measured, 1 when something blocks, 0 otherwise.")]
 pub fn exit_code(bs: [Blocker]) : Int =

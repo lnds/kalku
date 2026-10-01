@@ -118,13 +118,14 @@ fn run_here(
       2
     }
   } else {
-    with_declared(".", declared => measured(asking_for(c, wanted, declared), wanted))
+    with_declared(".", declared => measured(asking_for(c, wanted, declared), wanted, c.policy))
   }
 )
 
 fn measured(
   asking: Asking,
-  wanted: Wanted
+  wanted: Wanted,
+  policy: Policy
 ) : Int / Stdout + Stderr + File + Process + Spawn + Clock + Signal = with_mailbox {
   let shape = wanted.shape
   let found = alone(() => telling(wanted.aloud, () => measure(asking)))
@@ -138,8 +139,13 @@ fn measured(
         Stderr.eprint("kalku: nothing measured")
         2
       }
-      Some(r) -> {
+      Some(whole) -> {
         remember(found.cast)
+        # The report is what was measured; the blockers are what the
+        # project asked to be held to. Judging here rather than in the run
+        # keeps the same measurement answerable to a different policy in
+        # CI than on a laptop.
+        let r = judged_by(whole, policy)
         Stdout.print(printed(r, shape))
         exit_code(r.blockers)
       }
@@ -234,12 +240,27 @@ fn summoning_in(c: Config, root: String, reni: String) : PoolSpec = PoolSpec {
 
 fn asking_for(c: Config, wanted: Wanted, declared: [equivalent.Entry]) : Asking / Env = Asking {
   ...asking_of(c, pool_of(c), wanted.files, declared),
-  limit: wanted.limit.unwrap_or(0)
+  limit: wanted.limit.unwrap_or(DEFAULT_LIMIT)
 }
 
 # What every run is asked, whoever asks it: the project's spells and
 # exclusions, and what it declared equivalent. The caller says which
 # kalku to summon and which files to measure.
+#[doc("""
+How many wekufe a run casts when nobody said.
+
+A first run on a real project plans thousands, and an agent asks for
+everything because that is what agents do: the issue that opened this had
+one measuring a single Phoenix file for five minutes with nothing but a
+spinner. A hundred is enough to find real survivors and short enough to
+end, and `--limit 0` is how a caller asks for all of it.
+
+A count rather than a time budget, because a time budget makes the
+measured set depend on the machine, and two runs of one commit would
+score differently.
+""")]
+const DEFAULT_LIMIT : Int = 100
+
 fn asking_of(
   c: Config,
   spec: PoolSpec,
@@ -346,7 +367,8 @@ fn recast_here(
         ".",
         declared => measured(
           asking_again(c, sites_for(all, wanted.files), wanted, declared),
-          wanted
+          wanted,
+          c.policy
         )
       )
     }
