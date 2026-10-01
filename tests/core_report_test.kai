@@ -35,6 +35,7 @@ fn no_suppressions() : SuppressionChanges =
 fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Report =
   Report {
     counts: counts,
+    planned: 0,
     survivors: survivors,
     on_changed_lines: length(blockers),
     suppressions: no_suppressions(),
@@ -211,4 +212,27 @@ test "a site no test reaches is named, not just counted" {
 
   assert has(text, "no test reaches these:")
   assert has(text, "lib/b.ex:7  compare")
+}
+
+# A run that cast part of what it planned reports a score over that part.
+# Saying so is the precondition for any limit at all: a reader who takes a
+# limited run's score for the file's score has been misled by silence, and
+# a number that answers a question nobody asked is what this tool exists
+# to refuse.
+test "a partial run says so before it says its score" {
+  let counts = tally([
+    Cast(Killed),
+    Cast(Killed),
+    Cast(Killed),
+    Cast(Killed),
+    Cast(Survived),
+    Cast(Survived)
+  ])
+  let base = report_of([], counts, [])
+  let whole = human(Report { ...base, planned: 6 })
+  let part = human(Report { ...base, planned: 40 })
+
+  assert not has(whole, "PARTIAL")
+  assert has(part, "PARTIAL: 6 of 40 planned wekufe")
+  assert index_of(part, "PARTIAL") < index_of(part, "score")
 }

@@ -461,6 +461,10 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
   let declared = ready.suppressed | (_s => EquivalentBy(Declared))
   Report {
     counts: tally(verdicts ++ uncovered ++ declared),
+    planned: 
+    # What the plan held before `--limit` cut it, so a run that measured
+    # part of a file cannot report the part's score as the file's.
+    length(ready.to_cast),
     survivors: survivors_of(casting, known),
     on_changed_lines: 0,
     suppressions: SuppressionChanges {
