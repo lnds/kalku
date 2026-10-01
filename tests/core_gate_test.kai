@@ -9,12 +9,13 @@ fn counts_of(killed: Int, survived: Int) : Counts =
 fn clean() : Counts = counts_of(9, 1)
 
 test "a clean run passes" {
-  assert blockers(clean(), 0, no_policy(), None, false) == []
+  assert blockers(clean(), Change { survivors: 0, uncovered: 0 }, no_policy(), None, false, false)
+    == []
   assert exit_code([]) == 0
 }
 
 test "a survivor on a changed line blocks the change" {
-  let bs = blockers(clean(), 3, no_policy(), None, false)
+  let bs = blockers(clean(), Change { survivors: 3, uncovered: 0 }, no_policy(), None, false, false)
   assert bs == [SurvivorsOnChangedLines(3)]
   assert exit_code(bs) == 1
   assert explain(SurvivorsOnChangedLines(3)) == "3 wekufe survived on lines this change touched"
@@ -22,15 +23,24 @@ test "a survivor on a changed line blocks the change" {
 
 test "the global score is guarded apart from the change" {
   let policy = Policy { threshold: Some(0.95), baseline: None }
-  let bs = blockers(clean(), 0, policy, None, false)
+  let bs = blockers(clean(), Change { survivors: 0, uncovered: 0 }, policy, None, false, false)
   assert bs == [BelowThreshold(0.9, 0.95)]
   assert exit_code(bs) == 1
 }
 
 test "the ratchet blocks a score that fell below the stored baseline" {
   let policy = Policy { threshold: None, baseline: Some(0.95) }
-  assert blockers(clean(), 0, policy, None, false) == [BelowBaseline(0.9, 0.95)]
-  assert blockers(clean(), 0, Policy { threshold: None, baseline: Some(0.5) }, None, false) == []
+  assert blockers(clean(), Change { survivors: 0, uncovered: 0 }, policy, None, false, false)
+    == [BelowBaseline(0.9, 0.95)]
+  assert blockers(
+    clean(),
+    Change { survivors: 0, uncovered: 0 },
+    Policy { threshold: None, baseline: Some(0.5) },
+    None,
+    false,
+    false
+  )
+    == []
 }
 
 # "your tests have holes" and "kalku could not measure" are different failures.
@@ -38,9 +48,10 @@ test "a run that could not measure exits 2, and says so first" {
   let bs =
     blockers(
       clean(),
-      3,
+      Change { survivors: 3, uncovered: 0 },
       Policy { threshold: Some(0.99), baseline: None },
       Some("the suite is red"),
+      false,
       false
     )
   assert bs == [CouldNotMeasure("the suite is red")]
@@ -50,12 +61,20 @@ test "a run that could not measure exits 2, and says so first" {
 
 test "a run with nothing to kill is not below any floor" {
   let policy = Policy { threshold: Some(0.9), baseline: Some(0.9) }
-  assert blockers(tally([Cast(Timeout)]), 0, policy, None, false) == []
+  assert blockers(
+    tally([Cast(Timeout)]),
+    Change { survivors: 0, uncovered: 0 },
+    policy,
+    None,
+    false,
+    false
+  )
+    == []
 }
 
 test "every floor that is broken is reported, not only the first" {
   let policy = Policy { threshold: Some(0.95), baseline: Some(0.99) }
-  let bs = blockers(clean(), 2, policy, None, false)
+  let bs = blockers(clean(), Change { survivors: 2, uncovered: 0 }, policy, None, false, false)
   assert length(bs) == 3
   assert exit_code(bs) == 1
 }
@@ -67,7 +86,7 @@ test "every floor that is broken is reported, not only the first" {
 # went green over a slice of its code.
 test "a partial run is not judged against a floor" {
   let policy = Policy { threshold: Some(0.8), baseline: None }
-  let bs = blockers(clean(), 0, policy, None, true)
+  let bs = blockers(clean(), Change { survivors: 0, uncovered: 0 }, policy, None, true, false)
 
   assert length(bs) == 1
   assert any(
@@ -83,14 +102,96 @@ test "a partial run is not judged against a floor" {
 # Nothing was claimed, so nothing is declined: a partial run that is held
 # to no floor passes, and the report says it was partial.
 test "a partial run with no floor is not blocked at all" {
-  assert blockers(clean(), 0, no_policy(), None, true) == []
+  assert blockers(clean(), Change { survivors: 0, uncovered: 0 }, no_policy(), None, true, false)
+    == []
 }
 
 # A survivor found is a hole whether or not the rest of the plan was cast.
 # Declining the floor must not throw away what was measured.
 test "a partial run still blocks on survivors it did find" {
   let policy = Policy { threshold: Some(0.8), baseline: None }
-  let bs = blockers(clean(), 3, policy, None, true)
+  let bs = blockers(clean(), Change { survivors: 3, uncovered: 0 }, policy, None, true, false)
 
   assert any(bs, b => b == SurvivorsOnChangedLines(3))
+}
+
+# A change was asked about and only part of it was cast. Finding nothing
+# in the part that was examined says nothing about the rest, and a gate
+# that answered "clean" would pass a pull request over lines nobody looked
+# at. It can still say no, because what was found is real.
+test "a change that was only partly measured cannot pass" {
+  let bs = blockers(clean(), Change { survivors: 0, uncovered: 0 }, no_policy(), None, true, true)
+
+  assert length(bs) == 1
+  assert exit_code(bs) == 2
+  assert any(
+    bs,
+    b => match b {
+      CouldNotMeasure(why) -> is_some(index_of(why, "--limit"))
+      _ -> false
+    }
+  )
+}
+
+test "a change that was only partly measured still blocks on what it found" {
+  let bs = blockers(clean(), Change { survivors: 2, uncovered: 0 }, no_policy(), None, true, true)
+
+  assert bs == [SurvivorsOnChangedLines(2)]
+  assert exit_code(bs) == 1
+}
+
+# Asking about a change and measuring all of it is the ordinary pull
+# request, and it passes when nothing survived on a line it touched.
+test "a change that was fully measured and clean passes" {
+  assert blockers(clean(), Change { survivors: 0, uncovered: 0 }, no_policy(), None, false, true)
+    == []
+}
+
+# Partial with no diff is the case #115 settled: nothing was claimed.
+test "a partial run with no change asked about is not declined" {
+  assert blockers(clean(), Change { survivors: 0, uncovered: 0 }, no_policy(), None, true, false)
+    == []
+}
+
+fn on(survivors: Int, uncovered: Int) : Change =
+  Change { survivors: survivors, uncovered: uncovered }
+
+# Code no test ran is a larger hole than a survivor: there was nothing even
+# to fail to notice it. A gate that counted only survivors would pass a
+# pull request whose new function had no test at all, which is exactly the
+# case a gate on changed lines exists for.
+test "a site on a changed line that no test reaches blocks" {
+  let bs = blockers(clean(), on(0, 4), no_policy(), None, false, true)
+
+  assert bs == [UncoveredOnChangedLines(4)]
+  assert exit_code(bs) == 1
+}
+
+test "survivors and unreached sites are both said" {
+  let bs = blockers(clean(), on(2, 4), no_policy(), None, false, true)
+
+  assert bs == [SurvivorsOnChangedLines(2), UncoveredOnChangedLines(4)]
+}
+
+# Unreached sites are a finding like any other, so a partial change that
+# has one is blocked on it rather than declined as unmeasurable.
+test "a partial change with an unreached site still blocks on it" {
+  let bs = blockers(clean(), on(0, 1), no_policy(), None, true, true)
+
+  assert bs == [UncoveredOnChangedLines(1)]
+}
+
+test "the unreached count is explained in words a reviewer can act on" {
+  assert is_some(index_of(explain(UncoveredOnChangedLines(3)), "reached by no test"))
+}
+
+# The floors guard the global score. A run asked about a change has a score
+# over that change alone, and holding one to the other is exactly the
+# punishment of old debt the gate on changed lines exists to avoid.
+test "a floor is not applied to the score of a change" {
+  let policy = Policy { threshold: Some(0.99), baseline: Some(0.99) }
+  let half = tally([Cast(Killed), Cast(Survived)])
+
+  assert blockers(half, on(0, 0), policy, None, false, true) == []
+  assert length(blockers(half, on(0, 0), policy, None, false, false)) == 2
 }

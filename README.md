@@ -224,7 +224,8 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **kaikai kalku** — the one kalku measures itself with | done |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
-| `--since`, `--watch`, `--ci`, and the gate on changed lines | not yet |
+| **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
+| `--watch` and `--ci` | not yet |
 | `merge` — combining sharded reports | not yet |
 | **`kalku_elixir` on Hex** — the Elixir kalku installs like any dependency | done |
 | **Release binaries** — `brew install`, or a tarball per platform, built and checksummed by CI | done |
@@ -232,11 +233,31 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 
 Both kalku are driven end to end by their own test suites, over real pipes, against real fixture projects — and kalku measures its own suite through the kaikai one (`make self-mutate`).
 
-The plan for CI is a gate that does not punish old debt: a pull request
-fails when **a wekufe survives on a line it changed**, not when a global
-score dips, and exit codes separate *"your tests have holes"* (`1`) from
-*"kalku could not measure"* (`2`). That needs `--since`, which is the
-next thing.
+## In CI
+
+A pull request is gated on what **it** introduced, not on a global score
+that punishes whoever touches a file with old debt:
+
+```sh
+kalku run --since origin/main
+```
+
+That measures only the lines the change touched, and exits `1` when it
+introduced a hole: a wekufe that survived on one of those lines, or code on
+one that no test reaches at all. Old debt elsewhere in the same file does
+not block it. Exit codes separate *"your tests have holes"* (`1`) from
+*"kalku could not measure"* (`2`), and `2` is what you get when git cannot
+tell what changed — a gate that read that as *"nothing changed"* would pass
+every pull request it could not read.
+
+The change is measured from where the branch left `origin/main`, and the
+working tree counts, so a change still being written is judged the way it
+will be committed. A CI checkout needs enough history to find that point
+(`fetch-depth: 0` for `actions/checkout`).
+
+A run asked about a change casts all of it. If you pass `--limit` and it
+cuts the change short, a clean result is not an answer, and the run exits
+`2` rather than passing over lines nobody looked at.
 
 ## Documentation
 

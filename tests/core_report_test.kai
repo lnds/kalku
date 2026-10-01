@@ -3,6 +3,7 @@ import kalku.wire.shapes
 import kalku.core.verdict
 import kalku.core.gate
 import kalku.core.report
+import kalku.core.changed_lines
 import kalku.core.report_json
 import kalku.core.report_github
 
@@ -235,4 +236,52 @@ test "a partial run says so before it says its score" {
   assert not has(whole, "PARTIAL")
   assert has(part, "PARTIAL: 6 of 40 planned wekufe")
   assert index_of(part, "PARTIAL") < index_of(part, "score")
+}
+
+fn survivor_on(file: String, line: Int) : Survivor =
+  Survivor { site: site_of(file, line, Some("A.f/1"), Some(">="), ">"), tests: [] }
+
+fn change(file: String, from: Int, to: Int) : FileChange =
+  FileChange { file: file, ranges: [LineRange { from: from, to: to }] }
+
+# The gate on changed lines is made of this number, so it has to come from
+# the diff: a survivor on a line the change added is a hole the change
+# introduced, and the same survivor elsewhere in the file is old debt.
+test "survivors are counted where the change touched, and only there" {
+  let changes = [change("lib/a.ex", 40, 45)]
+  let survivors = [
+    survivor_on("lib/a.ex", 42),
+    survivor_on("lib/a.ex", 7),
+    survivor_on("lib/b.ex", 42)
+  ]
+
+  assert on_lines(changes, survivors) == 1
+}
+
+# The ends of a range are inside it, and a file the change did not touch
+# contributes nothing however many survivors it holds.
+test "both ends of a touched range count" {
+  let changes = [change("lib/a.ex", 40, 45)]
+
+  assert on_lines(changes, [survivor_on("lib/a.ex", 40), survivor_on("lib/a.ex", 45)]) == 2
+  assert on_lines(changes, [survivor_on("lib/a.ex", 39), survivor_on("lib/a.ex", 46)]) == 0
+}
+
+test "no change touched means none counted" {
+  assert on_lines([], [survivor_on("lib/a.ex", 1)]) == 0
+}
+
+# The other half of what a change can put in front of the tests: code that
+# was added and never run. Only the lines the change touched count; an
+# uncovered site elsewhere in the file is old debt.
+test "unreached sites are counted where the change touched, and only there" {
+  let changes = [change("lib/a.ex", 10, 14)]
+  let sites = [
+    site_of("lib/a.ex", 12, Some("A.f/1"), Some(">="), ">"),
+    site_of("lib/a.ex", 3, Some("A.g/1"), Some(">="), ">"),
+    site_of("lib/b.ex", 12, Some("B.f/1"), Some(">="), ">")
+  ]
+
+  assert uncovered_on_lines(changes, sites) == 1
+  assert uncovered_on_lines([], sites) == 0
 }

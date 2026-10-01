@@ -1,0 +1,116 @@
+#[doc("""
+Asking git which lines a change touched.
+
+`core/changed_lines.kai` reads a diff and is pure. This is the edge that
+produces one, and it is where a change is either understood or refused:
+a gate on changed lines that quietly treats "git could not tell me" as "no
+lines changed" would pass every pull request it could not read, which is
+worse than having no gate at all. So every way this can fail is an `Err`
+with a reason, and none of them is an empty answer.
+""")]
+
+import os.process as proc
+import kalku.core.changed_lines
+
+#[doc("""
+The lines this tree has touched since it left `ref`, relative to `root`.
+
+Measured from the merge base rather than from the tip of `ref`: when the
+base branch has moved on, a diff against its tip reads whatever it gained
+as lines this change took away, and the old text of those regions comes
+back as lines this change added. A pull request is answerable for what it
+changed, not for what happened to main afterwards.
+
+The working tree is compared, not just the commits, so a change that is
+still being written is measured the way it will be committed. A file git
+does not track yet is not part of any diff; that is git's definition of a
+change and kalku does not second-guess it.
+
+Paths come back relative to `root` and only for what lies under it, so a
+project that lives in a subdirectory of a larger repository sees its own
+files named as the kalku names them.
+""")]
+pub fn since(root: String, ref: String) : Result[[FileChange], String] / Process =
+  if starts_with(ref, "-") {
+    # Handed to git as an argument, a ref that begins with a dash is an
+    # option: `--output=<file>` would have `git diff` write into the
+    # project, which a run must never do.
+    Err("`#{ref}` is an option, not a ref")
+  } else {
+    since_ref(root, ref)
+  }
+
+fn since_ref(root: String, ref: String) : Result[[FileChange], String] / Process {
+  # Two failures that look alike and need different advice: a ref this
+  # repository has never heard of, and one it has but cannot connect to
+  # where this branch started.
+  let _known = git(root, ["rev-parse", "--verify", "--quiet", "#{ref}^{commit}"], unknown_ref(ref))!
+  let base = trim(git(root, ["merge-base", ref, "HEAD"], no_common_history(ref))!)
+  let text = git(
+    root,
+    [
+      "-c",
+      "core.quotepath=off",
+      "diff",
+      "--relative",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "-U0",
+      base
+    ],
+    "git could not diff against #{base}"
+  )!
+  Ok(parse(text))
+}
+
+# The prefixes are named because a user's own configuration can change
+# them (`diff.noprefix`, `diff.mnemonicPrefix`), and the parser reads `b/`.
+fn git(root: String, args: [String], what: String) : Result[String, String] / Process =
+  match proc.pipe_errs("git", ["-C", root] ++ args) {
+    Err(e) -> Err("cannot run git: #{e}")
+    Ok(child) -> {
+      let out = drain(child, "")
+      let err = drain_errors(child, "")
+      match proc.wait(child) {
+        Ok(Exited(0)) -> Ok(out)
+        _ -> Err(reason(what, err))
+      }
+    }
+  }
+
+# A ref that is not there is usually a typo, or a base branch the CI
+# checkout never fetched; the two read the same to git, so the message
+# names both.
+fn unknown_ref(ref: String) : String =
+  "`#{ref}` is not a commit this repository has. If it is a branch of the"
+    ++ " remote it may not have been fetched: in CI that means `fetch-depth: 0`,"
+    ++ " or fetching the base branch by name"
+
+# A ref that exists and still cannot be placed has one common cause: a CI
+# checkout that fetched only the tip, so the history that joins the two is
+# not there to be found.
+fn no_common_history(ref: String) : String =
+  "this branch and `#{ref}` share no history git can see. In CI that usually"
+    ++ " means a shallow checkout: fetch the full history (`fetch-depth: 0`)"
+
+fn reason(what: String, err: String) : String {
+  let said = trim(err)
+  if is_empty(said) { what } else { "#{what}: #{first_line(said)}" }
+}
+
+fn first_line(s: String) : String = match lines(s) {
+  [first, ..._] -> trim(first)
+  [] -> s
+}
+
+fn drain(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drain(child, so_far ++ chunk) }
+}
+
+fn drain_errors(child: Child, so_far: String) : String / Process = match proc.read_stderr(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drain_errors(child, so_far ++ chunk) }
+}

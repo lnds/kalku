@@ -3,9 +3,10 @@ What blocks a change, and the exit code that says so.
 
 "Your tests have holes" and "kalku could not measure" are different
 failures, so they get different codes: 1 for a hole, 2 for a run that
-could not produce a number. A survivor on a line the change touched is
-what blocks a pull request; the global score is guarded separately, so
-old debt in a file you touched does not block new work.
+could not produce a number. What blocks a pull request is a hole the change
+introduced: a survivor on a line it touched, or a site on one that no test
+reaches at all. The global score is guarded separately, so old debt in a
+file you touched does not block new work.
 """)]
 
 import kalku.wire.shapes
@@ -19,9 +20,26 @@ pub type Policy = { threshold: Option[Real], baseline: Option[Real] }
 #[derive(Eq, Show)]
 pub type Blocker
   = SurvivorsOnChangedLines(Int)
+  | UncoveredOnChangedLines(Int)
   | BelowThreshold(Real, Real)
   | BelowBaseline(Real, Real)
   | CouldNotMeasure(String)
+
+#[doc("""
+What a change put in front of the tests: wekufe that survived on a line it
+touched, and sites on a line it touched that no test reaches.
+
+Two numbers because they are two failures with one owner. A survivor is a
+test that ran and noticed nothing; an uncovered site is code no test ran at
+all, which is the larger hole — there was nothing even to fail to notice.
+The report has always said so, and a gate that counted only the first
+would pass a pull request whose new function had no test whatever.
+""")]
+#[derive(Eq, Show)]
+pub type Change = { survivors: Int, uncovered: Int }
+
+#[doc("A run that was not asked about a change: nothing was put in front of anything.")]
+pub fn no_change() : Change = Change { survivors: 0, uncovered: 0 }
 
 #[doc("A policy that holds a run to nothing.")]
 pub fn no_policy() : Policy = Policy { threshold: None, baseline: None }
@@ -33,15 +51,36 @@ red baseline, a failed prepare, an orphan suppression, a bad config.
 """)]
 pub fn blockers(
   counts: Counts,
-  survivors_on_changed_lines: Int,
+  change: Change,
   policy: Policy,
   trouble: Option[String],
-  partial: Bool
+  partial: Bool,
+  diffed: Bool
 ) : [Blocker] =
   match trouble {
     Some(why) -> [CouldNotMeasure(why)]
-    None -> holes(survivors_on_changed_lines) ++ judged(score(counts), policy, partial)
+    None -> {
+      let found = holes(change.survivors) ++ unreached(change.uncovered)
+      if partial and diffed and is_empty(found) {
+        # A change was asked about and only part of it was cast. Finding
+        # nothing in the part that was examined says nothing about the
+        # part that was not, and a gate that answered "clean" here would
+        # pass a pull request over lines nobody looked at.
+        [CouldNotMeasure(partial_change())]
+      } else {
+        # The floors guard the global score, and a run asked about a change
+        # has a score over that change alone. Holding one to the other is
+        # the punishment of old debt the gate on changed lines exists to
+        # avoid, so a change is judged by what it introduced and nothing
+        # else; the nightly run over everything is where a floor lives.
+        if diffed { found } else { found ++ judged(score(counts), policy, partial) }
+      }
+    }
   }
+
+fn partial_change() : String =
+  "only part of this change was measured, and finding nothing in part of it"
+    ++ " says nothing about the rest. Measure all of it by dropping `--limit`"
 
 # A survivor found is a hole whether or not the rest of the plan was cast,
 # so what was measured still blocks. What cannot stand is the comparison
@@ -72,6 +111,8 @@ pub fn exit_code(bs: [Blocker]) : Int =
 pub fn explain(b: Blocker) : String {
   case SurvivorsOnChangedLines(n) ->
     "#{n} wekufe survived on lines this change touched"
+  case UncoveredOnChangedLines(n) ->
+    "#{n} site(s) on lines this change touched are reached by no test"
   case BelowThreshold(got, limit) ->
     "score #{pct(got)} is below the threshold #{pct(limit)}"
   case BelowBaseline(got, was) ->
@@ -80,6 +121,8 @@ pub fn explain(b: Blocker) : String {
 }
 
 fn holes(n: Int) : [Blocker] = if n > 0 { [SurvivorsOnChangedLines(n)] } else { [] }
+
+fn unreached(n: Int) : [Blocker] = if n > 0 { [UncoveredOnChangedLines(n)] } else { [] }
 
 # A score that does not exist cannot be below anything: a run with nothing
 # to kill is not a failure, it is a run with nothing to say.

@@ -13,6 +13,7 @@ import kalku.core.score
 import kalku.core.gate
 import kalku.core.hint
 import kalku.core.recurring
+import kalku.core.changed_lines
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
@@ -24,6 +25,29 @@ const SAID_LINES : Int = 6
 #[doc("A wekufe that lived, and the tests that ran without noticing.")]
 #[derive(Eq, Show)]
 pub type Survivor = { site: Site, tests: [String] }
+
+#[doc("""
+How many survivors sit on a line a change touched.
+
+This is the number the gate on changed lines is made of, and it has to be
+computed from the diff rather than assumed: a survivor on a line the
+change added is a hole the change introduced, with an owner, while the
+same survivor three functions away is old debt. A run that was not given
+a diff has no changed lines and counts none, which is true for the right
+reason — nobody asked.
+""")]
+pub fn on_lines(changes: [FileChange], survivors: [Survivor]) : Int =
+  length(filter(survivors, s => touches(changes, s.site.file, s.site.span.start.line)))
+
+#[doc("""
+How many sites no test reaches sit on a line a change touched.
+
+The other half of what a change can put in front of the tests: code that
+was added and never run. It counts for the same reason a survivor does,
+and more.
+""")]
+pub fn uncovered_on_lines(changes: [FileChange], sites: [Site]) : Int =
+  length(filter(sites, s => touches(changes, s.file, s.span.start.line)))
 
 #[doc("Everything a run has to say.")]
 #[derive(Eq, Show)]

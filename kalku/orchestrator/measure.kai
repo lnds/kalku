@@ -24,6 +24,7 @@ import kalku.core.planner
 import kalku.core.equivalent
 import kalku.core.costing
 import kalku.core.gate
+import kalku.core.changed_lines
 import kalku.core.report
 import kalku.core.remembering
 import kalku.orchestrator.kalku_proc
@@ -44,7 +45,8 @@ pub type Asking = {
   exclude: [String],
   equivalents: [equivalent.Entry],
   limit: Int,
-  timeout_floor_ms: Int
+  timeout_floor_ms: Int,
+  touched: Option[[FileChange]]
 }
 
 # `durations` holds pairs, which have no `Eq`, so this record derives
@@ -434,7 +436,14 @@ pub fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
   durations: known.durations,
   suppressed_ids: suppressed_by(asking.equivalents, known.sites),
   exclude: asking.exclude,
-  reach: Everything,
+  reach: 
+  # A run asked about a change casts what the change touched and nothing
+  # else: that is where the speed of checking a pull request comes from,
+  # and where its question — did this introduce a hole — gets its answer.
+  match asking.touched {
+    Some(changes) -> Touched(changes)
+    None -> Everything
+  },
   timeout_floor_ms: asking.timeout_floor_ms
 }
 
@@ -491,12 +500,24 @@ measurement and a verdict is an opinion about one: the same counts answer
 to a different policy in CI than on a laptop, and nothing about the run
 changes between them.
 """)]
-pub fn judged_by(r: Report, policy: Policy) : Report = Report {
-  ...r,
-  blockers: 
+pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Report {
+  # A run that was not given a diff has no changed lines and counts none.
+  # That zero is true because nobody asked, which is a different zero from
+  # the one a gate used to be handed because the field was never filled in.
+  let change = match touched {
+    Some(changes) -> Change {
+      survivors: on_lines(changes, r.survivors),
+      uncovered: uncovered_on_lines(changes, r.uncovered)
+    }
+    None -> no_change()
+  }
   # A run that could not measure at all never reaches here: that failure
   # is answered before a report exists, which is why no trouble is passed.
-  blockers(r.counts, r.on_changed_lines, policy, None, was_partial(r))
+  Report {
+    ...r,
+    on_changed_lines: change.survivors,
+    blockers: blockers(r.counts, change, policy, None, was_partial(r), is_some(touched))
+  }
 }
 
 # A run that cast fewer wekufe than it planned measured part of the thing

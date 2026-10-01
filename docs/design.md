@@ -345,7 +345,7 @@ A full run on every PR does not scale: a medium Elixir project yields thousands 
 
 ### What blocks a PR
 
-A PR fails when **a wekufe survives on a line the PR changed**. Gating PRs on the global score punishes whoever touches a file with old debt, and teams switch such tools off. The global score is guarded separately by `[score] threshold` and, with `ratchet = true`, by a stored baseline it may not drop below.
+A PR fails when **it introduces a hole**: a wekufe that survives on a line the PR changed, or a site on one that no test reaches at all. Code no test ran is the larger hole — there was nothing even to fail to notice it. Gating PRs on the global score punishes whoever touches a file with old debt, and teams switch such tools off. The global score is guarded separately by `[score] threshold` and, with `ratchet = true`, by a stored baseline it may not drop below.
 
 Changes to suppressions are surfaced, never silent: if a PR adds entries to `.kalku/equivalent` or widens `exclude`/`exclude_calls` in `.kalku.toml`, the report and the GitHub summary list them under their own heading. Hiding a hole must be as visible as leaving one.
 
@@ -354,7 +354,7 @@ Changes to suppressions are surfaced, never silent: if a PR adds entries to `.ka
 | Code | Meaning |
 |---|---|
 | `0` | measured; nothing to report |
-| `1` | measured; survivors on changed lines, or the score is below threshold or baseline |
+| `1` | measured; survivors on changed lines, sites on changed lines that no test reaches, or the score is below threshold or baseline |
 | `2` | could not measure: red baseline, failed prepare, orphan equivalent entry, config error |
 
 "Your tests have holes" and "kalku could not run" are different failures and CI must be able to tell them apart.
