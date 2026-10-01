@@ -37,6 +37,11 @@ fn launcher_of(pidfile: String) : KalkuSpec = KalkuSpec {
 
 # `file.read` panics on a file that is not there, and a launcher that never
 # wrote one is a test failure with a reason rather than a crash.
+fn temp_under() : String / Env {
+  let dir = Env.get("TMPDIR").unwrap_or("/tmp")
+  if ends_with(dir, "/") { slice(dir, 0, length(dir) - 1) } else { dir }
+}
+
 fn launched(pidfile: String) : Option[Int] / File =
   if file.exists(pidfile) { to_int(trim(file.read(pidfile))) } else { None }
 
@@ -141,8 +146,10 @@ test "a kalku is summoned, answers, and leaves of its own accord" {
 # leaves nothing behind.
 test "killing a kalku kills what its launcher started, not just the launcher" {
   # Outside the repo, because a test that writes into the tree it measures
-  # is the thing this project refuses everywhere else.
-  let pidfile = "#{Env.get("TMPDIR").unwrap_or("/tmp")}kalku_grandchild_test.pid"
+  # is the thing this project refuses everywhere else. The separator is
+  # added here rather than assumed: macOS hands back a `TMPDIR` with a
+  # trailing slash and Linux usually hands back nothing at all.
+  let pidfile = "#{temp_under()}/kalku_grandchild_test.pid"
   let outcome = untold(
     () => with_mailbox {
       match summon(launcher_of(pidfile)) {
