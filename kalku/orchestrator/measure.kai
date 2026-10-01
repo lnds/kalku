@@ -483,6 +483,33 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
   }
 }
 
+#[doc("""
+The report, judged by what the project asked to be held to.
+
+The judging is separate from the measuring because a report is a
+measurement and a verdict is an opinion about one: the same counts answer
+to a different policy in CI than on a laptop, and nothing about the run
+changes between them.
+""")]
+pub fn judged_by(r: Report, policy: Policy) : Report = Report {
+  ...r,
+  blockers: 
+  # A run that could not measure at all never reaches here: that failure
+  # is answered before a report exists, which is why no trouble is passed.
+  blockers(r.counts, r.on_changed_lines, policy, None, was_partial(r))
+}
+
+# A run that cast fewer wekufe than it planned measured part of the thing
+# a floor is about.
+fn was_partial(r: Report) : Bool = r.planned > 0 and cast_of(r) < r.planned
+
+fn cast_of(r: Report) : Int = r.counts.killed
+  + r.counts.survived
+  + r.counts.timeout
+  + r.counts.compile_error
+  + r.counts.crashed
+  + r.counts.nondeterministic
+
 # An outcome outside the score is carried with whatever the kalku said
 # about it: a `compile_error` a reader cannot explain is the one result
 # that helps nobody.
