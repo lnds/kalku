@@ -449,7 +449,7 @@ Unlike the kalku protocol's `progress`, which reports how far one long request h
 |---|---|---|
 | `score`? | real | `killed / (killed + survived)`; absent when that denominator is 0 |
 | `counts` | Counts | |
-| `survivors_on_changed_lines` | int | |
+| `survivors_on_changed_lines` | int | survivors on a line the run's diff touched; `0` when the run was not asked about a change. Sites on those lines that no test reaches block too, and are named in the report's `blocked_by`, not counted here |
 | `suppression_changes` | Suppression changes | |
 | `exit` | int | the exit code a CLI client should return (*Running in CI* in `docs/design.md`) |
 

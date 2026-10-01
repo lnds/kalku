@@ -30,6 +30,8 @@ import kalku.orchestrator.pool
 import kalku.orchestrator.measure
 import kalku.orchestrator.telling
 import kalku.settling
+import kalku.diffing
+import kalku.core.changed_lines
 import kalku.serving
 import kalku.orchestrator.server
 import kalku.cli
@@ -112,15 +114,54 @@ fn with_settings[e](
 fn run_here(
   wanted: Wanted
 ) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_settings(
-  c => if is_empty(wanted.files) {
-    {
-      Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
+  c => match changes_asked(wanted) {
+    Err(why) -> {
+      Stderr.eprint("kalku: could not measure: #{why}")
       2
     }
-  } else {
-    with_declared(".", declared => measured(asking_for(c, wanted, declared), wanted, c.policy))
+    Ok(touched) -> match files_for(wanted, touched) {
+      [] -> if is_some(touched) {
+        {
+          Stderr.eprint("kalku: this change touches no source file, so there is nothing to measure")
+          0
+        }
+      } else {
+        {
+          Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
+          2
+        }
+      }
+      files -> with_declared(
+        ".",
+        declared => measured(asking_for(c, wanted, files, touched, declared), wanted, c.policy)
+      )
+    }
   }
 )
+
+# A run that was asked about a change reads the change first, and a change
+# that cannot be read stops the run. Treating "git could not tell me" as
+# "nothing changed" would pass every pull request it could not read.
+fn changes_asked(wanted: Wanted) : Result[Option[[FileChange]], String] / Process =
+  match wanted.since {
+    None -> Ok(None)
+    Some(ref) -> Ok(Some(diffing.since(".", ref)!))
+  }
+
+# The files a run is about: the ones named, or — when a change was asked
+# about and none were named — the source files that change touched.
+fn files_for(wanted: Wanted, touched: Option[[FileChange]]) : [String] =
+  if not is_empty(wanted.files) {
+    wanted.files
+  } else {
+    match touched {
+      Some(changes) ->
+        filter(changed_lines.files(changes), f => starts_with(f, "lib/") and is_source(f))
+      None -> []
+    }
+  }
+
+fn is_source(f: String) : Bool = ends_with(f, ".ex") or ends_with(f, ".kai")
 
 fn measured(
   asking: Asking,
@@ -145,7 +186,7 @@ fn measured(
         # project asked to be held to. Judging here rather than in the run
         # keeps the same measurement answerable to a different policy in
         # CI than on a laptop.
-        let r = judged_by(whole, policy)
+        let r = judged_by(whole, policy, asking.touched)
         Stdout.print(printed(r, shape))
         exit_code(r.blockers)
       }
@@ -238,9 +279,20 @@ fn summoning_in(c: Config, root: String, reni: String) : PoolSpec = PoolSpec {
   summons_allowed: 2
 }
 
-fn asking_for(c: Config, wanted: Wanted, declared: [equivalent.Entry]) : Asking / Env = Asking {
-  ...asking_of(c, pool_of(c), wanted.files, declared),
-  limit: wanted.limit.unwrap_or(DEFAULT_LIMIT)
+fn asking_for(
+  c: Config,
+  wanted: Wanted,
+  files: [String],
+  touched: Option[[FileChange]],
+  declared: [equivalent.Entry]
+) : Asking / Env = Asking {
+  ...asking_of(c, pool_of(c), files, declared),
+  limit: 
+  # A change is already bounded by the diff, and a gate that answered for a
+  # slice of one would pass a pull request over lines nobody looked at, so
+  # a run asked about a change casts all of it unless told otherwise.
+  wanted.limit.unwrap_or(if is_some(touched) { 0 } else { DEFAULT_LIMIT }),
+  touched: touched
 }
 
 # What every run is asked, whoever asks it: the project's spells and
@@ -275,7 +327,8 @@ fn asking_of(
   exclude: c.exclude,
   equivalents: declared,
   limit: 0,
-  timeout_floor_ms: c.timeout_floor_ms
+  timeout_floor_ms: c.timeout_floor_ms,
+  touched: None
 }
 
 #[doc("Where a project writes down what it has decided cannot be told apart.")]
@@ -624,7 +677,7 @@ fn settings_in(root: String) : Result[Config, String] / File {
 # Every source file the project has, which is what `scope: all` means. A
 # kalku is asked for sites by file, and this is the list it is asked for.
 fn every_source(root: String) : [String] / File =
-  filter(dir.walk("#{root}/lib"), f => ends_with(f, ".ex") or ends_with(f, ".kai"))
+  filter(dir.walk("#{root}/lib"), is_source)
 
 fn found_events(found: Found) : [ServerEvent] = match found.report {
   None -> [

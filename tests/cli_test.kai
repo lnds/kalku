@@ -50,16 +50,28 @@ test "a flag without its value is a misuse, not a default" {
 test "run takes the files to measure, and how much of them" {
   assert cli.parse_args(["run", "lib/a.ex", "lib/b.ex"])
     == Measure(
-      Wanted { files: ["lib/a.ex", "lib/b.ex"], limit: None, aloud: false, shape: AsHuman }
+      Wanted {
+        files: ["lib/a.ex", "lib/b.ex"],
+        limit: None,
+        aloud: false,
+        shape: AsHuman,
+        since: None
+      }
     )
   assert cli.parse_args(["run", "--limit", "6", "-v", "lib/a.ex"])
-    == Measure(Wanted { files: ["lib/a.ex"], limit: Some(6), aloud: true, shape: AsHuman })
+    == Measure(Wanted {
+      files: ["lib/a.ex"],
+      limit: Some(6),
+      aloud: true,
+      shape: AsHuman,
+      since: None
+    })
 }
 
 # The files a run measures come from the config when none are named.
 test "run with nothing named is still a run" {
   assert cli.parse_args(["run"])
-    == Measure(Wanted { files: [], limit: None, aloud: false, shape: AsHuman })
+    == Measure(Wanted { files: [], limit: None, aloud: false, shape: AsHuman, since: None })
 }
 
 test "info takes a topic and how to print it" {
@@ -77,9 +89,21 @@ test "info takes a topic and how to print it" {
 # quietly printing something else.
 test "run takes the shape it should print in" {
   assert cli.parse_args(["run", "lib/a.ex", "--format", "agent"])
-    == Measure(Wanted { files: ["lib/a.ex"], limit: None, aloud: false, shape: AsAgent })
+    == Measure(Wanted {
+      files: ["lib/a.ex"],
+      limit: None,
+      aloud: false,
+      shape: AsAgent,
+      since: None
+    })
   assert cli.parse_args(["run", "--format", "github", "lib/a.ex"])
-    == Measure(Wanted { files: ["lib/a.ex"], limit: None, aloud: false, shape: AsGithub })
+    == Measure(Wanted {
+      files: ["lib/a.ex"],
+      limit: None,
+      aloud: false,
+      shape: AsGithub,
+      since: None
+    })
   assert cli.parse_args(["run", "--format"])
     == Misused("`--format` needs a name: human, agent, json or github")
   assert cli.parse_args(["run", "--format", "yaml"])
@@ -90,7 +114,9 @@ test "run takes the shape it should print in" {
 # re-cast. Naming files instead would re-measure everything.
 test "cast names wekufe, show names one, and both need a name" {
   assert cli.parse_args(["cast", "w1", "w2"])
-    == Recast(Wanted { files: ["w1", "w2"], limit: None, aloud: false, shape: AsHuman })
+    == Recast(
+      Wanted { files: ["w1", "w2"], limit: None, aloud: false, shape: AsHuman, since: None }
+    )
   assert cli.parse_args(["cast"]) == Misused("`kalku cast` needs a wekufe to re-cast")
   assert cli.parse_args(["show", "w1"]) == Display("w1", AsHuman)
   assert cli.parse_args(["show", "w1", "--format", "json"]) == Display("w1", AsJson)
@@ -106,4 +132,62 @@ test "proposing an equivalent needs a wekufe and a reason" {
     == Misused("`kalku propose-equivalent` needs a `--reason`")
   assert cli.parse_args(["propose-equivalent", "--reason", "why"])
     == Misused("`kalku propose-equivalent` needs a wekufe")
+}
+
+# A change is asked about by naming where it started. With no files named
+# the run is about whatever the change touched, so naming none is allowed.
+test "run takes the ref a change started from" {
+  assert cli.parse_args(["run", "--since", "origin/main"])
+    == Measure(
+      Wanted {
+        files: [],
+        limit: None,
+        aloud: false,
+        shape: AsHuman,
+        since: Some("origin/main")
+      }
+    )
+  assert cli.parse_args(["run", "lib/a.ex", "--since", "main", "--format", "github"])
+    == Measure(
+      Wanted {
+        files: ["lib/a.ex"],
+        limit: None,
+        aloud: false,
+        shape: AsGithub,
+        since: Some("main")
+      }
+    )
+}
+
+# Handed to git as an argument, a ref that begins with a dash is an option,
+# and `--output=<file>` would have `git diff` write into the project.
+test "a ref that is really an option is refused where it is read" {
+  match cli.parse_args(["run", "--since", "--output=/tmp/x"]) {
+    Misused(why) -> {
+      assert is_some(index_of(why, "not the option"))
+    }
+    _ -> {
+      assert false
+    }
+  }
+  match cli.parse_args(["run", "--since"]) {
+    Misused(why) -> {
+      assert is_some(index_of(why, "needs a ref"))
+    }
+    _ -> {
+      assert false
+    }
+  }
+}
+
+# A re-cast names wekufe, so a change has nothing to say to it.
+test "cast does not take a change" {
+  match cli.parse_args(["cast", "abc123", "--since", "main"]) {
+    Misused(why) -> {
+      assert is_some(index_of(why, "kalku run"))
+    }
+    _ -> {
+      assert false
+    }
+  }
 }

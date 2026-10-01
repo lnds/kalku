@@ -29,7 +29,13 @@ pub type Setup = { root: String, language: Option[String], assume_yes: Bool }
 
 #[doc("What `run` was asked to measure: which files, and how much of them.")]
 #[derive(Eq, Show)]
-pub type Wanted = { files: [String], limit: Option[Int], aloud: Bool, shape: Shape }
+pub type Wanted = {
+  files: [String],
+  limit: Option[Int],
+  aloud: Bool,
+  shape: Shape,
+  since: Option[String]
+}
 
 #[doc("How a run prints what it found.")]
 #[derive(Eq, Show)]
@@ -91,7 +97,7 @@ fn read_setup(args: [String], so_far: Setup) : Command = match args {
 
 fn measuring(args: [String]) : Command = read_wanted(
   args,
-  Wanted { files: [], limit: None, aloud: false, shape: AsHuman }
+  Wanted { files: [], limit: None, aloud: false, shape: AsHuman, since: None }
 )
 
 fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
@@ -105,6 +111,12 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   ["--format", name, ...rest] -> match shape_of(name) {
     None -> Misused("`--format` takes human, agent, json or github, not `#{name}`")
     Some(shape) -> read_wanted(rest, Wanted { ...so_far, shape: shape })
+  }
+  ["--since"] -> Misused("`--since` needs a ref, such as `origin/main`")
+  ["--since", ref, ...rest] -> if starts_with(ref, "-") {
+    Misused("`--since` takes a ref, not the option `#{ref}`")
+  } else {
+    read_wanted(rest, Wanted { ...so_far, since: Some(ref) })
   }
   ["--verbose", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
   ["-v", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
@@ -121,9 +133,11 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
 # is the same, so they are read into the same shape.
 fn recasting(args: [String]) : Command = match read_wanted(
   args,
-  Wanted { files: [], limit: None, aloud: false, shape: AsHuman }
+  Wanted { files: [], limit: None, aloud: false, shape: AsHuman, since: None }
 ) {
-  Measure(w) -> if is_empty(w.files) {
+  Measure(w) -> if is_some(w.since) {
+    Misused("`kalku cast` names wekufe; `--since` is for `kalku run`")
+  } else if is_empty(w.files) {
     Misused("`kalku cast` needs a wekufe to re-cast")
   } else {
     Recast(w)
@@ -256,7 +270,10 @@ not implemented yet:
 options:
   --lang <name>    the project's language, when init should not guess
   -y, --yes        do not ask before writing
-  --limit <n>      cast at most n wekufe (0 for all of them)
+  --limit <n>      cast at most n wekufe: 100 by default, 0 for all of them
+                   (a run with --since casts the whole change unless told otherwise)
+  --since <ref>    measure only the lines changed since that ref, and block
+                   when a wekufe survives on one of them
   --format <name>  human (the default), agent, json, or github
   --json           print an info topic as JSON
   --snippet        print only the lines an agent pastes into CLAUDE.md

@@ -1,0 +1,246 @@
+import fs.dir as folders
+import fs.file
+import os.process as proc
+import kalku.diffing
+import kalku.core.changed_lines
+
+# Every test here asks a real git about a real repository, because what is
+# under test is the boundary: which lines git says changed, from which
+# starting point, and what happens when it cannot say. A scripted answer
+# would only prove that kalku can read the answer it was given.
+
+fn scratch(name: String) : String / Env {
+  let base = Env.get("TMPDIR").unwrap_or("/tmp")
+  let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
+  "#{dir}/kalku_diffing_#{name}"
+}
+
+fn drained(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drained(child, so_far ++ chunk) }
+}
+
+# Run a command in a directory and say whether it succeeded. The setup of
+# a repository is not what is being tested, so a step that fails stops the
+# test with the command that failed rather than a puzzling empty result.
+fn run_in(dir: String, cmd: String, args: [String]) : Bool / Process =
+  match proc.pipe_errs(cmd, ["-C", dir] ++ args) {
+    Err(_) -> false
+    Ok(child) -> {
+      let _ = drained(child, "")
+      match proc.wait(child) {
+        Ok(Exited(0)) -> true
+        _ -> false
+      }
+    }
+  }
+
+fn git(dir: String, args: [String]) : Bool / Process = run_in(dir, "git", args)
+
+fn commit(dir: String, message: String) : Bool / Process =
+  git(dir, ["add", "-A"])
+    and git(
+      dir,
+      ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", message]
+    )
+
+fn fresh(dir: String) : Unit / Process {
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]).map(c => {
+    let _ = drained(c, "")
+    proc.wait(c)
+  })
+  ()
+}
+
+fn numbered(n: Int, changed: [Int]) : String =
+  join(
+    enumerate(repeat(0, n))
+      | (i => if contains(changed, i.fst + 1) {
+        "line #{i.fst + 1} CHANGED"
+      } else {
+        "line #{i.fst + 1}"
+      }),
+    "\n"
+  )
+    ++ "\n"
+
+# A repository whose feature branch has changed lines 5 and 11–12 in a
+# commit and line 2 in the working tree, while main moved on and changed
+# line 8 after the branch left it.
+# Each step is a `let` rather than a link in an `and` chain: the writes
+# between commits have to happen in order, and a chain of boolean
+# expressions is not a place to rely on that.
+fn repository(at: String) : Bool / Process + File {
+  fresh(at)
+  let _ = folders.create_dir(at)
+  let _ = folders.create_dir("#{at}/lib")
+  file.write("#{at}/lib/a.ex", numbered(10, []))
+  let init = git(at, ["init", "-q", "-b", "main"])
+  let base = commit(at, "base")
+  let branch = git(at, ["checkout", "-q", "-b", "feature"])
+  file.write("#{at}/lib/a.ex", numbered(12, [5, 11, 12]))
+  let change = commit(at, "the change")
+  let back = git(at, ["checkout", "-q", "main"])
+  file.write("#{at}/lib/a.ex", numbered(10, [8]))
+  let moved = commit(at, "main moved on")
+  let forth = git(at, ["checkout", "-q", "feature"])
+  file.write("#{at}/lib/a.ex", numbered(12, [2, 5, 11, 12]))
+  init and base and branch and change and back and moved and forth
+}
+
+fn touched(changes: [FileChange], file: String, line: Int) : Bool = touches(changes, file, line)
+
+# The point of measuring from the merge base: when main has moved on, a
+# diff against its tip reads what main gained as lines this change took
+# away, and the old text of those regions as lines this change added. A
+# pull request answers for what it changed, not for what happened to main.
+test "a change is what it did since the branch left main, not since main moved" {
+  let dir = scratch("base")
+  assert repository(dir)
+
+  match diffing.since(dir, "main") {
+    Err(why) -> {
+      Stdout.print(why)
+      assert false
+    }
+    Ok(changes) -> {
+      assert touched(changes, "lib/a.ex", 5)
+      assert touched(changes, "lib/a.ex", 11)
+      assert touched(changes, "lib/a.ex", 12)
+      # Main's own change to line 8 is not this branch's doing.
+      assert not touched(changes, "lib/a.ex", 8)
+      assert not touched(changes, "lib/a.ex", 7)
+    }
+  }
+}
+
+# A change still being written is measured the way it will be committed.
+test "the working tree counts, not only what was committed" {
+  let dir = scratch("tree")
+  assert repository(dir)
+
+  match diffing.since(dir, "main") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(changes) -> {
+      assert touched(changes, "lib/a.ex", 2)
+    }
+  }
+}
+
+# A project that lives in a subdirectory of a larger repository sees its
+# own files named as the kalku names them, and nothing outside it.
+test "paths are relative to the project and only for what lies under it" {
+  let repo = scratch("mono")
+  fresh(repo)
+  let _ = folders.create_dir(repo)
+  let _ = folders.create_dir("#{repo}/app")
+  let _ = folders.create_dir("#{repo}/app/lib")
+  let _ = folders.create_dir("#{repo}/other")
+  file.write("#{repo}/app/lib/a.ex", numbered(5, []))
+  file.write("#{repo}/other/b.ex", numbered(5, []))
+  assert git(repo, ["init", "-q", "-b", "main"])
+  assert commit(repo, "base")
+  assert git(repo, ["checkout", "-q", "-b", "feature"])
+  file.write("#{repo}/app/lib/a.ex", numbered(5, [3]))
+  file.write("#{repo}/other/b.ex", numbered(5, [3]))
+  assert commit(repo, "touches both")
+
+  match diffing.since("#{repo}/app", "main") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(changes) -> {
+      assert touched(changes, "lib/a.ex", 3)
+      assert length(changes) == 1
+    }
+  }
+}
+
+# A gate that read "git could not tell me" as "nothing changed" would pass
+# every pull request it could not read, so each way this fails is an Err
+# with a reason and none of them is an empty answer.
+test "a ref that does not exist is an error, not an empty change" {
+  let dir = scratch("noref")
+  assert repository(dir)
+
+  match diffing.since(dir, "no-such-branch") {
+    Err(why) -> {
+      assert is_some(index_of(why, "no-such-branch"))
+    }
+    Ok(_) -> {
+      assert false
+    }
+  }
+}
+
+test "a directory that is not a repository is an error" {
+  let dir = scratch("norepo")
+  fresh(dir)
+  let _ = folders.create_dir(dir)
+
+  match diffing.since(dir, "main") {
+    Err(why) -> {
+      assert is_some(index_of(why, "fetch-depth"))
+    }
+    Ok(_) -> {
+      assert false
+    }
+  }
+}
+
+# Handed to git as an argument, a ref that begins with a dash is an option,
+# and `--output=<file>` would have `git diff` write into the project.
+test "a ref that is an option never reaches git" {
+  let dir = scratch("option")
+  assert repository(dir)
+
+  match diffing.since(dir, "--output=#{dir}/lib/pwned.txt") {
+    Err(why) -> {
+      assert is_some(index_of(why, "is an option"))
+    }
+    Ok(_) -> {
+      assert false
+    }
+  }
+  assert not file.exists("#{dir}/lib/pwned.txt")
+}
+
+# A ref that exists and still cannot be placed has one common cause in CI:
+# a checkout that fetched only the tip, so the history joining the two is
+# not there. That one gets the advice about fetching more of it, and a
+# typo does not.
+test "a ref that shares no history says to fetch more of it" {
+  let at = scratch("unrelated")
+  assert repository(at)
+  assert git(at, ["checkout", "-q", "--orphan", "unrelated"])
+  file.write("#{at}/lib/other.ex", "x\n")
+  assert commit(at, "an unrelated root")
+  assert git(at, ["checkout", "-q", "feature"])
+
+  match diffing.since(at, "unrelated") {
+    Err(why) -> {
+      assert is_some(index_of(why, "share no history"))
+      assert is_none(index_of(why, "is not a commit"))
+    }
+    Ok(_) -> {
+      assert false
+    }
+  }
+}
+
+test "a ref that is not there is not blamed on a shallow checkout" {
+  let at = scratch("typo")
+  assert repository(at)
+
+  match diffing.since(at, "mian") {
+    Err(why) -> {
+      assert is_some(index_of(why, "`mian` is not a commit"))
+      assert is_none(index_of(why, "share no history"))
+    }
+    Ok(_) -> {
+      assert false
+    }
+  }
+}
