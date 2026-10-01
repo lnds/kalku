@@ -26,6 +26,32 @@ defmodule Kalku.BaselineTest do
       assert Enum.all?(done["tests"], &(&1["duration_ms"] >= 0))
     end
 
+    # The bug this guards: a mocking library replaces one of the project's
+    # own modules, `:cover` loses the module it instrumented, and the test
+    # driving the mock comes back credited with no lines at all — not even
+    # lines of modules nobody touched. Reporting that attribution would
+    # judge each wekufe against too few tests, and a wekufe no test was
+    # aimed at survives. A survivor that is not a hole is the one thing a
+    # run must never produce, so the coverage is withheld and every wekufe
+    # faces the whole suite instead.
+    test "a suite that mocks its own modules reports no coverage at all", %{reni: reni} do
+      done = reply(run(reni, "mocked", ["baseline"]), "baseline_done")
+
+      assert done["status"] == "green"
+      assert length(done["tests"]) == 2
+      refute Map.has_key?(done, "coverage")
+      refute Map.has_key?(done, "coverage_path")
+    end
+
+    # Withholding it for every project would give away the speed the whole
+    # design is built on, so a suite that replaces nothing still gets the
+    # attribution it earned.
+    test "a suite that mocks nothing still reports coverage", %{reni: reni} do
+      done = reply(run(reni, "green", ["baseline"]), "baseline_done")
+
+      assert Map.has_key?(done, "coverage") or Map.has_key?(done, "coverage_path")
+    end
+
     # A suite that is already failing cannot say whether a wekufe was
     # noticed, so the baseline says so plainly rather than scoring it.
     test "a suite with a failing test is red, and the failure is quoted", %{reni: reni} do
