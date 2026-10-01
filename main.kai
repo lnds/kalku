@@ -34,7 +34,7 @@ import kalku.serving
 import kalku.orchestrator.server
 import kalku.cli
 
-fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix {
+fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix + Signal {
   match cli.parse_args(args.argv()) {
     ShowVersion -> {
       Stdout.print(cli.version_line())
@@ -97,26 +97,35 @@ fn told_about(asked: Asked) : Int / Stdout + Stderr = if asked.snippet_only {
 # A run measures the project one is standing in, with the kalku that
 # project's `.kalku.toml` names. Without that file there is nothing to
 # summon, so the way out is `kalku init` rather than a guess.
-fn run_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock =
-  match settings() {
-    Err(why) -> {
-      Stderr.eprint("kalku: #{why}")
+# Reading the project's settings is the first thing both `run` and `cast`
+# do, and failing to is the same answer from either: say why, and stop.
+fn with_settings[e](
+  body: (Config) -> Int / Stderr + e
+) : Int / Stderr + Env + File + e = match settings() {
+  Err(why) -> {
+    Stderr.eprint("kalku: #{why}")
+    2
+  }
+  Ok(c) -> body(c)
+}
+
+fn run_here(
+  wanted: Wanted
+) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_settings(
+  c => if is_empty(wanted.files) {
+    {
+      Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
       2
     }
-    Ok(c) -> if is_empty(wanted.files) {
-      {
-        Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
-        2
-      }
-    } else {
-      with_declared(".", declared => measured(asking_for(c, wanted, declared), wanted))
-    }
+  } else {
+    with_declared(".", declared => measured(asking_for(c, wanted, declared), wanted))
   }
+)
 
 fn measured(
   asking: Asking,
   wanted: Wanted
-) : Int / Stdout + Stderr + File + Process + Spawn + Clock = with_mailbox {
+) : Int / Stdout + Stderr + File + Process + Spawn + Clock + Signal = with_mailbox {
   let shape = wanted.shape
   let found = alone(() => telling(wanted.aloud, () => measure(asking)))
   match found.failure {
@@ -321,31 +330,28 @@ fn shown(wekufe: String, shape: Shape) : Int / Stdout + Stderr + File {
 # Re-casting names wekufe, and a name becomes a site through the ledger:
 # a wekufe kalku has never cast is a name it cannot place, which is said
 # rather than guessed at.
-fn recast_here(wanted: Wanted) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock =
-  match settings() {
-    Err(why) -> {
-      Stderr.eprint("kalku: #{why}")
-      2
-    }
-    Ok(c) -> {
-      let all = ledger()
-      let unknown = strangers(all, wanted.files)
-      if not is_empty(unknown) {
-        {
-          Stderr.eprint("kalku: never cast: #{join(unknown, ", ")}")
-          2
-        }
-      } else {
-        with_declared(
-          ".",
-          declared => measured(
-            asking_again(c, sites_for(all, wanted.files), wanted, declared),
-            wanted
-          )
-        )
+fn recast_here(
+  wanted: Wanted
+) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_settings(
+  c => {
+    let all = ledger()
+    let unknown = strangers(all, wanted.files)
+    if not is_empty(unknown) {
+      {
+        Stderr.eprint("kalku: never cast: #{join(unknown, ", ")}")
+        2
       }
+    } else {
+      with_declared(
+        ".",
+        declared => measured(
+          asking_again(c, sites_for(all, wanted.files), wanted, declared),
+          wanted
+        )
+      )
     }
   }
+)
 
 # The files those sites live in, because a kalku is asked for sites by
 # file and the plan is narrowed to the wekufe that were named.
@@ -460,15 +466,20 @@ fn proposal_of(r: Remembered, reason: String) : String = join(
 # A server that casts wekufe on request is remote code execution by
 # definition, so the socket is a file only its owner can open, under a
 # directory the system already keeps private.
-fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix {
+fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix + Signal {
   let mine = my_uid()
   let path = socket_path(Env.get("XDG_RUNTIME_DIR"), asked_temp(), mine)
   # The mailbox and the ward belong to the server, not to a run: the
   # kalku a run leaves warm keep talking to this mailbox, and whatever is
   # still alive when the server ends is killed by this ward.
-  let ending = with_mailbox {
-    warded(() => serve_at(path, mine, (p, asked, say) => run_for(p, asked, say)))
-  }
+  # A ward now reports a kalku that would not die, and for the server that
+  # belongs on stderr with everything else it says about itself. A run's own
+  # notes still go to its client, through `streamed`.
+  let ending = told(
+    () => with_mailbox {
+      warded(() => serve_at(path, mine, (p, asked, say) => run_for(p, asked, say)))
+    }
+  )
   match ending {
     Err(why) -> {
       Stderr.eprint("kalku: #{why}")
@@ -616,7 +627,7 @@ fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
 
 # MCP over stdio is JSON-RPC, one message per line, and a host holds the
 # pipe open for as long as it wants the tools.
-fn tooling() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock =
+fn tooling() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal =
   match Stdin.read_line() {
     None -> 0
     Some(line) -> {
@@ -629,7 +640,7 @@ fn tooling() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Cl
 fn answer_host(
   id: Option[Int],
   heard: Heard
-) : Unit / Stdout + Stderr + Env + File + Process + Spawn + Clock = match heard {
+) : Unit / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = match heard {
   Initialise -> Stdout.print(greeting(id))
   ListTools -> Stdout.print(tools(id))
   CallTool(c) -> Stdout.print(tool_ran(id, c))
@@ -643,7 +654,7 @@ fn answer_host(
 fn tool_ran(
   id: Option[Int],
   c: Call
-) : String / Stderr + Env + File + Process + Spawn + Clock = match c.tool {
+) : String / Stderr + Env + File + Process + Spawn + Clock + Signal = match c.tool {
   "kalku_run" -> measured_for(id, c)
   "kalku_cast" -> recast_for(id, c)
   "kalku_show" -> shown_for(id, c)
@@ -657,7 +668,7 @@ fn root_of(c: Call) : String = c.root.unwrap_or(".")
 fn measured_for(
   id: Option[Int],
   c: Call
-) : String / Stderr + Env + File + Process + Spawn + Clock = if is_empty(c.wekufe) {
+) : String / Stderr + Env + File + Process + Spawn + Clock + Signal = if is_empty(c.wekufe) {
   refused(id, "`kalku_run` needs the files to measure")
 } else {
   match settings_in(root_of(c)) {
@@ -677,7 +688,7 @@ fn measured_for(
 fn recast_for(
   id: Option[Int],
   c: Call
-) : String / Stderr + Env + File + Process + Spawn + Clock = if is_empty(c.wekufe) {
+) : String / Stderr + Env + File + Process + Spawn + Clock + Signal = if is_empty(c.wekufe) {
   refused(id, "`kalku_cast` needs the wekufe to re-cast")
 } else {
   match settings_in(root_of(c)) {

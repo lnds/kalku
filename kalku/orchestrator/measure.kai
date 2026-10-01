@@ -31,6 +31,7 @@ import kalku.orchestrator.attending
 import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
+import kalku.orchestrator.interrupting
 
 #[doc("What to measure, and with what.")]
 #[derive(Eq, Show)]
@@ -70,7 +71,11 @@ would be a number nobody should believe.
 """)]
 pub fn measure(
   asking: Asking
-) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling {
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Signal + Stderr {
+  # A run arranges not to be orphaned before it summons anything: the
+  # kalku it is about to start lead their own process groups, so an
+  # interrupt reaches this fiber and nothing else.
+  let _watching = spawn_actor(() => as_cancellation(Actor.self()))
   match discover(asking) {
     Err(why) -> Found { report: None, failure: Some(why), cast: [] }
     Ok(known) -> casting_them(asking, known)

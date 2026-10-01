@@ -1,10 +1,13 @@
 import actor
 import time
+import fs.file
+import os.process as proc
 import kalku.wire.enums
 import kalku.wire.envelope
 import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.telling
 
 # Every test here talks to a real child process, so every wait has a
 # deadline: a broken orchestrator fails the suite instead of hanging it.
@@ -21,6 +24,31 @@ fn spec(script: String) : KalkuSpec =
     command: FAKE,
     args: ["tests/fixtures/scripts/#{script}"]
   }
+
+# The bug this reproduces: a kalku is reached through a launcher, so the
+# process doing the work is a grandchild. A shell that outlives its own
+# child is that shape with nothing else in it — `mix` is one, and so is
+# every asdf shim between here and the runtime.
+fn launcher_of(pidfile: String) : KalkuSpec = KalkuSpec {
+  life: Life { worker: 0, summons: 1 },
+  command: "/bin/sh",
+  args: ["-c", "sleep 60 & echo $! > #{pidfile}; wait"]
+}
+
+# `file.read` panics on a file that is not there, and a launcher that never
+# wrote one is a test failure with a reason rather than a crash.
+fn temp_under() : String / Env {
+  let dir = Env.get("TMPDIR").unwrap_or("/tmp")
+  if ends_with(dir, "/") { slice(dir, 0, length(dir) - 1) } else { dir }
+}
+
+fn launched(pidfile: String) : Option[Int] / File =
+  if file.exists(pidfile) { to_int(trim(file.read(pidfile))) } else { None }
+
+fn still_running(pid: Int) : Bool / Process = match proc.kill(Child { pid: pid }, 0) {
+  Ok(_) -> true
+  Err(_) -> false
+}
 
 fn hello() : KalkuRequest = Hello(HelloMsg {
   version: 1,
@@ -89,48 +117,90 @@ fn json_ready(line: String) : Result[ReadyMsg, ProtocolError] = match heard(line
 }
 
 test "a kalku is summoned, answers, and leaves of its own accord" {
-  let told = with_mailbox {
-    match summon(spec("one_cast.ndjson")) {
-      Err(e) -> [e]
-      Ok(k) -> {
-        listen_to(k)
-        let _h = ask(k, 1, hello())
-        let ready = next()
-        let _p = ask(k, 9, Prepare)
-        let prepared = next()
-        let _c = ask(k, 2, a_cast("w1"))
-        let outcome = next()
-        let _s = ask(k, 3, Shutdown)
-        let farewell = next()
-        [ready, prepared, outcome, farewell, ending(reap(k))]
+  let told = untold(
+    () => with_mailbox {
+      match summon(spec("one_cast.ndjson")) {
+        Err(e) -> [e]
+        Ok(k) -> {
+          listen_to(k)
+          let _h = ask(k, 1, hello())
+          let ready = next()
+          let _p = ask(k, 9, Prepare)
+          let prepared = next()
+          let _c = ask(k, 2, a_cast("w1"))
+          let outcome = next()
+          let _s = ask(k, 3, Shutdown)
+          let farewell = next()
+          [ready, prepared, outcome, farewell, ending(reap(k))]
+        }
       }
     }
-  }
+  )
   assert told == ["ready fake protocol 1", "prepared", "cast_done killed", "bye", "exited 0"]
+}
+
+# A kalku holds the reni's build lock through whatever its launcher
+# started, so a kill that reaches only the child leaves a lock nobody will
+# release and the next run hangs at 0% CPU with no cause. Killing the
+# group is what makes the promise in `security.md` true: a killed kalku
+# leaves nothing behind.
+test "killing a kalku kills what its launcher started, not just the launcher" {
+  # Outside the repo, because a test that writes into the tree it measures
+  # is the thing this project refuses everywhere else. The separator is
+  # added here rather than assumed: macOS hands back a `TMPDIR` with a
+  # trailing slash and Linux usually hands back nothing at all.
+  let pidfile = "#{temp_under()}/kalku_grandchild_test.pid"
+  let outcome = untold(
+    () => with_mailbox {
+      match summon(launcher_of(pidfile)) {
+        Err(e) -> Err(e)
+        Ok(k) -> {
+          sleep(BRIEF)
+          match launched(pidfile) {
+            None -> Err("the launcher never said what it started")
+            Some(grandchild) -> {
+              let before = still_running(grandchild)
+              kill_now(k)
+              sleep(BRIEF)
+              # Said as words rather than a pair, which has no `Eq`, and
+              # which would read as two booleans nobody can tell apart.
+              Ok("alive before: #{show(before)}, after: #{show(still_running(grandchild))}")
+            }
+          }
+        }
+      }
+    }
+  )
+
+  let _ = file.delete(pidfile)
+
+  assert outcome == Ok("alive before: true, after: false")
 }
 
 # A version this side cannot speak is refused by name: guessing at what a
 # message means would produce numbers nobody can trust.
 test "a kalku that speaks another protocol version is refused" {
-  let told = with_mailbox {
-    match summon(spec("protocol_mismatch.ndjson")) {
-      Err(e) -> [e]
-      Ok(k) -> {
-        listen_to(k)
-        let _h = ask(k, 1, hello())
-        let line = match receive_timeout(PATIENCE) {
-          Some(Wire(_, Said(l))) -> l
-          _ -> "nothing the kalku said"
+  let told = untold(
+    () => with_mailbox {
+      match summon(spec("protocol_mismatch.ndjson")) {
+        Err(e) -> [e]
+        Ok(k) -> {
+          listen_to(k)
+          let _h = ask(k, 1, hello())
+          let line = match receive_timeout(PATIENCE) {
+            Some(Wire(_, Said(l))) -> l
+            _ -> "nothing the kalku said"
+          }
+          let refusal = match ready_of(line) {
+            Some(m) -> ready_refused(m).unwrap_or("accepted")
+            None -> "undecodable"
+          }
+          kill_now(k)
+          [refusal]
         }
-        let refusal = match ready_of(line) {
-          Some(m) -> ready_refused(m).unwrap_or("accepted")
-          None -> "undecodable"
-        }
-        kill_now(k)
-        [refusal]
       }
     }
-  }
+  )
   # A kalku from the future means this binary is the old half, and the
   # refusal has to say which one to move: the two are installed apart.
   let refusal = match told {
@@ -144,71 +214,77 @@ test "a kalku that speaks another protocol version is refused" {
 # Garbage on stdout is a protocol error naming the line, not a silent skip:
 # a kalku that writes noise is not one whose results can be believed.
 test "a line that is not JSON is a protocol error, and the kalku is still reapable" {
-  let told = with_mailbox {
-    match summon(spec("garbage.ndjson")) {
-      Err(e) -> [e]
-      Ok(k) -> {
-        listen_to(k)
-        let _h = ask(k, 1, hello())
-        let ready = next()
-        let _p = ask(k, 9, Prepare)
-        let prepared = next()
-        let _c = ask(k, 2, a_cast("w1"))
-        let noise = next()
-        kill_now(k)
-        [ready, prepared, noise]
+  let told = untold(
+    () => with_mailbox {
+      match summon(spec("garbage.ndjson")) {
+        Err(e) -> [e]
+        Ok(k) -> {
+          listen_to(k)
+          let _h = ask(k, 1, hello())
+          let ready = next()
+          let _p = ask(k, 9, Prepare)
+          let prepared = next()
+          let _c = ask(k, 2, a_cast("w1"))
+          let noise = next()
+          kill_now(k)
+          [ready, prepared, noise]
+        }
       }
     }
-  }
+  )
   assert told == ["ready fake protocol 1", "prepared", "protocol error: not_json"]
 }
 
 # A kalku that dies mid-cast closes its pipe; the wekufe it was casting is
 # reported by the caller, never lost, and the exit status says what happened.
 test "a kalku that crashes mid-cast closes its pipe and reaps with its code" {
-  let told = with_mailbox {
-    match summon(spec("crash_mid_cast.ndjson")) {
-      Err(e) -> [e]
-      Ok(k) -> {
-        listen_to(k)
-        let _h = ask(k, 1, hello())
-        let ready = next()
-        let _p = ask(k, 9, Prepare)
-        let prepared = next()
-        let _c = ask(k, 2, a_cast("w1"))
-        let end = next()
-        [ready, prepared, end, ending(reap(k))]
+  let told = untold(
+    () => with_mailbox {
+      match summon(spec("crash_mid_cast.ndjson")) {
+        Err(e) -> [e]
+        Ok(k) -> {
+          listen_to(k)
+          let _h = ask(k, 1, hello())
+          let ready = next()
+          let _p = ask(k, 9, Prepare)
+          let prepared = next()
+          let _c = ask(k, 2, a_cast("w1"))
+          let end = next()
+          [ready, prepared, end, ending(reap(k))]
+        }
       }
     }
-  }
+  )
   assert told == ["ready fake protocol 1", "prepared", "closed", "exited 7"]
 }
 
 # The last step of the escalation: a kalku deaf to `abort` answers nothing,
 # so the deadline passes and the kill is what ends it.
 test "a kalku that never answers is killed, and killing it leaves nothing behind" {
-  let told = with_mailbox {
-    match summon(spec("deaf.ndjson")) {
-      Err(e) -> [e]
-      Ok(k) -> {
-        listen_to(k)
-        let _h = ask(k, 1, hello())
-        let ready = next()
-        let _p = ask(k, 9, Prepare)
-        let prepared = next()
-        let _c = ask(k, 2, a_cast("w1"))
-        let hung = next_within(BRIEF)
-        let _a = ask(k, 3, Abort(AbortMsg { cast: 2 }))
-        let still_hung = next_within(BRIEF)
-        kill_now(k)
-        # Reaped by the kill, the pipe is gone rather than at end of input.
-        # Waited for rather than snatched at: this test asserts silence
-        # twice already, and a loaded machine that takes a moment to
-        # deliver the reader's last word is not a kalku that lived.
-        [ready, prepared, hung, still_hung, next()]
+  let told = untold(
+    () => with_mailbox {
+      match summon(spec("deaf.ndjson")) {
+        Err(e) -> [e]
+        Ok(k) -> {
+          listen_to(k)
+          let _h = ask(k, 1, hello())
+          let ready = next()
+          let _p = ask(k, 9, Prepare)
+          let prepared = next()
+          let _c = ask(k, 2, a_cast("w1"))
+          let hung = next_within(BRIEF)
+          let _a = ask(k, 3, Abort(AbortMsg { cast: 2 }))
+          let still_hung = next_within(BRIEF)
+          kill_now(k)
+          # Reaped by the kill, the pipe is gone rather than at end of input.
+          # Waited for rather than snatched at: this test asserts silence
+          # twice already, and a loaded machine that takes a moment to
+          # deliver the reader's last word is not a kalku that lived.
+          [ready, prepared, hung, still_hung, next()]
+        }
       }
     }
-  }
+  )
 
   assert told == ["ready fake protocol 1", "prepared", "silence", "silence", "unreadable"]
 }

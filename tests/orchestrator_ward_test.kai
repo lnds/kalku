@@ -1,5 +1,6 @@
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.ward
+import kalku.orchestrator.telling
 
 # Something outside the run decides it is over — a cancelled request, a
 # client that hung up — and never resumes what it interrupted.
@@ -12,12 +13,19 @@ fn a_kalku(worker: Int) : Kalku =
 
 # A `Process` that kills nothing and only remembers being asked to, so a
 # test can assert on what the ward did rather than on what survived.
-fn killed_during(body: () -> Unit / Ward + Process + Stop) : [Int] = handle {
+#
+# The ward kills a group rather than a child, and verifies it with signal
+# 0, so the fake answers both: a group it was asked to kill is recorded,
+# and a probe says the group is gone — which is what a fake that kills
+# nothing has to claim for the ward to stop looking.
+fn killed_during(body: () -> Unit / Ward + Process + Stop) : [Int] / Clock = handle {
   handle {
-    warded(() => {
-      body()
-      []
-    })
+    untold(
+      () => warded(() => {
+        body()
+        []
+      })
+    )
   } with Stop {
     stop(why, resume) -> []
   }
@@ -26,6 +34,11 @@ fn killed_during(body: () -> Unit / Ward + Process + Stop) : [Int] = handle {
     []
   }
   kill(c, sig, resume) -> resume(Ok(()), state ++ [c.pid])
+  kill_group(c, sig, resume) -> if sig == 0 {
+    resume(Err("No such process"), state)
+  } else {
+    resume(Ok(()), state ++ [c.pid])
+  }
   wait(c, resume) -> resume(Ok(Exited(0)))
   return(x) -> state
 }
