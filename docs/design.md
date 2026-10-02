@@ -418,7 +418,7 @@ Each language's kalku travels inside the binary as source and is compiled into t
 
 kalku runs on its own sources through the kaikai kalku, in CI like any other project: survivors on changed lines block a PR.
 
-The kalku that measures kalku is the **last release**, pinned and bumped deliberately, never the binary built from the same commit. A bug in the kalku under test could otherwise hide its own survivors — the same reason a compiler bootstraps from a previous stage. Until the first release exists, self-hosted runs use the freshly built binary and are advisory: they report but do not block.
+The kalku that measures kalku is the **last release**, pinned and bumped deliberately, never the binary built from the same commit. A bug in the kalku under test could otherwise hide its own survivors — the same reason a compiler bootstraps from a previous stage. `make self-mutate` does this, with the release pinned in `.kalku-release`; it is advisory: it reports but does not block.
 
 ## Security
 
