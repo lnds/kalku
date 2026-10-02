@@ -24,7 +24,7 @@ macOS on Apple Silicon and Linux on x86_64 with GLIBC 2.38 or newer —
 the platforms [kaikai](https://github.com/lnds/kaikai) publishes a
 toolchain for, and its floor is kalku's floor. The
 same tarballs are on every [release](https://github.com/lnds/kalku/releases):
-unpack it and put `kalku` and `kalku-kaikai` on your `PATH`.
+unpack it and put `kalku`, `kalku-kaikai` and `kalku-rust` on your `PATH`.
 
 From source, with kaikai installed (the version in `.kaikai-version`):
 
@@ -202,7 +202,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 |---|---|---|
 | Elixir | native | kalku owns the loop: warm BEAM nodes, in-memory loading, coverage-based test selection |
 | kaikai | native (thin) | built on `kai mutate`; this is how kalku tests itself |
-| Rust | native, **in progress** | sites come from `syn`, Rust's own parser; the **2024 edition only** (Rust 1.85 or later). Finds sites and casts them; per-test coverage and `kalku init` are next |
+| Rust | native, **in progress** | sites come from `syn`, Rust's own parser; the **2024 edition only** (Rust 1.85 or later). Finds sites and casts them; `abort` and per-test coverage are next |
 | others | driver | wraps an existing framework (Stryker, PIT, …), normalizes its results, and recomputes the score |
 
 ## What works today
@@ -225,7 +225,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **kaikai kalku** — the one kalku measures itself with | done |
 | **Rust kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal` from `syn`, behind the kalku protocol | done: finds sites |
 | Rust kalku: `prepare`, `baseline` and `cast` in the reni | done |
-| Rust kalku: `kalku init` for Cargo projects, release packaging | not yet |
+| Rust kalku: `kalku init` for Cargo projects, shipped in the release | done |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |

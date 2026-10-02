@@ -1,4 +1,4 @@
-//! Answering requests.
+//! Answeran.results.iter().find(|r| &r.name == name)ing requests.
 //!
 //! One request per line in, one reply per line out, and nothing else may
 //! reach stdout: anything a toolchain prints goes to stderr, because the
@@ -34,12 +34,17 @@ type ChooseEditions = Box<dyn FnMut(&Path) -> Box<dyn Editions>>;
 /// Builds the project a `hello` names, to be built and run in its reni.
 type ChooseProject = Box<dyn FnMut(&Hello) -> Box<dyn Project>>;
 
-/// What `prepare` and `baseline` learned, which `cast` runs against.
+/// What `prepare` learned, which `baseline` and `cast` run against. Every
+/// worker is prepared and only one is asked for a baseline, so a cast has
+/// to work from what `prepare` alone left behind.
 #[derive(Default)]
 struct Session {
     targets: Vec<Target>,
-    // A test's id to the target that holds it and its own name.
-    tests: HashMap<String, (usize, String)>,
+    // Every test in the order the targets list them: its id, the target
+    // that holds it, and its own name.
+    listed: Vec<(String, usize, String)>,
+    // A test's id to its place in `listed`.
+    tests: HashMap<String, usize>,
 }
 
 pub struct Service {
@@ -65,6 +70,7 @@ impl Service {
                 Box::new(CargoProject::new(
                     PathBuf::from(&hello.root),
                     PathBuf::from(&hello.reni),
+                    hello.worker,
                     hello.env.clone(),
                 ))
             }),
@@ -223,9 +229,32 @@ impl Service {
             Ok(Build::Failed(message)) => Self::failed(id, "prepare_failed", &message),
             Ok(Build::Built(targets)) => {
                 let modules = targets.len();
+                let mut listed = Vec::new();
+                for (index, target) in targets.iter().enumerate() {
+                    match project.list(target) {
+                        Ok(names) => listed.extend(
+                            names
+                                .into_iter()
+                                .map(|n| (format!("{}::{n}", target.file), index, n)),
+                        ),
+                        Err(e) => {
+                            return Self::failed(
+                                id,
+                                "prepare_failed",
+                                &format!("cannot list tests: {e}"),
+                            );
+                        }
+                    }
+                }
+                let tests = listed
+                    .iter()
+                    .enumerate()
+                    .map(|(at, (test, _, _))| (test.clone(), at))
+                    .collect();
                 self.session = Session {
                     targets,
-                    tests: HashMap::new(),
+                    listed,
+                    tests,
                 };
                 Step::Reply(protocol::prepared(id, millis(started), modules))
             }
@@ -243,16 +272,11 @@ impl Service {
         }
         let started = Instant::now();
         let (mut tests, mut failures) = (Vec::new(), Vec::new());
-        let mut known = HashMap::new();
-        for (index, target) in self.session.targets.iter().enumerate() {
-            let names = match project.list(target) {
-                Ok(names) => names,
-                Err(e) => return Self::failed(id, "baseline_failed", &e),
-            };
-            for name in names {
-                let test = format!("{}::{name}", target.file);
+        for (test, index, name) in &self.session.listed {
+            let target = &self.session.targets[*index];
+            {
                 let one = Instant::now();
-                let ran = match project.run(target, std::slice::from_ref(&name)) {
+                let ran = match project.run(target, std::slice::from_ref(name)) {
                     Ok(ran) => ran,
                     Err(e) => return Self::failed(id, "baseline_failed", &e),
                 };
@@ -261,7 +285,7 @@ impl Service {
                     file: target.file.clone(),
                     duration_ms: millis(one),
                 });
-                match ran.results.iter().find(|r| r.name == name) {
+                match ran.results.iter().find(|r| r.name == *name) {
                     Some(r) if r.passed => {}
                     Some(r) => failures.push(Failure {
                         test: test.clone(),
@@ -272,10 +296,8 @@ impl Service {
                         message: "the test did not report a result".to_string(),
                     }),
                 }
-                known.insert(test, (index, name));
             }
         }
-        self.session.tests = known;
         Step::Reply(protocol::baseline_done(
             id,
             millis(started),
@@ -288,13 +310,18 @@ impl Service {
         let Some(project) = self.project.as_mut() else {
             return Self::not_ready(id, "`hello` has to come first");
         };
-        if self.session.tests.is_empty() {
-            return Self::not_ready(id, "`baseline` has to come first");
+        if self.session.targets.is_empty() {
+            return Self::not_ready(id, "`prepare` has to come first");
         }
         // Group the tests by the executable that holds them, keeping order.
         let mut groups: Vec<(usize, Vec<(String, String)>)> = Vec::new();
         for test in tests {
-            let Some((target, name)) = self.session.tests.get(test) else {
+            let Some((_, target, name)) = self
+                .session
+                .tests
+                .get(test)
+                .map(|at| &self.session.listed[*at])
+            else {
                 return Step::Reply(protocol::error(
                     id,
                     "unknown_test",

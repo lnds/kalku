@@ -38,6 +38,13 @@ jobs:
             | KAIKAI_DIST_BASE="https://github.com/kaikailang-org/kaikai/releases/download/v$v" sh
           echo "$HOME/.kaikai/bin" >> "$GITHUB_PATH"
 
+      # The Rust kalku is a cargo project and needs the 2024 edition's
+      # compiler, which a runner image may not have yet.
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
       - run: make dist
 
       # A binary that only runs on the machine that built it is not a
@@ -47,6 +54,7 @@ jobs:
           tar -xzf dist/kalku-*.tar.gz -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/kalku" info > /dev/null
           "$RUNNER_TEMP/kalku" info spells | head -1
+          printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-rust" | grep -q '"type":"bye"'
 
       - name: Check the tarball is named for this platform
         run: ls dist/kalku-*-${{ matrix.platform }}.tar.gz
