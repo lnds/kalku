@@ -122,7 +122,7 @@ fn a_ready_reply_is_in_canonical_order() {
         ]
     );
     assert_eq!(v["language"], "rust");
-    assert_eq!(v["capabilities"], serde_json::json!(["cast"]));
+    assert_eq!(v["capabilities"], serde_json::json!(["cast", "abort"]));
     // No insignificant whitespace: it is its own compact form.
     assert_eq!(said, serde_json::to_string(&v).unwrap());
 }

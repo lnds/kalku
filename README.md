@@ -202,7 +202,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 |---|---|---|
 | Elixir | native | kalku owns the loop: warm BEAM nodes, in-memory loading, coverage-based test selection |
 | kaikai | native (thin) | built on `kai mutate`; this is how kalku tests itself |
-| Rust | native, **in progress** | sites come from `syn`, Rust's own parser; the **2024 edition only** (Rust 1.85 or later). Finds sites and casts them; `abort` and per-test coverage are next |
+| Rust | native, **in progress** | sites come from `syn`, Rust's own parser; the **2024 edition only** (Rust 1.85 or later). Finds sites and casts them; per-test coverage is next |
 | others | driver | wraps an existing framework (Stryker, PIT, …), normalizes its results, and recomputes the score |
 
 ## What works today

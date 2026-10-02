@@ -4,6 +4,7 @@
 //! reach stdout: anything a toolchain prints goes to stderr, because the
 //! kaikai side banishes a worker for a line it cannot read.
 
+use crate::cancel::Cancel;
 use crate::editions::{self, Cargo, Editions};
 use crate::project::{Build, Cargo as CargoProject, Project, Target};
 use crate::protocol::{
@@ -14,6 +15,7 @@ use crate::toolchain::{self, Toolchain};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 /// What to do with a reply.
@@ -23,6 +25,9 @@ pub enum Step {
     Reply(String),
     /// Say this and leave.
     Stop(String),
+    /// Say nothing: the request was a cast that was aborted, and an aborted
+    /// cast gets no answer of its own.
+    Quiet,
 }
 
 /// Asks the compiler which toolchain this is.
@@ -56,6 +61,9 @@ pub struct Service {
     editions_of: Option<Box<dyn Editions>>,
     project: Option<Box<dyn Project>>,
     session: Session,
+    cancel: Cancel,
+    // Whether the last cast left the reni as it found it.
+    restored: bool,
 }
 
 impl Service {
@@ -94,7 +102,14 @@ impl Service {
             editions_of: None,
             project: None,
             session: Session::default(),
+            cancel: Cancel::new(),
+            restored: true,
         }
+    }
+
+    /// Where an `abort` is raised while a cast is running.
+    pub fn cancel(&self) -> Cancel {
+        self.cancel.clone()
     }
 
     /// One line in, one step out.
@@ -119,6 +134,7 @@ impl Service {
         match request {
             Request::Hello(h) => self.greet(id, h),
             Request::Sites(r) => self.sites(id, r),
+            Request::Abort { cast } => Step::Reply(protocol::aborted(id, cast, self.restored)),
             Request::Prepare => self.prepare(id),
             Request::Baseline => self.baseline(id),
             Request::Cast {
@@ -354,13 +370,24 @@ impl Service {
         }
         let spliced = crate::source::Source::new(&original).splice(from, to, replacement);
 
+        // Asked to stop before it began: nothing was touched.
+        if self.cancel.asked(id) {
+            return Step::Quiet;
+        }
         let started = Instant::now();
         if let Err(e) = project.write(file, &spliced) {
             return bad(&format!("cannot write `{file}` in the reni: {e}"));
         }
+        let cancel = self.cancel.clone();
+        project.set_stop(Some(Arc::new(move || cancel.asked(id))));
         let outcome = cast_in(project.as_mut(), &self.session.targets, &groups);
+        project.set_stop(None);
+        let aborted =
+            matches!(&outcome, Err(Trouble::Io(e)) if e.kind() == std::io::ErrorKind::Interrupted);
         // Whatever happened, the next cast starts from the original.
-        if let Err(e) = project.write(file, &original) {
+        let restore = project.write(file, &original);
+        self.restored = restore.is_ok();
+        if let (Err(e), false) = (&restore, aborted) {
             return Step::Reply(protocol::error(
                 id,
                 "load_failed",
@@ -369,6 +396,7 @@ impl Service {
             ));
         }
         match outcome {
+            Err(Trouble::Io(_)) if aborted => Step::Quiet,
             Ok(outcome) => Step::Reply(protocol::cast_done(id, wekufe, &outcome, millis(started))),
             Err(Trouble::Unknown(test)) => Step::Reply(protocol::error(
                 id,
@@ -666,6 +694,7 @@ mod tests {
     fn say(service: &mut Service, request: serde_json::Value) -> serde_json::Value {
         match service.handle(&request.to_string()) {
             Step::Reply(r) | Step::Stop(r) => serde_json::from_str(&r).unwrap(),
+            Step::Quiet => serde_json::Value::Null,
         }
     }
 
@@ -1212,12 +1241,104 @@ mod tests {
 
         let refused = match service.handle("not json") {
             Step::Reply(r) => serde_json::from_str::<serde_json::Value>(&r).unwrap(),
-            Step::Stop(_) => panic!("a garbled line must not stop the kalku"),
+            Step::Stop(_) | Step::Quiet => panic!("a garbled line must not stop the kalku"),
         };
         let stopped = service.handle(r#"{"type":"shutdown","id":7}"#);
 
         assert_eq!(refused["code"], "bad_request");
         assert_eq!(refused["fatal"], false);
         assert!(matches!(stopped, Step::Stop(r) if r.contains("\"bye\"")));
+    }
+
+    fn interrupted() -> io::Error {
+        io::Error::new(io::ErrorKind::Interrupted, "aborted")
+    }
+
+    fn abort(service: &mut Service, cast: i64) -> serde_json::Value {
+        say(service, json!({"type": "abort", "id": 20, "cast": cast}))
+    }
+
+    #[test]
+    fn an_abort_with_nothing_running_says_the_reni_is_as_it_was() {
+        let (fake, _) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+
+        let said = abort(&mut service, 5);
+
+        assert_eq!(said["type"], "aborted");
+        assert_eq!(said["id"], 20);
+        assert_eq!(said["cast"], 5);
+        assert_eq!(said["restored"], true);
+    }
+
+    // The aborted cast gets no answer of its own; the abort does.
+    #[test]
+    fn a_cast_that_is_stopped_says_nothing_and_leaves_the_file_as_it_was() {
+        let (mut fake, seen) = Fake::new();
+        fake.ran = Box::new(|_, _| Err(interrupted()));
+        let mut service = prepared_and_baselined(fake);
+
+        let quiet = service.handle(
+            &json!({"type": "cast", "id": 9, "wekufe": "abc", "site": site(">=", ">"),
+                "tests": ["src/lib.rs::t::one"]})
+            .to_string(),
+        );
+
+        assert!(matches!(quiet, Step::Quiet));
+        let writes = seen.borrow().writes.clone();
+        assert_eq!(
+            writes,
+            [
+                ("src/lib.rs".to_string(), "a > 1".to_string()),
+                ("src/lib.rs".to_string(), "a >= 1".to_string())
+            ]
+        );
+        assert_eq!(abort(&mut service, 9)["restored"], true);
+    }
+
+    #[test]
+    fn a_cast_asked_to_stop_before_it_began_touches_nothing() {
+        let (fake, seen) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+        service.cancel().ask(9);
+
+        let quiet = service.handle(
+            &json!({"type": "cast", "id": 9, "wekufe": "abc", "site": site(">=", ">"),
+                "tests": ["src/lib.rs::t::one"]})
+            .to_string(),
+        );
+
+        assert!(matches!(quiet, Step::Quiet));
+        assert!(seen.borrow().writes.is_empty());
+        assert!(seen.borrow().runs.is_empty());
+    }
+
+    // A stop that cannot put the file back is the one thing the kaikai side
+    // must hear, so that it recycles this kalku.
+    #[test]
+    fn a_stopped_cast_that_cannot_restore_its_file_says_so_when_aborted() {
+        let (mut fake, _) = Fake::new();
+        fake.ran = Box::new(|_, _| Err(interrupted()));
+        fake.write_fails_at = Some(2);
+        let mut service = prepared_and_baselined(fake);
+
+        let quiet = service.handle(
+            &json!({"type": "cast", "id": 9, "wekufe": "abc", "site": site(">=", ">"),
+                "tests": ["src/lib.rs::t::one"]})
+            .to_string(),
+        );
+
+        assert!(matches!(quiet, Step::Quiet));
+        assert_eq!(abort(&mut service, 9)["restored"], false);
+    }
+
+    #[test]
+    fn a_cast_that_finishes_restores_and_reports_the_reni_clean() {
+        let (fake, _) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+
+        cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
+
+        assert_eq!(abort(&mut service, 9)["restored"], true);
     }
 }
