@@ -19,7 +19,7 @@ could use none of them; `None` when at least one yielded a site, or when no
 file was skipped (a project with nothing to mutate is not an error).
 """)]
 pub fn nothing_usable(found: Int, skipped: [Skipped]) : Option[String] =
-  if found == 0 and not is_empty(skipped) {
+  if found == 0 and (not is_empty(skipped)) {
     Some(
       "no file could be searched for sites:\n#{join(skipped | (s => "  #{skipped_line(s)}"), "\n")}"
     )

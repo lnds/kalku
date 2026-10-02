@@ -11,9 +11,10 @@ test "a skipped file is told with its reason and what the kalku said" {
 # `0 site(s) found` and nothing else.
 test "a run whose every file was skipped cannot go on, and says which and why" {
   let why = nothing_usable(0, [bad("src/a.rs"), bad("src/b.rs")])
-  assert why == Some(
-    "no file could be searched for sites:\n  src/a.rs: parse_error: line 1\n  src/b.rs: parse_error: line 1"
-  )
+  assert why
+    == Some(
+      "no file could be searched for sites:\n  src/a.rs: parse_error: line 1\n  src/b.rs: parse_error: line 1"
+    )
 }
 
 test "one file that yielded a site is enough to go on" {
