@@ -38,9 +38,15 @@ rsync -a --exclude .git --exclude _build --exclude .kai-cache --exclude dist \
   --exclude target --exclude deps --exclude '*.beam' "$root/" "$tree/"
 
 cd "$tree"
+# The suite talks to a scripted kalku that is built, not committed: without
+# it the baseline is red and nothing is measured.
+make tests/fake_kalku/fake_kalku >&2
 PATH="$release:$PATH"
 export PATH
 kalku init --yes >&2
 sed -i.bak "s/^workers = .*/workers = $workers/" .kalku.toml && rm -f .kalku.toml.bak
+# A cast rebuilds the package and runs the whole suite, which takes minutes;
+# the default floor would call every wekufe that compiles a timeout.
+sed -i.bak "s/^timeout_floor_ms = .*/timeout_floor_ms = ${SELF_TIMEOUT_MS:-900000}/" .kalku.toml && rm -f .kalku.toml.bak
 echo "kalku $version measuring $module" >&2
 kalku run "$module" --limit "$limit"
