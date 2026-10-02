@@ -1,6 +1,7 @@
 # kalku — build, test, and quality gates.
-# `make ci` is CI's kaikai-side job; the Elixir kalku has its own job
-# (`make test-elixir`). `make check` runs both locally.
+# `make ci` is CI's kaikai-side job; each language's kalku has its own job
+# (`make test-elixir`, `make test-rust`). `make check` runs all of them
+# locally.
 
 KAI   ?= kai
 BUILD := _build
@@ -31,7 +32,7 @@ KKALKU_SRC := $(wildcard adapters/kaikai/*.kai) $(wildcard adapters/kaikai/kaika
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
+.PHONY: all build test test-kaikai test-elixir test-rust fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
 
 all: build
 
@@ -41,7 +42,7 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 	@mkdir -p $(BUILD)
 	$(KAI) build . -o $@
 
-test: test-kaikai test-elixir
+test: test-kaikai test-elixir test-rust
 
 test-kaikai: $(FAKE) $(KKALKU) properties
 	$(KAI) test
@@ -79,6 +80,14 @@ test-elixir:
 	  cd adapters/elixir && mix format --check-formatted && mix test; \
 	else echo "test-elixir: skipped (no adapters/elixir/mix.exs)"; fi
 
+# The Rust kalku, held to Rust's own formatter and linter. A machine without
+# a Rust toolchain skips it, as one without Elixir skips the Elixir kalku;
+# CI has both, so nothing reaches main unchecked.
+test-rust:
+	@if [ -f adapters/rust/Cargo.toml ] && command -v cargo >/dev/null 2>&1; then \
+	  cd adapters/rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test; \
+	else echo "test-rust: skipped (no adapters/rust/Cargo.toml, or no cargo)"; fi
+
 fmt:
 	$(KAI) fmt .
 
@@ -96,7 +105,7 @@ km:
 # without waiting for the tests.
 ci: fmt-check lint build test-kaikai km
 
-check: ci test-elixir
+check: ci test-elixir test-rust
 
 # kalku on its own sources, through its own kalku: the project's claim,
 # run rather than asserted. One module at a time, because a kaikai cast

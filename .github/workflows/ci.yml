@@ -20,6 +20,8 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       elixir: ${{ steps.filter.outputs.elixir }}
       elixir_project: ${{ steps.project.outputs.elixir_project }}
+      rust: ${{ steps.filter.outputs.rust }}
+      rust_project: ${{ steps.project.outputs.rust_project }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -34,8 +36,12 @@ jobs:
               - '!.claude/**'
             elixir:
               - '{adapters/elixir/**,docs/protocol/fixtures/**}'
+            rust:
+              - '{adapters/rust/**,docs/protocol/fixtures/**}'
       - id: project
-        run: echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "rust_project=$([ -f adapters/rust/Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   # Format, lint and the quality gate: seconds of work, in a job of their
   # own so a slip in any of them is a red cross in a minute rather than
@@ -75,13 +81,37 @@ jobs:
       - run: mix format --check-formatted
       - run: mix test
 
+  # The Rust kalku measures the 2024 edition, which needs Rust 1.85, so that
+  # is the oldest toolchain it is tested on, beside the current stable. The
+  # formatter and the linter run once, on stable: their opinions change
+  # between releases and the toolchain under test is not what they judge.
+  rust-kalku:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_project == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ['1.85', stable]
+    defaults:
+      run:
+        working-directory: adapters/rust
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          rustup toolchain install ${{ matrix.toolchain }} --profile minimal --component rustfmt --component clippy
+          rustup default ${{ matrix.toolchain }}
+      - if: matrix.toolchain == 'stable'
+        run: cargo fmt --check && cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
   # The one required check: green when every job that ran passed or was skipped.
   ci-ok:
     if: always()
-    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku]
+    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku, rust-kalku]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}" "${{ needs.rust-kalku.result }}"; do
             case "$r" in success|skipped) ;; *) echo "a job ended in: $r"; exit 1 ;; esac
           done
