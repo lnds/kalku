@@ -357,7 +357,7 @@ fn a_cast_before_a_baseline_is_not_ready_and_a_stale_site_is_refused() {
 
 #[test]
 fn a_project_that_does_not_compile_is_a_prepare_failure_not_an_exit() {
-    let project = Project::new("broken", "2024", &[("src/lib.rs", "pub fn f( {\n")]);
+    let project = Project::new("wontbuild", "2024", &[("src/lib.rs", "pub fn f( {\n")]);
     let mut k = Kalku::summon();
     k.hello(&project.0);
 
