@@ -17,6 +17,8 @@ pub struct Toolchain {
     pub release: (u32, u32, u32),
     /// The target triple tests are built for, which a runner is named by.
     pub host: String,
+    /// Where this toolchain keeps its files, when it said.
+    pub sysroot: Option<std::path::PathBuf>,
 }
 
 impl Toolchain {
@@ -37,7 +39,23 @@ pub fn probe() -> Result<Toolchain, String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    parse(&String::from_utf8_lossy(&out.stdout))
+    let mut toolchain = parse(&String::from_utf8_lossy(&out.stdout))?;
+    toolchain.sysroot = sysroot();
+    Ok(toolchain)
+}
+
+// `rustc --print sysroot`; nothing when it cannot say, since what depends on
+// it is optional.
+fn sysroot() -> Option<std::path::PathBuf> {
+    let out = Command::new("rustc")
+        .args(["--print", "sysroot"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!path.is_empty()).then(|| path.into())
 }
 
 pub fn parse(verbose: &str) -> Result<Toolchain, String> {
@@ -54,6 +72,7 @@ pub fn parse(verbose: &str) -> Result<Toolchain, String> {
         version_line,
         release: numbers(&release).ok_or_else(|| format!("cannot read the release `{release}`"))?,
         host,
+        sysroot: None,
     })
 }
 

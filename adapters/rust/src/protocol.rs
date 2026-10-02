@@ -7,6 +7,7 @@
 //! canonical: `type`, then `id`, then the fields in the order the tables
 //! list them, absent optionals omitted, no whitespace.
 
+use crate::coverage::Entry;
 use crate::sites::Site;
 use crate::spell::{CAST, Spell};
 use serde_json::{Map, Value};
@@ -397,7 +398,7 @@ pub fn error(id: i64, code: &str, message: &str, fatal: bool) -> String {
     )
 }
 
-pub fn ready(id: i64, adapter: &str, runtime: &str) -> String {
+pub fn ready(id: i64, adapter: &str, runtime: &str, capabilities: &[&str]) -> String {
     line(
         "ready",
         id,
@@ -415,7 +416,11 @@ pub fn ready(id: i64, adapter: &str, runtime: &str) -> String {
             ),
             (
                 "capabilities",
-                vec![Value::from("cast"), Value::from("abort")].into(),
+                capabilities
+                    .iter()
+                    .map(|c| Value::from(*c))
+                    .collect::<Vec<_>>()
+                    .into(),
             ),
         ],
     )
@@ -456,7 +461,36 @@ fn object(fields: Vec<(&str, Value)>) -> Value {
     )
 }
 
-pub fn baseline_done(id: i64, duration_ms: u64, tests: &[Timed], failures: &[Failure]) -> String {
+/// Where a baseline puts what each test reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Coverage {
+    Inline(Vec<Entry>),
+    /// Too much to say on a line: the same entries, one per line, in a file.
+    Path(String),
+}
+
+pub fn entry_json(e: &Entry) -> Value {
+    object(vec![
+        ("file", e.file.clone().into()),
+        ("line", (e.line as i64).into()),
+        (
+            "tests",
+            e.tests
+                .iter()
+                .map(|t| Value::from(t.as_str()))
+                .collect::<Vec<_>>()
+                .into(),
+        ),
+    ])
+}
+
+pub fn baseline_done(
+    id: i64,
+    duration_ms: u64,
+    tests: &[Timed],
+    failures: &[Failure],
+    coverage: Option<&Coverage>,
+) -> String {
     let status = if failures.is_empty() { "green" } else { "red" };
     let tests: Vec<Value> = tests
         .iter()
@@ -477,16 +511,21 @@ pub fn baseline_done(id: i64, duration_ms: u64, tests: &[Timed], failures: &[Fai
             ])
         })
         .collect();
-    line(
-        "baseline_done",
-        id,
-        vec![
-            ("status", status.into()),
-            ("duration_ms", duration_ms.into()),
-            ("tests", tests.into()),
-            ("failures", failures.into()),
-        ],
-    )
+    let mut fields: Vec<(&str, Value)> = vec![
+        ("status", status.into()),
+        ("duration_ms", duration_ms.into()),
+        ("tests", tests.into()),
+    ];
+    match coverage {
+        Some(Coverage::Inline(entries)) => fields.push((
+            "coverage",
+            entries.iter().map(entry_json).collect::<Vec<_>>().into(),
+        )),
+        Some(Coverage::Path(path)) => fields.push(("coverage_path", path.clone().into())),
+        None => {}
+    }
+    fields.push(("failures", failures.into()));
+    line("baseline_done", id, fields)
 }
 
 /// How one cast ended, as the kalku can know it.
@@ -917,7 +956,7 @@ mod tests {
             file: "a.rs".into(),
             duration_ms: 4,
         }];
-        let green = reply(&baseline_done(3, 10, &timed, &[]));
+        let green = reply(&baseline_done(3, 10, &timed, &[], None));
         assert_eq!(green["type"], "baseline_done");
         assert_eq!(green["status"], "green");
         assert_eq!(green["duration_ms"], 10);
@@ -930,7 +969,7 @@ mod tests {
             test: "a::t".into(),
             message: "boom".into(),
         };
-        let red = reply(&baseline_done(3, 10, &timed, &[failure]));
+        let red = reply(&baseline_done(3, 10, &timed, &[failure], None));
         assert_eq!(red["status"], "red");
         assert_eq!(
             red["failures"],
@@ -953,5 +992,51 @@ mod tests {
             found["skipped"],
             json!([{"file": "a.rs", "reason": "parse_error", "message": "line 1"}])
         );
+    }
+
+    #[test]
+    fn a_baseline_carries_its_coverage_inline_or_by_path_and_never_both() {
+        let entry = Entry {
+            file: "a.rs".into(),
+            line: 3,
+            tests: vec!["a::t".into()],
+        };
+
+        let inline = reply(&baseline_done(
+            3,
+            1,
+            &[],
+            &[],
+            Some(&Coverage::Inline(vec![entry])),
+        ));
+        assert_eq!(
+            inline["coverage"],
+            json!([{"file": "a.rs", "line": 3, "tests": ["a::t"]}])
+        );
+        assert!(inline.get("coverage_path").is_none());
+
+        let by_path = reply(&baseline_done(
+            3,
+            1,
+            &[],
+            &[],
+            Some(&Coverage::Path("/reni/coverage/0.json".into())),
+        ));
+        assert_eq!(by_path["coverage_path"], "/reni/coverage/0.json");
+        assert!(by_path.get("coverage").is_none());
+
+        let none = reply(&baseline_done(3, 1, &[], &[], None));
+        assert!(none.get("coverage").is_none() && none.get("coverage_path").is_none());
+    }
+
+    #[test]
+    fn a_ready_announces_exactly_the_capabilities_it_is_given() {
+        let said = reply(&ready(1, "0", "r", &["cast", "abort", "per_test_coverage"]));
+
+        assert_eq!(
+            said["capabilities"],
+            json!(["cast", "abort", "per_test_coverage"])
+        );
+        assert_eq!(reply(&ready(1, "0", "r", &[]))["capabilities"], json!([]));
     }
 }

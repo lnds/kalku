@@ -10,6 +10,7 @@
 //! from the lines libtest prints.
 
 use crate::cancel::{Stop, capture};
+use crate::coverage::{Lines, Tools, parse_lcov};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -70,15 +71,28 @@ pub trait Project {
     /// that is stopped fails with `Interrupted`. A project that cannot be
     /// stopped ignores it.
     fn set_stop(&mut self, _stop: Option<Stop>) {}
+    /// Build the project again, instrumented to say which lines run, apart from
+    /// the ordinary build.
+    fn instrument(&mut self, _tools: &Tools) -> io::Result<Build> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+    /// Run one test alone on the instrumented build, and say which lines it ran.
+    fn run_covered(&mut self, _target: &Target, _name: &str) -> io::Result<(Ran, Lines)> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
 }
 
 pub struct Cargo {
     root: PathBuf,
     reni: PathBuf,
     work: PathBuf,
+    worker: i64,
     target_dir: PathBuf,
     env: Vec<(String, String)>,
     stop: Option<Stop>,
+    // What reads a profile, and the executables the profile is read against.
+    tools: Option<Tools>,
+    objects: Vec<PathBuf>,
 }
 
 // What a build needs from the environment of whoever started the kalku;
@@ -110,11 +124,80 @@ impl Cargo {
         Cargo {
             root,
             work: reni.join("work").join(worker.to_string()),
+            worker,
             target_dir: reni.join("target").join(worker.to_string()),
             reni,
             env,
             stop: None,
+            tools: None,
+            objects: Vec::new(),
         }
+    }
+
+    // The lines the profiles in a directory say were run, read against the
+    // instrumented executables.
+    fn lines_of(&self, tools: &Tools, profiles: &Path) -> io::Result<Lines> {
+        let raw: Vec<PathBuf> = fs::read_dir(profiles)?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "profraw"))
+            .collect();
+        if raw.is_empty() {
+            return Ok(Lines::new());
+        }
+        let merged = profiles.join("merged.profdata");
+        let status = Command::new(&tools.profdata)
+            .args(["merge", "-sparse"])
+            .args(&raw)
+            .arg("-o")
+            .arg(&merged)
+            .stdin(Stdio::null())
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Err(io::Error::other(
+                "llvm-profdata could not merge the profiles",
+            ));
+        }
+        let mut export = Command::new(&tools.cov);
+        export
+            .args(["export", "--format=lcov"])
+            .arg(format!("--instr-profile={}", merged.display()));
+        for (at, object) in self.objects.iter().enumerate() {
+            if at > 0 {
+                export.arg("-object");
+            }
+            export.arg(object);
+        }
+        let out = export
+            .stdin(Stdio::null())
+            .stderr(Stdio::inherit())
+            .output()?;
+        if !out.status.success() {
+            return Err(io::Error::other("llvm-cov could not read the profile"));
+        }
+        let work = fs::canonicalize(&self.work).unwrap_or_else(|_| self.work.clone());
+        Ok(parse_lcov(&String::from_utf8_lossy(&out.stdout), &work))
+    }
+
+    // Cargo on the instrumented build: its own target directory, and the flag
+    // that makes every binary count the lines it runs.
+    fn instrumented(&self) -> Command {
+        let mut c = self.cargo();
+        let flags = self
+            .env
+            .iter()
+            .find(|(k, _)| k == "RUSTFLAGS")
+            .map(|(_, v)| format!("{v} "))
+            .unwrap_or_default();
+        c.env("RUSTFLAGS", format!("{flags}-C instrument-coverage"))
+            .env(
+                "CARGO_TARGET_DIR",
+                self.reni
+                    .join("target")
+                    .join(format!("{}-cov", self.worker)),
+            );
+        c
     }
 
     fn cargo(&self) -> Command {
@@ -187,6 +270,48 @@ impl Project for Cargo {
 
     fn set_stop(&mut self, stop: Option<Stop>) {
         self.stop = stop;
+    }
+
+    fn instrument(&mut self, tools: &Tools) -> io::Result<Build> {
+        let mut command = self.instrumented();
+        command.args(["test", "--no-run", "--workspace", "--message-format=json"]);
+        let out = capture(command, self.stop.as_ref())?;
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        if !out.status.success() {
+            let errors = diagnostics(&stdout);
+            return Ok(Build::Failed(if errors.is_empty() {
+                "cargo could not build the project with coverage".to_string()
+            } else {
+                errors
+            }));
+        }
+        self.objects = executables(&stdout);
+        self.tools = Some(tools.clone());
+        Ok(Build::Built(artifacts(&stdout, &self.work)))
+    }
+
+    fn run_covered(&mut self, target: &Target, name: &str) -> io::Result<(Ran, Lines)> {
+        let Some(tools) = self.tools.clone() else {
+            return Err(io::Error::other("the project was not built with coverage"));
+        };
+        let profiles = self.reni.join("cov").join(self.worker.to_string());
+        if profiles.exists() {
+            fs::remove_dir_all(&profiles)?;
+        }
+        fs::create_dir_all(&profiles)?;
+        let mut command = self.instrumented();
+        command
+            .env("LLVM_PROFILE_FILE", profiles.join("%p-%m.profraw"))
+            .args(["test", "-p", &target.package])
+            .args(&target.select)
+            .args(["--", "--exact", name]);
+        let out = capture(command, self.stop.as_ref())?;
+        let ran = Ran {
+            results: results(&String::from_utf8_lossy(&out.stdout)),
+            success: out.status.success(),
+        };
+        let lines = self.lines_of(&tools, &profiles)?;
+        Ok((ran, lines))
     }
 }
 
@@ -303,6 +428,18 @@ pub fn artifacts(stdout: &str, work: &Path) -> Vec<Target> {
         }
     }
     targets
+}
+
+/// Every executable cargo built, in the order it said so.
+pub fn executables(stdout: &str) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    stdout
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|m| m["reason"] == "compiler-artifact")
+        .filter_map(|m| m["executable"].as_str().map(PathBuf::from))
+        .filter(|p| seen.insert(p.clone()))
+        .collect()
 }
 
 /// The compiler's errors, as the compiler wrote them for a person.
@@ -458,6 +595,29 @@ mod tests {
         .join("\n");
 
         assert_eq!(diagnostics(&out), "error[E0308]: mismatched\n");
+    }
+
+    #[test]
+    fn every_executable_cargo_built_is_listed_once_tests_or_not() {
+        let artifact = |exe: &str, test: bool| {
+            format!(
+                r#"{{"reason":"compiler-artifact","executable":{exe},"profile":{{"test":{test}}}}}"#
+            )
+        };
+        let out = [
+            artifact("\"/t/lib-test\"", true),
+            artifact("\"/t/bin\"", false),
+            artifact("\"/t/lib-test\"", true),
+            artifact("null", false),
+            r#"{"reason":"build-finished","executable":"/t/not-an-artifact"}"#.to_string(),
+            "not json".to_string(),
+        ]
+        .join("\n");
+
+        assert_eq!(
+            executables(&out),
+            [PathBuf::from("/t/lib-test"), PathBuf::from("/t/bin")]
+        );
     }
 
     #[test]

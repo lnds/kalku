@@ -147,3 +147,64 @@ fn a_build_that_fails_without_a_diagnostic_still_says_it_failed() {
         Build::Built(_) => panic!("a project with no manifest was built"),
     }
 }
+
+// The LLVM tools are a rustup component. Where they are not, there is
+// nothing to test and the kalku does not claim coverage either; on CI they
+// are installed, and a missing one is a failure rather than a skip.
+fn tools() -> Option<kalku_rust::coverage::Tools> {
+    let out = std::process::Command::new("rustc")
+        .args(["--print", "sysroot"])
+        .output()
+        .unwrap();
+    let sysroot = String::from_utf8(out.stdout).unwrap();
+    let host = std::process::Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .unwrap()
+        .stdout;
+    let host = String::from_utf8(host)
+        .unwrap()
+        .lines()
+        .find_map(|l| l.strip_prefix("host: ").map(str::to_string))
+        .unwrap();
+    let found = kalku_rust::coverage::find_tools(std::path::Path::new(sysroot.trim()), &host);
+    assert!(
+        found.is_some() || std::env::var_os("CI").is_none(),
+        "CI must have the llvm-tools component"
+    );
+    found
+}
+
+#[test]
+fn a_test_says_which_lines_of_the_project_it_ran() {
+    let Some(tools) = tools() else { return };
+    let dir = Dir::new("coverage");
+    dir.file("proj/Cargo.toml", PACKAGE);
+    dir.file(
+        "proj/src/lib.rs",
+        "pub fn used() -> i32 {\n    1\n}\n\npub fn unused() -> i32 {\n    2\n}\n\n#[cfg(test)]\nmod t {\n    #[test]\n    fn calls_used() {\n        assert_eq!(super::used(), 1);\n    }\n    #[test]\n    fn calls_nothing() {}\n}\n",
+    );
+    let mut project = dir.project();
+    project.copy().unwrap();
+    let targets = match project.instrument(&tools).unwrap() {
+        Build::Built(targets) => targets,
+        Build::Failed(why) => panic!("{why}"),
+    };
+
+    let (ran, calling) = project.run_covered(&targets[0], "t::calls_used").unwrap();
+    let (_, idle) = project
+        .run_covered(&targets[0], "t::calls_nothing")
+        .unwrap();
+
+    assert!(ran.success);
+    let reached = &calling["src/lib.rs"];
+    assert!(reached.contains(&2), "the body of `used` ran: {reached:?}");
+    assert!(
+        !reached.contains(&6),
+        "the body of `unused` did not: {reached:?}"
+    );
+    assert!(
+        !idle.get("src/lib.rs").is_some_and(|l| l.contains(&2)),
+        "a test that calls nothing reached the body of `used`"
+    );
+}

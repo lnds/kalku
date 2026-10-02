@@ -33,7 +33,7 @@ In the client protocol, the server answers a request with a stream of events end
 
 ### Large payloads
 
-Coverage maps and delegated outcomes may be written to a file inside the reni and referenced by path (`*_path` fields) instead of inlined. The kaikai side sets the threshold with `hello.inline_limit_bytes`; a payload above it goes to a file. Such files are NDJSON, one entry per line, in the entry shape the inline field would use.
+Coverage maps and delegated outcomes may be written to a file inside the reni and referenced by path (`*_path` fields) instead of inlined. The kaikai side sets the threshold with `hello.inline_limit_bytes`; a payload above it goes to a file. A coverage file holds one JSON array of the entries the inline field would carry; the outcomes of a delegated run are NDJSON, one entry per line.
 
 ## Encoding
 
@@ -208,7 +208,7 @@ Run the full suite, with per-test coverage when capable. `baseline` has no field
 | `duration_ms` | int | |
 | `tests` | [{`test`, `file`, `duration_ms`}] | every test that ran |
 | `coverage`? | [{`file`, `line`, `tests`}] | inline coverage |
-| `coverage_path`? | string | the same entries, one per line, in a file |
+| `coverage_path`? | string | the same entries, as one JSON array, in a file |
 | `failures` | [{`test`, `message`}] | empty when green |
 
 Rules: at most one of `coverage` / `coverage_path` (neither when the kalku lacks `per_test_coverage`); `status: "red"` requires at least one failure, `"green"` requires none. `red` aborts the run.
