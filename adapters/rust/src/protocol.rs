@@ -418,6 +418,100 @@ pub fn ready(id: i64, adapter: &str, runtime: &str) -> String {
     )
 }
 
+pub fn prepared(id: i64, duration_ms: u64, modules: usize) -> String {
+    line(
+        "prepared",
+        id,
+        vec![
+            ("duration_ms", duration_ms.into()),
+            ("modules", (modules as i64).into()),
+        ],
+    )
+}
+
+/// One test of a baseline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Timed {
+    pub test: String,
+    pub file: String,
+    pub duration_ms: u64,
+}
+
+/// One failing test and what it said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failure {
+    pub test: String,
+    pub message: String,
+}
+
+fn object(fields: Vec<(&str, Value)>) -> Value {
+    Value::Object(
+        fields
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    )
+}
+
+pub fn baseline_done(id: i64, duration_ms: u64, tests: &[Timed], failures: &[Failure]) -> String {
+    let status = if failures.is_empty() { "green" } else { "red" };
+    let tests: Vec<Value> = tests
+        .iter()
+        .map(|t| {
+            object(vec![
+                ("test", t.test.clone().into()),
+                ("file", t.file.clone().into()),
+                ("duration_ms", t.duration_ms.into()),
+            ])
+        })
+        .collect();
+    let failures: Vec<Value> = failures
+        .iter()
+        .map(|f| {
+            object(vec![
+                ("test", f.test.clone().into()),
+                ("message", f.message.clone().into()),
+            ])
+        })
+        .collect();
+    line(
+        "baseline_done",
+        id,
+        vec![
+            ("status", status.into()),
+            ("duration_ms", duration_ms.into()),
+            ("tests", tests.into()),
+            ("failures", failures.into()),
+        ],
+    )
+}
+
+/// How one cast ended, as the kalku can know it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    Killed { by: String },
+    Survived,
+    CompileError { message: String },
+}
+
+pub fn cast_done(id: i64, wekufe: &str, outcome: &Outcome, duration_ms: u64) -> String {
+    let mut fields: Vec<(&str, Value)> = vec![("wekufe", wekufe.into())];
+    match outcome {
+        Outcome::Killed { by } => {
+            fields.push(("outcome", "killed".into()));
+            fields.push(("killed_by", by.clone().into()));
+        }
+        Outcome::Survived => fields.push(("outcome", "survived".into())),
+        Outcome::CompileError { message } => {
+            fields.push(("outcome", "compile_error".into()));
+            fields.push(("message", message.clone().into()));
+        }
+    }
+    fields.push(("duration_ms", duration_ms.into()));
+    fields.push(("dirty", false.into()));
+    line("cast_done", id, fields)
+}
+
 pub fn bye(id: i64) -> String {
     line("bye", id, vec![])
 }
