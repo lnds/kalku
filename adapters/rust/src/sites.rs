@@ -946,4 +946,126 @@ mod tests {
             assert!(syn::parse_file(&wekufe).is_ok(), "{s:?}");
         }
     }
+
+    fn attrs_of(src: &str) -> Vec<syn::Attribute> {
+        syn::parse_str::<syn::ItemFn>(src).unwrap().attrs
+    }
+
+    #[test]
+    fn what_exists_to_be_run_by_the_suite_is_test_only() {
+        let test_only = [
+            "#[test] fn f() {}",
+            "#[bench] fn f() {}",
+            "#[tokio::test] fn f() {}",
+            "#[cfg(test)] fn f() {}",
+            "#[cfg(all(test, unix))] fn f() {}",
+            "#[inline] #[test] fn f() {}",
+        ];
+        for src in test_only {
+            assert!(is_test_only(&attrs_of(src)), "{src}");
+        }
+        let shipped = [
+            "fn f() {}",
+            "#[inline] fn f() {}",
+            "#[cfg(not(test))] fn f() {}",
+            "#[cfg(unix)] fn f() {}",
+            "#[cfg(feature = \"test\")] fn f() {}",
+            "#[cfg] fn f() {}",
+            "#[test_case] fn f() {}",
+            "#[doc = \"a test\"] fn f() {}",
+        ];
+        for src in shipped {
+            assert!(!is_test_only(&attrs_of(src)), "{src}");
+        }
+    }
+
+    #[test]
+    fn a_word_is_found_in_a_token_stream_at_any_depth_and_only_as_an_identifier() {
+        let tokens = |s: &str| s.parse::<proc_macro2::TokenStream>().unwrap();
+
+        assert!(mentions(tokens("test"), "test"));
+        assert!(mentions(tokens("all(unix, test)"), "test"));
+        assert!(mentions(tokens("all(any(test))"), "test"));
+        assert!(!mentions(tokens("feature = \"test\""), "test"));
+        assert!(!mentions(tokens("1 + 2, 'x'"), "test"));
+        assert!(!mentions(tokens(""), "test"));
+    }
+
+    #[test]
+    fn an_expression_binds_when_a_let_is_in_it() {
+        let expr = |s: &str| syn::parse_str::<Expr>(s).unwrap();
+
+        assert!(binds(&expr("let Some(x) = o")));
+        assert!(binds(&expr("(let Some(x) = o)")));
+        assert!(binds(&expr("a && let Some(x) = o")));
+        assert!(binds(&expr("let Some(x) = o && b")));
+        assert!(!binds(&expr("a && b")));
+        assert!(!binds(&expr("a || b")));
+        assert!(!binds(&expr("(a)")));
+        assert!(!binds(&expr("a")));
+    }
+
+    #[test]
+    fn a_let_chain_gets_no_connect_wekufe_from_either_side() {
+        let chain = |cond: &str| {
+            of(
+                Spell::Connect,
+                &format!("pub fn f(o: Option<i32>, b: bool) {{ if {cond} {{}} }}"),
+            )
+        };
+
+        assert!(chain("let Some(x) = o && b").is_empty());
+        assert!(chain("b && let Some(x) = o").is_empty());
+        assert!(chain("b || b && let Some(x) = o").is_empty());
+        assert_eq!(chain("b && b"), [("&&".to_string(), "||".to_string())]);
+        assert_eq!(chain("b || b"), [("||".to_string(), "&&".to_string())]);
+    }
+
+    #[test]
+    fn a_trait_method_gets_sites_unless_it_is_test_only_or_unsafe() {
+        let sites = |method: &str| {
+            of(
+                Spell::Compare,
+                &format!("pub trait T {{ {method} fn f(&self, a: i32) -> bool {{ a >= 1 }} }}"),
+            )
+        };
+
+        assert_eq!(sites(""), [(">=".to_string(), ">".to_string())]);
+        assert!(sites("#[cfg(test)]").is_empty());
+        assert!(sites("unsafe").is_empty());
+    }
+
+    #[test]
+    fn a_literal_is_succeeded_within_the_range_of_its_type() {
+        let ranges: [(&str, u128); 12] = [
+            ("u8", u8::MAX as u128),
+            ("i8", i8::MAX as u128),
+            ("u16", u16::MAX as u128),
+            ("i16", i16::MAX as u128),
+            ("u32", u32::MAX as u128),
+            ("i32", i32::MAX as u128),
+            ("u64", u64::MAX as u128),
+            ("i64", i64::MAX as u128),
+            ("u128", u128::MAX),
+            ("i128", i128::MAX as u128),
+            ("usize", usize::MAX as u128),
+            ("isize", isize::MAX as u128),
+        ];
+        for (suffix, max) in ranges {
+            assert_eq!(max_of(suffix), Some(max), "{suffix}");
+            // The last value that has a successor, and the one that does not.
+            assert_eq!(
+                succeeding(&format!("{}{suffix}", max - 1)),
+                Some(format!("{max}{suffix}")),
+                "{suffix}"
+            );
+            assert_eq!(succeeding(&format!("{max}{suffix}")), None, "{suffix}");
+        }
+        assert_eq!(max_of("f64"), None);
+        assert_eq!(succeeding("7"), Some("8".to_string()));
+        assert_eq!(succeeding("0"), Some("1".to_string()));
+        assert_eq!(succeeding("007"), None);
+        assert_eq!(succeeding("0x10"), None);
+        assert_eq!(succeeding("1_000"), None);
+    }
 }
