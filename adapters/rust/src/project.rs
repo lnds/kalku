@@ -69,6 +69,7 @@ pub trait Project {
 
 pub struct Cargo {
     root: PathBuf,
+    reni: PathBuf,
     work: PathBuf,
     target_dir: PathBuf,
     env: Vec<(String, String)>,
@@ -89,7 +90,7 @@ const INHERITED: [&str; 9] = [
 ];
 
 impl Cargo {
-    pub fn new(root: PathBuf, reni: PathBuf, extra: Vec<(String, String)>) -> Self {
+    pub fn new(root: PathBuf, reni: PathBuf, worker: i64, extra: Vec<(String, String)>) -> Self {
         let mut env: Vec<(String, String)> = INHERITED
             .iter()
             .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
@@ -97,8 +98,9 @@ impl Cargo {
         env.extend(extra);
         Cargo {
             root,
-            work: reni.join("work"),
-            target_dir: reni.join("target"),
+            work: reni.join("work").join(worker.to_string()),
+            target_dir: reni.join("target").join(worker.to_string()),
+            reni,
             env,
         }
     }
@@ -123,7 +125,7 @@ impl Project for Cargo {
         if self.work.exists() {
             fs::remove_dir_all(&self.work)?;
         }
-        copy_tree(&self.root, &self.work, &self.work)
+        copy_tree(&self.root, &self.work, &self.reni)
     }
 
     fn build(&mut self) -> io::Result<Build> {
@@ -176,21 +178,21 @@ impl Project for Cargo {
     }
 }
 
-// The project's files, without what Cargo built or what git keeps. `work`
-// is skipped in case the reni is inside the root.
-fn copy_tree(from: &Path, to: &Path, work: &Path) -> io::Result<()> {
+// The project's files, without what Cargo built or what git keeps. The reni
+// is skipped in case it is inside the root.
+fn copy_tree(from: &Path, to: &Path, reni: &Path) -> io::Result<()> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let name = entry.file_name();
         let path = entry.path();
-        if name == "target" || name == ".git" || path == work || name == ".reni" {
+        if name == "target" || name == ".git" || path == reni {
             continue;
         }
         let kind = entry.file_type()?;
         let dest = to.join(&name);
         if kind.is_dir() {
-            copy_tree(&path, &dest, work)?;
+            copy_tree(&path, &dest, reni)?;
         } else if kind.is_symlink() {
             #[cfg(unix)]
             std::os::unix::fs::symlink(fs::read_link(&path)?, &dest)?;

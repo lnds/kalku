@@ -28,6 +28,10 @@ KAI_SRC := main.kai $(shell find kalku -name '*.kai') $(wildcard tests/*.kai)
 KKALKU     := adapters/kaikai/bin/kalku-kaikai
 KKALKU_SRC := $(wildcard adapters/kaikai/*.kai) $(wildcard adapters/kaikai/kaikai_kalku/*.kai) adapters/kaikai/kai.toml
 
+# The Rust kalku: a cargo project, built in release mode, shipped beside the others.
+RKALKU     := adapters/rust/target/release/kalku-rust
+RKALKU_SRC := $(shell find adapters/rust/src -name '*.rs') adapters/rust/Cargo.toml adapters/rust/Cargo.lock
+
 # The scripted kalku the orchestrator tests talk to, built as its own package.
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
@@ -73,6 +77,9 @@ $(KKALKU): $(KKALKU_SRC) $(shell find kalku -name '*.kai')
 
 $(FAKE): $(FAKE_SRC)
 	$(KAI) build ./tests/fake_kalku
+
+$(RKALKU): $(RKALKU_SRC)
+	cargo build --release --locked --manifest-path adapters/rust/Cargo.toml
 
 # The Elixir kalku joins once its mix project exists.
 test-elixir:
@@ -124,21 +131,21 @@ self-mutate:
 # What a release ships: both binaries a user summons, side by side with
 # the licences they are shipped under. Flat, so a package manager can
 # install the tarball's contents without knowing this layout.
-dist: build $(KKALKU)
+dist: build $(KKALKU) $(RKALKU)
 	@rm -rf $(DIST) && mkdir -p $(DIST)
-	@cp $(BUILD)/kalku $(KKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
-	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai LICENSE-MIT LICENSE-APACHE README.md
-	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/LICENSE-* $(DIST)/README.md
+	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
+	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust LICENSE-MIT LICENSE-APACHE README.md
+	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/LICENSE-* $(DIST)/README.md
 	@cd $(DIST) && (command -v sha256sum >/dev/null && sha256sum $(notdir $(TARBALL)) \
 	  || shasum -a 256 $(notdir $(TARBALL))) > $(notdir $(TARBALL)).sha256
 	@echo "built $(TARBALL)"
 
-install: build $(KKALKU)
+install: build $(KKALKU) $(RKALKU)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(BUILD)/kalku $(KKALKU) $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(DESTDIR)$(PREFIX)/bin/
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai
+	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust
 
 clean:
 	rm -rf $(BUILD) $(DIST) .kai-cache
