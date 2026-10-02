@@ -1,0 +1,25 @@
+import kalku.core.skipping
+import kalku.wire.shapes
+
+fn bad(file: String) : Skipped = Skipped { file: file, reason: "parse_error", message: "line 1" }
+
+test "a skipped file is told with its reason and what the kalku said" {
+  assert skipped_line(bad("src/a.rs")) == "src/a.rs: parse_error: line 1"
+}
+
+# The run that read every file as skipped is the one that used to print
+# `0 site(s) found` and nothing else.
+test "a run whose every file was skipped cannot go on, and says which and why" {
+  let why = nothing_usable(0, [bad("src/a.rs"), bad("src/b.rs")])
+  assert why == Some(
+    "no file could be searched for sites:\n  src/a.rs: parse_error: line 1\n  src/b.rs: parse_error: line 1"
+  )
+}
+
+test "one file that yielded a site is enough to go on" {
+  assert nothing_usable(3, [bad("src/a.rs")]) == None
+}
+
+test "no site and no file skipped is a project with nothing to mutate, not an error" {
+  assert nothing_usable(0, []) == None
+}
