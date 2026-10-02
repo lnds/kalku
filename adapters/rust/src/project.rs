@@ -153,7 +153,7 @@ impl Project for Cargo {
             .cargo()
             .args(["test", "-p", &target.package])
             .args(&target.select)
-            .args(["--", "--list", "--format", "terse"])
+            .args(["--", "--list"])
             .output()?;
         Ok(listing(&String::from_utf8_lossy(&out.stdout)))
     }
@@ -451,6 +451,17 @@ mod tests {
     }
 
     #[test]
+    fn several_errors_are_told_one_after_the_other() {
+        let out = [
+            r#"{"reason":"compiler-message","message":{"level":"error","rendered":"first\n"}}"#,
+            r#"{"reason":"compiler-message","message":{"level":"error","rendered":"second\n"}}"#,
+        ]
+        .join("\n");
+
+        assert_eq!(diagnostics(&out), "first\n\nsecond\n");
+    }
+
+    #[test]
     fn a_copy_leaves_out_what_cargo_built_and_what_git_keeps() {
         let dir = std::env::temp_dir().join(format!("kalku-copy-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -559,7 +570,20 @@ mod tests {
         let everything = |k: &str| Some(format!("value of {k}"));
         let passed: Vec<String> = passed_on(everything).into_iter().map(|(k, _)| k).collect();
 
-        assert_eq!(passed, INHERITED);
+        assert_eq!(
+            passed,
+            [
+                "PATH",
+                "HOME",
+                "USER",
+                "TMPDIR",
+                "CARGO_HOME",
+                "RUSTUP_HOME",
+                "RUSTUP_TOOLCHAIN",
+                "RUSTFLAGS",
+                "LANG"
+            ]
+        );
         // A secret of the caller's is not something a test run was given.
         let only_secret = |k: &str| (k == "AWS_SECRET_ACCESS_KEY").then(|| "x".to_string());
         assert!(passed_on(only_secret).is_empty());

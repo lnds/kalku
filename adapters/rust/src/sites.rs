@@ -78,19 +78,24 @@ pub fn find(
     };
     walker.visit_file(&ast);
 
-    let mut resolved: Vec<Candidate> = walker.found;
-    resolved.sort_by(|a, b| {
-        (a.from, a.to, a.spell, &a.replacement).cmp(&(b.from, b.to, b.spell, &b.replacement))
-    });
-    resolved.dedup_by(|a, b| {
-        a.from == b.from && a.to == b.to && a.spell == b.spell && a.replacement == b.replacement
-    });
+    let resolved = in_source_order(walker.found);
 
     let (kept, dropped): (Vec<_>, Vec<_>) = resolved.into_iter().partition(|c| splices(&src, c));
     Ok(Found {
         sites: number(file, &file_hash, &src, kept),
         dropped: dropped.len(),
     })
+}
+
+// Source order, and one candidate where the walk reached the same one twice.
+fn in_source_order(mut found: Vec<Candidate>) -> Vec<Candidate> {
+    found.sort_by(|a, b| {
+        (a.from, a.to, a.spell, &a.replacement).cmp(&(b.from, b.to, b.spell, &b.replacement))
+    });
+    found.dedup_by(|a, b| {
+        a.from == b.from && a.to == b.to && a.spell == b.spell && a.replacement == b.replacement
+    });
+    found
 }
 
 // A candidate before it is a site: spans in bytes, and where it lives.
@@ -1067,5 +1072,120 @@ mod tests {
         assert_eq!(succeeding("007"), None);
         assert_eq!(succeeding("0x10"), None);
         assert_eq!(succeeding("1_000"), None);
+    }
+
+    fn candidate(spell: Spell, from: usize, to: usize, replacement: &str) -> Candidate {
+        Candidate {
+            spell,
+            from,
+            to,
+            replacement: replacement.into(),
+            enclosing: None,
+        }
+    }
+
+    #[test]
+    fn candidates_come_in_source_order_and_a_repeated_one_is_kept_once() {
+        let found = vec![
+            candidate(Spell::Compare, 8, 10, ">"),
+            candidate(Spell::Compare, 2, 4, ">"),
+            candidate(Spell::Compare, 2, 4, ">"),
+            // The same place with another replacement, another spell, or
+            // another end is another wekufe.
+            candidate(Spell::Compare, 2, 4, "<"),
+            candidate(Spell::Negate, 2, 4, ">"),
+            candidate(Spell::Compare, 2, 5, ">"),
+        ];
+
+        let ordered: Vec<_> = in_source_order(found)
+            .into_iter()
+            .map(|c| (c.from, c.to, c.spell, c.replacement))
+            .collect();
+
+        assert_eq!(
+            ordered,
+            [
+                (2, 4, Spell::Compare, "<".to_string()),
+                (2, 4, Spell::Compare, ">".to_string()),
+                (2, 4, Spell::Negate, ">".to_string()),
+                (2, 5, Spell::Compare, ">".to_string()),
+                (8, 10, Spell::Compare, ">".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_wekufe_is_kept_only_when_it_differs_and_still_parses() {
+        let text = "fn f(a: i32) -> bool { a >= 1 }";
+        let src = Source::new(text);
+        let at = text.find(">=").unwrap();
+
+        assert!(splices(&src, &candidate(Spell::Compare, at, at + 2, ">")));
+        // Nothing changes, so nothing is measured.
+        assert!(!splices(&src, &candidate(Spell::Compare, at, at + 2, ">=")));
+        // A replacement that is not Rust is dropped before anyone casts it.
+        assert!(!splices(
+            &src,
+            &candidate(Spell::Compare, at, at + 2, "=>=")
+        ));
+        // A span outside the text is not a site at all.
+        assert!(!splices(&src, &candidate(Spell::Compare, 900, 902, ">")));
+    }
+
+    #[test]
+    fn an_impl_method_gets_sites_unless_it_is_test_only_or_unsafe() {
+        let sites = |method: &str| {
+            of(
+                Spell::Compare,
+                &format!(
+                    "pub struct S; impl S {{ {method} fn f(&self, a: i32) -> bool {{ a >= 1 }} }}"
+                ),
+            )
+        };
+
+        assert_eq!(sites(""), [(">=".to_string(), ">".to_string())]);
+        assert!(sites("#[cfg(test)]").is_empty());
+        assert!(sites("unsafe").is_empty());
+    }
+
+    #[test]
+    fn a_literal_with_a_leading_zero_is_not_succeeded() {
+        assert_eq!(succeeding("01"), None);
+        assert_eq!(succeeding("00"), None);
+        assert_eq!(succeeding("10"), Some("11".to_string()));
+    }
+
+    #[test]
+    fn a_type_is_named_by_its_last_segment_through_references() {
+        let name = |t: &str| type_name(&syn::parse_str::<syn::Type>(t).unwrap());
+
+        assert_eq!(name("Foo"), "Foo");
+        assert_eq!(name("a::b::Foo<T>"), "Foo");
+        assert_eq!(name("&Foo"), "Foo");
+        assert_eq!(name("&'a mut Foo"), "Foo");
+        assert_eq!(name("&&Foo"), "Foo");
+        assert_eq!(name("[u8]"), "_");
+        assert_eq!(name("(A, B)"), "_");
+        let empty = syn::Type::Path(syn::TypePath {
+            attrs: vec![],
+            qself: None,
+            path: syn::Path {
+                leading_colon: None,
+                segments: syn::punctuated::Punctuated::new(),
+            },
+        });
+        assert_eq!(type_name(&empty), "_");
+    }
+
+    #[test]
+    fn a_call_pattern_is_an_exact_name_or_a_prefix_ending_in_a_star() {
+        assert!(matches("Logger.info", "Logger.info"));
+        assert!(!matches("Logger.info", "Logger.warn"));
+        assert!(matches("Logger.info", "Logger.*"));
+        assert!(matches("Logger.", "Logger.*"));
+        assert!(!matches("Other.info", "Logger.*"));
+        // A star anywhere but the end is not a pattern this reads.
+        assert!(!matches("Logger.info", "Log*r.info"));
+        assert!(!matches("Logger.info", "*Logger.info"));
     }
 }
