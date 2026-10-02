@@ -107,7 +107,7 @@ fn it_greets_finds_sites_and_leaves() {
     let ready = k.hello(&project.0);
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["language"], "rust");
-    assert_eq!(ready["capabilities"], json!(["cast"]));
+    assert_eq!(ready["capabilities"], json!(["cast", "abort"]));
     assert!(ready["runtime"].as_str().unwrap().contains("edition 2024"));
 
     let found = k.sites(&["src/lib.rs"]);
@@ -435,5 +435,113 @@ fn a_kalku_that_was_only_prepared_can_cast() {
         "site": weaker, "tests": ["src/lib.rs::tests::one_is_inside"]}));
 
     assert_eq!(cast["outcome"], "killed", "{cast}");
+    k.leave();
+}
+
+// A test that, once told to, writes the id of its own process where the test
+// below can see it and then sleeps for a minute.
+const SLOW: &str = "pub fn gate(a: i32) -> bool { a >= 1 }\n\
+    #[cfg(test)]\nmod tests {\n    use super::*;\n\
+    #[test]\n    fn slow() {\n\
+        assert!(gate(1));\n\
+        if let Ok(path) = std::fs::read_to_string(\"flag\") {\n\
+            std::fs::write(path.trim(), std::process::id().to_string()).unwrap();\n\
+            std::thread::sleep(std::time::Duration::from_secs(60));\n\
+        }\n    }\n}\n";
+
+impl Kalku {
+    fn send(&mut self, request: Value) {
+        writeln!(self.stdin, "{request}").unwrap();
+        self.stdin.flush().unwrap();
+    }
+
+    fn read(&mut self) -> Value {
+        let mut line = String::new();
+        self.stdout.read_line(&mut line).unwrap();
+        serde_json::from_str(line.trim_end()).unwrap_or_else(|e| panic!("{e}: {line:?}"))
+    }
+}
+
+// A killed process that its new parent has not reaped yet is a zombie: it
+// still answers `kill -0`, but it is not running.
+#[cfg(unix)]
+fn alive(pid: i32) -> bool {
+    let out = Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    let state = String::from_utf8_lossy(&out.stdout);
+    let state = state.trim();
+    !state.is_empty() && !state.starts_with('Z')
+}
+
+// The timeout is the kaikai side's, and what it says is `abort`. The cast
+// that is running stops, what it started dies with it, the file is back, and
+// the same kalku goes on to the next cast.
+#[cfg(unix)]
+#[test]
+fn an_abort_stops_a_running_cast_and_the_kalku_casts_again() {
+    let project = Project::new("aborts", "2024", &[("src/lib.rs", SLOW)]);
+    let mut k = Kalku::summon();
+    assert_eq!(
+        k.hello(&project.0)["capabilities"],
+        json!(["cast", "abort"])
+    );
+    k.ask(json!({"type": "prepare", "id": 2}));
+    let baseline = k.ask(json!({"type": "baseline", "id": 3}));
+    assert_eq!(baseline["status"], "green", "{baseline}");
+    let weaker = {
+        let mut s = site(&mut k, "compare", ">=");
+        s["replacement"] = ">=".into();
+        s
+    };
+    // From here on the test sleeps, and says where it is.
+    let pidfile = project.0.join("slow.pid");
+    fs::write(
+        project.0.join(".reni/work/0/flag"),
+        pidfile.to_str().unwrap(),
+    )
+    .unwrap();
+
+    k.send(
+        json!({"type": "cast", "id": 10, "wekufe": "w", "site": weaker,
+        "tests": ["src/lib.rs::tests::slow"]}),
+    );
+    let started = std::time::Instant::now();
+    while !pidfile.exists() {
+        assert!(started.elapsed().as_secs() < 90, "the cast never started");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let pid: i32 = fs::read_to_string(&pidfile)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    k.send(json!({"type": "abort", "id": 11, "cast": 10}));
+
+    // The first thing said is the abort's answer: the cast gets none.
+    let aborted = k.read();
+    assert_eq!(aborted["type"], "aborted", "{aborted}");
+    assert_eq!(aborted["cast"], 10);
+    assert_eq!(aborted["restored"], true);
+    assert!(started.elapsed().as_secs() < 30);
+    // The kill is a signal, and the process takes a moment to go.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while alive(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(!alive(pid), "the test the cast started outlived the abort");
+
+    // Same kalku, next cast: the file was put back and the build is sound.
+    fs::remove_file(project.0.join(".reni/work/0/flag")).unwrap();
+    let again = k.ask(
+        json!({"type": "cast", "id": 12, "wekufe": "w", "site": weaker,
+        "tests": ["src/lib.rs::tests::slow"]}),
+    );
+    assert_eq!(again["outcome"], "survived", "{again}");
+    assert_eq!(
+        fs::read_to_string(project.0.join("src/lib.rs")).unwrap(),
+        SLOW
+    );
     k.leave();
 }

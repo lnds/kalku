@@ -9,6 +9,7 @@
 //! test's duration is the time of running it alone, and its result is read
 //! from the lines libtest prints.
 
+use crate::cancel::{Stop, capture};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -65,6 +66,10 @@ pub trait Project {
     fn read(&self, file: &str) -> io::Result<String>;
     /// Overwrite a file of the copy.
     fn write(&mut self, file: &str, text: &str) -> io::Result<()>;
+    /// What the operations that follow look at to know they should stop; one
+    /// that is stopped fails with `Interrupted`. A project that cannot be
+    /// stopped ignores it.
+    fn set_stop(&mut self, _stop: Option<Stop>) {}
 }
 
 pub struct Cargo {
@@ -73,6 +78,7 @@ pub struct Cargo {
     work: PathBuf,
     target_dir: PathBuf,
     env: Vec<(String, String)>,
+    stop: Option<Stop>,
 }
 
 // What a build needs from the environment of whoever started the kalku;
@@ -107,6 +113,7 @@ impl Cargo {
             target_dir: reni.join("target").join(worker.to_string()),
             reni,
             env,
+            stop: None,
         }
     }
 
@@ -131,10 +138,9 @@ impl Project for Cargo {
     }
 
     fn build(&mut self) -> io::Result<Build> {
-        let out = self
-            .cargo()
-            .args(["test", "--no-run", "--workspace", "--message-format=json"])
-            .output()?;
+        let mut command = self.cargo();
+        command.args(["test", "--no-run", "--workspace", "--message-format=json"]);
+        let out = capture(command, self.stop.as_ref())?;
         let stdout = String::from_utf8_lossy(&out.stdout);
         if out.status.success() {
             Ok(Build::Built(artifacts(&stdout, &self.work)))
@@ -149,12 +155,12 @@ impl Project for Cargo {
     }
 
     fn list(&mut self, target: &Target) -> io::Result<Vec<String>> {
-        let out = self
-            .cargo()
+        let mut command = self.cargo();
+        command
             .args(["test", "-p", &target.package])
             .args(&target.select)
-            .args(["--", "--list"])
-            .output()?;
+            .args(["--", "--list"]);
+        let out = capture(command, self.stop.as_ref())?;
         Ok(listing(&String::from_utf8_lossy(&out.stdout)))
     }
 
@@ -164,7 +170,7 @@ impl Project for Cargo {
         if !names.is_empty() {
             c.arg("--").arg("--exact").args(names);
         }
-        let out = c.output()?;
+        let out = capture(c, self.stop.as_ref())?;
         Ok(Ran {
             results: results(&String::from_utf8_lossy(&out.stdout)),
             success: out.status.success(),
@@ -177,6 +183,10 @@ impl Project for Cargo {
 
     fn write(&mut self, file: &str, text: &str) -> io::Result<()> {
         fs::write(self.work.join(file), text)
+    }
+
+    fn set_stop(&mut self, stop: Option<Stop>) {
+        self.stop = stop;
     }
 }
 
