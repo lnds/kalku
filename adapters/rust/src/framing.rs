@@ -116,4 +116,77 @@ mod tests {
     fn nothing_is_nothing() {
         assert_eq!(lines("", 4), []);
     }
+
+    // The line arrives in pieces smaller than itself, as it does from a pipe.
+    #[test]
+    fn a_line_longer_than_the_reader_buffer_is_still_one_line() {
+        let mut reader = io::BufReader::with_capacity(3, "abcdefgh\nij\n".as_bytes());
+
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("abcdefgh".into()))
+        );
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("ij".into()))
+        );
+        assert_eq!(read_line(&mut reader, 100).unwrap(), None);
+    }
+
+    #[test]
+    fn a_long_line_arriving_in_pieces_is_too_long_and_the_next_is_whole() {
+        let mut reader = io::BufReader::with_capacity(4, "abcdefghij\nok\n".as_bytes());
+
+        assert_eq!(read_line(&mut reader, 6).unwrap(), Some(Line::TooLong));
+        assert_eq!(
+            read_line(&mut reader, 6).unwrap(),
+            Some(Line::Text("ok".into()))
+        );
+    }
+
+    // The limit is on the line, so a line of exactly `max` bytes is whole and
+    // one byte more is not, however the bytes arrive.
+    #[test]
+    fn a_line_of_exactly_the_limit_is_whole_and_one_byte_more_is_too_long() {
+        for capacity in [2, 3, 64] {
+            let read = |text: &str| {
+                let mut reader = io::BufReader::with_capacity(capacity, text.as_bytes());
+                read_line(&mut reader, 3).unwrap()
+            };
+
+            assert_eq!(read("abc\n"), Some(Line::Text("abc".into())), "{capacity}");
+            assert_eq!(read("abcd\n"), Some(Line::TooLong), "{capacity}");
+            assert_eq!(read("abc"), Some(Line::Text("abc".into())), "{capacity}");
+            assert_eq!(read("abcd"), Some(Line::TooLong), "{capacity}");
+        }
+    }
+
+    #[test]
+    fn bytes_that_are_not_utf8_are_a_line_that_is_not_json() {
+        let mut reader = io::BufReader::new(&b"\xff\xfe\nok\n"[..]);
+
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("\u{0}".into()))
+        );
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("ok".into()))
+        );
+    }
+
+    #[test]
+    fn a_carriage_return_before_the_newline_is_not_part_of_the_line() {
+        let mut reader = io::BufReader::new(&b"ab\r\ncd\r\n"[..]);
+
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("ab".into()))
+        );
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("cd".into()))
+        );
+        assert_eq!(read_line(&mut reader, 100).unwrap(), None);
+    }
 }

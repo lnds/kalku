@@ -482,3 +482,742 @@ fn name(r: &Request) -> &'static str {
         Request::Shutdown => "shutdown",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project::{Ran, Result_};
+    use serde_json::json;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::fs;
+    use std::io;
+    use std::rc::Rc;
+
+    // What the fake project was asked, shared with the test that built it.
+    #[derive(Default)]
+    struct Seen {
+        runs: Vec<(String, Vec<String>)>,
+        writes: Vec<(String, String)>,
+    }
+
+    // What running the named tests of a target says.
+    type Running = Box<dyn FnMut(&Target, &[String]) -> io::Result<Ran>>;
+
+    struct Fake {
+        seen: Rc<RefCell<Seen>>,
+        files: HashMap<String, String>,
+        copy_fails: bool,
+        builds: VecDeque<io::Result<Build>>,
+        targets: Vec<Target>,
+        listing: HashMap<String, Vec<String>>,
+        list_fails: bool,
+        ran: Running,
+        // The write that fails, counting from one.
+        write_fails_at: Option<usize>,
+        unreadable: bool,
+    }
+
+    fn io_error(what: &str) -> io::Error {
+        io::Error::other(what.to_string())
+    }
+
+    fn target(file: &str) -> Target {
+        Target {
+            package: "p".into(),
+            select: vec!["--lib".into()],
+            file: file.into(),
+        }
+    }
+
+    fn pass(name: &str) -> Result_ {
+        Result_ {
+            name: name.into(),
+            passed: true,
+            message: String::new(),
+        }
+    }
+
+    fn fail(name: &str, message: &str) -> Result_ {
+        Result_ {
+            name: name.into(),
+            passed: false,
+            message: message.into(),
+        }
+    }
+
+    impl Fake {
+        fn new() -> (Fake, Rc<RefCell<Seen>>) {
+            let seen = Rc::new(RefCell::new(Seen::default()));
+            let fake = Fake {
+                seen: seen.clone(),
+                files: HashMap::from([("src/lib.rs".to_string(), "a >= 1".to_string())]),
+                copy_fails: false,
+                builds: VecDeque::new(),
+                targets: vec![target("src/lib.rs")],
+                listing: HashMap::from([(
+                    "src/lib.rs".to_string(),
+                    vec!["t::one".to_string(), "t::two".to_string()],
+                )]),
+                list_fails: false,
+                ran: Box::new(|_, names| {
+                    Ok(Ran {
+                        results: names.iter().map(|n| pass(n)).collect(),
+                        success: true,
+                    })
+                }),
+                write_fails_at: None,
+                unreadable: false,
+            };
+            (fake, seen)
+        }
+    }
+
+    impl Project for Fake {
+        fn copy(&mut self) -> io::Result<()> {
+            if self.copy_fails {
+                Err(io_error("disk full"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn build(&mut self) -> io::Result<Build> {
+            self.builds
+                .pop_front()
+                .unwrap_or_else(|| Ok(Build::Built(self.targets.clone())))
+        }
+
+        fn list(&mut self, target: &Target) -> io::Result<Vec<String>> {
+            if self.list_fails {
+                return Err(io_error("cannot list"));
+            }
+            Ok(self.listing.get(&target.file).cloned().unwrap_or_default())
+        }
+
+        fn run(&mut self, target: &Target, names: &[String]) -> io::Result<Ran> {
+            self.seen
+                .borrow_mut()
+                .runs
+                .push((target.file.clone(), names.to_vec()));
+            (self.ran)(target, names)
+        }
+
+        fn read(&self, file: &str) -> io::Result<String> {
+            if self.unreadable {
+                return Err(io_error("gone"));
+            }
+            self.files
+                .get(file)
+                .cloned()
+                .ok_or_else(|| io_error("no such file"))
+        }
+
+        fn write(&mut self, file: &str, text: &str) -> io::Result<()> {
+            let mut seen = self.seen.borrow_mut();
+            seen.writes.push((file.to_string(), text.to_string()));
+            if self.write_fails_at == Some(seen.writes.len()) {
+                return Err(io_error("read-only"));
+            }
+            Ok(())
+        }
+    }
+
+    struct Fixed(Result<Option<String>, String>);
+
+    impl Editions for Fixed {
+        fn of(&mut self, _file: &Path) -> Result<Option<String>, String> {
+            self.0.clone()
+        }
+    }
+
+    fn service_with(fake: Fake, edition: Result<Option<String>, String>) -> Service {
+        let mut fake = Some(fake);
+        let mut edition = Some(edition);
+        Service::with(
+            "0.0.0",
+            Box::new(|| {
+                Ok(Toolchain {
+                    version_line: "rustc 1.98.1".into(),
+                    release: (1, 98, 1),
+                    host: "h".into(),
+                })
+            }),
+            Box::new(move |_| Box::new(Fixed(edition.take().unwrap_or(Ok(None))))),
+            Box::new(move |_| Box::new(fake.take().expect("one project per hello"))),
+        )
+    }
+
+    fn greeted(fake: Fake) -> Service {
+        greeted_in(fake, "/nowhere", Ok(Some("2024".into())))
+    }
+
+    fn greeted_in(fake: Fake, root: &str, edition: Result<Option<String>, String>) -> Service {
+        let mut service = service_with(fake, edition);
+        let said = say(
+            &mut service,
+            json!({"type": "hello", "id": 1, "protocol": 1, "root": root,
+                "reni": "/reni", "worker": 0, "inline_limit_bytes": 1, "env": {}}),
+        );
+        assert_eq!(said["type"], "ready", "{said}");
+        service
+    }
+
+    fn say(service: &mut Service, request: serde_json::Value) -> serde_json::Value {
+        match service.handle(&request.to_string()) {
+            Step::Reply(r) | Step::Stop(r) => serde_json::from_str(&r).unwrap(),
+        }
+    }
+
+    fn site(original: &str, replacement: &str) -> serde_json::Value {
+        json!({"site_id": "abc", "file": "src/lib.rs", "ordinal": 1,
+            "span": {"start": {"line": 1, "col": 3, "byte": 2},
+                     "end": {"line": 1, "col": 5, "byte": 4}},
+            "spell": "compare", "original": original, "replacement": replacement,
+            "reload": "module"})
+    }
+
+    fn cast(service: &mut Service, site: serde_json::Value, tests: &[&str]) -> serde_json::Value {
+        say(
+            service,
+            json!({"type": "cast", "id": 9, "wekufe": "abc", "site": site, "tests": tests}),
+        )
+    }
+
+    fn prepared_and_baselined(fake: Fake) -> Service {
+        let mut service = greeted(fake);
+        assert_eq!(
+            say(&mut service, json!({"type": "prepare", "id": 2}))["type"],
+            "prepared"
+        );
+        service
+    }
+
+    #[test]
+    fn every_request_is_named_by_its_wire_name() {
+        let hello = Hello {
+            protocol: 1,
+            root: String::new(),
+            reni: String::new(),
+            worker: 0,
+            inline_limit_bytes: 0,
+            env: vec![],
+        };
+        let sites = SitesRequest {
+            files: vec![],
+            spells: vec![],
+            exclude_calls: vec![],
+        };
+        let names = [
+            (Request::Hello(hello), "hello"),
+            (Request::Prepare, "prepare"),
+            (Request::Baseline, "baseline"),
+            (Request::Sites(sites), "sites"),
+            (
+                Request::Cast {
+                    wekufe: String::new(),
+                    site: json!({}),
+                    tests: vec![],
+                },
+                "cast",
+            ),
+            (Request::Abort { cast: 1 }, "abort"),
+            (Request::Reset, "reset"),
+            (Request::Reload { files: vec![] }, "reload"),
+            (Request::Delegate, "delegate"),
+            (Request::Shutdown, "shutdown"),
+        ];
+        for (request, wire) in names {
+            assert_eq!(name(&request), wire);
+        }
+    }
+
+    #[test]
+    fn what_it_does_not_answer_is_a_fatal_error_naming_the_request() {
+        let (fake, _) = Fake::new();
+        let mut service = greeted(fake);
+
+        let said = say(&mut service, json!({"type": "reset", "id": 4}));
+
+        assert_eq!(said["code"], "not_implemented");
+        assert_eq!(said["fatal"], true);
+        assert!(said["message"].as_str().unwrap().contains("`reset`"));
+    }
+
+    #[test]
+    fn nothing_but_hello_works_before_hello() {
+        let (fake, _) = Fake::new();
+        let mut service = service_with(fake, Ok(Some("2024".into())));
+
+        for request in [
+            json!({"type": "prepare", "id": 2}),
+            json!({"type": "baseline", "id": 3}),
+            json!({"type": "sites", "id": 4, "files": [], "spells": [], "exclude_calls": []}),
+            json!({"type": "cast", "id": 5, "wekufe": "a", "site": site("a", "b"), "tests": []}),
+        ] {
+            let said = say(&mut service, request);
+            assert_eq!(said["code"], "not_ready", "{said}");
+            assert_eq!(said["fatal"], false);
+            assert_eq!(said["message"], "`hello` has to come first");
+        }
+    }
+
+    #[test]
+    fn baseline_and_cast_need_a_prepare_first() {
+        let (fake, _) = Fake::new();
+        let mut service = greeted(fake);
+
+        let baseline = say(&mut service, json!({"type": "baseline", "id": 3}));
+        let cast_ = cast(&mut service, site(">=", ">"), &["x"]);
+
+        for said in [baseline, cast_] {
+            assert_eq!(said["code"], "not_ready");
+            assert_eq!(said["fatal"], false);
+            assert_eq!(said["message"], "`prepare` has to come first");
+        }
+    }
+
+    #[test]
+    fn a_prepare_that_cannot_finish_says_why_and_is_fatal() {
+        type Setup = fn(&mut Fake);
+        let cases: [(Setup, &str); 4] = [
+            (
+                |f| f.copy_fails = true,
+                "cannot copy the project: disk full",
+            ),
+            (
+                |f| f.builds.push_back(Err(io_error("no cargo"))),
+                "cannot run cargo: no cargo",
+            ),
+            (
+                |f| f.builds.push_back(Ok(Build::Failed("error[E0308]".into()))),
+                "error[E0308]",
+            ),
+            (|f| f.list_fails = true, "cannot list tests: cannot list"),
+        ];
+        for (setup, message) in cases {
+            let (mut fake, _) = Fake::new();
+            setup(&mut fake);
+            let mut service = greeted(fake);
+
+            let said = say(&mut service, json!({"type": "prepare", "id": 2}));
+
+            assert_eq!(said["code"], "prepare_failed", "{said}");
+            assert_eq!(said["fatal"], true);
+            assert_eq!(said["message"], message);
+        }
+    }
+
+    #[test]
+    fn a_prepare_counts_the_executables_it_built() {
+        let (mut fake, _) = Fake::new();
+        fake.targets = vec![target("src/lib.rs"), target("tests/pipe.rs")];
+        let mut service = greeted(fake);
+
+        let said = say(&mut service, json!({"type": "prepare", "id": 2}));
+
+        assert_eq!(said["modules"], 2);
+    }
+
+    #[test]
+    fn a_baseline_lists_every_test_with_its_file_and_a_green_status() {
+        let (fake, _) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["status"], "green");
+        assert_eq!(said["failures"], json!([]));
+        let tests: Vec<_> = said["tests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| (t["test"].as_str().unwrap(), t["file"].as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            tests,
+            [
+                ("src/lib.rs::t::one", "src/lib.rs"),
+                ("src/lib.rs::t::two", "src/lib.rs")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_baseline_is_red_with_the_message_of_each_failing_test() {
+        let (mut fake, _) = Fake::new();
+        fake.ran = Box::new(|_, names| {
+            let name = &names[0];
+            Ok(Ran {
+                results: if name == "t::one" {
+                    vec![fail(name, "assertion failed")]
+                } else if name == "t::two" {
+                    vec![]
+                } else {
+                    vec![pass(name)]
+                },
+                success: false,
+            })
+        });
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["status"], "red");
+        assert_eq!(
+            said["failures"],
+            json!([
+                {"test": "src/lib.rs::t::one", "message": "assertion failed"},
+                {"test": "src/lib.rs::t::two", "message": "the test did not report a result"}
+            ])
+        );
+    }
+
+    #[test]
+    fn a_baseline_that_cannot_run_a_test_is_fatal() {
+        let (mut fake, _) = Fake::new();
+        fake.ran = Box::new(|_, _| Err(io_error("spawn failed")));
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["code"], "baseline_failed");
+        assert_eq!(said["fatal"], true);
+        assert_eq!(said["message"], "spawn failed");
+    }
+
+    #[test]
+    fn a_cast_splices_the_site_runs_the_tests_and_restores_the_file() {
+        let (mut fake, seen) = Fake::new();
+        fake.ran = Box::new(|_, names| {
+            Ok(Ran {
+                results: vec![fail(&names[0], "boom")],
+                success: false,
+            })
+        });
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
+
+        assert_eq!(said["outcome"], "killed", "{said}");
+        assert_eq!(said["killed_by"], "src/lib.rs::t::one");
+        let seen = seen.borrow();
+        assert_eq!(
+            seen.writes,
+            [
+                ("src/lib.rs".to_string(), "a > 1".to_string()),
+                ("src/lib.rs".to_string(), "a >= 1".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn tests_of_one_executable_run_together_and_in_the_order_asked() {
+        let (mut fake, seen) = Fake::new();
+        fake.targets = vec![target("src/lib.rs"), target("tests/pipe.rs")];
+        fake.listing
+            .insert("tests/pipe.rs".into(), vec!["p::three".into()]);
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(
+            &mut service,
+            site(">=", ">"),
+            &[
+                "src/lib.rs::t::two",
+                "tests/pipe.rs::p::three",
+                "src/lib.rs::t::one",
+            ],
+        );
+
+        assert_eq!(said["outcome"], "survived", "{said}");
+        assert_eq!(
+            seen.borrow().runs,
+            [
+                (
+                    "src/lib.rs".to_string(),
+                    vec!["t::two".to_string(), "t::one".to_string()]
+                ),
+                ("tests/pipe.rs".to_string(), vec!["p::three".to_string()])
+            ]
+        );
+    }
+
+    #[test]
+    fn a_wekufe_that_does_not_compile_is_a_compile_error_with_the_message() {
+        let (mut fake, _) = Fake::new();
+        fake.builds
+            .push_back(Ok(Build::Built(vec![target("src/lib.rs")])));
+        fake.builds
+            .push_back(Ok(Build::Failed("expected `;`".into())));
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
+
+        assert_eq!(said["outcome"], "compile_error");
+        assert_eq!(said["message"], "expected `;`");
+        assert_eq!(said["dirty"], false);
+    }
+
+    // A test process that aborted is not a test that passed.
+    #[test]
+    fn a_test_that_never_reported_in_a_failed_run_is_a_kill() {
+        let (mut fake, _) = Fake::new();
+        fake.ran = Box::new(|_, _| {
+            Ok(Ran {
+                results: vec![],
+                success: false,
+            })
+        });
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::two"]);
+
+        assert_eq!(said["outcome"], "killed");
+        assert_eq!(said["killed_by"], "src/lib.rs::t::two");
+    }
+
+    // A clean run that left a test out says nothing about that test.
+    #[test]
+    fn a_test_that_never_reported_in_a_clean_run_is_an_error_not_a_survivor() {
+        let (mut fake, _) = Fake::new();
+        fake.ran = Box::new(|_, _| {
+            Ok(Ran {
+                results: vec![],
+                success: true,
+            })
+        });
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::two"]);
+
+        assert_eq!(said["code"], "unknown_test");
+        assert_eq!(said["fatal"], false);
+    }
+
+    #[test]
+    fn a_test_the_baseline_never_listed_is_unknown() {
+        let (fake, _) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::nope"]);
+
+        assert_eq!(said["code"], "unknown_test");
+        assert_eq!(said["fatal"], false);
+        assert!(
+            said["message"]
+                .as_str()
+                .unwrap()
+                .contains("src/lib.rs::nope")
+        );
+    }
+
+    #[test]
+    fn a_site_that_does_not_say_where_it_is_is_refused() {
+        let (fake, _) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+        let mut headless = site(">=", ">");
+        headless["span"] = json!({});
+
+        let said = cast(&mut service, headless, &["src/lib.rs::t::one"]);
+
+        assert_eq!(said["code"], "bad_request");
+        assert_eq!(said["fatal"], false);
+    }
+
+    #[test]
+    fn a_file_the_reni_cannot_read_or_a_site_from_other_text_is_refused() {
+        let (mut fake, seen) = Fake::new();
+        fake.unreadable = true;
+        let mut service = prepared_and_baselined(fake);
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
+        assert_eq!(said["code"], "bad_request");
+        assert!(said["message"].as_str().unwrap().contains("cannot read"));
+
+        let (fake, seen2) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+        let said = cast(&mut service, site("<=", "<"), &["src/lib.rs::t::one"]);
+        assert_eq!(said["code"], "bad_request");
+        assert!(said["message"].as_str().unwrap().contains("not the text"));
+        // Nothing was written for a site that did not fit.
+        assert!(seen.borrow().writes.is_empty());
+        assert!(seen2.borrow().writes.is_empty());
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_written_is_refused_and_nothing_runs() {
+        let (mut fake, seen) = Fake::new();
+        fake.write_fails_at = Some(1);
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
+
+        assert_eq!(said["code"], "bad_request");
+        assert!(said["message"].as_str().unwrap().contains("cannot write"));
+        assert!(seen.borrow().runs.is_empty());
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_restored_is_fatal() {
+        let (mut fake, _) = Fake::new();
+        fake.write_fails_at = Some(2);
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
+
+        assert_eq!(said["code"], "load_failed");
+        assert_eq!(said["fatal"], true);
+        assert!(said["message"].as_str().unwrap().contains("restore"));
+    }
+
+    #[test]
+    fn a_cast_that_cannot_run_its_tests_is_a_failure_of_the_cast() {
+        let (mut fake, _) = Fake::new();
+        fake.ran = Box::new(|_, _| Err(io_error("spawn failed")));
+        let mut service = prepared_and_baselined(fake);
+
+        let said = cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
+
+        assert_eq!(said["code"], "cast_failed");
+        assert_eq!(said["fatal"], true);
+    }
+
+    fn sites_of(service: &mut Service, files: &[&str]) -> serde_json::Value {
+        say(
+            service,
+            json!({"type": "sites", "id": 4, "files": files,
+                "spells": ["compare"], "exclude_calls": []}),
+        )
+    }
+
+    fn skipped(said: &serde_json::Value) -> Vec<(String, String)> {
+        said["skipped"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| {
+                (
+                    s["file"].as_str().unwrap().to_string(),
+                    s["reason"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_file_is_skipped_with_the_reason_it_cannot_be_searched() {
+        let dir = std::env::temp_dir().join(format!("kalku-svc-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(
+            dir.join("src/ok.rs"),
+            "pub fn f(a: i32) -> bool { a >= 1 }\n",
+        )
+        .unwrap();
+        fs::write(dir.join("src/broken.rs"), "fn f( {\n").unwrap();
+        let root = dir.to_str().unwrap();
+        let (fake, _) = Fake::new();
+        let mut service = greeted_in(fake, root, Ok(Some("2024".into())));
+
+        let said = sites_of(
+            &mut service,
+            &["README.md", "src/ok.rs", "src/missing.rs", "src/broken.rs"],
+        );
+
+        assert_eq!(said["type"], "sites_found");
+        assert_eq!(said["sites"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            skipped(&said),
+            [
+                ("README.md".to_string(), "not_rust".to_string()),
+                ("src/missing.rs".to_string(), "unreadable".to_string()),
+                ("src/broken.rs".to_string(), "parse_error".to_string()),
+            ]
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_in_no_package_or_an_old_edition_is_skipped_by_name() {
+        let (fake, _) = Fake::new();
+        let mut service = greeted_in(fake, "/nowhere", Ok(None));
+        let said = sites_of(&mut service, &["src/a.rs"]);
+        assert_eq!(
+            skipped(&said),
+            [("src/a.rs".to_string(), "not_in_a_package".to_string())]
+        );
+
+        let (fake, _) = Fake::new();
+        let mut service = greeted_in(fake, "/nowhere", Ok(Some("2021".into())));
+        let said = sites_of(&mut service, &["src/a.rs"]);
+        assert_eq!(
+            skipped(&said),
+            [("src/a.rs".to_string(), "unsupported_edition".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_project_cargo_cannot_read_is_a_fatal_error_not_a_skip() {
+        let (fake, _) = Fake::new();
+        let mut service = greeted_in(fake, "/nowhere", Err("no Cargo.toml".into()));
+
+        let said = sites_of(&mut service, &["src/a.rs"]);
+
+        assert_eq!(said["code"], "not_a_cargo_project");
+        assert_eq!(said["fatal"], true);
+        assert_eq!(said["message"], "no Cargo.toml");
+    }
+
+    #[test]
+    fn a_toolchain_that_is_missing_or_too_old_refuses_the_hello() {
+        let hello = json!({"type": "hello", "id": 1, "protocol": 1, "root": "/",
+            "reni": "/r", "worker": 0, "inline_limit_bytes": 1, "env": {}});
+        let probe = |release: Result<(u32, u32, u32), String>| -> Probe {
+            Box::new(move || {
+                release.clone().map(|release| Toolchain {
+                    version_line: "rustc old".into(),
+                    release,
+                    host: "h".into(),
+                })
+            })
+        };
+        let make = |p: Probe| {
+            Service::with(
+                "0",
+                p,
+                Box::new(|_| Box::new(Fixed(Ok(None)))),
+                Box::new(|_| Box::new(Fake::new().0)),
+            )
+        };
+
+        let missing = say(&mut make(probe(Err("no rustc".into()))), hello.clone());
+        let old = say(&mut make(probe(Ok((1, 84, 0)))), hello.clone());
+        let mismatch = say(
+            &mut make(probe(Ok((1, 98, 1)))),
+            json!({"type": "hello", "id": 1, "protocol": 2, "root": "/",
+                "reni": "/r", "worker": 0, "inline_limit_bytes": 1, "env": {}}),
+        );
+
+        assert_eq!(missing["code"], "toolchain_missing");
+        assert_eq!(old["code"], "unsupported_toolchain");
+        assert_eq!(mismatch["code"], "protocol_mismatch");
+        for said in [missing, old, mismatch] {
+            assert_eq!(said["fatal"], true);
+        }
+    }
+
+    #[test]
+    fn a_garbled_line_is_refused_and_a_shutdown_stops() {
+        let (fake, _) = Fake::new();
+        let mut service = greeted(fake);
+
+        let refused = match service.handle("not json") {
+            Step::Reply(r) => serde_json::from_str::<serde_json::Value>(&r).unwrap(),
+            Step::Stop(_) => panic!("a garbled line must not stop the kalku"),
+        };
+        let stopped = service.handle(r#"{"type":"shutdown","id":7}"#);
+
+        assert_eq!(refused["code"], "bad_request");
+        assert_eq!(refused["fatal"], false);
+        assert!(matches!(stopped, Step::Stop(r) if r.contains("\"bye\"")));
+    }
+}

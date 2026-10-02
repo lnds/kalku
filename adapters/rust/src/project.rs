@@ -89,12 +89,17 @@ const INHERITED: [&str; 9] = [
     "LANG",
 ];
 
+// The variables of `INHERITED` that `get` has, and nothing else.
+fn passed_on(get: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    INHERITED
+        .iter()
+        .filter_map(|k| get(k).map(|v| (k.to_string(), v)))
+        .collect()
+}
+
 impl Cargo {
     pub fn new(root: PathBuf, reni: PathBuf, worker: i64, extra: Vec<(String, String)>) -> Self {
-        let mut env: Vec<(String, String)> = INHERITED
-            .iter()
-            .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
-            .collect();
+        let mut env = passed_on(|k| std::env::var(k).ok());
         env.extend(extra);
         Cargo {
             root,
@@ -148,7 +153,7 @@ impl Project for Cargo {
             .cargo()
             .args(["test", "-p", &target.package])
             .args(&target.select)
-            .args(["--", "--list", "--format", "terse"])
+            .args(["--", "--list"])
             .output()?;
         Ok(listing(&String::from_utf8_lossy(&out.stdout)))
     }
@@ -446,6 +451,17 @@ mod tests {
     }
 
     #[test]
+    fn several_errors_are_told_one_after_the_other() {
+        let out = [
+            r#"{"reason":"compiler-message","message":{"level":"error","rendered":"first\n"}}"#,
+            r#"{"reason":"compiler-message","message":{"level":"error","rendered":"second\n"}}"#,
+        ]
+        .join("\n");
+
+        assert_eq!(diagnostics(&out), "first\n\nsecond\n");
+    }
+
+    #[test]
     fn a_copy_leaves_out_what_cargo_built_and_what_git_keeps() {
         let dir = std::env::temp_dir().join(format!("kalku-copy-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -546,6 +562,131 @@ mod tests {
 
         assert!(!to.join("old").exists());
         assert!(!to.join("b.rs").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_what_a_build_needs_is_passed_on() {
+        let everything = |k: &str| Some(format!("value of {k}"));
+        let passed: Vec<String> = passed_on(everything).into_iter().map(|(k, _)| k).collect();
+
+        assert_eq!(
+            passed,
+            [
+                "PATH",
+                "HOME",
+                "USER",
+                "TMPDIR",
+                "CARGO_HOME",
+                "RUSTUP_HOME",
+                "RUSTUP_TOOLCHAIN",
+                "RUSTFLAGS",
+                "LANG"
+            ]
+        );
+        // A secret of the caller's is not something a test run was given.
+        let only_secret = |k: &str| (k == "AWS_SECRET_ACCESS_KEY").then(|| "x".to_string());
+        assert!(passed_on(only_secret).is_empty());
+        assert_eq!(
+            passed_on(|k| (k == "RUSTUP_TOOLCHAIN").then(|| "1.85".to_string())),
+            [("RUSTUP_TOOLCHAIN".to_string(), "1.85".to_string())]
+        );
+    }
+
+    #[test]
+    fn cargo_runs_in_the_copy_with_its_own_target_directory_and_no_colour() {
+        let cargo = Cargo::new(
+            PathBuf::from("/root"),
+            PathBuf::from("/reni"),
+            3,
+            vec![("EXTRA".to_string(), "1".to_string())],
+        );
+
+        let command = cargo.cargo();
+        let envs: HashMap<_, _> = command
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+
+        assert_eq!(command.get_current_dir(), Some(Path::new("/reni/work/3")));
+        assert_eq!(envs["CARGO_TARGET_DIR"].as_deref(), Some("/reni/target/3"));
+        assert_eq!(envs["CARGO_TERM_COLOR"].as_deref(), Some("never"));
+        assert_eq!(envs["EXTRA"].as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn a_non_test_artifact_with_an_executable_is_not_a_test_target() {
+        let work = Path::new("/w");
+        let artifact = |reason: &str, test: bool| {
+            format!(
+                r#"{{"reason":"{reason}","package_id":"path+file:///w#p@1.0.0","target":{{"kind":["bin"],"name":"p","src_path":"/w/src/main.rs"}},"profile":{{"test":{test}}},"executable":"/t/p"}}"#
+            )
+        };
+
+        // The binary itself is built, with an executable, but it is not a test.
+        assert!(artifacts(&artifact("compiler-artifact", false), work).is_empty());
+        // Something that is not an artifact never names a target.
+        assert!(artifacts(&artifact("build-finished", true), work).is_empty());
+        assert_eq!(
+            artifacts(&artifact("compiler-artifact", true), work).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_failure_message_keeps_its_lines_and_stops_at_the_next_section() {
+        let out = "---- a stdout ----\nfirst\nsecond\n\nfailures:\n    a\n";
+        assert_eq!(failure_message(out, "a"), "first\nsecond");
+
+        let two = "---- a stdout ----\nfirst\n---- b stdout ----\nother\n";
+        assert_eq!(failure_message(two, "a"), "first");
+        assert_eq!(failure_message(two, "b"), "other");
+    }
+
+    // Where the project has a link, the copy has the same link, and a new
+    // target is followed.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_is_copied_and_follows_its_target_when_that_changes() {
+        let dir = scratch("links");
+        let (src, to) = (dir.join("src"), dir.join("to"));
+        fs::create_dir_all(&src).unwrap();
+        std::os::unix::fs::symlink("one", src.join("l")).unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+        assert_eq!(fs::read_link(to.join("l")).unwrap(), Path::new("one"));
+
+        fs::remove_file(src.join("l")).unwrap();
+        std::os::unix::fs::symlink("two", src.join("l")).unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+
+        assert_eq!(fs::read_link(to.join("l")).unwrap(), Path::new("two"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // A path that was a file and is now a directory, and the other way.
+    #[test]
+    fn a_file_becomes_a_directory_in_the_copy_and_back() {
+        let dir = scratch("kinds");
+        let (src, to) = (dir.join("src"), dir.join("to"));
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("x"), "file").unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+
+        fs::remove_file(src.join("x")).unwrap();
+        fs::create_dir(src.join("x")).unwrap();
+        fs::write(src.join("x/inner"), "in").unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+        assert_eq!(fs::read_to_string(to.join("x/inner")).unwrap(), "in");
+
+        fs::remove_dir_all(src.join("x")).unwrap();
+        fs::write(src.join("x"), "file again").unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+        assert_eq!(fs::read_to_string(to.join("x")).unwrap(), "file again");
         let _ = fs::remove_dir_all(&dir);
     }
 }

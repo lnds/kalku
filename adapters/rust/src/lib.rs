@@ -55,11 +55,28 @@ pub fn serve(
 pub fn run() -> i32 {
     let stdin = io::stdin();
     let stdout = io::stdout();
-    match serve(stdin.lock(), stdout.lock(), &mut Service::new()) {
+    exit_code(serve(stdin.lock(), stdout.lock(), &mut Service::new()))
+}
+
+// A conversation that ended is success; one that broke is said on stderr,
+// where the channel is not, and fails.
+fn exit_code(ended: io::Result<()>) -> i32 {
+    match ended {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("kalku-rust: {e}");
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_conversation_that_ended_exits_zero_and_one_that_broke_exits_one() {
+        assert_eq!(exit_code(Ok(())), 0);
+        assert_eq!(exit_code(Err(io::Error::other("broken pipe"))), 1);
     }
 }

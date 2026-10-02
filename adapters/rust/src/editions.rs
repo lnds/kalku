@@ -166,6 +166,48 @@ mod tests {
     }
 
     #[test]
+    fn each_thing_metadata_lacks_is_named() {
+        let said = |json: &str| parse_packages(json).unwrap_err();
+
+        assert_eq!(
+            said(r#"{"workspace_root":"/w"}"#),
+            "`cargo metadata` listed no packages"
+        );
+        assert_eq!(
+            said(r#"{"packages":[{"edition":"2024"}]}"#),
+            "a package has no manifest_path"
+        );
+        assert_eq!(
+            said(r#"{"packages":[{"manifest_path":"/w/Cargo.toml"}]}"#),
+            "a package has no edition"
+        );
+        assert_eq!(
+            said(r#"{"packages":[{"manifest_path":"","edition":"2024"}]}"#),
+            "a manifest has no directory"
+        );
+        assert!(said("nonsense").starts_with("`cargo metadata` did not print JSON"));
+    }
+
+    #[test]
+    fn a_project_cargo_cannot_be_asked_about_is_an_error_that_says_so() {
+        let missing = Cargo::new("/definitely/not/here")
+            .of(Path::new("a.rs"))
+            .unwrap_err();
+        assert!(missing.starts_with("cannot run `cargo`"), "{missing}");
+
+        let empty = std::env::temp_dir().join(format!("kalku-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&empty);
+        std::fs::create_dir_all(&empty).unwrap();
+        let unreadable = Cargo::new(&empty).of(Path::new("a.rs")).unwrap_err();
+        assert!(
+            unreadable.starts_with("`cargo metadata` failed in"),
+            "{unreadable}"
+        );
+        assert!(unreadable.contains(empty.to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
     fn the_refusal_says_what_to_change() {
         let said = unsupported("2021");
 

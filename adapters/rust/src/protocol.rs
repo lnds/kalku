@@ -567,3 +567,380 @@ fn skipped_json(s: &Skipped) -> Value {
     m.insert("message".into(), s.message.clone().into());
     Value::Object(m)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn refused(line: &str) -> DecodeError {
+        decode(line).expect_err(line)
+    }
+
+    fn bad_field(line: &str) -> String {
+        let e = refused(line);
+        assert_eq!(e.kind, ErrorKind::BadField, "{line}: {}", e.detail);
+        e.detail
+    }
+
+    const SITE: &str = r#"{"site_id":"s","file":"a.rs","ordinal":1,"enclosing":"f",
+        "span":{"start":{"line":1,"col":1,"byte":0},"end":{"line":1,"col":2,"byte":1}},
+        "spell":"compare","original":">=","replacement":">","reload":"module"}"#;
+
+    fn cast_with(change: impl Fn(&mut Value)) -> String {
+        let mut site: Value = serde_json::from_str(SITE).unwrap();
+        change(&mut site);
+        json!({"type":"cast","id":3,"wekufe":"w","site":site,"tests":[]}).to_string()
+    }
+
+    #[test]
+    fn every_kind_of_refusal_has_its_wire_name() {
+        let names = [
+            (ErrorKind::LineTooLong, "line_too_long"),
+            (ErrorKind::NotJson, "not_json"),
+            (ErrorKind::NotObject, "not_object"),
+            (ErrorKind::MissingType, "missing_type"),
+            (ErrorKind::UnknownType, "unknown_type"),
+            (ErrorKind::MissingId, "missing_id"),
+            (ErrorKind::BadField, "bad_field"),
+        ];
+        for (kind, wire) in names {
+            assert_eq!(kind.name(), wire);
+        }
+    }
+
+    #[test]
+    fn a_line_that_is_not_a_request_is_refused_by_kind() {
+        assert_eq!(refused("nonsense").kind, ErrorKind::NotJson);
+        assert_eq!(refused("[1]").kind, ErrorKind::NotObject);
+        assert_eq!(refused(r#"{"id":1}"#).kind, ErrorKind::MissingType);
+        assert_eq!(refused(r#"{"type":5,"id":1}"#).kind, ErrorKind::MissingType);
+        let unknown = refused(r#"{"type":"mutate","id":1}"#);
+        assert_eq!(
+            (unknown.kind, unknown.detail.as_str()),
+            (ErrorKind::UnknownType, "mutate")
+        );
+        assert_eq!(refused(r#"{"type":"reset"}"#).kind, ErrorKind::MissingId);
+        assert_eq!(
+            refused(r#"{"type":"reset","id":"1"}"#).kind,
+            ErrorKind::MissingId
+        );
+        assert_eq!(
+            refused(r#"{"type":"reset","id":1.5}"#).kind,
+            ErrorKind::MissingId
+        );
+    }
+
+    #[test]
+    fn a_bad_field_is_refused_with_the_id_and_the_path_to_it() {
+        let e = refused(r#"{"type":"hello","id":7,"protocol":1}"#);
+
+        assert_eq!(e.id, Some(7));
+        assert_eq!(e.detail, "root: is required");
+        assert_eq!(refused(r#"{"type":"reset"}"#).id, None);
+    }
+
+    #[test]
+    fn every_simple_request_decodes() {
+        for (line, request) in [
+            (r#"{"type":"prepare","id":1}"#, Request::Prepare),
+            (r#"{"type":"baseline","id":1}"#, Request::Baseline),
+            (r#"{"type":"reset","id":1}"#, Request::Reset),
+            (r#"{"type":"shutdown","id":1}"#, Request::Shutdown),
+            (
+                r#"{"type":"abort","id":1,"cast":4}"#,
+                Request::Abort { cast: 4 },
+            ),
+            (
+                r#"{"type":"reload","id":1,"files":["a.rs"]}"#,
+                Request::Reload {
+                    files: vec!["a.rs".into()],
+                },
+            ),
+        ] {
+            assert_eq!(decode(line).unwrap().1, request, "{line}");
+        }
+    }
+
+    #[test]
+    fn the_fields_of_a_hello_are_read_in_their_shapes() {
+        let hello = r#"{"type":"hello","id":1,"protocol":1,"root":"/r","reni":"/n",
+            "worker":2,"inline_limit_bytes":9,"env":{"A":"1"}}"#;
+
+        let (id, request) = decode(hello).unwrap();
+
+        assert_eq!(id, 1);
+        assert_eq!(
+            request,
+            Request::Hello(Hello {
+                protocol: 1,
+                root: "/r".into(),
+                reni: "/n".into(),
+                worker: 2,
+                inline_limit_bytes: 9,
+                env: vec![("A".into(), "1".into())],
+            })
+        );
+        assert_eq!(
+            bad_field(r#"{"type":"hello","id":1,"protocol":"1"}"#),
+            "protocol: must be an integer"
+        );
+        let with = |env: &str| {
+            format!(
+                r#"{{"type":"hello","id":1,"protocol":1,"root":"/r","reni":"/n","worker":0,"inline_limit_bytes":1,"env":{env}}}"#
+            )
+        };
+        assert_eq!(bad_field(&with("[]")), "env: must be an object");
+        assert_eq!(bad_field(&with(r#"{"A":1}"#)), "env.A: must be a string");
+        assert_eq!(bad_field(&with("null")), "env: is required");
+    }
+
+    #[test]
+    fn a_sites_request_names_the_list_and_the_item_that_is_wrong() {
+        let with = |files: &str, spells: &str| {
+            format!(
+                r#"{{"type":"sites","id":1,"files":{files},"spells":{spells},"exclude_calls":[]}}"#
+            )
+        };
+
+        assert_eq!(bad_field(&with("5", "[]")), "files: must be an array");
+        assert_eq!(bad_field(&with("[1]", "[]")), "files[0]: must be a string");
+        assert_eq!(
+            bad_field(&with("[]", r#"["compare","nope"]"#)),
+            "spells[1]: `nope` is not a spell"
+        );
+        match decode(&with(r#"["a.rs"]"#, r#"["arm","negate"]"#))
+            .unwrap()
+            .1
+        {
+            Request::Sites(s) => {
+                assert_eq!(s.files, ["a.rs"]);
+                assert_eq!(s.spells, [Spell::Arm, Spell::Negate]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_cast_without_its_site_says_so() {
+        assert_eq!(
+            bad_field(r#"{"type":"cast","id":1,"wekufe":"w","tests":[]}"#),
+            "site: is required"
+        );
+    }
+
+    #[test]
+    fn a_site_is_checked_field_by_field() {
+        type Change = Box<dyn Fn(&mut Value)>;
+        let cases: [(Change, &str); 14] = [
+            (Box::new(|s| *s = json!(5)), "site: must be an object"),
+            (
+                Box::new(|s| s["site_id"] = json!(1)),
+                "site.site_id: must be a string",
+            ),
+            (
+                Box::new(|s| s["enclosing"] = json!(1)),
+                "site.enclosing: must be a string",
+            ),
+            (
+                Box::new(|s| s["ordinal"] = json!("x")),
+                "site.ordinal: must be an integer",
+            ),
+            (
+                Box::new(|s| {
+                    s.as_object_mut().unwrap().remove("span");
+                }),
+                "site.span: is required",
+            ),
+            (
+                Box::new(|s| s["span"] = json!(1)),
+                "site.span: must be an object",
+            ),
+            (
+                Box::new(|s| s["span"] = json!({})),
+                "site.span.start: is required",
+            ),
+            (
+                Box::new(|s| s["span"]["start"] = json!(1)),
+                "site.span.start: must be an object",
+            ),
+            (
+                Box::new(|s| {
+                    s["span"]["start"].as_object_mut().unwrap().remove("col");
+                }),
+                "site.span.start.col: is required",
+            ),
+            (
+                Box::new(|s| s["span"]["end"] = json!("x")),
+                "site.span.end: must be an object",
+            ),
+            (
+                Box::new(|s| s["spell"] = json!("mutate")),
+                "site.spell: `mutate` is not a spell",
+            ),
+            (
+                Box::new(|s| s["original"] = json!(1)),
+                "site.original: must be a string",
+            ),
+            (
+                Box::new(|s| s["replacement"] = json!(1)),
+                "site.replacement: must be a string",
+            ),
+            (
+                Box::new(|s| s["reload"] = json!("other")),
+                "site.reload: must be `module` or `dependents`",
+            ),
+        ];
+        for (change, detail) in cases {
+            assert_eq!(bad_field(&cast_with(change)), detail);
+        }
+    }
+
+    #[test]
+    fn what_a_site_may_leave_out_it_may_leave_out() {
+        for change in [
+            (|s: &mut Value| {
+                s.as_object_mut().unwrap().remove("enclosing");
+            }) as fn(&mut Value),
+            |s| s["ordinal"] = Value::Null,
+            |s| {
+                s.as_object_mut().unwrap().remove("original");
+            },
+            |s| {
+                s["span"].as_object_mut().unwrap().remove("end");
+            },
+            |s| s["span"]["end"] = Value::Null,
+            |s| s["reload"] = json!("dependents"),
+        ] {
+            assert!(decode(&cast_with(change)).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_scope_is_exactly_one_of_all_since_or_files() {
+        let delegate = |scope: &str| format!(r#"{{"type":"delegate","id":1,"scope":{scope}}}"#);
+
+        for ok in [
+            r#"{"all":true}"#,
+            r#"{"since":"main"}"#,
+            r#"{"files":["a"]}"#,
+        ] {
+            assert_eq!(decode(&delegate(ok)).unwrap().1, Request::Delegate, "{ok}");
+        }
+        for (scope, detail) in [
+            ("1", "scope: must be an object"),
+            ("{}", "scope: needs one of `all`, `since` or `files`"),
+            (
+                r#"{"all":true,"since":"x"}"#,
+                "scope: takes exactly one of `all`, `since` or `files`",
+            ),
+            (r#"{"all":false}"#, "scope.all: can only be `true`"),
+            (r#"{"since":1}"#, "scope.since: must be a string"),
+            (r#"{"files":"a"}"#, "scope.files: must be an array"),
+        ] {
+            assert_eq!(bad_field(&delegate(scope)), detail, "{scope}");
+        }
+        assert_eq!(
+            bad_field(r#"{"type":"delegate","id":1}"#),
+            "scope: is required"
+        );
+    }
+
+    fn reply(line: &str) -> Value {
+        serde_json::from_str(line).unwrap()
+    }
+
+    #[test]
+    fn replies_carry_their_type_and_id() {
+        let prepared = reply(&prepared(3, 41, 2));
+        assert_eq!(prepared["type"], "prepared");
+        assert_eq!(prepared["duration_ms"], 41);
+        assert_eq!(prepared["modules"], 2);
+
+        let outcomes = [
+            (Outcome::Survived, "survived"),
+            (Outcome::Killed { by: "t".into() }, "killed"),
+            (
+                Outcome::CompileError {
+                    message: "m".into(),
+                },
+                "compile_error",
+            ),
+        ];
+        for (outcome, wire) in outcomes {
+            let done = reply(&cast_done(5, "w", &outcome, 7));
+            assert_eq!(done["type"], "cast_done");
+            assert_eq!(done["id"], 5);
+            assert_eq!(done["wekufe"], "w");
+            assert_eq!(done["outcome"], wire);
+            assert_eq!(done["duration_ms"], 7);
+            assert_eq!(done["dirty"], false);
+        }
+        let killed = reply(&cast_done(5, "w", &Outcome::Killed { by: "t".into() }, 7));
+        assert_eq!(killed["killed_by"], "t");
+        let compile = reply(&cast_done(
+            5,
+            "w",
+            &Outcome::CompileError {
+                message: "m".into(),
+            },
+            7,
+        ));
+        assert_eq!(compile["message"], "m");
+
+        let bye = reply(&bye(8));
+        assert_eq!(
+            (bye["type"].as_str(), bye["id"].as_i64()),
+            (Some("bye"), Some(8))
+        );
+        let err = reply(&error(2, "c", "m", true));
+        assert_eq!(err["type"], "error");
+        assert_eq!(err["code"], "c");
+        assert_eq!(err["fatal"], true);
+    }
+
+    #[test]
+    fn a_baseline_is_green_without_failures_and_red_with_them() {
+        let timed = [Timed {
+            test: "a::t".into(),
+            file: "a.rs".into(),
+            duration_ms: 4,
+        }];
+        let green = reply(&baseline_done(3, 10, &timed, &[]));
+        assert_eq!(green["type"], "baseline_done");
+        assert_eq!(green["status"], "green");
+        assert_eq!(green["duration_ms"], 10);
+        assert_eq!(
+            green["tests"],
+            json!([{"test": "a::t", "file": "a.rs", "duration_ms": 4}])
+        );
+
+        let failure = Failure {
+            test: "a::t".into(),
+            message: "boom".into(),
+        };
+        let red = reply(&baseline_done(3, 10, &timed, &[failure]));
+        assert_eq!(red["status"], "red");
+        assert_eq!(
+            red["failures"],
+            json!([{"test": "a::t", "message": "boom"}])
+        );
+    }
+
+    #[test]
+    fn a_skipped_file_is_reported_with_its_reason() {
+        let skipped = [Skipped {
+            file: "a.rs".into(),
+            reason: "parse_error".into(),
+            message: "line 1".into(),
+        }];
+
+        let found = reply(&sites_found(4, &[], &skipped));
+
+        assert_eq!(found["type"], "sites_found");
+        assert_eq!(
+            found["skipped"],
+            json!([{"file": "a.rs", "reason": "parse_error", "message": "line 1"}])
+        );
+    }
+}
