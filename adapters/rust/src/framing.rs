@@ -1,0 +1,119 @@
+//! Newline-delimited framing with a ceiling.
+//!
+//! A line longer than the limit is discarded up to the next newline without
+//! being buffered, and the next line is read as if nothing had happened: a
+//! peer that sends gigabytes without a newline must not be able to make this
+//! process hold them, and one oversized message must not cost the ones after
+//! it.
+
+use std::io::{self, BufRead};
+
+/// One line of input, or the news that it was too long to take.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Line {
+    Text(String),
+    TooLong,
+}
+
+// A line longer than the limit is discarded up to the next newline without
+// being buffered: a peer that sends gigabytes without one must not be able
+// to make this process hold them.
+pub fn read_line(input: &mut impl BufRead, max: usize) -> io::Result<Option<Line>> {
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut too_long = false;
+    let mut any = false;
+    loop {
+        let (consumed, done) = {
+            let available = input.fill_buf()?;
+            if available.is_empty() {
+                return Ok(if any {
+                    Some(finish(bytes, too_long))
+                } else {
+                    None
+                });
+            }
+            any = true;
+            match available.iter().position(|&b| b == b'\n') {
+                Some(at) => {
+                    if !too_long && bytes.len() + at <= max {
+                        bytes.extend_from_slice(&available[..at]);
+                    } else {
+                        too_long = true;
+                    }
+                    (at + 1, true)
+                }
+                None => {
+                    if !too_long && bytes.len() + available.len() <= max {
+                        bytes.extend_from_slice(available);
+                    } else {
+                        too_long = true;
+                        bytes.clear();
+                    }
+                    (available.len(), false)
+                }
+            }
+        };
+        input.consume(consumed);
+        if done {
+            return Ok(Some(finish(bytes, too_long)));
+        }
+    }
+}
+
+fn finish(bytes: Vec<u8>, too_long: bool) -> Line {
+    if too_long {
+        return Line::TooLong;
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => Line::Text(text.trim_end_matches('\r').to_string()),
+        // The protocol is UTF-8; bytes that are not are not JSON.
+        Err(_) => Line::Text(String::from("\u{0}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lines(input: &str, max: usize) -> Vec<Line> {
+        let mut reader = io::Cursor::new(input.as_bytes().to_vec());
+        let mut out = Vec::new();
+        while let Some(l) = read_line(&mut reader, max).unwrap() {
+            out.push(l);
+        }
+        out
+    }
+
+    #[test]
+    fn a_line_at_the_limit_is_read_and_one_past_it_is_not() {
+        assert_eq!(lines("abcd\n", 4), [Line::Text("abcd".into())]);
+        assert_eq!(lines("abcde\n", 4), [Line::TooLong]);
+    }
+
+    // One oversized message must not cost the messages after it.
+    #[test]
+    fn the_line_after_a_long_one_is_still_read() {
+        assert_eq!(
+            lines("toolong\nok\n", 4),
+            [Line::TooLong, Line::Text("ok".into())]
+        );
+    }
+
+    #[test]
+    fn a_last_line_with_no_newline_is_still_a_line() {
+        assert_eq!(
+            lines("ab\ncd", 4),
+            [Line::Text("ab".into()), Line::Text("cd".into())]
+        );
+    }
+
+    #[test]
+    fn a_carriage_return_is_not_part_of_the_message() {
+        assert_eq!(lines("ab\r\n", 8), [Line::Text("ab".into())]);
+    }
+
+    #[test]
+    fn nothing_is_nothing() {
+        assert_eq!(lines("", 4), []);
+    }
+}

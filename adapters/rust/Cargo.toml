@@ -1,0 +1,19 @@
+[package]
+name = "kalku-rust"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.85"
+description = "The Rust kalku: finds the places where a defect can be cast in a Rust project, and casts them"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lnds/kalku"
+publish = false
+
+[[bin]]
+name = "kalku-rust"
+path = "src/main.rs"
+
+[dependencies]
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+sha2 = "0.11.0"
+syn = { version = "3.0.6", features = ["full", "visit"] }

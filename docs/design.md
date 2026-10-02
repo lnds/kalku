@@ -93,6 +93,30 @@ kalku's score for a project will therefore often be lower than the framework's o
 
 Where frameworks emit the shared *mutation-testing-report-schema* (from the mutation-testing-elements project), one driver can read all of them. kalku also emits that schema as an output format, so its reports work with existing viewers.
 
+### The Rust kalku
+
+Rust has a mutation framework, `cargo-mutants`, and the rule above says to wrap a framework where one exists. kalku does not wrap it, and the reasons are specific rather than a preference:
+
+- **It would be a driver, and the driver path does not exist yet.** The protocol defines `delegate`; the orchestrator does not answer it. A native kalku needs nothing the orchestrator lacks.
+- **It would put the whole product behind one maintainer's output format.** Nearly all of its commits come from a single person, and its own documentation says the contents of `mutants.out` are *subject to change in future versions*. A native kalku depends on the language's parser, which is as stable as the language.
+- **kalku's value is what it adds around the mutation:** the shared spells and their hints, `exclude_calls`, declared equivalents keyed to the enclosing function, the gate on changed lines, one report across languages. A driver gets those only as far as the framework's output allows.
+
+So the Rust kalku is native, in the shape of the Elixir one: it finds sites with the language's own parser — `syn`, in a Rust program, never a scan of the text — and it owns the cast. It measures the **2024 edition only**, which needs Rust 1.85 or later: one grammar to be right about. A package on an older edition is skipped, with that reason, rather than read with rules that may not apply to it.
+
+What it does not copy from the BEAM is the warm runtime. A Rust test binary cannot be hot-loaded, so a cast rebuilds, the way the kaikai kalku's does; "warm" means a warm `target` directory in the reni. It announces `cast` and nothing it cannot do.
+
+Its spells are the shared ones, with Rust's own judgement about where each is worth proposing:
+
+| Spell | Rust forms |
+|---|---|
+| `arm` | delete a `match` arm — only when a catch-all remains, because without one the wekufe is not exhaustive and the compiler, not a test, is what rejects it |
+| `compare` | `>=`↔`>`, `<`↔`<=`, `==`↔`!=`, in expressions and in match guards |
+| `connect` | `&&`↔`\|\|` — not in a `let` chain, where `\|\|` cannot bind |
+| `negate` | `if c` → `if !(c)`, and drop a `!` |
+| `literal` | `n`→`n+1` for plain decimals within their type's range, `true`↔`false`, a non-empty string → `""` |
+
+`call` is not offered: dropping a call in Rust almost never keeps the types, so it would propose compile errors and little else, and each of those costs a build. Nothing is proposed in tests, in `unsafe fn`, in patterns, types or attributes (a literal there is structure, not a value), or in the arguments of a macro, which are tokens the parser does not read.
+
 ### The kaikai kalku
 
 kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mutate-list-json` catalogues sites from the AST, `kaic2 --mutate-apply <i>` writes the spliced source, and a shell driver owns the run loop. The kaikai kalku is a thin native kalku over those flags:
