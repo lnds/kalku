@@ -413,7 +413,10 @@ pub fn ready(id: i64, adapter: &str, runtime: &str) -> String {
                     .collect::<Vec<_>>()
                     .into(),
             ),
-            ("capabilities", vec![Value::from("cast")].into()),
+            (
+                "capabilities",
+                vec![Value::from("cast"), Value::from("abort")].into(),
+            ),
         ],
     )
 }
@@ -510,6 +513,14 @@ pub fn cast_done(id: i64, wekufe: &str, outcome: &Outcome, duration_ms: u64) -> 
     fields.push(("duration_ms", duration_ms.into()));
     fields.push(("dirty", false.into()));
     line("cast_done", id, fields)
+}
+
+pub fn aborted(id: i64, cast: i64, restored: bool) -> String {
+    line(
+        "aborted",
+        id,
+        vec![("cast", cast.into()), ("restored", restored.into())],
+    )
 }
 
 pub fn bye(id: i64) -> String {
