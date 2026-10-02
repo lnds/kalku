@@ -1,10 +1,10 @@
 #[doc("""
 What `kalku init` decides, worked out without touching a thing.
 
-A project says what it is written in — `mix.exs` means Elixir, `kai.toml`
-means kaikai — so being told is only needed when the guess would be
-wrong. Everything here is a decision about files: what to look for, what
-to write, and what to say. `main` performs it, and asks first.
+A project says what it is written in — `mix.exs` means Elixir, `Cargo.toml`
+means Rust, `kai.toml` means kaikai — so being told is only needed when the
+guess would be wrong. Everything here is a decision about files: what to look
+for, what to write, and what to say. `main` performs it, and asks first.
 
 The catalogue below is the one place the kaikai side knows a language by
 name, and it is data rather than logic: a marker to look for, and the
@@ -64,7 +64,8 @@ pub const CONFIG_PATH : String = ".kalku.toml"
 #[doc("Every language this kalku can set a project up for.")]
 pub fn catalogue() : [Known] = [
   Known { language: "elixir", marker: "mix.exs", summon: elixir_summoner() },
-  Known { language: "kaikai", marker: "kai.toml", summon: kaikai_summoner() }
+  Known { language: "kaikai", marker: "kai.toml", summon: kaikai_summoner() },
+  Known { language: "rust", marker: "Cargo.toml", summon: rust_summoner() }
 ]
 
 #[doc("""
@@ -217,6 +218,28 @@ set -eu
 shift
 
 exec kalku-kaikai "$@"
+"""
+
+# The Rust kalku is told where the reni is through `hello` and builds
+# nothing on the way up — `prepare` is where cargo runs, and its output
+# goes to stderr there — so the argument is taken off and the kalku is
+# started as it is.
+fn rust_summoner() : String = """
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the Rust kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol. Nothing is built here: cargo runs
+# inside `prepare`, with its output on stderr.
+set -eu
+
+# Every summoning is handed the reni first. This kalku is told where the
+# reni is through `hello`, so the argument is taken off here rather than
+# passed on.
+: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
+shift
+
+exec kalku-rust "$@"
 """
 
 # A kalku runs inside the project's own runtime, so the project has to

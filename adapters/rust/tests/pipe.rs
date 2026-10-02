@@ -389,3 +389,51 @@ fn a_root_reached_through_a_symlink_still_finds_its_packages() {
     assert!(!found["sites"].as_array().unwrap().is_empty());
     k.leave();
 }
+
+// Workers share one reni, so each keeps its own copy and its own build
+// directory in it: two casts at once must not write into the same tree.
+#[test]
+fn workers_sharing_a_reni_each_keep_their_own_copy() {
+    let project = Project::new("workers", "2024", &[("src/lib.rs", TESTED)]);
+    let reni = project.0.join(".reni");
+    let hello = |k: &mut Kalku, worker: i64| {
+        k.ask(json!({
+            "type": "hello", "id": 1, "protocol": 1, "root": project.0, "reni": reni,
+            "worker": worker, "inline_limit_bytes": 65536, "env": {}
+        }))
+    };
+    let (mut a, mut b) = (Kalku::summon(), Kalku::summon());
+    hello(&mut a, 0);
+    hello(&mut b, 1);
+
+    let (pa, pb) = (
+        a.ask(json!({"type": "prepare", "id": 2})),
+        b.ask(json!({"type": "prepare", "id": 2})),
+    );
+
+    assert_eq!(pa["type"], "prepared", "{pa}");
+    assert_eq!(pb["type"], "prepared", "{pb}");
+    assert!(reni.join("work/0/src/lib.rs").exists());
+    assert!(reni.join("work/1/src/lib.rs").exists());
+    a.leave();
+    b.leave();
+}
+
+// The kaikai side asks one kalku for the baseline and only prepares the
+// rest, so a kalku that was never asked for one must still cast.
+#[test]
+fn a_kalku_that_was_only_prepared_can_cast() {
+    let project = Project::new("prepared", "2024", &[("src/lib.rs", TESTED)]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+    let mut weaker = site(&mut k, "compare", ">=");
+    weaker["replacement"] = ">".into();
+
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+    let cast = k.ask(json!({"type": "cast", "id": 3, "wekufe": weaker["site_id"],
+        "site": weaker, "tests": ["src/lib.rs::tests::one_is_inside"]}));
+
+    assert_eq!(cast["outcome"], "killed", "{cast}");
+    k.leave();
+}

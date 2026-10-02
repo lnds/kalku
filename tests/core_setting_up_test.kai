@@ -20,8 +20,8 @@ test "a project with no marker says what it looked for" {
 }
 
 test "a language kalku has no kalku for is named, with what it does have" {
-  assert named("rust") == Err(Unknown("rust"))
-  assert has(explain(Unknown("rust")), "elixir")
+  assert named("cobol") == Err(Unknown("cobol"))
+  assert has(explain(Unknown("cobol")), "elixir")
   assert named("Elixir").map(.language) == Ok("elixir")
 }
 
@@ -202,4 +202,19 @@ test "a summoning from an older kalku is not current" {
   assert not summon_is_current("#!/bin/sh\nexec mix kalku.serve\n")
   assert not summon_is_current("#!/bin/sh\n# kalku-summon-contract: 0\n")
   assert contract_of("#!/bin/sh\n") == None
+}
+
+test "a Cargo project is Rust, and its summoning starts the Rust kalku" {
+  assert detect(["Cargo.toml", "README.md"]).map(.language) == Ok("rust")
+  let plan = plan_for(named("rust").unwrap_or(elixir()), "/r")
+  assert has(plan.config, "language = \"rust\"")
+  assert has(plan.summoner, "exec kalku-rust")
+  assert plan.dependency == None
+  assert starts_with(plan.summoner, "#!/bin/sh")
+}
+
+# A repository with a Rust crate beside another project's marker is two
+# answers, and the owner is asked rather than a coin flipped.
+test "a Cargo.toml beside another marker is ambiguous" {
+  assert detect(["Cargo.toml", "mix.exs"]) == Err(Ambiguous(["elixir", "rust"]))
 }
