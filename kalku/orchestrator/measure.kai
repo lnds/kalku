@@ -20,6 +20,7 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.verdict
+import kalku.core.skipping
 import kalku.core.planner
 import kalku.core.equivalent
 import kalku.core.costing
@@ -137,8 +138,14 @@ fn interview(
       exclude_calls: asking.exclude_calls
     })
   )!
+  let found = sites_found_of(await_kind(k, "sites_found")!)!
+  each(found.skipped, s => Telling.tell_of("skipped #{skipped_line(s)}"))
+  (match nothing_usable(length(found.sites), found.skipped) {
+    Some(why) -> Err(why)
+    None -> Ok(())
+  })!
   Ok(Known {
-    sites: sites_of(await_kind(k, "sites_found")!)!,
+    sites: found.sites,
     tests: suite,
     coverage: coverage_from(baseline)!,
     durations: durations_of(baseline)
@@ -206,8 +213,8 @@ fn failure_names(failures: [Failure]) : String = if is_empty(failures) {
   join(failures | (.test_id), ", ")
 }
 
-fn sites_of(reply: KalkuReply) : Result[[Site], String] = match reply {
-  SitesFound(m) -> Ok(m.sites)
+fn sites_found_of(reply: KalkuReply) : Result[SitesFoundMsg, String] = match reply {
+  SitesFound(m) -> Ok(m)
   other -> Err("expected the sites, got #{other}")
 }
 

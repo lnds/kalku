@@ -1,0 +1,28 @@
+#[doc("""
+What a run says about the files a kalku would not search.
+
+A kalku reports a file it could not read or parse in `skipped` rather than
+failing the request, so one bad file does not cost the others. That is only
+honest if the run then says so: a run whose every file was skipped has
+nothing to measure, and "0 sites found" with no reason reads as "there was
+nothing to break".
+""")]
+
+import kalku.wire.shapes
+
+#[doc("One skipped file, in a line a person can act on.")]
+pub fn skipped_line(s: Skipped) : String = "#{s.file}: #{s.reason}: #{s.message}"
+
+#[doc("""
+Why a run cannot go on, when the kalku looked at the files it was given and
+could use none of them; `None` when at least one yielded a site, or when no
+file was skipped (a project with nothing to mutate is not an error).
+""")]
+pub fn nothing_usable(found: Int, skipped: [Skipped]) : Option[String] =
+  if found == 0 and (not is_empty(skipped)) {
+    Some(
+      "no file could be searched for sites:\n#{join(skipped | (s => "  #{skipped_line(s)}"), "\n")}"
+    )
+  } else {
+    None
+  }
