@@ -10,6 +10,7 @@
 
 pub mod editions;
 pub mod framing;
+pub mod project;
 pub mod protocol;
 pub mod service;
 pub mod sites;

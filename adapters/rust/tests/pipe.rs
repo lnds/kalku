@@ -229,19 +229,143 @@ fn a_protocol_it_does_not_speak_is_refused_by_name() {
     k.leave();
 }
 
-// A kalku announces `cast`, so it answers everything that implies; until it
-// does, it says so plainly rather than going quiet.
+// What it cannot do yet is said plainly rather than going quiet.
 #[test]
 fn what_it_cannot_do_yet_is_said_plainly() {
     let project = Project::new("later", "2024", &[("src/lib.rs", LIB)]);
     let mut k = Kalku::summon();
     k.hello(&project.0);
 
-    let said = k.ask(json!({"type": "prepare", "id": 3}));
+    let said = k.ask(json!({"type": "reset", "id": 3}));
 
     assert_eq!(said["type"], "error");
     assert_eq!(said["code"], "not_implemented");
-    assert!(said["message"].as_str().unwrap().contains("prepare"));
+    assert!(said["message"].as_str().unwrap().contains("reset"));
+    k.leave();
+}
+
+const TESTED: &str = "pub fn gate(a: i32) -> bool { a >= 1 }\n\
+    #[cfg(test)]\nmod tests {\n    use super::*;\n\
+    #[test]\n    fn one_is_inside() { assert!(gate(1)); }\n\
+    #[test]\n    fn zero_is_outside() { assert!(!gate(0)); }\n}\n";
+
+fn site(k: &mut Kalku, spell: &str, original: &str) -> Value {
+    let found = k.sites(&["src/lib.rs"]);
+    found["sites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["spell"] == spell && s["original"] == original)
+        .unwrap_or_else(|| panic!("no {spell} site for {original}: {found}"))
+        .clone()
+}
+
+// The whole loop on a real project: prepare in the reni, a baseline with a
+// duration per test, a wekufe that a test kills, one that survives, one
+// that does not compile, and the user's tree never touched.
+#[test]
+fn it_prepares_measures_and_casts_in_the_reni() {
+    let project = Project::new("casts", "2024", &[("src/lib.rs", TESTED)]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+
+    let baseline = k.ask(json!({"type": "baseline", "id": 3}));
+    assert_eq!(baseline["status"], "green", "{baseline}");
+    let tests: Vec<String> = baseline["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["test"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        tests,
+        [
+            "src/lib.rs::tests::one_is_inside",
+            "src/lib.rs::tests::zero_is_outside"
+        ]
+    );
+
+    // `>=` to `>`: the test of one is inside kills it.
+    let mut weaker = site(&mut k, "compare", ">=");
+    weaker["replacement"] = ">".into();
+    let cast = |k: &mut Kalku, id: i64, site: &Value| {
+        k.ask(json!({"type": "cast", "id": id, "wekufe": site["site_id"],
+            "site": site, "tests": tests}))
+    };
+    let killed = cast(&mut k, 4, &weaker);
+    assert_eq!(killed["outcome"], "killed", "{killed}");
+    assert_eq!(killed["killed_by"], "src/lib.rs::tests::one_is_inside");
+    assert_eq!(killed["dirty"], false);
+
+    // The next cast starts from the original, not from the last wekufe.
+    let mut same = weaker.clone();
+    same["replacement"] = ">=".into();
+    let survived = cast(&mut k, 5, &same);
+    assert_eq!(survived["outcome"], "survived", "{survived}");
+
+    let mut broken = weaker.clone();
+    broken["replacement"] = "=>".into();
+    let failed = cast(&mut k, 6, &broken);
+    assert_eq!(failed["outcome"], "compile_error", "{failed}");
+    assert!(!failed["message"].as_str().unwrap().is_empty());
+
+    let after_error = cast(&mut k, 7, &weaker);
+    assert_eq!(after_error["outcome"], "killed", "{after_error}");
+
+    assert_eq!(
+        fs::read_to_string(project.0.join("src/lib.rs")).unwrap(),
+        TESTED
+    );
+    assert!(!project.0.join("target").exists());
+    k.leave();
+}
+
+#[test]
+fn a_cast_before_a_baseline_is_not_ready_and_a_stale_site_is_refused() {
+    let project = Project::new("stale", "2024", &[("src/lib.rs", TESTED)]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+    let site = site(&mut k, "compare", ">=");
+    let ask = |k: &mut Kalku, id: i64, site: &Value, tests: Value| {
+        k.ask(json!({"type": "cast", "id": id, "wekufe": site["site_id"],
+            "site": site, "tests": tests}))
+    };
+
+    let early = ask(&mut k, 2, &site, json!([]));
+    assert_eq!(early["code"], "not_ready");
+
+    k.ask(json!({"type": "prepare", "id": 3}));
+    k.ask(json!({"type": "baseline", "id": 4}));
+    let unknown = ask(&mut k, 5, &site, json!(["src/lib.rs::tests::nope"]));
+    assert_eq!(unknown["code"], "unknown_test");
+
+    let mut moved = site.clone();
+    moved["original"] = "<=".into();
+    let stale = ask(
+        &mut k,
+        6,
+        &moved,
+        json!(["src/lib.rs::tests::one_is_inside"]),
+    );
+    assert_eq!(stale["code"], "bad_request");
+    assert_eq!(stale["fatal"], false);
+    k.leave();
+}
+
+#[test]
+fn a_project_that_does_not_compile_is_a_prepare_failure_not_an_exit() {
+    let project = Project::new("broken", "2024", &[("src/lib.rs", "pub fn f( {\n")]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+
+    let said = k.ask(json!({"type": "prepare", "id": 2}));
+
+    assert_eq!(said["code"], "prepare_failed");
+    assert_eq!(said["fatal"], true);
+    assert!(!said["message"].as_str().unwrap().is_empty());
     k.leave();
 }
 
