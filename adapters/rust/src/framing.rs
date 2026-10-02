@@ -116,4 +116,31 @@ mod tests {
     fn nothing_is_nothing() {
         assert_eq!(lines("", 4), []);
     }
+
+    // The line arrives in pieces smaller than itself, as it does from a pipe.
+    #[test]
+    fn a_line_longer_than_the_reader_buffer_is_still_one_line() {
+        let mut reader = io::BufReader::with_capacity(3, "abcdefgh\nij\n".as_bytes());
+
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("abcdefgh".into()))
+        );
+        assert_eq!(
+            read_line(&mut reader, 100).unwrap(),
+            Some(Line::Text("ij".into()))
+        );
+        assert_eq!(read_line(&mut reader, 100).unwrap(), None);
+    }
+
+    #[test]
+    fn a_long_line_arriving_in_pieces_is_too_long_and_the_next_is_whole() {
+        let mut reader = io::BufReader::with_capacity(4, "abcdefghij\nok\n".as_bytes());
+
+        assert_eq!(read_line(&mut reader, 6).unwrap(), Some(Line::TooLong));
+        assert_eq!(
+            read_line(&mut reader, 6).unwrap(),
+            Some(Line::Text("ok".into()))
+        );
+    }
 }
