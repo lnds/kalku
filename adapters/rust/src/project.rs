@@ -10,7 +10,7 @@
 //! from the lines libtest prints.
 
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -53,7 +53,7 @@ pub struct Ran {
 
 /// What the kalku needs from a project; Cargo is the one implementation.
 pub trait Project {
-    /// Put a fresh copy of the project in the reni.
+    /// Bring the reni's copy of the project up to date with the project.
     fn copy(&mut self) -> io::Result<()>;
     /// Build every test executable.
     fn build(&mut self) -> io::Result<Build>;
@@ -122,10 +122,7 @@ impl Cargo {
 
 impl Project for Cargo {
     fn copy(&mut self) -> io::Result<()> {
-        if self.work.exists() {
-            fs::remove_dir_all(&self.work)?;
-        }
-        copy_tree(&self.root, &self.work, &self.reni)
+        sync_tree(&self.root, &self.work, &self.reni)
     }
 
     fn build(&mut self) -> io::Result<Build> {
@@ -178,10 +175,19 @@ impl Project for Cargo {
     }
 }
 
-// The project's files, without what Cargo built or what git keeps. The reni
-// is skipped in case it is inside the root.
-fn copy_tree(from: &Path, to: &Path, reni: &Path) -> io::Result<()> {
+// Put the project's files in `to`, without what Cargo built or what git
+// keeps; `reni` is skipped in case it is inside the project.
+//
+// Cargo decides what to rebuild by file times, and the reni outlives a
+// run. A copy that kept the original's times beside artifacts built from
+// an earlier version of the same file would be trusted as up to date, and
+// a binary built from other code would be measured. So a file whose content
+// differs is written anew, with a time of now; one that is the same is left
+// alone, so what was built from it stays valid; and what the project no
+// longer has is removed.
+fn sync_tree(from: &Path, to: &Path, reni: &Path) -> io::Result<()> {
     fs::create_dir_all(to)?;
+    let mut wanted = HashSet::new();
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let name = entry.file_name();
@@ -191,16 +197,52 @@ fn copy_tree(from: &Path, to: &Path, reni: &Path) -> io::Result<()> {
         }
         let kind = entry.file_type()?;
         let dest = to.join(&name);
+        wanted.insert(name);
         if kind.is_dir() {
-            copy_tree(&path, &dest, reni)?;
+            if !is_dir(&dest) {
+                remove_any(&dest)?;
+            }
+            sync_tree(&path, &dest, reni)?;
         } else if kind.is_symlink() {
             #[cfg(unix)]
-            std::os::unix::fs::symlink(fs::read_link(&path)?, &dest)?;
+            {
+                let target = fs::read_link(&path)?;
+                if fs::read_link(&dest).ok().as_ref() != Some(&target) {
+                    remove_any(&dest)?;
+                    std::os::unix::fs::symlink(target, &dest)?;
+                }
+            }
         } else {
-            fs::copy(&path, &dest)?;
+            let bytes = fs::read(&path)?;
+            if fs::read(&dest).ok().as_deref() != Some(bytes.as_slice()) {
+                if fs::symlink_metadata(&dest).is_ok_and(|m| !m.is_file()) {
+                    remove_any(&dest)?;
+                }
+                fs::write(&dest, bytes)?;
+                fs::set_permissions(&dest, fs::metadata(&path)?.permissions())?;
+            }
+        }
+    }
+    for entry in fs::read_dir(to)? {
+        let entry = entry?;
+        if !wanted.contains(&entry.file_name()) {
+            remove_any(&entry.path())?;
         }
     }
     Ok(())
+}
+
+fn is_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+}
+
+// A file, a link or a directory, whichever it is; nothing at all is fine.
+fn remove_any(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() => fs::remove_dir_all(path),
+        Ok(_) => fs::remove_file(path),
+        Err(_) => Ok(()),
+    }
 }
 
 /// The test executables in `cargo test --no-run --message-format=json`.
@@ -416,11 +458,94 @@ mod tests {
         fs::write(src.join(".git/HEAD"), "x").unwrap();
         let to = dir.join("copy");
 
-        copy_tree(&src, &to, &to).unwrap();
+        sync_tree(&src, &to, &to.join("reni")).unwrap();
 
         assert!(to.join("src/lib.rs").exists());
         assert!(!to.join("target").exists());
         assert!(!to.join(".git").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("kalku-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn set_time(path: &Path, seconds: u64) {
+        let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds);
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    }
+
+    fn modified(path: &Path) -> std::time::SystemTime {
+        fs::metadata(path).unwrap().modified().unwrap()
+    }
+
+    // The bug this prevents: the original's old time on a changed file,
+    // beside artifacts built from the earlier content, is a stale build.
+    #[test]
+    fn a_file_that_changed_is_written_with_a_time_of_now_whatever_the_original_says() {
+        let dir = scratch("changed");
+        let (src, to) = (dir.join("src"), dir.join("to"));
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("a.rs"), "one").unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+
+        fs::write(src.join("a.rs"), "two").unwrap();
+        set_time(&src.join("a.rs"), 1_000);
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+
+        assert_eq!(fs::read_to_string(to.join("a.rs")).unwrap(), "two");
+        let age = std::time::SystemTime::now()
+            .duration_since(modified(&to.join("a.rs")))
+            .unwrap();
+        assert!(
+            age.as_secs() < 3600,
+            "the copy kept the original's old time"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // What was built from a file stays valid while the file does not change.
+    #[test]
+    fn a_file_that_did_not_change_is_left_alone() {
+        let dir = scratch("same");
+        let (src, to) = (dir.join("src"), dir.join("to"));
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("a.rs"), "one").unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+        set_time(&to.join("a.rs"), 5_000);
+
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+
+        assert_eq!(
+            modified(&to.join("a.rs")),
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(5_000)
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_the_project_no_longer_has_is_removed_from_the_copy() {
+        let dir = scratch("gone");
+        let (src, to) = (dir.join("src"), dir.join("to"));
+        fs::create_dir_all(src.join("old")).unwrap();
+        fs::write(src.join("old/a.rs"), "x").unwrap();
+        fs::write(src.join("b.rs"), "x").unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+
+        fs::remove_dir_all(src.join("old")).unwrap();
+        fs::remove_file(src.join("b.rs")).unwrap();
+        sync_tree(&src, &to, &dir.join("reni")).unwrap();
+
+        assert!(!to.join("old").exists());
+        assert!(!to.join("b.rs").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }
