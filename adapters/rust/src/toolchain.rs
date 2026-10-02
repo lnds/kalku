@@ -110,4 +110,24 @@ mod tests {
         assert!(parse("hello\n").is_err());
         assert!(parse("release: x.y\nhost: z\n").is_err());
     }
+
+    // A release with no patch number is patch 0, which is what Rust itself
+    // means by `1.85`.
+    #[test]
+    fn a_release_without_a_patch_number_is_patch_zero() {
+        assert_eq!(numbers("1.85"), Some((1, 85, 0)));
+        assert_eq!(numbers("1.85.2"), Some((1, 85, 2)));
+    }
+
+    #[test]
+    fn what_is_missing_from_rustc_is_named() {
+        assert_eq!(
+            parse("host: z\n").unwrap_err(),
+            "`rustc -vV` did not say its release"
+        );
+        assert_eq!(
+            parse("release: 1.98.1\n").unwrap_err(),
+            "`rustc -vV` did not say its host"
+        );
+    }
 }
