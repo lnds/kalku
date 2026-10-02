@@ -100,6 +100,18 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::time::Instant;
 
+    // A process that was killed and not yet reaped by its new parent is a
+    // zombie: it still answers signal 0, but it is not running.
+    fn running(pid: i32) -> bool {
+        let out = Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .unwrap();
+        let state = String::from_utf8_lossy(&out.stdout);
+        let state = state.trim();
+        !state.is_empty() && !state.starts_with('Z')
+    }
+
     fn shell(script: &str) -> Command {
         let mut c = Command::new("sh");
         c.arg("-c").arg(script);
@@ -158,9 +170,12 @@ mod tests {
             .trim()
             .parse()
             .unwrap();
-        // Signal 0 only asks whether the process exists.
-        let alive = unsafe { libc::kill(pid, 0) } == 0;
-        assert!(!alive, "the grandchild outlived the abort");
+        // The kill is a signal, and the process takes a moment to go.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while running(pid) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!running(pid), "the grandchild outlived the abort");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

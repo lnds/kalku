@@ -462,14 +462,17 @@ impl Kalku {
     }
 }
 
+// A killed process that its new parent has not reaped yet is a zombie: it
+// still answers `kill -0`, but it is not running.
 #[cfg(unix)]
 fn alive(pid: i32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .unwrap()
-        .success()
+    let out = Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    let state = String::from_utf8_lossy(&out.stdout);
+    let state = state.trim();
+    !state.is_empty() && !state.starts_with('Z')
 }
 
 // The timeout is the kaikai side's, and what it says is `abort`. The cast
@@ -522,6 +525,11 @@ fn an_abort_stops_a_running_cast_and_the_kalku_casts_again() {
     assert_eq!(aborted["cast"], 10);
     assert_eq!(aborted["restored"], true);
     assert!(started.elapsed().as_secs() < 30);
+    // The kill is a signal, and the process takes a moment to go.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while alive(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
     assert!(!alive(pid), "the test the cast started outlived the abort");
 
     // Same kalku, next cast: the file was put back and the build is sound.
