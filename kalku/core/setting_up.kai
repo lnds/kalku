@@ -287,12 +287,7 @@ fn kaikai_summoner() : String = """
 # stdout carries the kalku protocol, so anything the toolchain prints on
 # the way up goes to stderr.
 set -eu
-
-# Every summoning is handed the reni first. This kalku is told where the
-# reni is through `hello` and keeps no build path of its own, so the
-# argument is taken off here rather than passed on.
-: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
-shift
+#{reni_off()}
 
 exec kalku-kaikai "$@"
 """
@@ -310,12 +305,7 @@ fn python_summoner() : String = """
 # interpreter, which is the one that has the project's packages and pytest:
 # set KALKU_PYTHON to choose another.
 set -eu
-
-# Every summoning is handed the reni first. This kalku is told where the
-# reni is through `hello`, so the argument is taken off here rather than
-# passed on.
-: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
-shift
+#{reni_off()}
 
 if [ -n "${KALKU_PYTHON:-}" ]; then
   PY="$KALKU_PYTHON"
@@ -344,12 +334,7 @@ fn rust_summoner() : String = """
 # stdout carries the kalku protocol. Nothing is built here: cargo runs
 # inside `prepare`, with its output on stderr.
 set -eu
-
-# Every summoning is handed the reni first. This kalku is told where the
-# reni is through `hello`, so the argument is taken off here rather than
-# passed on.
-: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
-shift
+#{reni_off()}
 
 exec kalku-rust "$@"
 """
@@ -467,3 +452,13 @@ fn segments(path: String) : [String] = match split(path, "/") {
   [] -> []
   parts -> take(parts, length(parts) - 1)
 }
+
+# What every summoning does first, said once: it is handed the reni and these
+# kalku are told where it is through `hello`, so it is taken off the arguments.
+fn reni_off() : String = """
+# Every summoning is handed the reni first. This kalku is told where the
+# reni is through `hello`, so the argument is taken off here rather than
+# passed on.
+: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
+shift
+"""
