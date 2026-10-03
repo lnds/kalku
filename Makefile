@@ -32,11 +32,17 @@ KKALKU_SRC := $(wildcard adapters/kaikai/*.kai) $(wildcard adapters/kaikai/kaika
 RKALKU     := adapters/rust/target/release/kalku-rust
 RKALKU_SRC := $(shell find adapters/rust/src -name '*.rs') adapters/rust/Cargo.toml adapters/rust/Cargo.lock
 
+# The Python kalku: one zipapp of the standard library and nothing else, run by
+# the project's own interpreter, shipped beside the others.
+PYKALKU     := adapters/python/dist/kalku-python
+PYKALKU_SRC := $(wildcard adapters/python/src/kalku_python/*.py)
+PYTHON      ?= python3
+
 # The scripted kalku the orchestrator tests talk to, built as its own package.
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir test-rust fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
+.PHONY: all build test test-kaikai test-elixir test-rust test-python fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
 
 all: build
 
@@ -46,7 +52,7 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 	@mkdir -p $(BUILD)
 	$(KAI) build . -o $@
 
-test: test-kaikai test-elixir test-rust
+test: test-kaikai test-elixir test-rust test-python
 
 test-kaikai: $(FAKE) $(KKALKU) properties
 	$(KAI) test
@@ -81,6 +87,12 @@ $(FAKE): $(FAKE_SRC)
 $(RKALKU): $(RKALKU_SRC)
 	cargo build --release --locked --manifest-path adapters/rust/Cargo.toml
 
+$(PYKALKU): $(PYKALKU_SRC)
+	rm -rf adapters/python/dist/app
+	mkdir -p adapters/python/dist/app/kalku_python
+	cp $(PYKALKU_SRC) adapters/python/dist/app/kalku_python/
+	$(PYTHON) -m zipapp adapters/python/dist/app -m "kalku_python.__main__:main" -p "/usr/bin/env python3" -o $@
+
 # The Elixir kalku joins once its mix project exists.
 test-elixir:
 	@if [ -f adapters/elixir/mix.exs ]; then \
@@ -94,6 +106,13 @@ test-rust:
 	@if [ -f adapters/rust/Cargo.toml ] && command -v cargo >/dev/null 2>&1; then \
 	  cd adapters/rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test; \
 	else echo "test-rust: skipped (no adapters/rust/Cargo.toml, or no cargo)"; fi
+
+# The Python kalku, held to ruff and its own tests. A machine without pytest
+# skips it, as one without Elixir or Rust skips theirs; CI has them all.
+test-python:
+	@if [ -f adapters/python/pyproject.toml ] && $(PYTHON) -c 'import pytest' 2>/dev/null; then \
+	  cd adapters/python && $(PYTHON) -m pytest -q; \
+	else echo "test-python: skipped (no adapters/python, or no pytest for $(PYTHON))"; fi
 
 fmt:
 	$(KAI) fmt .
@@ -112,7 +131,7 @@ km:
 # without waiting for the tests.
 ci: fmt-check lint build test-kaikai km
 
-check: ci test-elixir test-rust
+check: ci test-elixir test-rust test-python
 
 # kalku on its own sources, through its own kalku: the project's claim,
 # run rather than asserted. Measured by the last release, pinned in
@@ -131,21 +150,21 @@ self-mutate:
 # What a release ships: both binaries a user summons, side by side with
 # the licences they are shipped under. Flat, so a package manager can
 # install the tarball's contents without knowing this layout.
-dist: build $(KKALKU) $(RKALKU)
+dist: build $(KKALKU) $(RKALKU) $(PYKALKU)
 	@rm -rf $(DIST) && mkdir -p $(DIST)
-	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
-	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust LICENSE-MIT LICENSE-APACHE README.md
-	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/LICENSE-* $(DIST)/README.md
+	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
+	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python LICENSE-MIT LICENSE-APACHE README.md
+	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/LICENSE-* $(DIST)/README.md
 	@cd $(DIST) && (command -v sha256sum >/dev/null && sha256sum $(notdir $(TARBALL)) \
 	  || shasum -a 256 $(notdir $(TARBALL))) > $(notdir $(TARBALL)).sha256
 	@echo "built $(TARBALL)"
 
-install: build $(KKALKU) $(RKALKU)
+install: build $(KKALKU) $(RKALKU) $(PYKALKU)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(DESTDIR)$(PREFIX)/bin/
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust
+	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python
 
 clean:
 	rm -rf $(BUILD) $(DIST) .kai-cache

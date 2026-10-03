@@ -16,9 +16,11 @@ owner can read and change.
 #[doc("""
 A language kalku can set a project up for.
 
-`sources` are the extensions of the files that are the project's code. `tests`
-are directory names whose files are the suite, `test_suffixes` the endings of
-files that are, and `ignored` directories that are neither (what a build
+`sources` are the extensions of the files that are the project's code. `also`
+are other files that mean the same language as `marker`. `tests` are
+directory names whose files are the suite, `test_prefixes` and `test_suffixes`
+the beginnings and endings of the names of files that are, and `ignored`
+directories that are neither (what a build
 leaves, what a version control keeps). A change or a whole project is
 read through these, so the core does not need to know a layout.
 """)]
@@ -26,9 +28,11 @@ read through these, so the core does not need to know a layout.
 pub type Known = {
   language: String,
   marker: String,
+  also: [String],
   summon: String,
   sources: [String],
   tests: [String],
+  test_prefixes: [String],
   test_suffixes: [String],
   ignored: [String]
 }
@@ -82,29 +86,61 @@ pub fn catalogue() : [Known] = [
   Known {
     language: "elixir",
     marker: "mix.exs",
+    also: [],
     summon: elixir_summoner(),
     sources: [".ex"],
     tests: ["test"],
+    test_prefixes: [],
     test_suffixes: ["_test.exs"],
     ignored: ["_build", "deps", ".git", "node_modules", "cover"]
   },
   Known {
     language: "kaikai",
     marker: "kai.toml",
+    also: [],
     summon: kaikai_summoner(),
     sources: [".kai"],
     tests: ["tests"],
+    test_prefixes: [],
     test_suffixes: ["_test.kai"],
     ignored: ["_build", ".kai-cache", ".git", "dist"]
   },
   Known {
     language: "rust",
     marker: "Cargo.toml",
+    also: [],
     summon: rust_summoner(),
     sources: [".rs"],
     tests: ["tests", "benches", "examples"],
+    test_prefixes: [],
     test_suffixes: [],
     ignored: ["target", ".git"]
+  },
+  Known {
+    language: "python",
+    marker: "pyproject.toml",
+    also: ["setup.py", "setup.cfg", "requirements.txt"],
+    summon: python_summoner(),
+    sources: [".py"],
+    tests: ["tests", "test"],
+    test_prefixes: ["test_", "conftest"],
+    test_suffixes: ["_test.py"],
+    ignored: [
+      ".venv",
+      "venv",
+      "env",
+      "__pycache__",
+      ".tox",
+      ".nox",
+      ".git",
+      "build",
+      "dist",
+      "node_modules",
+      "site-packages",
+      ".mypy_cache",
+      ".pytest_cache",
+      ".eggs"
+    ]
   }
 ]
 
@@ -121,7 +157,8 @@ pub fn detect(markers: [String]) : Result[Known, Puzzle] = match found_in(marker
   several -> Err(Ambiguous(several | (.language)))
 }
 
-fn found_in(markers: [String]) : [Known] = filter(catalogue(), k => contains(markers, k.marker))
+fn found_in(markers: [String]) : [Known] =
+  filter(catalogue(), k => contains(markers, k.marker) or any(k.also, m => contains(markers, m)))
 
 #[doc("The language by the name it was given, for a project that says so itself.")]
 pub fn named(language: String) : Result[Known, Puzzle] = match find(
@@ -250,14 +287,39 @@ fn kaikai_summoner() : String = """
 # stdout carries the kalku protocol, so anything the toolchain prints on
 # the way up goes to stderr.
 set -eu
-
-# Every summoning is handed the reni first. This kalku is told where the
-# reni is through `hello` and keeps no build path of its own, so the
-# argument is taken off here rather than passed on.
-: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
-shift
+#{reni_off()}
 
 exec kalku-kaikai "$@"
+"""
+
+# The Python kalku runs in the project's own interpreter, because the tests
+# need the project's own packages: the environment that is active, then the
+# project's own virtual environment, then whatever `python3` is. It builds
+# nothing on the way up.
+fn python_summoner() : String = """
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the Python kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol. The kalku runs in the project's own
+# interpreter, which is the one that has the project's packages and pytest:
+# set KALKU_PYTHON to choose another.
+set -eu
+#{reni_off()}
+
+if [ -n "${KALKU_PYTHON:-}" ]; then
+  PY="$KALKU_PYTHON"
+elif [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
+  PY="$VIRTUAL_ENV/bin/python"
+elif [ -x .venv/bin/python ]; then
+  PY=.venv/bin/python
+elif [ -x venv/bin/python ]; then
+  PY=venv/bin/python
+else
+  PY=python3
+fi
+
+exec "$PY" "$(command -v kalku-python)" "$@"
 """
 
 # The Rust kalku is told where the reni is through `hello` and builds
@@ -272,12 +334,7 @@ fn rust_summoner() : String = """
 # stdout carries the kalku protocol. Nothing is built here: cargo runs
 # inside `prepare`, with its output on stderr.
 set -eu
-
-# Every summoning is handed the reni first. This kalku is told where the
-# reni is through `hello`, so the argument is taken off here rather than
-# passed on.
-: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
-shift
+#{reni_off()}
 
 exec kalku-rust "$@"
 """
@@ -378,6 +435,13 @@ pub fn is_test_of(known: Known, path: String) : Bool =
 fn is_suite_file(known: Known, path: String) : Bool =
   any(segments(path), s => contains(known.tests, s))
     or any(known.test_suffixes, e => ends_with(path, e))
+    or any(known.test_prefixes, p => starts_with(file_name(path), p))
+
+# The last part of a path.
+fn file_name(path: String) : String = match reverse(split(path, "/")) {
+  [name, ..._] -> name
+  [] -> path
+}
 
 fn is_ignored(known: Known, path: String) : Bool =
   any(segments(path), s => contains(known.ignored, s))
@@ -388,3 +452,13 @@ fn segments(path: String) : [String] = match split(path, "/") {
   [] -> []
   parts -> take(parts, length(parts) - 1)
 }
+
+# What every summoning does first, said once: it is handed the reni and these
+# kalku are told where it is through `hello`, so it is taken off the arguments.
+fn reni_off() : String = """
+# Every summoning is handed the reni first. This kalku is told where the
+# reni is through `hello`, so the argument is taken off here rather than
+# passed on.
+: "${1:?this script is summoned by kalku, which passes the reni as the first argument}"
+shift
+"""
