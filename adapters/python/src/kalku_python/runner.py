@@ -144,6 +144,7 @@ def _child(spec: Spec, write_fd: int) -> None:  # pragma: no cover
     try:
         os.setpgrp()
         _detach_stdio()
+        _close_inherited(keep={write_fd})
         if os.environ.get("KALKU_PYTHON_DEBUG"):
             # A child that does not come back can be asked where it is:
             # `kill -USR1 <pid>` prints every thread's stack on stderr.
@@ -182,6 +183,29 @@ def _detach_stdio() -> None:  # pragma: no cover
     os.dup2(quiet, 1)
     if not os.environ.get("KALKU_PYTHON_DEBUG"):
         os.dup2(quiet, 2)
+    os.close(quiet)
+    # The streams the interpreter prints through are rebuilt on those descriptors:
+    # whatever they were wrapping may be a file the parent had open, and is closed.
+    sys.stdin = sys.__stdin__ = open(0, encoding="utf-8", errors="replace", closefd=False)  # noqa: SIM115
+    sys.stdout = sys.__stdout__ = open(1, "w", encoding="utf-8", errors="replace", closefd=False)  # noqa: SIM115
+    sys.stderr = sys.__stderr__ = open(2, "w", encoding="utf-8", errors="replace", closefd=False)  # noqa: SIM115
+
+
+def _close_inherited(keep: set[int]) -> None:  # pragma: no cover
+    """Close every descriptor the parent had open but this child's own pipe.
+
+    The parent keeps the protocol on a descriptor of its own, and a child that
+    inherited it could write into the conversation: a test that prints to a
+    descriptor it did not open, or a wekufe that makes it do so, would corrupt
+    a channel that only the parent may speak on."""
+    try:
+        inherited = [int(name) for name in os.listdir("/dev/fd")]
+    except (OSError, ValueError):
+        inherited = list(range(3, 1024))
+    for fd in inherited:
+        if fd > 2 and fd not in keep:
+            with contextlib.suppress(OSError):
+                os.close(fd)
 
 
 def _forget_project(work: Path) -> None:  # pragma: no cover

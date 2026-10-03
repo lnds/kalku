@@ -233,3 +233,21 @@ def test_a_baseline_says_so_when_every_monitoring_tool_is_taken(work, occupied):
 
     crashed = [e for e in events if e["e"] == "crashed"]
     assert crashed and "tool" in crashed[0]["message"]
+
+
+def test_a_child_cannot_reach_a_descriptor_its_parent_had_open(work, tmp_path, monkeypatch):
+    # The parent keeps the protocol on a descriptor of its own. Anything it has
+    # open, a test the child runs must not be able to write to.
+    (work / "tests/test_gate.py").write_text(
+        "import os\n\n\ndef test_the_descriptor_is_closed():\n"
+        "    fd = int(os.environ['KALKU_PROBE_FD'])\n"
+        "    try:\n        os.fstat(fd)\n    except OSError:\n        return\n"
+        "    raise AssertionError('the parent descriptor is open in the child')\n"
+    )
+    with open(tmp_path / "held", "w") as held:
+        monkeypatch.setenv("KALKU_PROBE_FD", str(held.fileno()))
+        r = run(work, "baseline")
+        events = events_of(r)
+        finish(r)
+    (result,) = [e for e in events if e["e"] == "result"]
+    assert result["outcome"] == "passed", result
