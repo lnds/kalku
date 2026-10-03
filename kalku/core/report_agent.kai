@@ -34,9 +34,24 @@ itself. A file it cannot answer for simply travels without context.
 """)]
 pub fn agent(r: Report, source: (String) -> [String]) : String = join(
   (ordered(r.survivors) | (s => survivor_line(s, source)))
+    ++ (r.skipped | skipped_json)
     ++ (r.troubles | trouble_line)
     ++ [summary_line(r)],
   "\n"
+)
+
+#[doc("""
+One file the kalku would not search, and why. An agent that is told a score
+and not told which files it leaves out will think the file is clean.
+""")]
+pub fn skipped_json(s: Skipped) : String = json_encode(
+  JObj(
+    [
+      ("skipped", JStr(s.file)),
+      ("reason", JStr(s.reason)),
+      ("message", JStr(s.message))
+    ]
+  )
 )
 
 #[doc("""

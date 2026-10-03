@@ -57,7 +57,8 @@ pub type Known = {
   sites: [Site],
   tests: [String],
   coverage: Option[[CoverageEntry]],
-  durations: [(String, Int)]
+  durations: [(String, Int)],
+  skipped: [Skipped]
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -148,7 +149,8 @@ fn interview(
     sites: found.sites,
     tests: suite,
     coverage: coverage_from(baseline)!,
-    durations: durations_of(baseline)
+    durations: durations_of(baseline),
+    skipped: found.skipped
   })
 }
 
@@ -391,7 +393,8 @@ fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) 
     sites: filter(known.sites, s => contains(asking.only, s.site_id)),
     tests: known.tests,
     coverage: known.coverage,
-    durations: known.durations
+    durations: known.durations,
+    skipped: known.skipped
   }
 }
 
@@ -494,6 +497,7 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
       exclude_calls_added: []
     },
     troubles: troubles_of(casting, known),
+    skipped: known.skipped,
     uncovered: ready.no_coverage,
     blockers: []
   }
@@ -519,11 +523,20 @@ pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Rep
     None -> no_change()
   }
   # A run that could not measure at all never reaches here: that failure
-  # is answered before a report exists, which is why no trouble is passed.
+  # is answered before a report exists. What can reach here is a run that
+  # measured part of what it was asked, because some file would not be
+  # searched, and the gate has to hear that.
   Report {
     ...r,
     on_changed_lines: change.survivors,
-    blockers: blockers(r.counts, change, policy, None, was_partial(r), is_some(touched))
+    blockers: blockers(
+      r.counts,
+      change,
+      policy,
+      trouble_of(r.skipped),
+      was_partial(r),
+      is_some(touched)
+    )
   }
 }
 

@@ -26,3 +26,16 @@ pub fn nothing_usable(found: Int, skipped: [Skipped]) : Option[String] =
   } else {
     None
   }
+
+#[doc("""
+Why a run that skipped files cannot be trusted as the answer to what was
+asked, for the gate to hear; `None` when nothing was skipped.
+""")]
+pub fn trouble_of(skipped: [Skipped]) : Option[String] =
+  if is_empty(skipped) {
+    None
+  } else {
+    Some(
+      "#{length(skipped)} file(s) could not be searched, so the score says nothing about them: #{join(skipped | (.file), ", ")}"
+    )
+  }

@@ -5,6 +5,7 @@ import kalku.core.verdict
 import kalku.core.gate
 import kalku.core.report
 import kalku.core.report_agent
+import kalku.core.report_json
 
 const SOURCE : [String] = [
   "defmodule Parser do",
@@ -45,6 +46,7 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
     exclude_calls_added: []
   },
   troubles: [],
+  skipped: [],
   uncovered: [],
   blockers: []
 }
@@ -212,3 +214,22 @@ test "a wekufe that produced nothing to score travels with its reason" {
   assert field(line, "outcome") == JStr("compile_error")
   assert field(line, "message") == JStr("error: undefined function f/1")
 }
+
+# An agent told a score and not told which files it leaves out will think the
+# file is clean and stop looking at it.
+test "a file that was not searched travels as a line of its own, and in the JSON" {
+  let skipped = Report {
+    ...report_of([], one()),
+    skipped: [Skipped { file: "lib/b.ex", reason: "parse_error", message: "line 3" }]
+  }
+  let line = "{\"skipped\":\"lib/b.ex\",\"reason\":\"parse_error\",\"message\":\"line 3\"}"
+
+  assert contains(lines(agent(skipped, _f => [])), line)
+  assert has_text(
+    json(skipped, 2),
+    "\"skipped\":[{\"file\":\"lib/b.ex\",\"reason\":\"parse_error\",\"message\":\"line 3\"}]"
+  )
+  assert has_text(json(report_of([], one()), 0), "\"skipped\":[]")
+}
+
+fn has_text(text: String, needle: String) : Bool = is_some(index_of(text, needle))
