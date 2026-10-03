@@ -31,9 +31,11 @@ fn of(language: String) : Known = match find(catalogue(), k => k.language == lan
   None -> Known {
     language: "none",
     marker: "",
+    also: [],
     summon: "",
     sources: [],
     tests: [],
+    test_prefixes: [],
     test_suffixes: [],
     ignored: []
   }
@@ -93,4 +95,29 @@ test "a kaikai project's code is anywhere, including a file at the top" {
   assert relative(root, every_source(root, of("kaikai")))
     == ["kalku/core/gate.kai", "main.kai"]
   assert relative(root, every_test(root, of("kaikai"))) == ["tests/gate_test.kai"]
+}
+
+test "a Python project's code is found in packages and under src, and its suite and environment are not" {
+  let root = scratch("python")
+  make(
+    root,
+    [
+      "pyproject.toml",
+      "pkg/__init__.py",
+      "pkg/core.py",
+      "src/other/mod.py",
+      "setup.py",
+      "tests/test_core.py",
+      "tests/conftest.py",
+      "pkg/test_inline.py",
+      ".venv/lib/python3.13/site-packages/dep.py",
+      "build/lib/pkg/core.py",
+      "README.md"
+    ]
+  )
+
+  assert relative(root, every_source(root, of("python")))
+    == ["pkg/__init__.py", "pkg/core.py", "setup.py", "src/other/mod.py"]
+  assert relative(root, every_test(root, of("python")))
+    == ["pkg/test_inline.py", "tests/conftest.py", "tests/test_core.py"]
 }

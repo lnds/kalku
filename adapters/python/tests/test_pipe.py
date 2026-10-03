@@ -1,7 +1,10 @@
 """The kalku as the kaikai side meets it: a real process, a real pipe, and
 real projects on disk running a real pytest."""
 
+import json
+import textwrap
 import time
+from pathlib import Path
 
 from conftest import GATE, INSIDE, LABELS, OUTSIDE
 
@@ -310,7 +313,26 @@ def test_a_map_too_big_for_a_line_goes_to_a_file_in_the_reni(kalku, make_project
     done = k.ask({"type": "baseline"})
 
     assert "coverage" not in done
-    import json
-
-    written = json.loads(open(done["coverage_path"]).read())
+    written = json.loads(Path(done["coverage_path"]).read_text())
     assert any(e["file"] == "gate.py" and e["line"] == 5 for e in written)
+
+
+def test_the_projects_own_addopts_still_select_what_is_run(kalku, make_project):
+    suite = textwrap.dedent(GATE["tests/test_gate.py"]).lstrip("\n")
+    suite = suite.replace("def test_labels():", "@pytest.mark.stress\ndef test_labels():")
+    files = {**GATE, "tests/test_gate.py": suite.replace("from gate", "import pytest\nfrom gate")}
+    root = make_project(files)
+    (root / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+        'markers = ["stress"]\naddopts = "-m \'not stress\' -n auto --cov=gate"\n'
+    )
+    k = kalku(root)
+    k.hello()
+    assert k.ask({"type": "prepare"})["type"] == "prepared"
+
+    done = k.ask({"type": "baseline"})
+
+    # The stress test is deselected by the project's own choice; `-n` and
+    # `--cov`, which this kalku cannot honour, did not stop the run.
+    assert done["status"] == "green", done
+    assert sorted(t["test"] for t in done["tests"]) == sorted([INSIDE, OUTSIDE])

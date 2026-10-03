@@ -3,6 +3,7 @@ side, the Elixir kalku and the Rust kalku are held to."""
 
 import io
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,14 @@ import pytest
 from kalku_python import framing, protocol
 
 FIXTURES = Path(__file__).resolve().parents[3] / "docs" / "protocol" / "fixtures"
+
+# The fixtures belong to the repository, outside this project. Measured on a
+# copy, they are not there: that is a skip, except on CI, where a missing
+# fixture is a failure.
+if not FIXTURES.is_dir():
+    if os.environ.get("CI"):
+        raise RuntimeError(f"the protocol fixtures are missing: {FIXTURES}")
+    pytest.skip("the protocol fixtures are not next to this project", allow_module_level=True)
 
 
 def lines(path):

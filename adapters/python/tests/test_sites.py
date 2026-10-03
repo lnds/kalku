@@ -204,3 +204,9 @@ def test_every_other_wekufe_parses_too():
     assert len(result) > 10
     for s in result:
         ast.parse(src.splice(s.start.byte, s.end.byte, s.replacement))
+
+
+def test_the_type_a_cast_names_is_not_a_value():
+    text = 'import typing as t\nx = t.cast("t.IO[t.Any]", y, 3)\nT = TypeVar("T", bound="Base")\nz = cast(int, "s")\n'
+    # The first argument of `cast` and `TypeVar` names a type; the rest are values.
+    assert [o for o, _ in of("literal", text)] == ["3", '"Base"', '"s"']

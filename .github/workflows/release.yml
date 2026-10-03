@@ -55,6 +55,7 @@ jobs:
           "$RUNNER_TEMP/kalku" info > /dev/null
           "$RUNNER_TEMP/kalku" info spells | head -1
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-rust" | grep -q '"type":"bye"'
+          printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-python" | grep -q '"type":"bye"'
 
       - name: Check the tarball is named for this platform
         run: ls dist/kalku-*-${{ matrix.platform }}.tar.gz

@@ -3,9 +3,11 @@ import kalku.core.setting_up
 fn elixir() : Known = Known {
   language: "elixir",
   marker: "mix.exs",
+  also: [],
   summon: "",
   sources: [],
   tests: [],
+  test_prefixes: [],
   test_suffixes: [],
   ignored: []
 }
@@ -264,4 +266,40 @@ test "a path is under a test directory by its directories, not its file name" {
   assert is_test_of(of("kaikai"), "adapters/kaikai/tests/kalku_test.kai")
   assert not is_test_of(of("elixir"), "lib/billing.ex")
   assert not is_test_of(of("elixir"), "deps/foo/test/foo_test.exs")
+}
+
+test "a Python project is told by any of the files that mean Python, and runs in its own interpreter" {
+  assert detect(["pyproject.toml", "README.md"]).map(.language) == Ok("python")
+  assert detect(["setup.py"]).map(.language) == Ok("python")
+  assert detect(["requirements.txt", "src"]).map(.language) == Ok("python")
+  let plan = plan_for(of("python"), "/r")
+  assert has(plan.config, "language = \"python\"")
+  assert has(plan.summoner, "exec \"$PY\" \"$(command -v kalku-python)\"")
+  assert has(plan.summoner, ".venv/bin/python")
+  assert summon_is_current(plan.summoner)
+  assert starts_with(plan.summoner, "#!/bin/sh")
+}
+
+# A Rust crate that ships Python bindings has both: asked, not guessed.
+test "a pyproject.toml beside a Cargo.toml is ambiguous" {
+  assert detect(["Cargo.toml", "pyproject.toml"]) == Err(Ambiguous(["rust", "python"]))
+}
+
+test "Python sources are .py files outside the suite, which is named by directory, prefix or suffix" {
+  let python = of("python")
+  assert is_source_of(python, "src/pkg/core.py")
+  assert is_source_of(python, "pkg/utils.py")
+  assert is_source_of(python, "pkg/testing_utils.py")
+  assert not is_source_of(python, "tests/test_core.py")
+  assert not is_source_of(python, "pkg/test_core.py")
+  assert not is_source_of(python, "pkg/core_test.py")
+  assert not is_source_of(python, "pkg/conftest.py")
+  assert not is_source_of(python, "src/pkg/core.pyi")
+  assert not is_source_of(python, ".venv/lib/python3.13/site-packages/x.py")
+  assert not is_source_of(python, "build/lib/pkg/core.py")
+  assert is_test_of(python, "tests/test_core.py")
+  assert is_test_of(python, "tests/helpers/data.py")
+  assert is_test_of(python, "pkg/test_core.py")
+  assert is_test_of(python, "conftest.py")
+  assert not is_test_of(python, "pkg/core.py")
 }

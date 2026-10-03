@@ -18,10 +18,12 @@ inherits a lock nobody will ever release.
 from __future__ import annotations
 
 import contextlib
+import faulthandler
 import importlib.abc
 import importlib.machinery
 import json
 import os
+import shlex
 import signal
 import sys
 import time
@@ -43,8 +45,6 @@ _BASE_ARGS = (
     "no:xdist",
     "-p",
     "no:cov",
-    "-o",
-    "addopts=",
     "-q",
     "--no-header",
 )
@@ -144,6 +144,10 @@ def _child(spec: Spec, write_fd: int) -> None:  # pragma: no cover
     try:
         os.setpgrp()
         _detach_stdio()
+        if os.environ.get("KALKU_PYTHON_DEBUG"):
+            # A child that does not come back can be asked where it is:
+            # `kill -USR1 <pid>` prints every thread's stack on stderr.
+            faulthandler.register(signal.SIGUSR1, all_threads=True)
         sys.dont_write_bytecode = True
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
         work = Path(os.path.realpath(spec.work))
@@ -155,7 +159,9 @@ def _child(spec: Spec, write_fd: int) -> None:  # pragma: no cover
         import pytest
 
         recorder = _Recorder(out, work, measuring=spec.mode == "baseline")
-        args = [*_BASE_ARGS, f"--rootdir={work}"]
+        addopts = project.sanitized_addopts(project.read_addopts(work))
+        args = [*_BASE_ARGS, "-o", f"addopts={addopts}", f"--rootdir={work}"]
+        args.extend(shlex.split(os.environ.get("KALKU_PYTEST_ARGS", "")))
         if spec.mode == "collect":
             args.append("--collect-only")
         elif spec.mode == "cast":

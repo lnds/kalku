@@ -12,8 +12,9 @@ not a node and cannot become a site.
 Not proposed, on purpose:
 - docstrings and module dunders (`__all__`, `__version__`): documentation and
   metadata, not behaviour;
-- annotations, `if TYPE_CHECKING:` and `if __name__ == "__main__":`: nothing a
-  test can run, or a different program;
+- annotations, the type named by `cast(...)` or `TypeVar(...)`,
+  `if TYPE_CHECKING:` and `if __name__ == "__main__":`: nothing a test can
+  run, or a different program;
 - patterns of `match`, whose literals are structure and not values;
 - the arguments of a call that `exclude_calls` names;
 - test files, which the service refuses before it gets here: mutating the
@@ -112,6 +113,10 @@ _ATOMIC = (
     ast.GeneratorExp,
     ast.JoinedStr,
 )
+
+# Calls whose first argument is the name of a type or of a type variable, and
+# the position of that argument.
+_TYPE_ARGUMENT = {"cast": 0, "TypeVar": 0, "ParamSpec": 0, "TypeVarTuple": 0, "NewType": 0}
 
 _SIGNIFICANT_SKIPPED = {
     tokenize.COMMENT,
@@ -487,6 +492,19 @@ class _Walker(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         if self.excluded(node):
+            return
+        if _TYPE_ARGUMENT.get(_dotted(node.func).rsplit(".", 1)[-1], -1) == 0 and (
+            node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            # `cast("list[int]", x)`: the first argument names a type, which
+            # no test can tell from another string.
+            self.visit(node.func)
+            for arg in node.args[1:]:
+                self.visit(arg)
+            for keyword in node.keywords:
+                self.visit(keyword)
             return
         self.generic_visit(node)
 

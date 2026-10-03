@@ -153,3 +153,97 @@ def _safe_scandir(path: str):
         return list(os.scandir(path))
     except OSError:
         return []
+
+
+# ---- how pytest is configured -------------------------------------------------
+
+# What `addopts` may say that this kalku cannot honour: running the suite on
+# several processes (it forks one child per run), and measuring coverage with
+# another tool (the interpreter's own monitor is in use).
+_DROPPED_WITH_VALUE = {
+    "-n",
+    "--numprocesses",
+    "--maxprocesses",
+    "--dist",
+    "--tx",
+    "--cov-report",
+    "--cov-config",
+    "--cov-fail-under",
+    "--cov-context",
+}
+_DROPPED_PLUGINS = {"xdist", "xdist.plugin", "cov", "pytest_cov", "pytest_cov.plugin"}
+
+
+def read_addopts(work: Path) -> str | None:
+    """The `addopts` of the project's pytest configuration, as pytest finds it:
+    `pytest.ini`, then `pyproject.toml`, then `tox.ini`, then `setup.cfg`."""
+    import configparser
+    import tomllib
+
+    ini = work / "pytest.ini"
+    if ini.is_file():
+        return _from_ini(ini, "pytest", configparser)
+    pyproject = work / "pyproject.toml"
+    if pyproject.is_file():
+        try:
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        options = data.get("tool", {}).get("pytest", {}).get("ini_options")
+        if options is not None:
+            value = options.get("addopts")
+            return " ".join(value) if isinstance(value, list) else value
+    for name, section in (("tox.ini", "pytest"), ("setup.cfg", "tool:pytest")):
+        found = work / name
+        if found.is_file():
+            value = _from_ini(found, section, configparser)
+            if value is not None:
+                return value
+    return None
+
+
+def _from_ini(path: Path, section: str, configparser) -> str | None:
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read(path, encoding="utf-8")
+    except (OSError, configparser.Error):
+        return None
+    return parser.get(section, "addopts", fallback=None)
+
+
+def sanitized_addopts(addopts: str | None) -> str:
+    """The project's `addopts` without what cannot run here."""
+    import shlex
+
+    try:
+        words = shlex.split(addopts or "")
+    except ValueError:
+        return ""
+    kept: list[str] = []
+    skip_value = False
+    for word in words:
+        if skip_value:
+            skip_value = False
+            continue
+        name = word.split("=", 1)[0]
+        if name in _DROPPED_WITH_VALUE:
+            skip_value = "=" not in word
+            continue
+        if word.startswith("-n") and not word.startswith("--") and len(word) > 2:
+            continue  # `-n4`, `-nauto`
+        if name == "--cov" or name.startswith("--cov-") or word == "--no-cov":
+            continue
+        kept.append(word)
+    # `-p xdist` takes its value as the next word.
+    cleaned: list[str] = []
+    i = 0
+    while i < len(kept):
+        if kept[i] == "-p" and i + 1 < len(kept) and kept[i + 1] in _DROPPED_PLUGINS:
+            i += 2
+            continue
+        if kept[i].startswith("-p") and kept[i][2:] in _DROPPED_PLUGINS:
+            i += 1
+            continue
+        cleaned.append(kept[i])
+        i += 1
+    return shlex.join(cleaned)
