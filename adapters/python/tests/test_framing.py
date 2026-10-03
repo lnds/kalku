@@ -50,3 +50,23 @@ def test_bytes_that_are_not_utf8_are_a_line_that_is_not_json():
 @pytest.mark.parametrize("text", ["é", "日本語", "a b"])
 def test_multibyte_text_is_read_whole(text):
     assert lines((text + "\n").encode(), 100) == [text]
+
+
+def test_what_is_read_in_one_go_is_bounded_and_a_dropped_line_is_not_held():
+    import tracemalloc
+
+    assert framing._CHUNK == 65536
+    # The input is built before anything is measured: it is not what is under test.
+    stream = io.BytesIO(b"a" * (8 * 1024 * 1024) + b"\nok\n")
+    tracemalloc.start()
+    try:
+        before = tracemalloc.get_traced_memory()[0]
+        out = [read_line(stream, 100), read_line(stream, 100)]
+        peak = tracemalloc.get_traced_memory()[1] - before
+    finally:
+        tracemalloc.stop()
+
+    assert out == [TOO_LONG, "ok"]
+    # The line was never held: the peak is a few chunks of the reader's own and
+    # not the eight megabytes of the line.
+    assert peak < 1024 * 1024

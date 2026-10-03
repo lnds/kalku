@@ -59,3 +59,23 @@ def test_splicing_replaces_exactly_the_span_in_bytes():
     assert src.splice(5, 7, ">") == "if a > 10 {}é"
     assert src.splice(5, 7, "") == "if a  10 {}é"
     assert Source("é = 1").splice(5, 6, "2") == "é = 2"
+
+
+def test_a_byte_in_the_middle_of_a_character_is_a_position_not_an_error():
+    # Half of `é`: the column still counts a character, as the replacement for what is cut.
+    assert Source("é = 1").position(1) == Position(1, 2, 1)
+    assert Source("aé").position(2) == Position(1, 3, 2)
+
+
+def test_a_position_is_a_value_that_cannot_be_changed():
+    import dataclasses
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        Position(1, 1, 0).line = 2
+
+
+def test_an_empty_slice_at_either_end_is_the_empty_text():
+    src = Source("abc")
+    assert src.slice(0, 0) == "" and src.slice(3, 3) == ""
+    assert src.slice(0, 3) == "abc"
+    assert src.slice(3, 2) is None

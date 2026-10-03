@@ -116,3 +116,61 @@ def test_an_import_inside_a_function_or_a_condition_still_counts(tmp_path):
         "c.py": "try:\n    import a\nexcept ImportError:\n    pass\n",
     }
     assert importers(tmp_path, files, "a.py") == {"b.py", "c.py"}
+
+
+def test_a_from_import_of_a_package_depends_on_the_package_itself(tmp_path):
+    files = {
+        "pkg/__init__.py": "FLAG = 1\n",
+        "pkg/a.py": "",
+        "tests/test_x.py": "from pkg import a\n",
+    }
+    assert "tests/test_x.py" in importers(tmp_path, files, "pkg/__init__.py")
+    assert "tests/test_x.py" in importers(tmp_path, files, "pkg/a.py")
+
+
+def test_only_python_files_are_files_of_the_project(tmp_path):
+    files = {"a.py": "", "pyfile": "import a\n", "notes.pyi": "", "b.txt": "import a\n"}
+    graph = dependency.build(make(tmp_path, files))
+    assert set(graph.imports) == {"a.py"}
+
+
+def test_a_package_is_a_directory_chain_of_inits_and_stops_at_the_first_that_is_not(tmp_path):
+    files = {
+        "pkg/__init__.py": "",
+        "pkg/mid/mod.py": "from . import sibling\n",
+        "pkg/mid/sibling.py": "",
+        "pkg/mid/deep/__init__.py": "",
+        "pkg/mid/deep/leaf.py": "from . import other\n",
+        "pkg/mid/deep/other.py": "",
+    }
+    # `mid` has no `__init__`, so `mod.py` is not in a package and a relative
+    # import there points at nothing; `deep` is a package of its own.
+    graph = dependency.build(make(tmp_path, files))
+    assert graph.imports["pkg/mid/mod.py"] == set()
+    assert graph.imports["pkg/mid/deep/leaf.py"] == {
+        "pkg/mid/deep/other.py",
+        "pkg/mid/deep/__init__.py",
+    }
+
+
+def test_a_name_next_to_a_deeply_nested_file_is_found_in_every_directory_above_it(tmp_path):
+    files = {
+        "tests/a/b/c/test_deep.py": "import top\nimport mid\nimport near\n",
+        "top.py": "",
+        "tests/mid.py": "",
+        "tests/a/b/c/near.py": "",
+    }
+    graph = dependency.build(make(tmp_path, files))
+    assert graph.imports["tests/a/b/c/test_deep.py"] == {
+        "top.py",
+        "tests/mid.py",
+        "tests/a/b/c/near.py",
+    }
+
+
+def test_two_graphs_with_the_same_imports_are_equal_whatever_they_have_computed():
+    a = dependency.Graph({"x.py": {"y.py"}})
+    b = dependency.Graph({"x.py": {"y.py"}})
+    a.importers_of("y.py")
+    assert a == b
+    assert "_cache" not in repr(a)

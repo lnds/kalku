@@ -60,8 +60,10 @@ def build(work: Path) -> Graph:
     """The import graph of every Python file under `work`."""
     files = python_files(work)
     present = set(files)
+    # The project's own directory is always searched, as the one every file's
+    # ancestors end in, so only `src` needs naming.
     roots = [Path(r).relative_to(work).as_posix() for r in project.import_roots(work)]
-    roots = ["" if r == "." else r for r in roots]
+    roots = [r for r in roots if r != "."]
     graph = Graph()
     for relative in files:
         graph.imports[relative] = _imports_of(work, relative, present, roots)
