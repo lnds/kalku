@@ -7,10 +7,24 @@ import kalku.core.setting_up
 # A real tree on disk, because what is under test is what is read from it:
 # which files a project has, and which of them are its code.
 
-fn scratch(name: String) : String / Env {
+# Two `kai test` runs at once share a TMPDIR, so a scratch directory is named
+# after the process that owns it.
+fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $PPID"]) {
+  Err(_) -> "0"
+  Ok(child) -> {
+    let out = match proc.read_stdout(child) {
+      Ok(chunk) -> chunk
+      Err(_) -> ""
+    }
+    let _ = proc.wait(child)
+    trim(out)
+  }
+}
+
+fn scratch(name: String) : String / Env + Process {
   let base = Env.get("TMPDIR").unwrap_or("/tmp")
   let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
-  "#{dir}/kalku_sources_#{name}"
+  "#{dir}/kalku_sources_#{own_pid()}_#{name}"
 }
 
 fn make(dir: String, paths: [String]) : Unit / Process + File {

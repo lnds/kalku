@@ -9,10 +9,21 @@ import kalku.core.changed_lines
 # starting point, and what happens when it cannot say. A scripted answer
 # would only prove that kalku can read the answer it was given.
 
-fn scratch(name: String) : String / Env {
+# Two `kai test` runs at once share a TMPDIR, so a scratch directory is named
+# after the process that owns it.
+fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $PPID"]) {
+  Err(_) -> "0"
+  Ok(child) -> {
+    let out = drained(child, "")
+    let _ = proc.wait(child)
+    trim(out)
+  }
+}
+
+fn scratch(name: String) : String / Env + Process {
   let base = Env.get("TMPDIR").unwrap_or("/tmp")
   let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
-  "#{dir}/kalku_diffing_#{name}"
+  "#{dir}/kalku_diffing_#{own_pid()}_#{name}"
 }
 
 fn drained(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
