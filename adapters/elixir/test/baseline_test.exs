@@ -26,21 +26,37 @@ defmodule Kalku.BaselineTest do
       assert Enum.all?(done["tests"], &(&1["duration_ms"] >= 0))
     end
 
-    # The bug this guards: a mocking library replaces one of the project's
-    # own modules, `:cover` loses the module it instrumented, and the test
-    # driving the mock comes back credited with no lines at all — not even
-    # lines of modules nobody touched. Reporting that attribution would
-    # judge each wekufe against too few tests, and a wekufe no test was
-    # aimed at survives. A survivor that is not a hole is the one thing a
-    # run must never produce, so the coverage is withheld and every wekufe
-    # faces the whole suite instead.
-    test "a suite that mocks its own modules reports no coverage at all", %{reni: reni} do
+    # A mocking library sets itself up in `test_helper.exs` and tidies up in
+    # an `after_suite` callback, which ExUnit runs at the end of every
+    # `ExUnit.run`. The baseline runs the suite once whole and then once per
+    # test, so that tidying left the per-test runs with the mock gone: the
+    # test driving it failed, was credited with no lines at all, and the
+    # attribution had to be withheld for the whole run.
+    test "a suite that mocks its own modules is attributed test by test", %{reni: reni} do
       done = reply(run(reni, "mocked", ["baseline"]), "baseline_done")
 
       assert done["status"] == "green"
       assert length(done["tests"]) == 2
-      refute Map.has_key?(done, "coverage")
-      refute Map.has_key?(done, "coverage_path")
+
+      by_line = Map.new(done["coverage"], &{{&1["file"], &1["line"]}, &1["tests"]})
+      # `charge/1` runs in the test that drives the mock, and `total/2` in
+      # the one that does not touch it.
+      assert by_line[{"lib/mocked.ex", 5}] == ["test/mocked_test.exs:9"]
+      assert by_line[{"lib/mocked.ex", 12}] == ["test/mocked_test.exs:5"]
+    end
+
+    # The net under it: where the lines the suite reached are not all
+    # credited to some test, the attribution is withheld, because a wekufe
+    # judged against too few tests is a survivor that is not a hole.
+    test "attribution that does not add up to the suite is withheld" do
+      whole = MapSet.new([{"lib/a.ex", 1}, {"lib/a.ex", 2}])
+      credited = fn lines -> %{id: "t", lines: lines} end
+
+      assert [%{lines: [{"lib/a.ex", 1}, {"lib/a.ex", 2}]}] =
+               Kalku.Baseline.reconcile([credited.([{"lib/a.ex", 1}, {"lib/a.ex", 2}])], whole)
+
+      assert [%{lines: []}] =
+               Kalku.Baseline.reconcile([credited.([{"lib/a.ex", 1}])], whole)
     end
 
     # Withholding it for every project would give away the speed the whole
