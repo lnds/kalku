@@ -1,0 +1,37 @@
+#[doc("""
+Which files of a project are its code and which are its suite.
+
+The language says what its files look like (`core/setting_up.kai`) and this
+reads a project through that: a whole project for `scope: all`, and the suite
+a warm kalku holds a copy of. Nothing here knows a layout. A project whose
+code is under `src/`, in any package of a workspace, is read the same way as
+one whose code is under `lib/`.
+""")]
+
+import fs.dir
+import fs.file
+import kalku.core.setting_up
+
+#[doc("Every source file the project has, which is what `scope: all` means.")]
+pub fn every_source(root: String, known: Known) : [String] / File =
+  filter(walked(root, known), f => is_source_of(known, f))
+
+#[doc("Every file of the project's suite.")]
+pub fn every_test(root: String, known: Known) : [String] / File =
+  filter(walked(root, known), f => is_test_of(known, f))
+
+# Everything under the project, without descending into what a build or
+# version control leaves: a `target` or `deps` is more files than the rest of
+# the project together, and none of them is read.
+fn walked(root: String, known: Known) : [String] / File =
+  flat_map(
+    filter(dir.list_dir(root), name => not contains(known.ignored, name)),
+    name => files_at("#{root}/#{name}")
+  )
+
+# A directory yields what is under it; a file at the top of the project is
+# itself, which `walk` does not say.
+fn files_at(path: String) : [String] / File = match dir.walk(path) {
+  [] -> if file.exists(path) { [path] } else { [] }
+  inside -> inside
+}

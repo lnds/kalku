@@ -3,7 +3,6 @@
 import actor
 import os.args
 import fs.file
-import fs.dir
 import os.process as proc
 import kalku.wire.enums
 import kalku.core.report
@@ -21,6 +20,7 @@ import kalku.core.equivalent
 import kalku.core.answering
 import kalku.core.equivalent_parse as eqfile
 import kalku.core.setting_up
+import kalku.sources
 import kalku.core.info
 import kalku.core.mcp
 import kalku.core.remembering
@@ -119,22 +119,30 @@ fn run_here(
       Stderr.eprint("kalku: could not measure: #{why}")
       2
     }
-    Ok(touched) -> match files_for(wanted, touched) {
-      [] -> if is_some(touched) {
-        {
-          Stderr.eprint("kalku: this change touches no source file, so there is nothing to measure")
-          0
-        }
-      } else {
-        {
-          Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
-          2
-        }
+    Ok(touched) -> match language_of(c) {
+      Err(why) -> {
+        Stderr.eprint("kalku: #{why}")
+        2
       }
-      files -> with_declared(
-        ".",
-        declared => measured(asking_for(c, wanted, files, touched, declared), wanted, c.policy)
-      )
+      Ok(known) -> match files_for(wanted, touched, known) {
+        [] -> if is_some(touched) {
+          {
+            Stderr.eprint(
+              "kalku: this change touches no source file, so there is nothing to measure"
+            )
+            0
+          }
+        } else {
+          {
+            Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
+            2
+          }
+        }
+        files -> with_declared(
+          ".",
+          declared => measured(asking_for(c, wanted, files, touched, declared), wanted, c.policy)
+        )
+      }
     }
   }
 )
@@ -150,18 +158,26 @@ fn changes_asked(wanted: Wanted) : Result[Option[[FileChange]], String] / Proces
 
 # The files a run is about: the ones named, or — when a change was asked
 # about and none were named — the source files that change touched.
-fn files_for(wanted: Wanted, touched: Option[[FileChange]]) : [String] =
+fn files_for(wanted: Wanted, touched: Option[[FileChange]], known: setting_up.Known) : [String] =
   if not is_empty(wanted.files) {
     wanted.files
   } else {
     match touched {
       Some(changes) ->
-        filter(changed_lines.files(changes), f => starts_with(f, "lib/") and is_source(f))
+        filter(changed_lines.files(changes), f => is_source_of(known, f))
       None -> []
     }
   }
 
-fn is_source(f: String) : Bool = ends_with(f, ".ex") or ends_with(f, ".kai")
+# The language a project says it is written in, which is what tells its sources
+# from its tests and from what a build leaves.
+fn language_of(c: Config) : Result[setting_up.Known, String] = match c.language {
+  None -> Err("no language in #{CONFIG_PATH}; run `kalku init` there")
+  Some(name) -> match named(name) {
+    Ok(known) -> Ok(known)
+    Err(puzzle) -> Err(explain(puzzle))
+  }
+}
 
 fn measured(
   asking: Asking,
@@ -573,9 +589,12 @@ fn run_for(
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix =
   match settings_in(p.root) {
     Err(why) -> (p, [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })])
-    Ok(c) -> match measurable(p.root, asked, every_source(p.root)) {
-      Err(no) -> (p, [no])
-      Ok(files) -> measured_over(p, c, files, say)
+    Ok(c) -> match language_of(c) {
+      Err(why) -> (p, [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })])
+      Ok(known) -> match measurable(p.root, asked, every_source(p.root, known)) {
+        Err(no) -> (p, [no])
+        Ok(files) -> measured_over(p, c, known, files, say)
+      }
     }
   }
 
@@ -673,11 +692,6 @@ fn settings_in(root: String) : Result[Config, String] / File {
     Err("no #{CONFIG_PATH} in #{root}; run `kalku init` there")
   }
 }
-
-# Every source file the project has, which is what `scope: all` means. A
-# kalku is asked for sites by file, and this is the list it is asked for.
-fn every_source(root: String) : [String] / File =
-  filter(dir.walk("#{root}/lib"), is_source)
 
 fn found_events(found: Found) : [ServerEvent] = match found.report {
   None -> [
@@ -884,13 +898,14 @@ fn answered_mid_run(p: Project, m: OrchMsg) : Unit / Actor[OrchMsg] = match m {
 fn measured_over(
   p: Project,
   c: Config,
+  known: setting_up.Known,
   files: [String],
   say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
   # The fingerprint covers the project, not the request: warm kalku hold a
   # copy of all of it, and a file this run does not measure can still be
   # the one that made them stale.
-  let now = fingerprint(read_hashes(every_source(p.root) ++ every_test(p.root)))
+  let now = fingerprint(read_hashes(every_source(p.root, known) ++ every_test(p.root, known)))
   # A run that cannot read what the project declared does not start: the
   # alternative is measuring while ignoring a suppression, and reporting
   # a hole somebody already decided was not one.
@@ -958,6 +973,3 @@ fn read_hashes(files: [String]) : [FileHash] / File =
 
 fn read_or_empty(path: String) : String / File =
   if file.exists(path) { file.read(path) } else { "" }
-
-fn every_test(root: String) : [String] / File =
-  filter(dir.walk("#{root}/test"), f => ends_with(f, "_test.exs"))

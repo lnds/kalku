@@ -1,6 +1,14 @@
 import kalku.core.setting_up
 
-fn elixir() : Known = Known { language: "elixir", marker: "mix.exs", summon: "" }
+fn elixir() : Known = Known {
+  language: "elixir",
+  marker: "mix.exs",
+  summon: "",
+  sources: [],
+  tests: [],
+  test_suffixes: [],
+  ignored: []
+}
 
 test "a project says what it is written in" {
   assert detect(["mix.exs", "README.md"]).map(.language) == Ok("elixir")
@@ -217,4 +225,43 @@ test "a Cargo project is Rust, and its summoning starts the Rust kalku" {
 # answers, and the owner is asked rather than a coin flipped.
 test "a Cargo.toml beside another marker is ambiguous" {
   assert detect(["Cargo.toml", "mix.exs"]) == Err(Ambiguous(["elixir", "rust"]))
+}
+
+fn of(language: String) : Known = named(language).unwrap_or(elixir())
+
+test "a source file is the language's own, outside its suite and its build" {
+  assert is_source_of(of("elixir"), "lib/thing.ex")
+  assert is_source_of(of("elixir"), "apps/billing/lib/thing.ex")
+  assert is_source_of(of("rust"), "src/lib.rs")
+  assert is_source_of(of("rust"), "crates/core/src/sites.rs")
+  assert is_source_of(of("kaikai"), "kalku/core/gate.kai")
+  assert is_source_of(of("kaikai"), "main.kai")
+}
+
+# The oracle is not what is measured.
+test "tests and what a build leaves are not sources" {
+  assert not is_source_of(of("elixir"), "test/support/helper.ex")
+  assert not is_source_of(of("elixir"), "deps/jason/lib/jason.ex")
+  assert not is_source_of(of("rust"), "tests/pipe.rs")
+  assert not is_source_of(of("rust"), "target/debug/build/x/out.rs")
+  assert not is_source_of(of("kaikai"), "tests/gate_test.kai")
+  assert not is_source_of(of("kaikai"), "kalku/core/gate_test.kai")
+}
+
+test "another language's files are not this one's" {
+  assert not is_source_of(of("rust"), "lib/thing.ex")
+  assert not is_source_of(of("elixir"), "src/lib.rs")
+  assert not is_source_of(of("rust"), "README.md")
+}
+
+# A directory called `test` holds a suite; a file called `test_utils` does not.
+test "a path is under a test directory by its directories, not its file name" {
+  assert not is_source_of(of("elixir"), "lib/billing/test/fixture.ex")
+  assert is_source_of(of("elixir"), "lib/billing/test_utils.ex")
+  assert is_test_of(of("elixir"), "test/billing_test.exs")
+  assert is_test_of(of("elixir"), "test/test_helper.exs")
+  assert is_test_of(of("rust"), "tests/pipe.rs")
+  assert is_test_of(of("kaikai"), "adapters/kaikai/tests/kalku_test.kai")
+  assert not is_test_of(of("elixir"), "lib/billing.ex")
+  assert not is_test_of(of("elixir"), "deps/foo/test/foo_test.exs")
 }

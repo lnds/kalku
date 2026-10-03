@@ -13,9 +13,25 @@ summons, which is why it is written into the project as a script the
 owner can read and change.
 """)]
 
-#[doc("A language kalku can set a project up for.")]
+#[doc("""
+A language kalku can set a project up for.
+
+`sources` are the extensions of the files that are the project's code. `tests`
+are directory names whose files are the suite, `test_suffixes` the endings of
+files that are, and `ignored` directories that are neither (what a build
+leaves, what a version control keeps). A change or a whole project is
+read through these, so the core does not need to know a layout.
+""")]
 #[derive(Eq, Show)]
-pub type Known = { language: String, marker: String, summon: String }
+pub type Known = {
+  language: String,
+  marker: String,
+  summon: String,
+  sources: [String],
+  tests: [String],
+  test_suffixes: [String],
+  ignored: [String]
+}
 
 #[doc("What init found, and what it would write.")]
 #[derive(Eq, Show)]
@@ -63,9 +79,33 @@ pub const CONFIG_PATH : String = ".kalku.toml"
 
 #[doc("Every language this kalku can set a project up for.")]
 pub fn catalogue() : [Known] = [
-  Known { language: "elixir", marker: "mix.exs", summon: elixir_summoner() },
-  Known { language: "kaikai", marker: "kai.toml", summon: kaikai_summoner() },
-  Known { language: "rust", marker: "Cargo.toml", summon: rust_summoner() }
+  Known {
+    language: "elixir",
+    marker: "mix.exs",
+    summon: elixir_summoner(),
+    sources: [".ex"],
+    tests: ["test"],
+    test_suffixes: ["_test.exs"],
+    ignored: ["_build", "deps", ".git", "node_modules", "cover"]
+  },
+  Known {
+    language: "kaikai",
+    marker: "kai.toml",
+    summon: kaikai_summoner(),
+    sources: [".kai"],
+    tests: ["tests"],
+    test_suffixes: ["_test.kai"],
+    ignored: ["_build", ".kai-cache", ".git", "dist"]
+  },
+  Known {
+    language: "rust",
+    marker: "Cargo.toml",
+    summon: rust_summoner(),
+    sources: [".rs"],
+    tests: ["tests", "benches", "examples"],
+    test_suffixes: [],
+    ignored: ["target", ".git"]
+  }
 ]
 
 #[doc("""
@@ -316,3 +356,35 @@ fn spliced(build_file: String, at: Int, entry: String) : Result[String, String] 
     (Some(before), Some(after)) -> Ok(before ++ entry ++ after)
     _ -> Err("its `deps` list does not fall on a character boundary")
   }
+
+#[doc("""
+True when a path is one of the language's own source files: the right
+extension, outside the suite, and outside what a build or version control
+leaves. A test is the oracle, so a wekufe is never cast on one.
+""")]
+pub fn is_source_of(known: Known, path: String) : Bool =
+  any(known.sources, e => ends_with(path, e))
+    and (not is_suite_file(known, path))
+    and (not is_ignored(known, path))
+
+#[doc("""
+True when a path belongs to the suite: under one of the language's test
+directories, or named like a test. What a warm kalku holds a copy of, and so
+what makes it stale when it changes.
+""")]
+pub fn is_test_of(known: Known, path: String) : Bool =
+  is_suite_file(known, path) and (not is_ignored(known, path))
+
+fn is_suite_file(known: Known, path: String) : Bool =
+  any(segments(path), s => contains(known.tests, s))
+    or any(known.test_suffixes, e => ends_with(path, e))
+
+fn is_ignored(known: Known, path: String) : Bool =
+  any(segments(path), s => contains(known.ignored, s))
+
+# The directory names of a path, not its file name: `lib/test_utils.ex` is
+# not under a directory called `test`.
+fn segments(path: String) : [String] = match split(path, "/") {
+  [] -> []
+  parts -> take(parts, length(parts) - 1)
+}

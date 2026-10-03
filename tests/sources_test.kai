@@ -1,0 +1,96 @@
+import fs.dir
+import fs.file
+import os.process as proc
+import kalku.sources
+import kalku.core.setting_up
+
+# A real tree on disk, because what is under test is what is read from it:
+# which files a project has, and which of them are its code.
+
+fn scratch(name: String) : String / Env {
+  let base = Env.get("TMPDIR").unwrap_or("/tmp")
+  let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
+  "#{dir}/kalku_sources_#{name}"
+}
+
+fn make(dir: String, paths: [String]) : Unit / Process + File {
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]).map(c => proc.wait(c))
+  let _ = proc.pipe_errs("/bin/mkdir", ["-p", dir]).map(c => proc.wait(c))
+  each(
+    paths,
+    p => {
+      let parent = join(reverse(drop(reverse(split("#{dir}/#{p}", "/")), 1)), "/")
+      let _ = proc.pipe_errs("/bin/mkdir", ["-p", parent]).map(c => proc.wait(c))
+      file.write("#{dir}/#{p}", "x\n")
+    }
+  )
+}
+
+fn of(language: String) : Known = match find(catalogue(), k => k.language == language) {
+  Some(k) -> k
+  None -> Known {
+    language: "none",
+    marker: "",
+    summon: "",
+    sources: [],
+    tests: [],
+    test_suffixes: [],
+    ignored: []
+  }
+}
+
+fn relative(dir: String, paths: [String]) : [String] =
+  sort(paths | (p => slice(p, length(dir) + 1, length(p))))
+
+# The bug this guards: sources were `lib/` and `.ex` or `.kai`, whatever the
+# language, so a Rust project had none.
+test "a Rust workspace's code is found under src in every package, and its suite is not" {
+  let root = scratch("rust")
+  make(
+    root,
+    [
+      "Cargo.toml",
+      "src/lib.rs",
+      "src/sites.rs",
+      "crates/core/src/lib.rs",
+      "tests/pipe.rs",
+      "target/debug/build/x/out.rs",
+      "README.md"
+    ]
+  )
+
+  assert relative(root, every_source(root, of("rust")))
+    == ["crates/core/src/lib.rs", "src/lib.rs", "src/sites.rs"]
+  assert relative(root, every_test(root, of("rust"))) == ["tests/pipe.rs"]
+}
+
+test "an Elixir project keeps reading lib, and not its deps or its tests" {
+  let root = scratch("elixir")
+  make(
+    root,
+    [
+      "mix.exs",
+      "lib/a.ex",
+      "lib/b/c.ex",
+      "test/a_test.exs",
+      "test/test_helper.exs",
+      "deps/jason/lib/jason.ex",
+      "_build/test/lib/a.ex"
+    ]
+  )
+
+  assert relative(root, every_source(root, of("elixir"))) == ["lib/a.ex", "lib/b/c.ex"]
+  assert relative(root, every_test(root, of("elixir")))
+    == ["test/a_test.exs", "test/test_helper.exs"]
+}
+
+# This repository's own code is under `kalku/`, and its entry point is a file
+# at the top of the project, which a walk of directories does not say.
+test "a kaikai project's code is anywhere, including a file at the top" {
+  let root = scratch("kaikai")
+  make(root, ["kai.toml", "main.kai", "kalku/core/gate.kai", "tests/gate_test.kai", "dist/x.kai"])
+
+  assert relative(root, every_source(root, of("kaikai")))
+    == ["kalku/core/gate.kai", "main.kai"]
+  assert relative(root, every_test(root, of("kaikai"))) == ["tests/gate_test.kai"]
+}
