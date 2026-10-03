@@ -1,3 +1,23 @@
+## v0.4.0 (2026-10-03)
+
+### Added
+
+- **rust**: per-test coverage with LLVM, so a cast runs only the tests that reach it (#128)
+- **rust**: the Rust kalku answers abort (#127)
+- **rust**: kalku init sets up a Cargo project, and the Rust kalku ships in the release (#122)
+- **rust**: the Rust kalku prepares, measures and casts in the reni (#119)
+- **rust**: a native Rust kalku that finds sites (#118)
+- **gate**: block a change on the holes it introduced (#117)
+
+### Fixed
+
+- **elixir**: the suite's after_suite hooks do not run between the runs of a warm runtime (#131)
+- **report**: a file the kalku would not search is in the report, and the gate hears of it (#130)
+- **orchestrator**: say when no file could be searched for sites (#129)
+- **rust**: sync the reni's copy by content, so a build is never trusted over other code (#124)
+- **self-mutate**: build the scripted kalku and allow a cast the time a suite takes (#121)
+- **self-mutate**: measure with the pinned release, in a copy of the tree (#120)
+
 ## v0.3.0 (2026-10-01)
 
 ### Added
