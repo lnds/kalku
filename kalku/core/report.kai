@@ -14,6 +14,7 @@ import kalku.core.gate
 import kalku.core.hint
 import kalku.core.recurring
 import kalku.core.changed_lines
+import kalku.core.skipping
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
@@ -58,6 +59,7 @@ pub type Report = {
   on_changed_lines: Int,
   suppressions: SuppressionChanges,
   troubles: [Trouble],
+  skipped: [Skipped],
   uncovered: [Site],
   blockers: [Blocker]
 }
@@ -71,6 +73,7 @@ pub fn human(r: Report) : String = join(
   survivor_blocks(r)
     ++ pattern_block(r)
     ++ uncovered_block(r)
+    ++ skipped_block(r)
     ++ trouble_blocks(r)
     ++ [summary_line(r)]
     ++ suppression_block(r)
@@ -171,6 +174,15 @@ fn pattern_block(r: Report) : [String] = flat_map(
   repeated_calls(r.survivors | (.site), WORTH_SAYING),
   as_advice
 )
+
+# A file the kalku would not search is a file the score says nothing about,
+# so it is named with the reason and not left to be inferred from a smaller
+# number of sites.
+fn skipped_block(r: Report) : [String] = if is_empty(r.skipped) {
+  []
+} else {
+  ["files that were not searched:"] ++ (r.skipped | (s => "  #{skipped_line(s)}")) ++ [""]
+}
 
 fn uncovered_block(r: Report) : [String] = if is_empty(r.uncovered) {
   []
