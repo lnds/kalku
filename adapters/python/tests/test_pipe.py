@@ -336,3 +336,26 @@ def test_the_projects_own_addopts_still_select_what_is_run(kalku, make_project):
     # `--cov`, which this kalku cannot honour, did not stop the run.
     assert done["status"] == "green", done
     assert sorted(t["test"] for t in done["tests"]) == sorted([INSIDE, OUTSIDE])
+
+
+def test_a_constant_a_test_only_reads_is_judged_against_that_test(kalku, make_project):
+    files = {
+        "config.py": "LIMIT = 9\n",
+        "gate.py": "def gate(a):\n    return a >= 1\n",
+        "tests/test_config.py": "import config\n\n\ndef test_limit():\n    assert config.LIMIT == 9\n",
+        "tests/test_gate.py": "from gate import gate\n\n\ndef test_gate():\n    assert gate(1)\n",
+    }
+    k, _ = prepared(kalku, make_project, files)
+    k.ask({"type": "prepare"})
+
+    baseline = k.ask({"type": "baseline"})
+
+    # No line of `config.py` runs during `test_limit`, which only reads what the
+    # module defined when it was imported: it is credited because it imports it.
+    by_line = {(e["file"], e["line"]): e["tests"] for e in baseline["coverage"]}
+    assert by_line[("config.py", 1)] == ["tests/test_config.py::test_limit"]
+    assert ("gate.py", 1) in by_line and "tests/test_config.py::test_limit" not in by_line[
+        ("gate.py", 1)
+    ]
+    done = k.cast(k.site("config.py", "literal", "9", "10"), ["tests/test_config.py::test_limit"])
+    assert done["outcome"] == "killed"

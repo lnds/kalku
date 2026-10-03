@@ -631,3 +631,44 @@ def test_what_is_said_is_written_with_its_newline_and_flushed(harness):
     h = harness()
     h.svc._say("héllo")
     assert h.out.getvalue() == "héllo\n".encode()
+
+
+def test_a_conftest_that_imports_a_module_makes_every_test_below_it_depend_on_it(harness):
+    h = harness()
+    (h.root / "config.py").write_text("LIMIT = 9\n")
+    (h.root / "tests/conftest.py").write_text("import config\n")
+    (h.root / "tests/sub").mkdir()
+    (h.root / "tests/sub/test_x.py").write_text("def test_x():\n    pass\n")
+    (h.root / "other").mkdir()
+    (h.root / "other/test_y.py").write_text("def test_y():\n    pass\n")
+    h.hello()
+    h.scripts["collect"] = collected(T1)
+    assert h.one(type="prepare")["type"] == "prepared"
+    x, y = "tests/sub/test_x.py::test_x", "other/test_y.py::test_y"
+    h.scripts["baseline"] = [
+        result(x, lines={}),
+        result(y, lines={}),
+        {"e": "done", "exit": 0, "warm": []},
+    ]
+
+    said = h.one(type="baseline")
+
+    by_line = {(e["file"], e["line"]): e["tests"] for e in said["coverage"]}
+    assert by_line == {("config.py", 1): [x]}
+
+
+def test_a_file_that_cannot_be_parsed_adds_no_shared_lines_and_does_not_stop_the_baseline(harness):
+    h = harness()
+    (h.root / "broken.py").write_text("def f(:\n")
+    (h.root / "tests/test_b.py").write_text("import broken\n")
+    h.hello()
+    h.scripts["collect"] = collected(T1)
+    assert h.one(type="prepare")["type"] == "prepared"
+    h.scripts["baseline"] = [
+        result("tests/test_b.py::t", lines={}),
+        {"e": "done", "exit": 0, "warm": []},
+    ]
+
+    said = h.one(type="baseline")
+
+    assert said["status"] == "green" and said["coverage"] == []

@@ -178,3 +178,55 @@ def test_a_file_is_read_once_however_many_tests_ran_it():
 def test_a_decorated_function_header_includes_every_decorator_line():
     text = "@a\n@b(1,\n   2)\ndef f(x):\n    return x\n"
     assert lines_of(text, {5}) == {1, 2, 3, 4, 5}
+
+
+CONFIG = "LIMIT = 9\nNAMES = ['a']\n\n\nclass Settings:\n    mode = 'fast'\n\n    def run(self):\n        return 1\n"
+
+
+def expanded(per_test, depends, files=("config.py",), wanted=None):
+    return coverage.expand(per_test, lambda f: CONFIG, depends=depends, files=files, wanted=wanted)
+
+
+def test_a_test_that_only_reads_a_constant_is_credited_with_it_through_what_it_imports():
+    per_test = {"tests/test_a.py::reads": {}, "tests/test_b.py::runs": {"config.py": {9}}}
+
+    got = expanded(per_test, lambda f: {"tests/test_a.py"})
+
+    # The reader ran no line of the module; it depends on it, so the module's
+    # own lines and the class attribute are its too.
+    assert got["tests/test_a.py::reads"] == {"config.py": {1, 2, 5, 6}}
+    # The test that ran the method has them by running the module.
+    assert {1, 2, 5, 6, 8, 9} <= got["tests/test_b.py::runs"]["config.py"]
+
+
+def test_a_test_that_does_not_depend_on_the_module_is_not_credited_with_it():
+    per_test = {"tests/test_a.py::x": {}, "tests/test_b.py::y": {}}
+
+    got = expanded(per_test, lambda f: {"tests/test_a.py"})
+
+    assert got["tests/test_b.py::y"] == {}
+
+
+def test_only_the_lines_that_have_something_to_measure_are_shared():
+    per_test = {"tests/test_a.py::reads": {}}
+
+    got = expanded(per_test, lambda f: {"tests/test_a.py"}, wanted=lambda f: {1})
+
+    assert got["tests/test_a.py::reads"] == {"config.py": {1}}
+
+
+def test_a_module_nothing_ran_is_still_considered_when_it_is_named():
+    per_test = {"tests/test_a.py::reads": {"other.py": {1}}}
+
+    got = expanded(per_test, lambda f: {"tests/test_a.py"} if f == "config.py" else set())
+
+    assert "config.py" in got["tests/test_a.py::reads"]
+
+
+def test_a_module_that_nothing_depends_on_adds_nothing():
+    per_test = {"tests/test_a.py::x": {}}
+    assert expanded(per_test, lambda f: set()) == {"tests/test_a.py::x": {}}
+
+
+def test_without_a_dependency_map_only_what_ran_is_expanded():
+    assert coverage.expand({"t": {"config.py": {9}}}, lambda f: CONFIG)["t"]["config.py"] >= {9}

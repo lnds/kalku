@@ -259,7 +259,7 @@ class _Recorder:  # pragma: no cover - exercised through a real pytest in a chil
     def _start_monitoring(self) -> None:
         mon = sys.monitoring
         self._mon = mon
-        mon.use_tool_id(mon.COVERAGE_ID, "kalku")
+        self._tool = _free_tool_id(mon)
 
         def line(code, number):
             name = code.co_filename
@@ -271,8 +271,8 @@ class _Recorder:  # pragma: no cover - exercised through a real pytest in a chil
             self.current.setdefault(name, set()).add(number)
             return mon.DISABLE
 
-        mon.register_callback(mon.COVERAGE_ID, mon.events.LINE, line)
-        mon.set_events(mon.COVERAGE_ID, mon.events.LINE)
+        mon.register_callback(self._tool, mon.events.LINE, line)
+        mon.set_events(self._tool, mon.events.LINE)
 
     def _is_project_source(self, name: str) -> bool:
         if not name.endswith(".py") or not name.startswith(self.work + os.sep):
@@ -324,6 +324,21 @@ class _Recorder:  # pragma: no cover - exercised through a real pytest in a chil
                 }
                 message["lines"] = relative
             self.out.send(message)
+
+
+def _free_tool_id(mon) -> int:  # pragma: no cover
+    """A `sys.monitoring` tool that nothing else is using.
+
+    The interpreter has six, and a project's own tests may be running under
+    `coverage.py`, which holds the one named for it, or under another kalku:
+    taking a free one is what lets both measure."""
+    for tool in (3, 4, mon.COVERAGE_ID, mon.PROFILER_ID):
+        try:
+            mon.use_tool_id(tool, "kalku")
+        except ValueError:
+            continue
+        return tool
+    raise RuntimeError("every sys.monitoring tool the interpreter offers is already in use")
 
 
 def _text(report) -> str:  # pragma: no cover

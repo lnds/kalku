@@ -3,6 +3,7 @@ a real pytest on a real project, and what it says on its pipe."""
 
 import os
 import select
+import sys
 import time
 
 import pytest
@@ -188,3 +189,47 @@ def test_a_child_is_reaped_once(work):
     assert finish(r) == 0
     # A second `finish` does not wait on a process that is no longer there.
     assert r.finish() is None
+
+
+@pytest.fixture
+def occupied():
+    """Tool ids of `sys.monitoring` held by something else, given back after."""
+    held = []
+
+    def take(*ids):
+        for tool in ids:
+            # One may already be held, by whatever is measuring this very run.
+            try:
+                sys.monitoring.use_tool_id(tool, "someone else")
+            except ValueError:
+                continue
+            held.append(tool)
+
+    yield take
+    for tool in held:
+        sys.monitoring.free_tool_id(tool)
+
+
+def lines_of_first_test(work):
+    r = run(work, "baseline")
+    events = events_of(r)
+    finish(r)
+    return events
+
+
+def test_a_baseline_measures_with_whichever_monitoring_tool_is_free(work, occupied):
+    occupied(3, 4)
+
+    events = lines_of_first_test(work)
+
+    first = next(e for e in events if e["e"] == "result")
+    assert first["lines"]["gate.py"] == [2]
+
+
+def test_a_baseline_says_so_when_every_monitoring_tool_is_taken(work, occupied):
+    occupied(3, 4, sys.monitoring.COVERAGE_ID, sys.monitoring.PROFILER_ID)
+
+    events = lines_of_first_test(work)
+
+    crashed = [e for e in events if e["e"] == "crashed"]
+    assert crashed and "tool" in crashed[0]["message"]

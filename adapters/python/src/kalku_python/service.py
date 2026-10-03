@@ -19,10 +19,21 @@ import select
 import sys
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import __version__, coverage, framing, project, protocol, runner, sites, source
+from . import (
+    __version__,
+    coverage,
+    dependency,
+    framing,
+    project,
+    protocol,
+    runner,
+    sites,
+    source,
+    spell,
+)
 from .protocol import (
     Abort,
     Baseline,
@@ -39,8 +50,16 @@ from .protocol import Sites as SitesRequest
 
 MINIMUM = (3, 12)
 
-# A message of a failing test, as long as it is worth saying.
+# What a baseline imported from outside the project is imported again for, at
+# most: a project with more than this is not helped by the rest.
 _WARM_LIMIT = 3000
+
+# The most tests a module's own lines are credited to by what they import.
+# Past it the map would be the size of the suite times the module's lines, and
+# the kaikai side reads the whole of it; a module that every test imports is
+# credited to the tests that import it themselves, and past the limit again,
+# to none that did not run its code.
+MAX_DEPENDENTS = 300
 
 
 @dataclass
@@ -277,7 +296,7 @@ class Service:
                 failures.append({"test": e["id"], "message": e["message"] or "the test failed"})
             per_test[e["id"]] = {f: set(n) for f, n in e.get("lines", {}).items()}
         self._warm(events)
-        attributed = coverage.expand(per_test, lambda f: _read(work / f))
+        attributed = self._attributed(work, tests, per_test)
         entries = coverage.invert(attributed)
         return protocol.baseline_done(
             ident,
@@ -285,6 +304,47 @@ class Service:
             tests,
             failures,
             self._spoken(entries),
+        )
+
+    def _attributed(self, work: Path, tests: list[dict], per_test: dict) -> dict:
+        """What each test reached, with what ran at import credited to the tests
+        that run it or depend on it by what they import."""
+        graph = dependency.build(work)
+        test_files = {t["file"] for t in tests}
+        sources = [f for f in dependency.python_files(work) if not project.is_test_file(f)]
+        by_directory = {f: PurePosixPath(f).parent for f in test_files}
+        site_lines: dict[str, set[int]] = {}
+
+        def below(importers: set[str]) -> set[str]:
+            """The test files that are importers, or sit under a conftest that is."""
+            found = importers & test_files
+            for conftest in (f for f in importers if PurePosixPath(f).name == "conftest.py"):
+                here = PurePosixPath(conftest).parent
+                found |= {t for t, d in by_directory.items() if d == here or here in d.parents}
+            return found
+
+        def depends(file: str) -> set[str]:
+            every = below(graph.importers_of(file))
+            if len(test_files_of(every)) <= MAX_DEPENDENTS:
+                return every
+            direct = below(graph.direct_importers_of(file))
+            return direct if len(test_files_of(direct)) <= MAX_DEPENDENTS else set()
+
+        def test_files_of(files: set[str]) -> list[str]:
+            return [t["test"] for t in tests if t["file"] in files]
+
+        def wanted(file: str) -> set[int] | None:
+            if file not in site_lines:
+                text = _read(work / file)
+                try:
+                    found = sites.find(file, text or "", spell.CAST, []).sites if text else []
+                except sites.ParseError:
+                    found = []
+                site_lines[file] = {s.start.line for s in found}
+            return site_lines[file]
+
+        return coverage.expand(
+            per_test, lambda f: _read(work / f), depends=depends, files=sources, wanted=wanted
         )
 
     def _spoken(self, entries: list[dict]) -> tuple[str, Any]:

@@ -121,6 +121,27 @@ Its spells are the shared ones, with Rust's own judgement about where each is wo
 
 `call` is not offered: dropping a call in Rust almost never keeps the types, so it would propose compile errors and little else, and each of those costs a build. Nothing is proposed in tests, in `unsafe fn`, in patterns, types or attributes (a literal there is structure, not a value), or in the arguments of a macro, which are tokens the parser does not read.
 
+### The Python kalku
+
+Python has mutation frameworks (`mutmut`, `cosmic-ray`), and the rule above says to wrap a framework where one exists. As with Rust, kalku does not: the driver path is not implemented, and what makes kalku worth running — the shared spells and their hints, `exclude_calls`, equivalents keyed to the enclosing function, per-test selection by coverage, the gate on changed lines — needs the kalku to own the loop. The Python kalku is native, in the shape of the others, and written in Python.
+
+- **It runs inside the project's own interpreter.** The tests need the project's packages and its pytest, so the summoning picks the active environment, then `.venv` or `venv`, then `python3` (`KALKU_PYTHON` overrides). It therefore uses the standard library and nothing else, and ships as a single zipapp (`kalku-python`), so it never chooses which version of anything the project gets. It needs Python 3.12 or later, for `sys.monitoring`.
+- **Sites come from `ast` and `tokenize`**, never from a scan of the text: `ast` gives every node's span, and the tokens give where an operator sits between two operands, which `ast` does not keep. Columns are bytes in `ast` and characters in the protocol, so one module turns between them.
+- **A cast forks.** The parent is the warm part: it has pytest imported and, after a baseline, what the tests import from outside the project. Each run of the suite happens in a forked child that is thrown away, so there is no state to reset, an `abort` is a kill of the child's process group, and a wekufe cannot leak into the next. The wekufe is applied in memory: the importer serves the changed module from a string, so no file is written and no bytecode cache can serve the original. Nothing uses threads, because forking a process that has them is how a child inherits a lock nobody will release.
+- **Coverage is `sys.monitoring`**, cleared before each test and read after it. What ran at import — a function's header, its decorators and defaults, a module's constants — ran before any test started, so it is credited to the tests that run what it belongs to, from the syntax tree.
+- **pytest is configured by the project.** Its `addopts` select what is run (`click` deselects thirty thousand stress tests with one) and are kept, minus what cannot run here: other processes (`-n`, `--dist`) and another coverage tool (`--cov*`).
+
+| Spell | Python forms |
+|---|---|
+| `arm` | delete a `case` of a `match`, whole |
+| `compare` | `>=`↔`>`, `<=`↔`<`, `==`↔`!=`, `is`↔`is not`, `in`↔`not in` |
+| `connect` | `and`↔`or`, one operator at a time in a chain |
+| `negate` | `not x` becomes `x`, and a condition `c` becomes `not (c)` (`if`, `elif`, `while`, a conditional expression) |
+| `literal` | `n`→`n+1` for plain decimals, `True`↔`False`, a non-empty string → `""` |
+| `call` | a call that is a whole statement, awaited or not, becomes `pass` |
+
+Not proposed: docstrings and bare strings, module dunders (`__all__`, `__version__`), annotations, the type a `cast(...)` or `TypeVar(...)` names, `if TYPE_CHECKING:`, `if __name__ == "__main__":`, the patterns of a `match`, the arguments of a call `exclude_calls` names, and test files. Only `arm` can leave a file that does not parse, so only its candidates are parsed before anyone is asked to cast them.
+
 ### The kaikai kalku
 
 kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mutate-list-json` catalogues sites from the AST, `kaic2 --mutate-apply <i>` writes the spliced source, and a shell driver owns the run loop. The kaikai kalku is a thin native kalku over those flags:

@@ -14,6 +14,11 @@ about Python and is made here, from the syntax tree, and not guessed:
   belong to the tests that ran any line of the class;
 - the lines of a module that are not functions or classes (its constants, its
   top-level statements) belong to the tests that ran any line of the module.
+
+A test that only reads a constant or a class attribute runs no line of the
+module at all, so what is shared this way (the module's own lines and the
+class-level ones) also goes to every test that depends on the module by what
+it imports (`dependency.py`).
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from __future__ import annotations
 import ast
 import bisect
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 Lines = dict[str, set[int]]
@@ -29,11 +34,15 @@ Lines = dict[str, set[int]]
 
 @dataclass(frozen=True)
 class Rule:
-    """When any line in `first..last` ran, the `owned` lines count as run."""
+    """When any line in `first..last` ran, the `owned` lines count as run.
+
+    `shared` says the owned lines are the module's or a class's own, which
+    are not tied to the body of a function."""
 
     first: int
     last: int
     owned: frozenset[int]
+    shared: bool = False
 
 
 def rules_of(text: str | None) -> list[Rule]:
@@ -75,7 +84,7 @@ def rules_of(text: str | None) -> list[Rule]:
             header = frozenset(range(first, body_first))
             if isinstance(node, ast.ClassDef):
                 class_own = visit(node.body, (first, last))
-                rules.append(Rule(body_first, last, header | frozenset(class_own)))
+                rules.append(Rule(body_first, last, header | frozenset(class_own), shared=True))
             else:
                 rules.append(Rule(body_first, last, header))
         for stmt in body:
@@ -90,7 +99,7 @@ def rules_of(text: str | None) -> list[Rule]:
     for node in defs_all(tree):
         first, last = span(node)
         claimed.update(range(first, last + 1))
-    rules.append(Rule(1, last_line, frozenset(module_own - claimed)))
+    rules.append(Rule(1, last_line, frozenset(module_own - claimed), shared=True))
     return rules
 
 
@@ -109,23 +118,52 @@ def _blocks(stmt: ast.stmt):
         yield handler.body
 
 
-def expand(per_test: dict[str, Lines], read: Callable[[str], str | None]) -> dict[str, Lines]:
-    """Credit what ran at import to the tests that run what it belongs to."""
+def expand(
+    per_test: dict[str, Lines],
+    read: Callable[[str], str | None],
+    depends: Callable[[str], set[str]] | None = None,
+    files: Iterable[str] = (),
+    wanted: Callable[[str], set[int] | None] | None = None,
+) -> dict[str, Lines]:
+    """Credit what ran at import to the tests that run what it belongs to.
+
+    `depends(file)` names the test files that depend on a project file, and
+    `files` the project files to consider besides the ones a test ran; `wanted`
+    narrows what is shared to the lines that have something to measure."""
     rules: dict[str, list[Rule]] = {}
+
+    def rules_for(file: str) -> list[Rule]:
+        if file not in rules:
+            rules[file] = rules_of(read(file))
+        return rules[file]
+
     out: dict[str, Lines] = {}
     for test, lines in per_test.items():
         grown: Lines = {}
         for file, numbers in lines.items():
-            if file not in rules:
-                rules[file] = rules_of(read(file))
             ran = sorted(numbers)
             added = set(numbers)
-            for rule in rules[file]:
+            for rule in rules_for(file):
                 at = bisect.bisect_left(ran, rule.first)
                 if at < len(ran) and ran[at] <= rule.last:
                     added |= rule.owned
             grown[file] = added
         out[test] = grown
+    if depends is not None:
+        everything = sorted({*files, *(f for lines in per_test.values() for f in lines)})
+        for file in everything:
+            dependents = depends(file)
+            if not dependents:
+                continue
+            shared = {n for rule in rules_for(file) if rule.shared for n in rule.owned}
+            narrowed = wanted(file) if wanted is not None else None
+            if narrowed is not None:
+                shared &= narrowed
+            if not shared:
+                continue
+            for test, grown in out.items():
+                if test.split("::", 1)[0] in dependents:
+                    grown.setdefault(file, set()).update(shared)
     return out
 
 

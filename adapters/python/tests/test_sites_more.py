@@ -203,11 +203,11 @@ def test_exclude_calls_matches_dotted_names_exactly_or_by_prefix():
 
 
 def test_a_call_that_is_not_by_name_has_no_name_to_exclude():
-    assert (
-        of("call", "f()()\n(a or b).c()\n", ["f", "*"])
-        == [("f()()", "pass"), ("(a or b).c()", "pass")]
-        or True
-    )
+    # Neither has a dotted name, so no pattern can exclude it, not even `*`.
+    assert of("call", "f()()\n(a or b).c()\n", ["f", "*"]) == [
+        ("f()()", "pass"),
+        ("(a or b).c()", "pass"),
+    ]
     assert _dotted(ast.parse("a.b.c").body[0].value) == "a.b.c"
     assert _dotted(ast.parse("f().g").body[0].value) == ""
     assert _dotted(ast.parse("x").body[0].value) == "x"
@@ -240,15 +240,11 @@ def test_an_awaited_call_is_dropped_whole_and_an_awaited_value_is_not():
 
 
 def test_a_call_in_every_position_but_a_statement_is_a_value():
-    assert (
-        of("call", "x = f()\nreturn_ = g(h())\n[i()]\n(j())\nk.l()\n")
-        == [
-            ("[i()]", "pass"),
-            ("(j())", "pass"),
-            ("k.l()", "pass"),
-        ]
-        or True
-    )
+    # A list of a call is not a call statement; a parenthesised one is.
+    assert of("call", "x = f()\nreturn_ = g(h())\n[i()]\n(j())\nk.l()\n") == [
+        ("(j())", "pass"),
+        ("k.l()", "pass"),
+    ]
 
 
 # ---- match --------------------------------------------------------------------
