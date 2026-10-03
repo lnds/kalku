@@ -99,7 +99,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          rustup toolchain install ${{ matrix.toolchain }} --profile minimal --component rustfmt --component clippy
+          rustup toolchain install ${{ matrix.toolchain }} --profile minimal --component rustfmt --component clippy --component llvm-tools
           rustup default ${{ matrix.toolchain }}
       - if: matrix.toolchain == 'stable'
         run: cargo fmt --check && cargo clippy --all-targets -- -D warnings

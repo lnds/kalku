@@ -5,10 +5,11 @@
 //! kaikai side banishes a worker for a line it cannot read.
 
 use crate::cancel::Cancel;
+use crate::coverage::{self, Entry, Tools, invert};
 use crate::editions::{self, Cargo, Editions};
 use crate::project::{Build, Cargo as CargoProject, Project, Target};
 use crate::protocol::{
-    self, DecodeError, Failure, Hello, Outcome, Request, SitesRequest, Skipped, Timed,
+    self, Coverage, DecodeError, Failure, Hello, Outcome, Request, SitesRequest, Skipped, Timed,
 };
 use crate::sites;
 use crate::toolchain::{self, Toolchain};
@@ -62,6 +63,7 @@ pub struct Service {
     project: Option<Box<dyn Project>>,
     session: Session,
     cancel: Cancel,
+    tools: Option<Tools>,
     // Whether the last cast left the reni as it found it.
     restored: bool,
 }
@@ -103,6 +105,7 @@ impl Service {
             project: None,
             session: Session::default(),
             cancel: Cancel::new(),
+            tools: None,
             restored: true,
         }
     }
@@ -188,7 +191,15 @@ impl Service {
         );
         self.project = Some((self.choose_project)(&hello));
         self.hello = Some(hello);
-        Step::Reply(protocol::ready(id, &self.adapter, &runtime))
+        self.tools = toolchain
+            .sysroot
+            .as_deref()
+            .and_then(|sysroot| coverage::find_tools(sysroot, &toolchain.host));
+        let mut capabilities = vec!["cast", "abort"];
+        if self.tools.is_some() {
+            capabilities.push("per_test_coverage");
+        }
+        Step::Reply(protocol::ready(id, &self.adapter, &runtime, &capabilities))
     }
 
     fn sites(&mut self, id: i64, request: SitesRequest) -> Step {
@@ -278,47 +289,75 @@ impl Service {
     }
 
     // Every test is run alone once, which is how it gets a duration of its
-    // own: stable libtest does not time them.
+    // own: stable libtest does not time them. With the LLVM tools at hand the
+    // run is on an instrumented build and each test also says which lines it
+    // reached, which is what lets a cast run only the tests that matter.
     fn baseline(&mut self, id: i64) -> Step {
-        let Some(project) = self.project.as_mut() else {
+        let (Some(project), Some(hello)) = (self.project.as_mut(), self.hello.as_ref()) else {
             return Self::not_ready(id, "`hello` has to come first");
         };
         if self.session.targets.is_empty() {
             return Self::not_ready(id, "`prepare` has to come first");
         }
         let started = Instant::now();
-        let (mut tests, mut failures) = (Vec::new(), Vec::new());
-        for (test, index, name) in &self.session.listed {
-            let target = &self.session.targets[*index];
-            {
-                let one = Instant::now();
-                let ran = match project.run(target, std::slice::from_ref(name)) {
-                    Ok(ran) => ran,
-                    Err(e) => return Self::failed(id, "baseline_failed", &e),
-                };
-                tests.push(Timed {
-                    test: test.clone(),
-                    file: target.file.clone(),
-                    duration_ms: millis(one),
-                });
-                match ran.results.iter().find(|r| r.name == *name) {
-                    Some(r) if r.passed => {}
-                    Some(r) => failures.push(Failure {
-                        test: test.clone(),
-                        message: r.message.clone(),
-                    }),
-                    None => failures.push(Failure {
-                        test: test.clone(),
-                        message: "the test did not report a result".to_string(),
-                    }),
+        if let Some(tools) = &self.tools {
+            match project.instrument(tools) {
+                Ok(Build::Built(_)) => {}
+                Ok(Build::Failed(why)) => {
+                    return Self::failed(id, "baseline_failed", &why);
                 }
+                Err(e) => return Self::failed(id, "baseline_failed", &e),
             }
         }
+        let covering = self.tools.is_some();
+        let (mut tests, mut failures) = (Vec::new(), Vec::new());
+        let mut reached = Vec::new();
+        for (test, index, name) in &self.session.listed {
+            let target = &self.session.targets[*index];
+            let one = Instant::now();
+            let ran = if covering {
+                project.run_covered(target, name).map(|(ran, lines)| {
+                    reached.push((test.clone(), lines));
+                    ran
+                })
+            } else {
+                project.run(target, std::slice::from_ref(name))
+            };
+            let ran = match ran {
+                Ok(ran) => ran,
+                Err(e) => return Self::failed(id, "baseline_failed", &e),
+            };
+            tests.push(Timed {
+                test: test.clone(),
+                file: target.file.clone(),
+                duration_ms: millis(one),
+            });
+            match ran.results.iter().find(|r| r.name == *name) {
+                Some(r) if r.passed => {}
+                Some(r) => failures.push(Failure {
+                    test: test.clone(),
+                    message: r.message.clone(),
+                }),
+                None => failures.push(Failure {
+                    test: test.clone(),
+                    message: "the test did not report a result".to_string(),
+                }),
+            }
+        }
+        let coverage = if covering {
+            match spoken(&invert(&reached), hello) {
+                Ok(c) => Some(c),
+                Err(e) => return Self::failed(id, "baseline_failed", &e),
+            }
+        } else {
+            None
+        };
         Step::Reply(protocol::baseline_done(
             id,
             millis(started),
             &tests,
             &failures,
+            coverage.as_ref(),
         ))
     }
 
@@ -454,6 +493,25 @@ fn search(
         .map_err(|e| skip("parse_error", e.0))
 }
 
+// What a baseline says about coverage: inline when it is small, and in a file
+// in the reni when it is not, which is every project big enough to be worth
+// measuring. The kaikai side reads it from there.
+fn spoken(entries: &[Entry], hello: &Hello) -> std::io::Result<Coverage> {
+    let lines: Vec<String> = entries
+        .iter()
+        .map(|e| protocol::entry_json(e).to_string())
+        .collect();
+    let size: usize = lines.iter().map(|l| l.len() + 1).sum();
+    if size as i64 <= hello.inline_limit_bytes {
+        return Ok(Coverage::Inline(entries.to_vec()));
+    }
+    let dir = Path::new(&hello.reni).join("coverage");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{}.json", hello.worker));
+    std::fs::write(&path, format!("[{}]\n", lines.join(",\n")))?;
+    Ok(Coverage::Path(path.to_string_lossy().into_owned()))
+}
+
 fn millis(since: Instant) -> u64 {
     since.elapsed().as_millis() as u64
 }
@@ -544,6 +602,9 @@ mod tests {
         // The write that fails, counting from one.
         write_fails_at: Option<usize>,
         unreadable: bool,
+        // What instrumenting says, and the lines each test reached.
+        instrument: Option<io::Result<Build>>,
+        reached: HashMap<String, crate::coverage::Lines>,
     }
 
     fn io_error(what: &str) -> io::Error {
@@ -596,6 +657,8 @@ mod tests {
                 }),
                 write_fails_at: None,
                 unreadable: false,
+                instrument: None,
+                reached: HashMap::new(),
             };
             (fake, seen)
         }
@@ -641,6 +704,21 @@ mod tests {
                 .ok_or_else(|| io_error("no such file"))
         }
 
+        fn instrument(&mut self, _tools: &Tools) -> io::Result<Build> {
+            self.instrument
+                .take()
+                .unwrap_or_else(|| Ok(Build::Built(self.targets.clone())))
+        }
+
+        fn run_covered(
+            &mut self,
+            target: &Target,
+            name: &str,
+        ) -> io::Result<(Ran, crate::coverage::Lines)> {
+            let ran = self.run(target, std::slice::from_ref(&name.to_string()))?;
+            Ok((ran, self.reached.get(name).cloned().unwrap_or_default()))
+        }
+
         fn write(&mut self, file: &str, text: &str) -> io::Result<()> {
             let mut seen = self.seen.borrow_mut();
             seen.writes.push((file.to_string(), text.to_string()));
@@ -669,6 +747,7 @@ mod tests {
                     version_line: "rustc 1.98.1".into(),
                     release: (1, 98, 1),
                     host: "h".into(),
+                    sysroot: None,
                 })
             }),
             Box::new(move |_| Box::new(Fixed(edition.take().unwrap_or(Ok(None))))),
@@ -1206,6 +1285,7 @@ mod tests {
                     version_line: "rustc old".into(),
                     release,
                     host: "h".into(),
+                    sysroot: None,
                 })
             })
         };
@@ -1340,5 +1420,144 @@ mod tests {
         cast(&mut service, site(">=", ">"), &["src/lib.rs::t::one"]);
 
         assert_eq!(abort(&mut service, 9)["restored"], true);
+    }
+
+    // A toolchain directory that has the two programs, which is all the
+    // service asks of it: they are only run by the real project.
+    fn toolchain_with_tools() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("kalku-svc-tools-{}", std::process::id()));
+        let bin = dir.join("lib/rustlib/h/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("llvm-profdata"), "").unwrap();
+        fs::write(bin.join("llvm-cov"), "").unwrap();
+        dir
+    }
+
+    fn greeted_with_tools(fake: Fake, inline_limit: i64, reni: &str) -> Service {
+        let sysroot = toolchain_with_tools();
+        let mut fake = Some(fake);
+        let mut service = Service::with(
+            "0.0.0",
+            Box::new(move || {
+                Ok(Toolchain {
+                    version_line: "rustc 1.98.1".into(),
+                    release: (1, 98, 1),
+                    host: "h".into(),
+                    sysroot: Some(sysroot.clone()),
+                })
+            }),
+            Box::new(|_| Box::new(Fixed(Ok(Some("2024".into()))))),
+            Box::new(move |_| Box::new(fake.take().unwrap())),
+        );
+        let ready = say(
+            &mut service,
+            json!({"type": "hello", "id": 1, "protocol": 1, "root": "/nowhere",
+                "reni": reni, "worker": 4, "inline_limit_bytes": inline_limit, "env": {}}),
+        );
+        assert_eq!(
+            ready["capabilities"],
+            json!(["cast", "abort", "per_test_coverage"])
+        );
+        assert_eq!(
+            say(&mut service, json!({"type": "prepare", "id": 2}))["type"],
+            "prepared"
+        );
+        service
+    }
+
+    fn lines(file: &str, numbers: &[u32]) -> crate::coverage::Lines {
+        crate::coverage::Lines::from([(file.to_string(), numbers.iter().copied().collect())])
+    }
+
+    #[test]
+    fn coverage_is_claimed_only_where_the_tools_are() {
+        let (fake, _) = Fake::new();
+        let mut service = service_with(fake, Ok(Some("2024".into())));
+
+        let ready = say(
+            &mut service,
+            json!({"type": "hello", "id": 1, "protocol": 1, "root": "/",
+                "reni": "/r", "worker": 0, "inline_limit_bytes": 1, "env": {}}),
+        );
+
+        assert_eq!(ready["capabilities"], json!(["cast", "abort"]));
+    }
+
+    #[test]
+    fn a_baseline_says_which_tests_reached_which_lines() {
+        let (mut fake, _) = Fake::new();
+        fake.reached
+            .insert("t::one".into(), lines("src/lib.rs", &[1, 2]));
+        fake.reached
+            .insert("t::two".into(), lines("src/lib.rs", &[2, 9]));
+        let mut service = greeted_with_tools(fake, 1 << 20, "/unused");
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["status"], "green", "{said}");
+        assert!(said.get("coverage_path").is_none());
+        assert_eq!(
+            said["coverage"],
+            json!([
+                {"file": "src/lib.rs", "line": 1, "tests": ["src/lib.rs::t::one"]},
+                {"file": "src/lib.rs", "line": 2, "tests": ["src/lib.rs::t::one", "src/lib.rs::t::two"]},
+                {"file": "src/lib.rs", "line": 9, "tests": ["src/lib.rs::t::two"]}
+            ])
+        );
+    }
+
+    #[test]
+    fn a_map_too_big_for_a_line_goes_to_a_file_in_the_reni() {
+        let reni = std::env::temp_dir().join(format!("kalku-svc-reni-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&reni);
+        let (mut fake, _) = Fake::new();
+        fake.reached
+            .insert("t::one".into(), lines("src/lib.rs", &[1, 2, 3]));
+        let mut service = greeted_with_tools(fake, 10, reni.to_str().unwrap());
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert!(said.get("coverage").is_none(), "{said}");
+        let path = said["coverage_path"].as_str().unwrap();
+        assert_eq!(path, reni.join("coverage/4.json").to_str().unwrap());
+        let written: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(written.as_array().unwrap().len(), 3);
+        assert_eq!(
+            written[0],
+            json!({"file": "src/lib.rs", "line": 1, "tests": ["src/lib.rs::t::one"]})
+        );
+        let _ = fs::remove_dir_all(&reni);
+    }
+
+    #[test]
+    fn an_instrumented_build_that_fails_stops_the_baseline_with_its_words() {
+        let (mut fake, _) = Fake::new();
+        fake.instrument = Some(Ok(Build::Failed("error: linking".into())));
+        let mut service = greeted_with_tools(fake, 1 << 20, "/unused");
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["code"], "baseline_failed");
+        assert_eq!(said["fatal"], true);
+        assert_eq!(said["message"], "error: linking");
+
+        let (mut fake, _) = Fake::new();
+        fake.instrument = Some(Err(io_error("no cargo")));
+        let mut service = greeted_with_tools(fake, 1 << 20, "/unused");
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+        assert_eq!(said["message"], "no cargo");
+    }
+
+    #[test]
+    fn a_test_that_cannot_be_run_for_coverage_stops_the_baseline() {
+        let (mut fake, _) = Fake::new();
+        fake.ran = Box::new(|_, _| Err(io_error("spawn failed")));
+        let mut service = greeted_with_tools(fake, 1 << 20, "/unused");
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["code"], "baseline_failed");
+        assert_eq!(said["message"], "spawn failed");
     }
 }

@@ -107,7 +107,11 @@ fn it_greets_finds_sites_and_leaves() {
     let ready = k.hello(&project.0);
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["language"], "rust");
-    assert_eq!(ready["capabilities"], json!(["cast", "abort"]));
+    // Coverage is announced only where the LLVM tools are, so the rest is fixed.
+    assert_eq!(
+        ready["capabilities"].as_array().unwrap()[..2],
+        [json!("cast"), json!("abort")]
+    );
     assert!(ready["runtime"].as_str().unwrap().contains("edition 2024"));
 
     let found = k.sites(&["src/lib.rs"]);
@@ -483,9 +487,10 @@ fn alive(pid: i32) -> bool {
 fn an_abort_stops_a_running_cast_and_the_kalku_casts_again() {
     let project = Project::new("aborts", "2024", &[("src/lib.rs", SLOW)]);
     let mut k = Kalku::summon();
+    let capabilities = k.hello(&project.0)["capabilities"].clone();
     assert_eq!(
-        k.hello(&project.0)["capabilities"],
-        json!(["cast", "abort"])
+        capabilities.as_array().unwrap()[..2],
+        [json!("cast"), json!("abort")]
     );
     k.ask(json!({"type": "prepare", "id": 2}));
     let baseline = k.ask(json!({"type": "baseline", "id": 3}));
@@ -543,5 +548,47 @@ fn an_abort_stops_a_running_cast_and_the_kalku_casts_again() {
         fs::read_to_string(project.0.join("src/lib.rs")).unwrap(),
         SLOW
     );
+    k.leave();
+}
+
+// Where the LLVM tools are, a baseline says which test reached which line,
+// and it is the lines of the project, relative to it, that it names.
+#[test]
+fn a_baseline_with_coverage_names_the_tests_that_reached_each_line() {
+    let project = Project::new("covered", "2024", &[("src/lib.rs", TESTED)]);
+    let mut k = Kalku::summon();
+    let capabilities = k.hello(&project.0)["capabilities"].clone();
+    if !capabilities
+        .as_array()
+        .unwrap()
+        .contains(&json!("per_test_coverage"))
+    {
+        k.leave();
+        return;
+    }
+    k.ask(json!({"type": "prepare", "id": 2}));
+
+    let baseline = k.ask(json!({"type": "baseline", "id": 3}));
+
+    assert_eq!(baseline["status"], "green", "{baseline}");
+    let coverage = baseline["coverage"].as_array().expect("inline coverage");
+    let tests_of = |line: u64| -> Vec<String> {
+        coverage
+            .iter()
+            .filter(|e| e["file"] == "src/lib.rs" && e["line"] == line)
+            .flat_map(|e| e["tests"].as_array().unwrap().iter())
+            .map(|t| t.as_str().unwrap().to_string())
+            .collect()
+    };
+    // Line 1 is `gate`, which both tests call; the others are one test each.
+    assert_eq!(
+        tests_of(1),
+        [
+            "src/lib.rs::tests::one_is_inside",
+            "src/lib.rs::tests::zero_is_outside"
+        ]
+    );
+    assert_eq!(tests_of(6), ["src/lib.rs::tests::one_is_inside"]);
+    assert_eq!(tests_of(8), ["src/lib.rs::tests::zero_is_outside"]);
     k.leave();
 }

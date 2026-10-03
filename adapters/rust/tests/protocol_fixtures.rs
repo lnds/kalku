@@ -104,7 +104,7 @@ fn what_it_says_is_the_fixtures_byte_for_byte() {
 // `type`, then `id`, then the fields in the order the tables list them.
 #[test]
 fn a_ready_reply_is_in_canonical_order() {
-    let said = protocol::ready(1, "0.3.0", "rustc 1.98.1, edition 2024");
+    let said = protocol::ready(1, "0.3.0", "rustc 1.98.1, edition 2024", &["cast", "abort"]);
     let v: Value = serde_json::from_str(&said).unwrap();
     let keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
 
@@ -130,7 +130,7 @@ fn a_ready_reply_is_in_canonical_order() {
 // The spells announced are the ones this kalku can cast, by their wire names.
 #[test]
 fn the_spells_it_announces_are_the_shared_names() {
-    let v: Value = serde_json::from_str(&protocol::ready(1, "0", "r")).unwrap();
+    let v: Value = serde_json::from_str(&protocol::ready(1, "0", "r", &["cast"])).unwrap();
 
     assert_eq!(
         v["spells"],

@@ -9,6 +9,7 @@
 //! to be right about.
 
 pub mod cancel;
+pub mod coverage;
 pub mod editions;
 pub mod framing;
 pub mod project;
