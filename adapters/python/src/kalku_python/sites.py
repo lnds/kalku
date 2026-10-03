@@ -271,7 +271,8 @@ def _is_main_guard(test: ast.expr) -> bool:
         isinstance(test, ast.Compare)
         and isinstance(test.left, ast.Name)
         and test.left.id == "__name__"
-        and len(test.comparators) == 1
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
         and isinstance(test.comparators[0], ast.Constant)
         and test.comparators[0].value == "__main__"
     )

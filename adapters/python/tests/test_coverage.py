@@ -75,3 +75,106 @@ def test_lines_are_turned_around_into_the_tests_that_reached_them():
         {"file": "b.py", "line": 7, "tests": ["t2"]},
     ]
     assert coverage.invert({}) == []
+
+
+NESTED = '''\
+import os
+
+try:
+    import fast
+except ImportError:
+    fast = None
+
+if os.name == "nt":
+    def where():
+        return "win"
+else:
+    def where():
+        return "posix"
+
+with open_it() as handle:
+    CONSTANT = 1
+
+
+@register
+class Box:
+    """doc"""
+
+    size = 3
+
+    class Inner:
+        depth = 4
+
+        def peek(self):
+            return self.depth
+
+    async def fetch(self,
+                    url="x"):
+        def local():
+            return 1
+        return local()
+
+
+for i in range(2):
+    LOOP = i
+
+while False:
+    NEVER = 1
+'''
+
+
+def test_a_function_defined_inside_a_module_level_block_goes_with_its_own_body():
+    # `where` in the `else` has its body on line 13 and its header on line 12.
+    got = lines_of(NESTED, {13})
+    assert 12 in got
+    # The `if` branch's `where` was never the one defined.
+    assert 9 not in got
+
+
+def test_the_blocks_of_a_module_belong_to_the_module():
+    got = lines_of(NESTED, {13})
+    assert {1, 3, 4, 5, 6, 8, 11, 15, 16, 38, 39, 41, 42} <= got
+
+
+def test_a_decorated_class_and_its_nested_class_share_attributes_with_their_methods():
+    # `Inner.peek` ran (line 29): its header (28), the class `Inner` and its
+    # attribute (25, 26), and the decorator, header and attribute of the outer
+    # class `Box` (19, 20, 21, 23).
+    got = lines_of(NESTED, {29})
+    assert {28, 25, 26, 19, 20, 21, 23} <= got
+    assert 31 not in got
+
+
+def test_the_header_of_an_async_method_spanning_two_lines_goes_with_its_body():
+    got = lines_of(NESTED, {34})
+    assert {31, 32} <= got
+
+
+def test_nothing_is_credited_to_a_test_that_ran_nothing_of_the_file():
+    assert coverage.expand({"t": {"m.py": set()}}, lambda f: NESTED)["t"]["m.py"] == set()
+
+
+def test_each_file_of_a_test_is_expanded_by_its_own_source():
+    sources = {
+        "a.py": "X = 1\n\ndef f():\n    return 2\n",
+        "b.py": "Y = 1\n\ndef g():\n    return 2\n",
+    }
+    got = coverage.expand({"t": {"a.py": {4}, "b.py": set()}}, sources.get)["t"]
+    assert got["a.py"] == {1, 3, 4} and got["b.py"] == set()
+
+
+def test_a_file_is_read_once_however_many_tests_ran_it():
+    reads = []
+
+    def read(file):
+        reads.append(file)
+        return "X = 1\n\ndef f():\n    return 2\n"
+
+    coverage.expand({"t1": {"a.py": {4}}, "t2": {"a.py": {4}}, "t3": {"a.py": {4}}}, read)
+
+    assert reads == ["a.py"]
+
+
+def test_a_decorated_function_header_includes_every_decorator_line():
+    text = "@a\n@b(1,\n   2)\ndef f(x):\n    return x\n"
+    assert lines_of(text, {5}) == {1, 2, 3, 4, 5}
