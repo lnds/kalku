@@ -41,6 +41,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     on_changed_lines: length(blockers),
     suppressions: no_suppressions(),
     troubles: [],
+    skipped: [],
     uncovered: [],
     blockers: blockers
   }
@@ -284,4 +285,19 @@ test "unreached sites are counted where the change touched, and only there" {
 
   assert uncovered_on_lines(changes, sites) == 1
   assert uncovered_on_lines([], sites) == 0
+}
+
+# A score over what was searched, said as if it were the score of what was
+# asked, is the quiet way to be wrong: the file that would not parse has to
+# be on the page.
+test "a file that was not searched is named with why, above the summary" {
+  let skipped = Report {
+    ...plain(),
+    skipped: [Skipped { file: "lib/b.ex", reason: "parse_error", message: "line 3" }]
+  }
+  let text = human(skipped)
+
+  assert has(text, "files that were not searched:\n  lib/b.ex: parse_error: line 3")
+  assert index_of(text, "files that were not searched") < index_of(text, "score ")
+  assert not has(human(plain()), "not searched")
 }

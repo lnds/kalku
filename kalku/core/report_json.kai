@@ -22,12 +22,17 @@ pub fn json(r: Report, exit: Int) : String = encode_value(
       ++ [
         ("counts", to_json(r.counts)),
         ("survivors", JArr(r.survivors | survivor)),
+        ("skipped", JArr(r.skipped | skipped_file)),
         ("survivors_on_changed_lines", JNum(r.on_changed_lines)),
         ("suppression_changes", to_json(r.suppressions)),
         ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
         ("exit", JNum(exit))
       ]
   )
+)
+
+fn skipped_file(s: Skipped) : JsonValue = JObj(
+  [("file", JStr(s.file)), ("reason", JStr(s.reason)), ("message", JStr(s.message))]
 )
 
 fn survivor(s: Survivor) : JsonValue = JObj(

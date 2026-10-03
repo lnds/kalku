@@ -24,3 +24,11 @@ test "one file that yielded a site is enough to go on" {
 test "no site and no file skipped is a project with nothing to mutate, not an error" {
   assert nothing_usable(0, []) == None
 }
+
+test "the gate hears of skipped files, naming them" {
+  assert trouble_of([]) == None
+  assert trouble_of([bad("src/a.rs"), bad("src/b.rs")])
+    == Some(
+      "2 file(s) could not be searched, so the score says nothing about them: src/a.rs, src/b.rs"
+    )
+}
