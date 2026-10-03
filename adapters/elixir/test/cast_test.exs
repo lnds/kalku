@@ -144,6 +144,61 @@ defmodule Kalku.CastTest do
 
   # ---- requests -----------------------------------------------------
 
+  describe "against a suite that mocks one of its own modules" do
+    setup :a_reni
+
+    # The bug this guards: a mocking library tidies up in an `after_suite`
+    # callback, ExUnit runs it at the end of every `ExUnit.run`, and the
+    # runtime runs the suite again for every cast. The test driving the mock
+    # then failed on code that was never touched, and every wekufe of
+    # `charge/1` came back `killed` — a kill that no test had earned. A
+    # wekufe the suite cannot tell from the original has to survive.
+    test "a wekufe no test can tell from the original survives, and a real one is killed",
+         %{reni: reni} do
+      source = File.read!(Path.join(project("mocked"), "lib/mocked.ex"))
+      {from, _} = :binary.match(source, "amount > 0")
+      # `amount > 0` to `amount >= 0`: `charge(1)` answers the same.
+      kept = mocked_cast("kept", 4, from + 7, from + 8, ">=", 5)
+      # `amount > 0` to `amount < 0`: `charge(1)` now answers `:error`.
+      broken = mocked_cast("broken", 5, from + 7, from + 8, "<", 5)
+
+      lines =
+        summon(reni, "mocked", [
+          request("prepare", 2),
+          request("baseline", 3),
+          kept,
+          broken
+        ])
+
+      done = for l <- lines, {:ok, d} <- [JSON.decode(l)], d["type"] == "cast_done", do: d
+      by_wekufe = Map.new(done, &{&1["wekufe"], &1})
+
+      assert by_wekufe["kept"]["outcome"] == "survived"
+      assert by_wekufe["broken"]["outcome"] == "killed"
+      assert by_wekufe["broken"]["killed_by"] == "test/mocked_test.exs:9"
+    end
+  end
+
+  defp mocked_cast(wekufe, id, from, to, replacement, line) do
+    JSON.encode!(%{
+      "type" => "cast",
+      "id" => id,
+      "wekufe" => wekufe,
+      "site" => %{
+        "site_id" => wekufe,
+        "file" => "lib/mocked.ex",
+        "span" => %{
+          "start" => %{"line" => line, "col" => 1, "byte" => from},
+          "end" => %{"line" => line, "col" => 1, "byte" => to}
+        },
+        "spell" => "compare",
+        "replacement" => replacement,
+        "reload" => "module"
+      },
+      "tests" => ["test/mocked_test.exs:5", "test/mocked_test.exs:9"]
+    })
+  end
+
   defp cast(wekufe, id, {from, to}, replacement, tests) do
     JSON.encode!(%{
       "type" => "cast",

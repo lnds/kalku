@@ -77,18 +77,22 @@ defmodule Kalku.Baseline do
   # So the whole attribution is withheld and every wekufe faces the whole
   # suite: slower, and true. The protocol already has this — a kalku
   # without `per_test_coverage` works exactly this way.
-  defp attributed(tests, modules, whole) do
-    measured = measure_each(tests, modules)
-    attributed = for t <- measured, l <- t.lines, into: MapSet.new(), do: l
+  defp attributed(tests, modules, whole), do: reconcile(measure_each(tests, modules), whole)
 
-    case MapSet.difference(whole, attributed) do
-      %MapSet{} = lost ->
-        if MapSet.size(lost) == 0 do
-          measured
-        else
-          IO.puts(:stderr, unattributable(lost))
-          for t <- measured, do: %{t | lines: []}
-        end
+  @doc """
+  Keeps the per-test attribution only when it adds up to what the suite as a
+  whole reached; otherwise withholds all of it, and says why on stderr.
+  """
+
+  def reconcile(measured, whole) do
+    attributed = for t <- measured, l <- t.lines, into: MapSet.new(), do: l
+    lost = MapSet.difference(whole, attributed)
+
+    if MapSet.size(lost) == 0 do
+      measured
+    else
+      IO.puts(:stderr, unattributable(lost))
+      for t <- measured, do: %{t | lines: []}
     end
   end
 
@@ -267,13 +271,27 @@ defmodule Kalku.Baseline do
     end
   end
 
+  # A library that sets itself up in `test_helper.exs` — a mocking library
+  # copies the modules it will replace — tidies up after itself in an
+  # `after_suite` callback, and ExUnit runs those at the end of every
+  # `ExUnit.run`. This runtime runs the suite again and again and stays warm,
+  # so that tidying would leave the next run with nothing set up: a test that
+  # passes alone fails, and a failing test is a kill. A wekufe identical to
+  # the original came back `killed` for that reason. The callbacks are left
+  # out; the runtime is thrown away when the run is over.
+  defp keep_suite_state, do: Application.put_env(:ex_unit, :after_suite, [])
+
   defp load_files(root, files) do
     helper = Path.join(root, "test/test_helper.exs")
     if File.exists?(helper), do: Code.require_file(helper)
 
     case Kernel.ParallelCompiler.require(files, return_diagnostics: true) do
-      {:ok, modules, _info} -> {:ok, remember(test_modules(modules))}
-      {:error, errors, _info} -> {:error, "baseline_failed", load_failure(errors)}
+      {:ok, modules, _info} ->
+        keep_suite_state()
+        {:ok, remember(test_modules(modules))}
+
+      {:error, errors, _info} ->
+        {:error, "baseline_failed", load_failure(errors)}
     end
   rescue
     e -> {:error, "baseline_failed", "the suite would not load: #{Exception.message(e)}"}
