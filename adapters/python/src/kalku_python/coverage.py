@@ -53,11 +53,7 @@ def rules_of(text: str | None) -> list[Rule]:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
         return []
-    last_line = max(len(text.splitlines()), 1)
     rules: list[Rule] = []
-    # Lines inside any function or class defined at import: the module's own
-    # lines are the rest.
-    claimed: set[int] = set()
 
     def span(node) -> tuple[int, int]:
         first = min([node.lineno, *[d.lineno for d in node.decorator_list]])
@@ -96,17 +92,8 @@ def rules_of(text: str | None) -> list[Rule]:
         return own - inside
 
     module_own = visit(tree.body, None)
-    for node in defs_all(tree):
-        first, last = span(node)
-        claimed.update(range(first, last + 1))
-    rules.append(Rule(1, last_line, frozenset(module_own - claimed), shared=True))
+    rules.append(Rule(1, len(text.splitlines()), frozenset(module_own), shared=True))
     return rules
-
-
-def defs_all(tree: ast.AST):
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            yield node
 
 
 def _blocks(stmt: ast.stmt):
@@ -162,7 +149,7 @@ def expand(
             if not shared:
                 continue
             for test, grown in out.items():
-                if test.split("::", 1)[0] in dependents:
+                if test.partition("::")[0] in dependents:
                     grown.setdefault(file, set()).update(shared)
     return out
 

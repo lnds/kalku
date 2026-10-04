@@ -96,7 +96,7 @@ class Service:
         for raw in lines:
             line = self._line(raw)
             self._queue.append(line)
-            if isinstance(line, str) and '"abort"' in line:
+            if isinstance(line, str):
                 with contextlib.suppress(DecodeError):
                     _, request = protocol.decode(line)
                     if isinstance(request, Abort):
@@ -117,7 +117,6 @@ class Service:
         while not self._queue:
             if self._eof:
                 return None
-            select.select([self.stdin_fd], [], [])
             self._feed()
         return self._queue.pop(0)
 
@@ -263,7 +262,9 @@ class Service:
         ids = [i for e in events if e.get("e") == "collected" for i in e["ids"]]
         if problem is not None:
             return protocol.error(ident, "prepare_failed", problem, True)
-        self.session = _Session(ids=ids, files={i: i.split("::", 1)[0] for i in ids}, prepared=True)
+        self.session = _Session(
+            ids=ids, files={i: i.partition("::")[0] for i in ids}, prepared=True
+        )
         modules = len(set(self.session.files.values()))
         return protocol.prepared(ident, int((time.monotonic() - started) * 1000), modules)
 
@@ -288,7 +289,7 @@ class Service:
             tests.append(
                 {
                     "test": e["id"],
-                    "file": e["id"].split("::", 1)[0],
+                    "file": e["id"].partition("::")[0],
                     "duration_ms": e["duration_ms"],
                 }
             )
@@ -436,7 +437,7 @@ class Service:
             # A child that never finished, or a suite that would not load,
             # is not a test that passed: what the wekufe broke is what killed it.
             started_ids = [e["id"] for e in events if e.get("e") == "start"]
-            culprit = (started_ids[-1:] or request.tests[:1] or ["?"])[0]
+            culprit = (started_ids[-1:] or request.tests or ["?"])[0]
             return protocol.cast_done(
                 ident, request.wekufe, "killed", _ms(started), killed_by=culprit
             )
