@@ -220,6 +220,26 @@ A timeout escalates in three steps:
 
 A cast may leave global state behind (ETS tables, registered processes, application env). The kalku reports `dirty: true`, and the kaikai side escalates the same way: first `reset` — for Elixir, restart the project's applications and clear its ETS tables — and only if the reset fails, recycle the kalku.
 
+#### Memory
+
+A timeout bounds time, and a wekufe can take the machine well inside it: a loop turned into unbounded growth allocates faster than a cast's deadline passes, and once the machine is thrashing nobody is left to hear `abort`.
+
+So the kaikai side also watches memory, from outside like the timeout. While a kalku is casting it sums the resident size of the kalku and everything it started (the process tree read from `ps`, not the process group: cargo and a forked child live in groups of their own), five times a second. Past `run.memory_limit_mb` the cast ends as `crashed`, with the size and the ceiling in its message, and the kalku is recycled; the abort-first steps are skipped because they depend on the very thing that is starved. It is never a kill: no assertion failed.
+
+Killing a kalku, for this or for any other reason, ends its whole tree. The tree is read before anything is signalled, because once the parent is gone its children belong to `init` and cannot be found again.
+
+The default ceiling is a quarter of the machine's memory shared between the workers and never under 2048 MB. `0` turns it off. The kalku's build and `prepare` are not held to it, since a build can need more than any test.
+
+What it does not cover:
+
+- **Anything outside a cast.** The build, `prepare` and the baseline are not held to the ceiling.
+- **Growth faster than the look.** The size is read every 200 ms, so a cast that allocates faster than that goes over the ceiling before it is seen; the ceiling is a bound with a margin, not an exact line. A loop growing at 13 GB/s was ended at about 2.8 GB with a ceiling of 300 MB.
+- **A machine where `ps` cannot run.** The size reads as zero and nothing is ended, without a word about it.
+- **One kalku against another.** The ceiling is per kalku, so the workers together can hold the number of workers times the ceiling; the default shares the quarter of the machine between them for that reason.
+- **Elixir.** Its tests run inside the kalku's own VM, so the ceiling is on that whole process and ending it loses the warm runtime.
+- **Windows.** The process table is read with `ps -axo`, `sysctl` and `/proc/meminfo`.
+
+
 ### 8. Report
 
 Outcomes stream to the client as they arrive and are written to the cache. At the end the reporter emits the summary: human text, JSON (`--format json`), agent-oriented JSON (`--format agent`, see *Agents*), and optional GitHub annotations for survivors.
@@ -259,7 +279,7 @@ cold ──prepare──► preparing ──ok──► baseline ──green─�
 | `timeout` | exceeded its timeout | reported apart |
 | `no_coverage` | no test executes the site | reported apart |
 | `compile_error` | the wekufe does not compile | excluded |
-| `crashed` | the cast produced no verdict: the kalku died, or it could not run the tests it was given | reported apart |
+| `crashed` | the cast produced no verdict: the kalku died, it could not run the tests it was given, or the wekufe held more memory than the ceiling (the message says how much) | reported apart |
 | `equivalent` | proven by identical bytecode, or declared with a written reason | excluded |
 | `nondeterministic` | cast several times and did not agree with itself | reported apart |
 
@@ -540,13 +560,3 @@ kaikai synthesises property checks from protocol laws declared in the source. Th
 ## Open questions
 
 - Editor integration: LSP diagnostics for survivors, or a lighter file-based report the editor watches.
-
-#### Memory
-
-A timeout bounds time, and a wekufe can take the machine well inside it: a loop turned into unbounded growth allocates faster than a cast's deadline passes, and once the machine is thrashing nobody is left to hear `abort`.
-
-So the kaikai side also watches memory, from outside like the timeout. While a kalku is casting it sums the resident size of the kalku and everything it started (the process tree read from `ps`, not the process group: cargo and a forked child live in groups of their own), five times a second. Past `run.memory_limit_mb` the cast ends as `crashed`, with the size and the ceiling in its message, and the kalku is recycled; the abort-first steps are skipped because they depend on the very thing that is starved. It is never a kill: no assertion failed.
-
-Killing a kalku, for this or for any other reason, ends its whole tree. The tree is read before anything is signalled, because once the parent is gone its children belong to `init` and cannot be found again.
-
-The default ceiling is a quarter of the machine's memory shared between the workers and never under 2048 MB. `0` turns it off. The kalku's build and `prepare` are not held to it, since a build can need more than any test.

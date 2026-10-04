@@ -268,7 +268,7 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 | `duration_ms` | int | |
 | `dirty` | bool | the runtime may not be back to its original state |
 
-`timeout`, `crashed` and `nondeterministic` never appear here: the kaikai side decides them from outside — a missing response, a dead process, or a wekufe whose repeated casts did not agree with each other. A native kalku does not enforce its own timeout, and does not know that it has been asked to cast the same wekufe twice. Any other outcome is `invalid`.
+`timeout`, `crashed` and `nondeterministic` never appear here: the kaikai side decides them from outside — a missing response, a dead process (one ended for holding more memory than `run.memory_limit_mb` included), or a wekufe whose repeated casts did not agree with each other. A native kalku does not enforce its own timeout, and does not know that it has been asked to cast the same wekufe twice. Any other outcome is `invalid`.
 
 `equivalent` means the wekufe compiled to the same code as the original, so no test ran: identical compiled code is the only mechanical evidence of equivalence, and a kalku never reports equivalence on any other ground. Should another kind of evidence appear, it arrives as a new optional field.
 
