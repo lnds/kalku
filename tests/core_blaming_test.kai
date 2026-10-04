@@ -1,0 +1,38 @@
+import kalku.wire.shapes
+import kalku.core.blaming
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+fn failing(n: Int, message: String) : Failure =
+  Failure { test_id: "tests/t.rs::t#{n}", message: message }
+
+# A red baseline used to name the tests and drop the reason, so a reader
+# facing 24 failures had no way to tell a broken suite from a copy of the
+# project that lacks something the tests read.
+test "a red suite says why each of the first tests failed" {
+  let said =
+    red_suite([failing(1, "fatal: not a git repository\nsecond line\nthird line"), failing(2, "")])
+
+  assert starts_with(said, "the suite is already failing, 2 test(s):\n")
+  assert has(said, "  tests/t.rs::t1:\n    fatal: not a git repository\n    second line\n")
+  assert not has(said, "third line")
+  assert has(said, "  tests/t.rs::t2: no message\n")
+  assert not has(said, "more")
+}
+
+test "only the first few are shown, and the rest are counted" {
+  let said = red_suite(map(enumerate(repeat(0, 8)), i => failing(i.fst, "boom")))
+
+  assert has(said, "8 test(s)")
+  assert has(said, "t4:\n    boom")
+  assert not has(said, "t5:")
+  assert has(said, "\n  and 3 more\n")
+}
+
+test "a suite that is red the reni's way is told where it ran" {
+  assert has(red_suite([failing(1, "x")]), "`.git` for one")
+}
+
+test "a red suite with no test named still says so" {
+  assert red_suite([]) == "the suite is already failing: no test named"
+}
