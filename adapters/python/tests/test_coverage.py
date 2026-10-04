@@ -1,3 +1,7 @@
+import dataclasses
+
+import pytest
+
 from kalku_python import coverage
 
 # Lines: 1-4 constants, 7-9 the decorator and signature of `first`, 10-11 its
@@ -230,3 +234,44 @@ def test_a_module_that_nothing_depends_on_adds_nothing():
 
 def test_without_a_dependency_map_only_what_ran_is_expanded():
     assert coverage.expand({"t": {"config.py": {9}}}, lambda f: CONFIG)["t"]["config.py"] >= {9}
+
+
+TRY = """\
+try:
+    def in_body():
+        return 1
+except ValueError:
+    def in_handler():
+        return 2
+else:
+    def in_else():
+        return 3
+finally:
+    def in_final():
+        return 4
+"""
+TRY_OWN = {1, 4, 7, 10}
+
+
+def test_a_function_in_any_block_of_a_try_goes_with_its_own_body_and_no_other():
+    # The `try` lines themselves are the module's; each function's header goes
+    # only with the body that ran.
+    assert lines_of(TRY, {3}) == TRY_OWN | {2, 3}
+    assert lines_of(TRY, {6}) == TRY_OWN | {5, 6}
+    assert lines_of(TRY, {9}) == TRY_OWN | {8, 9}
+    assert lines_of(TRY, {12}) == TRY_OWN | {11, 12}
+
+
+def test_a_statement_right_after_a_function_is_the_modules_and_not_the_functions():
+    text = "def f():\n    return 1\nX = 2\n"
+    assert lines_of(text, {2}) == {1, 2, 3}
+
+
+def test_a_rule_cannot_be_changed_once_made():
+    rule = coverage.Rule(1, 2, frozenset({1}))
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        rule.first = 5
+
+
+def test_a_test_that_ran_only_the_first_line_of_a_module_is_credited_with_the_rest():
+    assert lines_of("A = 1\nB = 2\n", {1}) == {1, 2}

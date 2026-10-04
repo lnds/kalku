@@ -114,9 +114,8 @@ _ATOMIC = (
     ast.JoinedStr,
 )
 
-# Calls whose first argument is the name of a type or of a type variable, and
-# the position of that argument.
-_TYPE_ARGUMENT = {"cast": 0, "TypeVar": 0, "ParamSpec": 0, "TypeVarTuple": 0, "NewType": 0}
+# Calls whose first argument is the name of a type or of a type variable.
+_TYPE_ARGUMENT = {"cast", "TypeVar", "ParamSpec", "TypeVarTuple", "NewType"}
 
 _SIGNIFICANT_SKIPPED = {
     tokenize.COMMENT,
@@ -210,15 +209,15 @@ class _Token:
 
 def _tokens(text: str, src: Source) -> list[_Token]:
     """The significant tokens of the file, positioned in bytes."""
-    lines = text.splitlines(keepends=True)
+    # The tokenizer reads lines by `\n` alone, so rows are counted the same way
+    # here: `splitlines` would also cut at form feeds and U+2028.
+    lines = io.StringIO(text).readlines()
     starts = [0]
     for line in lines:
         starts.append(starts[-1] + len(line.encode("utf-8")))
 
     def byte(pos: tuple[int, int]) -> int:
         row, col = pos
-        if row - 1 >= len(lines):
-            return len(src.data)
         return starts[row - 1] + len(lines[row - 1][:col].encode("utf-8"))
 
     out = []
@@ -326,13 +325,8 @@ class _Walker(ast.NodeVisitor):
     def tokens_between(self, start: int, end: int) -> list[_Token]:
         """The tokens inside `start:end`, without the parentheses around operands."""
         lo = bisect.bisect_left(self._starts, start)
-        out = []
-        for tok in self.tokens[lo:]:
-            if tok.start >= end:
-                break
-            if tok.end <= end and tok.text not in ("(", ")"):
-                out.append(tok)
-        return out
+        hi = bisect.bisect_left(self._starts, end)
+        return [t for t in self.tokens[lo:hi] if t.end <= end and t.text not in ("(", ")")]
 
     def excluded(self, call: ast.Call) -> bool:
         name = _dotted(call.func)
@@ -429,9 +423,9 @@ class _Walker(ast.NodeVisitor):
     def visit_Compare(self, node: ast.Compare) -> None:
         operands = [node.left, *node.comparators]
         for i, op in enumerate(node.ops):
-            wanted = _OP_OF.get(type(op))
+            wanted = _OP_OF[type(op)]
             left, right = self.span(operands[i]), self.span(operands[i + 1])
-            if wanted is None or left is None or right is None:
+            if left is None or right is None:
                 continue
             between = self.tokens_between(left[1], right[0])
             words = wanted.split()
@@ -453,7 +447,7 @@ class _Walker(ast.NodeVisitor):
             if left is None or right is None:
                 continue
             between = self.tokens_between(left[1], right[0])
-            if between and between[-1].text == word:
+            if between[-1].text == word:
                 self.propose("connect", between[-1].start, between[-1].end, other, expected=word)
         self.generic_visit(node)
 
@@ -494,14 +488,13 @@ class _Walker(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:
         if self.excluded(node):
             return
-        if _TYPE_ARGUMENT.get(_dotted(node.func).rsplit(".", 1)[-1], -1) == 0 and (
+        if _dotted(node.func).rpartition(".")[2] in _TYPE_ARGUMENT and (
             node.args
             and isinstance(node.args[0], ast.Constant)
             and isinstance(node.args[0].value, str)
         ):
             # `cast("list[int]", x)`: the first argument names a type, which
             # no test can tell from another string.
-            self.visit(node.func)
             for arg in node.args[1:]:
                 self.visit(arg)
             for keyword in node.keywords:
@@ -533,9 +526,10 @@ class _Walker(ast.NodeVisitor):
         last = self.span(case.body[-1]) if case.body else None
         if first is None or last is None:
             return
-        lo = bisect.bisect_left(self._starts, first[0])
-        # The `case` keyword is the token before the pattern.
-        for tok in reversed(self.tokens[max(0, lo - 3) : lo]):
-            if tok.text == "case":
-                self.propose("arm", tok.start, last[1], "", risky=True)
-                return
+        # The `case` keyword comes before the pattern, past any parentheses
+        # around it, which are not part of its span.
+        at = bisect.bisect_left(self._starts, first[0]) - 1
+        while self.tokens[at].text == "(":
+            at -= 1
+        if self.tokens[at].text == "case":
+            self.propose("arm", self.tokens[at].start, last[1], "", risky=True)

@@ -10,6 +10,7 @@ import io
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -672,3 +673,303 @@ def test_a_file_that_cannot_be_parsed_adds_no_shared_lines_and_does_not_stop_the
     said = h.one(type="baseline")
 
     assert said["status"] == "green" and said["coverage"] == []
+
+
+# ---- the edges of what the service counts, says and refuses ---------------------
+
+
+class Flushing(io.BytesIO):
+    flushes = 0
+
+    def flush(self):
+        self.flushes += 1
+
+
+def reading(tmp_path, data):
+    """A service reading from a file, so that one read takes whatever is asked of it."""
+    path = tmp_path / "in"
+    path.write_bytes(data)
+    fd = os.open(path, os.O_RDONLY)
+    return service.Service(fd, Out()), fd
+
+
+def test_the_limits_the_documentation_names_are_these():
+    assert service.MINIMUM == (3, 12)
+    assert service.MAX_DEPENDENTS == 300
+    assert service._WARM_LIMIT == 3000
+
+
+def test_every_reply_is_flushed_as_it_is_said(harness):
+    h = harness()
+    h.svc.out = Flushing()
+    hello = {"type": "hello", "id": 1, "protocol": 1, "root": str(h.root), "reni": str(h.reni)}
+    hello |= {"worker": 0, "inline_limit_bytes": 1, "env": {}}
+    lines = [hello, {"type": "shutdown", "id": 2}]
+    h.feed(b"".join((json.dumps(line) + "\n").encode() for line in lines))
+
+    assert h.svc.serve() == 0
+    assert h.svc.out.flushes == 2
+
+
+def test_a_read_takes_at_most_a_mebibyte_at_a_time(tmp_path):
+    svc, fd = reading(tmp_path, b"x" * (3 << 20))
+    svc._feed()
+    os.close(fd)
+    assert len(svc._buffer) == 1 << 20
+
+
+def test_a_line_that_never_ends_is_kept_up_to_the_limit_and_dropped_past_it(tmp_path):
+    kept, fd = reading(tmp_path, b"x" * protocol.MAX_LINE)
+    for _ in range(4):
+        kept._feed()
+    os.close(fd)
+    assert len(kept._buffer) == protocol.MAX_LINE and not kept._dropping
+
+    dropped, fd = reading(tmp_path, b"x" * (protocol.MAX_LINE + 1))
+    for _ in range(5):
+        dropped._feed()
+    os.close(fd)
+    assert dropped._buffer == b"" and dropped._dropping
+
+
+def test_a_line_of_exactly_the_limit_is_kept_and_one_byte_more_is_too_long(harness):
+    svc = harness().svc
+    assert svc._line(b"x" * protocol.MAX_LINE) is not framing.TOO_LONG
+    assert svc._line(b"x" * (protocol.MAX_LINE + 1)) is framing.TOO_LONG
+
+
+def test_an_abort_is_heard_however_its_type_is_spelled_in_json(harness):
+    h = harness()
+    h.feed(b'{"type": "ab\\u006frt", "id": 7, "cast": 4}\n')
+    h.svc._feed()
+    assert h.svc._aborted == {4}
+
+
+def test_a_line_nobody_can_read_is_refused_without_ending_the_conversation(harness):
+    (reply,), stop = harness().svc.handle("not json")
+    said = json.loads(reply)
+    assert said["code"] == "bad_request" and said["fatal"] is False and not stop
+
+
+def test_exactly_python_3_12_is_enough_and_the_refusal_names_the_version_it_found(
+    harness, monkeypatch
+):
+    monkeypatch.setattr(service.sys, "version_info", (3, 12, 0, "final", 0))
+    assert harness().hello()["type"] == "ready"
+
+    monkeypatch.setattr(service.sys, "version_info", (3, 11, 4, "final", 0))
+    monkeypatch.setattr(service.sys, "version", "3.11.4 (main, Jan 1 2024) [GCC]")
+    said = harness().hello()
+    assert said["message"].startswith("Python 3.11.4 is older than 3.12")
+
+
+def test_a_duration_is_counted_in_milliseconds(monkeypatch):
+    monkeypatch.setattr(service.time, "monotonic", lambda: 12.5)
+    assert service._ms(10.0) == 2500
+
+
+def test_prepare_and_baseline_say_how_long_they_took_in_milliseconds(harness, monkeypatch):
+    h = harness()
+    h.hello()
+    h.scripts["collect"] = collected(T1)
+    clock = iter([10.0, 12.5])
+    monkeypatch.setattr(service.time, "monotonic", lambda: next(clock))
+    assert h.one(type="prepare")["duration_ms"] == 2500
+
+    h.scripts["baseline"] = [result(T1), {"e": "done", "exit": 0, "warm": []}]
+    clock = iter([20.0, 23.25])
+    monkeypatch.setattr(service.time, "monotonic", lambda: next(clock))
+    assert h.one(type="baseline")["duration_ms"] == 3250
+
+
+def test_a_baseline_before_prepare_is_not_ready_and_not_fatal(harness):
+    h = harness()
+    h.hello()
+    said = h.one(type="baseline")
+    assert said["code"] == "not_ready" and said["fatal"] is False
+    assert said["message"] == "`prepare` has to come first"
+
+
+def test_a_cast_before_prepare_says_what_to_do_first_and_is_not_fatal(harness):
+    h = harness()
+    h.hello()
+    said = cast(h)[0]
+    assert said["fatal"] is False and said["message"] == "`prepare` has to come first"
+
+
+def test_a_site_in_a_file_the_reni_cannot_read_is_refused_without_ending_the_run(harness):
+    h = harness()
+    ready(h)
+    said = cast(h, file="missing.py")[0]
+    assert said["code"] == "bad_request" and said["fatal"] is False
+    assert "missing.py" in said["message"]
+
+
+def test_a_prepare_stopped_by_the_end_of_input_says_what_stopped_it(harness):
+    h = harness()
+    h.hello()
+    h.scripts["collect"] = collected(T1)
+    h.svc._eof = True
+    said = h.one(type="prepare")
+    assert said["code"] == "aborted" and said["fatal"] is True
+    assert said["message"] == "the kalku was asked to stop"
+
+
+def test_a_baseline_stopped_by_the_end_of_input_says_what_stopped_it(harness):
+    h = harness()
+    ready(h)
+    h.svc._eof = True
+    said = h.one(type="baseline")
+    assert said["fatal"] is True and said["message"] == "the kalku was asked to stop"
+
+
+def test_a_child_is_always_closed_once_it_has_been_read(harness):
+    h = harness()
+    ready(h)
+    h.scripts["baseline"] = [result(T1), {"e": "done", "exit": 0, "warm": []}]
+    h.one(type="baseline")
+    assert all(run.closed for run in h.runs)
+
+    h.hang = True
+    h.svc._eof = True
+    assert h.svc._run(runner.Spec("w", "baseline")) is None
+    assert h.runs[-1].killed and h.runs[-1].closed
+
+
+def test_the_verdict_names_the_last_test_that_started_when_the_suite_never_finished(harness):
+    h = harness()
+    ready(h)
+    h.scripts["cast"] = [{"e": "start", "id": T1}, {"e": "start", "id": T2}]
+    said = cast(h, tests=(T1, T2))[0]
+    assert said["outcome"] == "killed" and said["killed_by"] == T2
+
+
+def test_a_suite_that_never_started_a_test_is_killed_by_the_one_asked_for_or_by_none(harness):
+    h = harness()
+    ready(h)
+    h.scripts["cast"] = [{"e": "crashed", "message": "boom"}]
+    assert cast(h, tests=(T2,))[0]["killed_by"] == T2
+    assert cast(h, tests=())[0]["killed_by"] == "?"
+
+
+def test_a_cast_where_no_requested_test_passed_is_an_error_that_says_so(harness):
+    h = harness()
+    ready(h)
+    h.scripts["cast"] = [{"e": "done", "exit": 0, "warm": []}]
+    said = cast(h)[0]
+    assert said["code"] == "unknown_test" and said["fatal"] is False
+    assert said["message"] == "none of the requested tests ran and passed"
+
+
+def test_a_syntax_error_is_told_with_its_line_and_anything_else_with_its_kind():
+    assert service._syntax(SyntaxError("bad", ("f.py", 3, 1, "x", 3, 2))) == (
+        "SyntaxError: bad (line 3)"
+    )
+    assert service._syntax(ValueError("null bytes")) == "ValueError: null bytes"
+
+
+def spoken(harness, tmp_path, limit):
+    h = harness(inline_limit=limit)
+    h.reni = tmp_path / "not" / "yet" / "reni"
+    h.hello()
+    return h
+
+
+def test_coverage_is_inline_up_to_the_limit_and_in_a_file_of_the_reni_past_it(harness, tmp_path):
+    entries = [{"file": "a.py", "line": 1, "tests": [T1]}]
+    text = json.dumps(entries, separators=(",", ":"))
+    size = len(text.encode())
+
+    assert spoken(harness, tmp_path, size).svc._spoken(entries) == ("inline", entries)
+
+    h = spoken(harness, tmp_path, size - 1)
+    kind, path = h.svc._spoken(entries)
+    assert kind == "path" and path == str(h.reni / "coverage" / "0.json")
+    assert Path(path).read_text() == text + "\n"
+    assert h.svc._spoken(entries) == ("path", path)
+
+
+def attributed(tmp_path, files, monkeypatch, limit):
+    for name, text in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    monkeypatch.setattr(service, "MAX_DEPENDENTS", limit)
+    ids = [f"{n}::t" for n in files if n.startswith("tests/")]
+    tests = [{"test": i, "file": i.partition("::")[0], "duration_ms": 1} for i in ids]
+    svc = service.Service(0, Out())
+    return svc._attributed(tmp_path, tests, {i: {} for i in ids})
+
+
+IMPORTERS = {
+    "lib.py": "LIMIT = 1\n",
+    "mid.py": "import lib\n",
+    "tests/test_direct.py": "import lib\n",
+    "tests/test_a.py": "import mid\n",
+    "tests/test_b.py": "import mid\n",
+}
+
+
+def test_a_module_is_credited_to_every_test_that_depends_on_it_up_to_the_limit(
+    tmp_path, monkeypatch
+):
+    got = attributed(tmp_path, IMPORTERS, monkeypatch, limit=3)
+    for test in ("tests/test_direct.py::t", "tests/test_a.py::t", "tests/test_b.py::t"):
+        assert got[test]["lib.py"] == {1}
+
+
+def test_past_the_limit_a_module_is_credited_only_to_the_tests_that_import_it_themselves(
+    tmp_path, monkeypatch
+):
+    got = attributed(tmp_path, IMPORTERS, monkeypatch, limit=2)
+    assert got["tests/test_direct.py::t"]["lib.py"] == {1}
+    assert "lib.py" not in got["tests/test_a.py::t"]
+    assert "lib.py" not in got["tests/test_b.py::t"]
+
+
+def test_past_the_limit_even_for_the_direct_importers_a_module_is_credited_to_none(
+    tmp_path, monkeypatch
+):
+    files = {**IMPORTERS, "tests/test_c.py": "import lib\n"}
+    got = attributed(tmp_path, files, monkeypatch, limit=1)
+    assert all("lib.py" not in lines for lines in got.values())
+
+
+def test_only_the_first_few_thousand_modules_a_baseline_imported_are_imported_again(monkeypatch):
+    seen = []
+    monkeypatch.setattr(service, "__import__", seen.append, raising=False)
+    names = [f"kalku_no_such_module_{i}" for i in range(service._WARM_LIMIT + 5)]
+    service.Service(0, Out())._warm([{"e": "done", "warm": names}])
+    assert seen == names[: service._WARM_LIMIT]
+
+
+def test_a_python_of_exactly_the_minimum_is_enough(harness, monkeypatch):
+    monkeypatch.setattr(service.sys, "version_info", service.MINIMUM)
+    assert harness().hello()["type"] == "ready"
+
+
+def test_a_suite_that_cannot_be_collected_ends_the_run(harness):
+    h = harness()
+    h.hello()
+    h.scripts["collect"] = [{"e": "collect_error", "id": "tests/test_gate.py", "message": "boom"}]
+    said = h.one(type="prepare")
+    assert said["code"] == "prepare_failed" and said["fatal"] is True
+    assert said["message"] == "tests/test_gate.py: boom"
+
+
+def test_a_project_that_cannot_be_copied_ends_the_run(harness, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service.project, "sync_tree", refuse)
+    h = harness()
+    h.hello()
+    said = h.one(type="prepare")
+    assert said["code"] == "prepare_failed" and said["fatal"] is True
+    assert "disk full" in said["message"]
+
+
+def test_the_direct_importers_are_credited_when_they_are_exactly_the_limit(tmp_path, monkeypatch):
+    got = attributed(tmp_path, IMPORTERS, monkeypatch, limit=1)
+    assert got["tests/test_direct.py::t"]["lib.py"] == {1}
+    assert "lib.py" not in got["tests/test_a.py::t"]
