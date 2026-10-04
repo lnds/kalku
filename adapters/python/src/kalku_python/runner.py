@@ -366,6 +366,14 @@ def _free_tool_id(mon) -> int:  # pragma: no cover
 
 
 def _text(report) -> str:  # pragma: no cover
+    """What went wrong: the line pytest picks out of the traceback, which says
+    so whole, or the end of the traceback when it picked none. Cutting a
+    traceback from its end alone leaves a first line that begins in the middle
+    of one."""
+    crash = getattr(getattr(report, "longrepr", None), "reprcrash", None)
+    headline = getattr(crash, "message", "") or ""
+    if headline:
+        return headline[:_MESSAGE_LIMIT]
     text = getattr(report, "longreprtext", "") or str(getattr(report, "longrepr", ""))
     return text[-_MESSAGE_LIMIT:]
 
