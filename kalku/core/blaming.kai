@@ -1,0 +1,30 @@
+#[doc("""
+What a run says when the suite is red before anything was cast.
+
+A baseline that fails ends the run, and the reader has to find out why
+from what is printed: the names of the tests are not enough, since the
+reason is in each failure's message and a run in a copy of the project
+can fail for a reason the reader's own tree does not have.
+""")]
+
+import kalku.wire.shapes
+
+const SHOWN : Int = 5
+
+fn blamed(f: Failure) : String = match take(lines(trim(f.message)), 2) {
+  [] -> "  #{f.test_id}: no message"
+  why -> "  #{f.test_id}:\n#{join(why | (l => "    #{l}"), "\n")}"
+}
+
+#[doc("""
+The refusal for a suite that is already failing: how many tests, the first
+few with the first two lines of why each failed, and where the suite ran.
+""")]
+pub fn red_suite(failures: [Failure]) : String = if is_empty(failures) {
+  "the suite is already failing: no test named"
+} else {
+  let shown = take(failures, SHOWN)
+  let more = length(failures) - length(shown)
+  let rest = if more > 0 { "\n  and #{more} more" } else { "" }
+  "the suite is already failing, #{length(failures)} test(s):\n#{join(shown | blamed, "\n")}#{rest}\nIt ran in the reni, a copy of the project made for this run: a test that depends on something the copy leaves out, `.git` for one, fails there and not in your tree."
+}
