@@ -18,3 +18,6 @@ tests/fake_kalku/fake_kalku
 adapters/kaikai/bin/
 adapters/kaikai/fixtures/reni/
 /dist/
+
+# Local environment files can hold secrets
+.envrc
