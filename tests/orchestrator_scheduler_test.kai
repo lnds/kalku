@@ -5,6 +5,7 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.planner
 import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.measure
 import kalku.orchestrator.pool
 import kalku.orchestrator.attending
 import kalku.orchestrator.scheduler
@@ -271,5 +272,52 @@ test "a ceiling of zero lets a cast use what it likes" {
   let done = with_mailbox { casting(spec, casts(1, 1500)) }
 
   assert tally(done) == [("timeout", 1)]
+  assert not hog_alive()
+}
+
+# What `discover` does before a run, in miniature: a kalku reads the project,
+# is killed, and its reader says so into the mailbox the pool will use. Those
+# last words were once addressed to worker 0's first life, so the pool's own
+# first kalku was recycled before it cast anything, and a run with a single
+# replacement allowed had none left for the first real failure.
+fn after_discovery(spec: PoolSpec, cs: [Wekufe]) : Casting / Process + Spawn + Clock + Actor[
+  OrchMsg
+] = alone(
+  () => untold(
+    () => match summon(
+      KalkuSpec {
+        life: discovery_life(),
+        command: FAKE,
+        args: ["tests/fixtures/scripts/pool_happy.ndjson"]
+      }
+    ) {
+      Err(why) -> Casting { verdicts: [], failure: Some(why), cancelled: false }
+      Ok(k) -> {
+        let me = Actor.self()
+        let _reader = spawn_actor(() => read_loop(k, me))
+        kill_now(k)
+        cast_all(spec, cs)
+      }
+    }
+  )
+)
+
+test "the last words of the kalku that read the project do not recycle the pool's first kalku" {
+  let done = with_mailbox { after_discovery(pool_of("pool_happy.ndjson", 1, 1), casts(3, 5000)) }
+
+  assert tally(done) == [("killed", 3)]
+  assert done.failure == None
+}
+
+# Replacing a kalku that went over the ceiling is not a failed summons: a file
+# can hold several wekufe like that, and the run has to reach the ones after
+# them. Each life of this script hogs memory on its first cast, so every cast
+# here is one, with a single summons allowed.
+test "a run goes on past every cast that goes over the memory ceiling" {
+  let spec = PoolSpec { ...pool_of("pool_memory_hog.ndjson", 1, 1), memory_mb: 200 }
+  let done = with_mailbox { casting(spec, casts(3, 60000)) }
+
+  assert tally(done) == [("crashed", 3)]
+  assert done.failure == None
   assert not hog_alive()
 }

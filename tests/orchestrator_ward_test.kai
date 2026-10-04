@@ -14,6 +14,10 @@ fn a_kalku(worker: Int) : Kalku =
 # A `Process` that kills nothing and only remembers being asked to, so a
 # test can assert on what the ward did rather than on what survived.
 #
+# Killing a kalku also reads the process table, to end what it started in
+# groups of its own; the fake has none, since the pids here are made up and a
+# real table could hold a process with one of them.
+#
 # The ward kills a group rather than a child, and verifies it with signal
 # 0, so the fake answers both: a group it was asked to kill is recorded,
 # and a probe says the group is gone — which is what a fake that kills
@@ -40,6 +44,8 @@ fn killed_during(body: () -> Unit / Ward + Process + Stop) : [Int] / Clock = han
     resume(Ok(()), state ++ [c.pid])
   }
   wait(c, resume) -> resume(Ok(Exited(0)))
+  start_piped(cmd, args, pipe_stdin, pipe_stdout, pipe_stderr, resume) ->
+    resume(Err("no process table in this test"), state)
   return(x) -> state
 }
 

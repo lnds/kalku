@@ -1,0 +1,23 @@
+#[doc("""
+What a run says when it did not get through what it planned.
+
+A pool that runs out of kalku ends the run, and the wekufe it had not cast
+are not measured. A report built from the ones it did cast carries a score
+and a clean exit, so a CI job or an agent reads a finished run. Saying
+where it stopped, and why, is the only honest answer.
+""")]
+
+#[doc("""
+Why a run is not a measurement, when it stopped before casting everything:
+how far it got and what the pool said. `None` when it got through its plan,
+whatever the pool said on the way out, since nothing was left unmeasured.
+""")]
+pub fn stopped_short(failure: Option[String], cast: Int, planned: Int) : Option[String] =
+  match failure {
+    Some(why) -> if cast < planned {
+      Some("the run stopped after #{cast} of #{planned} wekufe: #{why}")
+    } else {
+      None
+    }
+    None -> None
+  }
