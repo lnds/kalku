@@ -271,3 +271,7 @@ def test_a_rule_cannot_be_changed_once_made():
     rule = coverage.Rule(1, 2, frozenset({1}))
     with pytest.raises(dataclasses.FrozenInstanceError):
         rule.first = 5
+
+
+def test_a_test_that_ran_only_the_first_line_of_a_module_is_credited_with_the_rest():
+    assert lines_of("A = 1\nB = 2\n", {1}) == {1, 2}

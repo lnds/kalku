@@ -437,7 +437,7 @@ class Service:
             # A child that never finished, or a suite that would not load,
             # is not a test that passed: what the wekufe broke is what killed it.
             started_ids = [e["id"] for e in events if e.get("e") == "start"]
-            culprit = (started_ids[-1:] or request.tests[:1] or ["?"])[0]
+            culprit = (started_ids[-1:] or request.tests or ["?"])[0]
             return protocol.cast_done(
                 ident, request.wekufe, "killed", _ms(started), killed_by=culprit
             )

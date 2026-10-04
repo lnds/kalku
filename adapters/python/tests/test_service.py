@@ -939,3 +939,35 @@ def test_only_the_first_few_thousand_modules_a_baseline_imported_are_imported_ag
     names = [f"kalku_no_such_module_{i}" for i in range(service._WARM_LIMIT + 5)]
     service.Service(0, Out())._warm([{"e": "done", "warm": names}])
     assert seen == names[: service._WARM_LIMIT]
+
+
+def test_a_python_of_exactly_the_minimum_is_enough(harness, monkeypatch):
+    monkeypatch.setattr(service.sys, "version_info", service.MINIMUM)
+    assert harness().hello()["type"] == "ready"
+
+
+def test_a_suite_that_cannot_be_collected_ends_the_run(harness):
+    h = harness()
+    h.hello()
+    h.scripts["collect"] = [{"e": "collect_error", "id": "tests/test_gate.py", "message": "boom"}]
+    said = h.one(type="prepare")
+    assert said["code"] == "prepare_failed" and said["fatal"] is True
+    assert said["message"] == "tests/test_gate.py: boom"
+
+
+def test_a_project_that_cannot_be_copied_ends_the_run(harness, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service.project, "sync_tree", refuse)
+    h = harness()
+    h.hello()
+    said = h.one(type="prepare")
+    assert said["code"] == "prepare_failed" and said["fatal"] is True
+    assert "disk full" in said["message"]
+
+
+def test_the_direct_importers_are_credited_when_they_are_exactly_the_limit(tmp_path, monkeypatch):
+    got = attributed(tmp_path, IMPORTERS, monkeypatch, limit=1)
+    assert got["tests/test_direct.py::t"]["lib.py"] == {1}
+    assert "lib.py" not in got["tests/test_a.py::t"]
