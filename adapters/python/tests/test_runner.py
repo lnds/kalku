@@ -251,3 +251,16 @@ def test_a_child_cannot_reach_a_descriptor_its_parent_had_open(work, tmp_path, m
         finish(r)
     (result,) = [e for e in events if e["e"] == "result"]
     assert result["outcome"] == "passed", result
+
+
+def test_a_failure_leads_with_the_line_that_says_what_went_wrong(work):
+    # A long traceback cut from its end begins in the middle of a line; the
+    # reader of a red baseline only has the first one.
+    body = "def test_bad():\n" + "".join(f"    v{i} = {i}\n" for i in range(400))
+    body += "    raise RuntimeError('what went wrong')\n"
+    (work / "tests/test_gate.py").write_text(body)
+    r = run(work, "baseline")
+    events = events_of(r)
+    finish(r)
+    (failed,) = [e for e in events if e["e"] == "result"]
+    assert failed["message"].splitlines()[0] == "RuntimeError: what went wrong"
