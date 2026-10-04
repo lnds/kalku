@@ -63,3 +63,15 @@ test "a wekufe's name becomes the site it was cast at" {
   assert (sites_for(ledger(), ["w2", "w1"]) | (.span.start.line)) == [9, 4]
   assert strangers(ledger(), ["w1", "stranger", "w2"]) == ["stranger"]
 }
+
+# A file edited since a wekufe was cast gives every site in it a new name,
+# so the old name is one nothing answers to; a re-cast has to say so rather
+# than measure nothing.
+test "a name no site carries any more is told apart from one that is still there" {
+  let found = [site_at("lib/a.ex", 4), site_at("lib/a.ex", 9)]
+
+  assert gone(["lib/a.ex:4", "lib/a.ex:7", "lib/a.ex:9"], found) == ["lib/a.ex:7"]
+  assert gone(["lib/a.ex:4"], found) == []
+  assert gone([], found) == []
+  assert gone(["lib/a.ex:4"], []) == ["lib/a.ex:4"]
+}

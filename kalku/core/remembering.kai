@@ -72,6 +72,17 @@ pub fn sites_for(all: [Remembered], wekufe: [String]) : [Site] = flat_map(
 pub fn strangers(all: [Remembered], wekufe: [String]) : [String] =
   filter(wekufe, w => is_none(latest(all, w)))
 
+#[doc("""
+Which of the named wekufe no site found now carries.
+
+A wekufe is named by a hash that includes the text it was cast in, so a
+file edited since renames every wekufe in it. A re-cast of such a name
+would measure nothing and say so with a score of `n/a`, which reads as
+"nothing to break"; this is how it is told apart.
+""")]
+pub fn gone(named: [String], found: [Site]) : [String] =
+  filter(named, w => not contains(found | (.site_id), w))
+
 fn last(rs: [Remembered]) : Option[Remembered] = match reverse(rs) {
   [] -> None
   [newest, ..._] -> Some(newest)
