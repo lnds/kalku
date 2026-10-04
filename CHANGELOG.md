@@ -1,3 +1,9 @@
+## v0.6.0 (2026-10-04)
+
+### Added
+
+- **orchestrator**: hold a cast to a memory ceiling, and end a killed kalku's whole tree (#152)
+
 ## v0.5.1 (2026-10-04)
 
 ### Fixed
