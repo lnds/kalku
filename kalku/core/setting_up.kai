@@ -319,7 +319,11 @@ else
   PY=python3
 fi
 
-exec "$PY" "$(command -v kalku-python)" "$@"
+APP="$(command -v kalku-python)" || {
+  echo "kalku: kalku-python is not on PATH; put it beside kalku, as the release does" >&2
+  exit 127
+}
+exec "$PY" "$APP" "$@"
 """
 
 # The Rust kalku is told where the reni is through `hello` and builds
