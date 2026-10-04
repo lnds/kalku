@@ -42,6 +42,20 @@ fn temp_under() : String / Env {
   if ends_with(dir, "/") { slice(dir, 0, length(dir) - 1) } else { dir }
 }
 
+# Two `kai test` runs at once share a TMPDIR, so the file is named after the
+# process that owns it.
+fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $PPID"]) {
+  Err(_) -> "0"
+  Ok(child) -> {
+    let out = match proc.read_stdout(child) {
+      Ok(chunk) -> chunk
+      Err(_) -> ""
+    }
+    let _ = proc.wait(child)
+    trim(out)
+  }
+}
+
 fn launched(pidfile: String) : Option[Int] / File =
   if file.exists(pidfile) { to_int(trim(file.read(pidfile))) } else { None }
 
@@ -149,7 +163,7 @@ test "killing a kalku kills what its launcher started, not just the launcher" {
   # is the thing this project refuses everywhere else. The separator is
   # added here rather than assumed: macOS hands back a `TMPDIR` with a
   # trailing slash and Linux usually hands back nothing at all.
-  let pidfile = "#{temp_under()}/kalku_grandchild_test.pid"
+  let pidfile = "#{temp_under()}/kalku_grandchild_#{own_pid()}.pid"
   let outcome = untold(
     () => with_mailbox {
       match summon(launcher_of(pidfile)) {
