@@ -19,7 +19,12 @@ import kalku.wire.kalku_msg
 #[derive(Eq, Show)]
 pub type Awaiting = AwaitingReady | AwaitingCast | AwaitingAbort | AwaitingReset
 
-#[doc("What happens to the kalku next.")]
+#[doc("""
+What happens to the kalku next.
+
+`Recycle` is for a kalku that failed and is counted against the summons a
+run allows; `Replace` is for one that was working and is ended on purpose.
+""")]
 #[derive(Eq, Show)]
 pub type Next
   = Keep
@@ -27,6 +32,7 @@ pub type Next
   | AskAbort
   | AskReset
   | Recycle(String)
+  | Replace(String)
 
 #[doc("A decision: what the wekufe in flight came to, and what happens to the kalku.")]
 #[derive(Eq, Show)]
@@ -81,13 +87,15 @@ What a kalku holding more memory than its ceiling means for the cast in flight.
 
 It is a `crashed` and never a kill: the wekufe did not fail an assertion,
 it took the machine. It is not asked to `abort` first, because a cast that
-is eating memory leaves nobody to hear it, and the kalku is recycled, which
-also ends everything it started.
+is eating memory leaves nobody to hear it. The kalku is replaced, which also
+ends everything it started, and the replacement does not count against the
+summons a run allows: that budget is for a kalku that dies on startup, and
+this one was healthy and doing what it was asked.
 """)]
 pub fn on_memory(used_mb: Int, ceiling_mb: Int) : Reaction = Reaction {
   outcome: Some(Crashed),
   said: Some("held #{used_mb} MB, over the memory ceiling of #{ceiling_mb} MB"),
-  next: Recycle("went over its memory ceiling")
+  next: Replace("went over its memory ceiling")
 }
 
 #[doc("""

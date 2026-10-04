@@ -1,0 +1,18 @@
+import kalku.core.stopping
+
+# A run that lost its last kalku after casting 6 of 152 used to report those
+# 6 as the answer, with a score and a zero exit.
+test "a run that stopped before its plan says how far it got and why" {
+  assert stopped_short(Some("worker 0: closed its pipe"), 6, 152)
+    == Some("the run stopped after 6 of 152 wekufe: worker 0: closed its pipe")
+}
+
+# The last cast can be what ends a kalku, with nothing left to cast: that is
+# a finished run, not a failed one.
+test "a run that cast everything is not stopped by what its pool said last" {
+  assert stopped_short(Some("worker 0: closed its pipe"), 152, 152) == None
+}
+
+test "a pool that said nothing stopped nothing" {
+  assert stopped_short(None, 6, 152) == None
+}

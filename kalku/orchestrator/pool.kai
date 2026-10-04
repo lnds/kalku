@@ -79,6 +79,20 @@ pub fn refill(spec: PoolSpec, slot: Slot, why: String) : Slot / Process + Spawn 
   }
 
 #[doc("""
+Summon another kalku in a slot whose kalku was ended on purpose.
+
+It does not count against `summons_allowed`: that is what turns a kalku that
+dies on startup into a failed run instead of an endless one, and this one
+started fine. A run cannot loop on it, because each replacement comes with
+the verdict of the wekufe that caused it.
+""")]
+pub fn replace_slot(
+  spec: PoolSpec,
+  slot: Slot
+) : Slot / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
+  summon_slot(spec, slot.worker, slot.summons + 1)
+
+#[doc("""
 Stop a kalku where it stands, and leave the reaping to the ward.
 
 Killed but not reaped: whatever it wrote about itself on the way down is
