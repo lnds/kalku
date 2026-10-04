@@ -1,0 +1,2 @@
+# src/kalku_python/service.py:409:69:16120:409:73:16124:False
+src/kalku_python/service.py Service._cast 1 literal: compile() here only checks that the mutated text is valid Python; the future flags it would inherit (annotations) change what an annotation evaluates to, never what parses, so no test can tell the two apart

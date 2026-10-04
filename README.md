@@ -332,6 +332,18 @@ the package and runs the whole suite. `SELF_MODULE`, `SELF_LIMIT` and
 tree alone while it runs — each worker copies the project when it starts,
 so an edit mid-run gets measured.
 
+The Python kalku measures itself the same way, from `adapters/python`, where
+`.kalku.toml` and `.kalku/summon` are kept, with its own `.pyz` on the
+`PATH` (`make adapters/python/dist/kalku-python`):
+
+```sh
+cd adapters/python && kalku run --limit 0 src/kalku_python/service.py
+```
+
+It has a warm runtime and per-test coverage, so a module takes minutes. The
+one wekufe it cannot tell apart from the original is proposed in
+`.kalku/equivalent.proposed`, with its reason, for a person to accept.
+
 The same run happens nightly (`.github/workflows/self-mutate.yml`, also
 startable by hand with a module and a limit) and its report is attached to
 the run. It is advisory: a gate that blocks a pull request has to measure
