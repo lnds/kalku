@@ -360,6 +360,7 @@ spells = ["arm", "compare", "connect", "negate", "literal", "call"]
 exclude = ["lib/my_app_web/telemetry.ex"]
 exclude_calls = ["Logger.*", ":telemetry.execute", "IO.inspect"]
 timeout_floor_ms = 500
+memory_limit_mb = 8192   # per kalku; 0 for none. Default: a quarter of the machine shared between the workers, at least 2048
 
 [score]
 threshold = 0.80        # global floor; --ci exits 1 below it
@@ -539,3 +540,13 @@ kaikai synthesises property checks from protocol laws declared in the source. Th
 ## Open questions
 
 - Editor integration: LSP diagnostics for survivors, or a lighter file-based report the editor watches.
+
+#### Memory
+
+A timeout bounds time, and a wekufe can take the machine well inside it: a loop turned into unbounded growth allocates faster than a cast's deadline passes, and once the machine is thrashing nobody is left to hear `abort`.
+
+So the kaikai side also watches memory, from outside like the timeout. While a kalku is casting it sums the resident size of the kalku and everything it started (the process tree read from `ps`, not the process group: cargo and a forked child live in groups of their own), five times a second. Past `run.memory_limit_mb` the cast ends as `crashed`, with the size and the ceiling in its message, and the kalku is recycled; the abort-first steps are skipped because they depend on the very thing that is starved. It is never a kill: no assertion failed.
+
+Killing a kalku, for this or for any other reason, ends its whole tree. The tree is read before anything is signalled, because once the parent is gone its children belong to `init` and cannot be found again.
+
+The default ceiling is a quarter of the machine's memory shared between the workers and never under 2048 MB. `0` turns it off. The kalku's build and `prepare` are not held to it, since a build can need more than any test.

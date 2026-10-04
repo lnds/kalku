@@ -7,6 +7,7 @@ Casting wekufe executes modified code by design. Treat every part that casts or 
 - Wekufe never touch the user's working tree: they are cast in memory, and all artefacts live in the reni.
 - Cleanup must survive crashes: a killed server or kalku leaves nothing behind in the project.
 - Every cast has a timeout. A wekufe that loops forever is a `timeout` outcome, not a hang.
+- Every cast has a memory ceiling too. A wekufe that allocates without limit is a `crashed` outcome that names the ceiling, not a machine that stops answering; what a kalku started is ended with it, whatever process group it is in.
 
 ## The server
 

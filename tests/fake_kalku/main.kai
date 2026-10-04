@@ -5,6 +5,9 @@ reproducible tests rather than accidents of timing.
 
     fake_kalku <script.ndjson>
 
+A step may start a command of its own before it replies (`spawn`), which is how
+a test gives a kalku a child that does something the kalku would not.
+
 A request the script did not expect is the fake's own failure: it says so
 on stderr and exits 3, so an orchestrator bug surfaces as a failed test
 instead of a hung one.
@@ -17,6 +20,7 @@ import time
 import fake_kalku.script
 
 const SCRIPT_EXIT : Int = 3
+
 const CRASH_EXIT : Int = 7
 
 fn main() : Int / Stdin + Stdout + Stderr + File + Clock + Process + Env = match args.argv() {
@@ -40,7 +44,11 @@ fn serve(steps: [Step], deaf: Bool) : Int / Stdin + Stdout + Stderr + Clock + Pr
     }
   }
 
-fn dispatch(steps: [Step], deaf: Bool, req: (String, Int)) : Int / Stdin + Stdout + Stderr + Clock + Process = match steps {
+fn dispatch(
+  steps: [Step],
+  deaf: Bool,
+  req: (String, Int)
+) : Int / Stdin + Stdout + Stderr + Clock + Process = match steps {
   [] -> die("no step left for `#{req.fst}`")
   [s, ...rest] -> if is_wildcard(s) or s.expect == req.fst {
     {
@@ -57,7 +65,19 @@ fn act(s: Step, id: Int) : Unit / Stdout + Stderr + Clock + Process {
     Some(t) -> Stderr.eprint(t)
     None -> ()
   }
-  if s.crash { let _ = proc.exit(CRASH_EXIT); () } else { () }
+  match s.spawn {
+    Some(command) -> {
+      let _ = proc.pipe_errs("/bin/sh", ["-c", command])
+      ()
+    }
+    None -> ()
+  }
+  if s.crash {
+    let _ = proc.exit(CRASH_EXIT)
+    ()
+  } else {
+    ()
+  }
   if s.delay_ms > 0 { sleep(millis(s.delay_ms)) } else { () }
   if s.garbage { Stdout.print("} not json {") } else { () }
   if s.hang { () } else { say(s.reply, id) }

@@ -23,6 +23,7 @@ pub type Step = {
   crash: Bool,
   garbage: Bool,
   stderr: Option[String],
+  spawn: Option[String],
   repeat: Int
 }
 
@@ -40,7 +41,8 @@ pub fn reply_text(s: Step) : String = match s.reply {
 pub fn is_wildcard(s: Step) : Bool = s.expect == "*"
 
 #[doc("The same step with one use spent, or nothing left when it was the last.")]
-pub fn spend(s: Step) : [Step] = if s.repeat > 1 { [Step { ...s, repeat: s.repeat - 1 }] } else { [] }
+pub fn spend(s: Step) : [Step] =
+  if s.repeat > 1 { [Step { ...s, repeat: s.repeat - 1 }] } else { [] }
 
 # ---- reading -----------------------------------------------------------
 
@@ -69,6 +71,7 @@ fn read_step(v: JsonValue) : Step = Step {
   crash: as_bool(get(v, "crash")).unwrap_or(false),
   garbage: as_bool(get(v, "garbage")).unwrap_or(false),
   stderr: as_string(get(v, "stderr")),
+  spawn: as_string(get(v, "spawn")),
   repeat: as_int(get(v, "repeat")).unwrap_or(1)
 }
 

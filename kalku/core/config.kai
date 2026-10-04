@@ -25,6 +25,7 @@ pub type Config = {
   exclude: [String],
   exclude_calls: [String],
   timeout_floor_ms: Int,
+  memory_limit_mb: Option[Int],
   policy: Policy,
   ratchet: Bool
 }
@@ -46,6 +47,7 @@ pub fn defaults() : Config = Config {
   exclude: [],
   exclude_calls: [],
   timeout_floor_ms: 500,
+  memory_limit_mb: None,
   policy: no_policy(),
   ratchet: false
 }
@@ -86,11 +88,16 @@ fn of_toml(root: TomlValue) : Result[Config, [ConfigProblem]] {
     exclude: strings_at(run, "exclude"),
     exclude_calls: strings_at(run, "exclude_calls"),
     timeout_floor_ms: int_at(run, "timeout_floor_ms").unwrap_or(defaults().timeout_floor_ms),
+    memory_limit_mb: int_at(run, "memory_limit_mb"),
     policy: Policy { threshold: real_at(score, "threshold"), baseline: None },
     ratchet: bool_at(score, "ratchet").unwrap_or(false)
   }
   let problems =
-    spells.fst ++ check_workers(config) ++ check_threshold(config) ++ check_floor(config)
+    spells.fst
+      ++ check_workers(config)
+      ++ check_threshold(config)
+      ++ check_floor(config)
+      ++ check_memory(config)
   if is_empty(problems) { Ok(config) } else { Err(problems) }
 }
 
@@ -134,12 +141,16 @@ fn check_threshold(c: Config) : [ConfigProblem] = match c.policy.threshold {
   None -> []
 }
 
+fn not_negative(key: String, n: Int, note: String) : [ConfigProblem] =
+  if n < 0 { [ConfigProblem { key: key, message: note }] } else { [] }
+
 fn check_floor(c: Config) : [ConfigProblem] =
-  if c.timeout_floor_ms < 0 {
-    [ConfigProblem { key: "run.timeout_floor_ms", message: "must not be negative" }]
-  } else {
-    []
-  }
+  not_negative("run.timeout_floor_ms", c.timeout_floor_ms, "must not be negative")
+
+fn check_memory(c: Config) : [ConfigProblem] = match c.memory_limit_mb {
+  Some(n) -> not_negative("run.memory_limit_mb", n, "must not be negative; 0 means no ceiling")
+  None -> []
+}
 
 # ---- toml pieces -------------------------------------------------------
 

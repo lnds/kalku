@@ -1,0 +1,44 @@
+#[doc("""
+Asking the machine how much memory a kalku holds, and ending what it started.
+
+What a kalku starts is not always in its process group: the Rust kalku puts
+cargo in a group of its own so that `abort` can stop it, and a Python
+kalku's children are forked into theirs. Killing the kalku's group alone
+leaves those running, and one of them is what holds the memory. So the tree
+is read from the process table before anything is signalled, because once
+the parent is gone its children belong to `init` and cannot be found again.
+""")]
+
+import os.process as proc
+import kalku.core.footprint
+
+fn drained(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drained(child, so_far ++ chunk) }
+}
+
+fn printed(cmd: String, args: [String]) : String / Process = match proc.pipe_errs(cmd, args) {
+  Err(_) -> ""
+  Ok(child) -> {
+    let out = drained(child, "")
+    let _ = proc.wait(child)
+    out
+  }
+}
+
+#[doc("Every process on the machine, as `ps` lists it; none when `ps` cannot be run.")]
+pub fn processes() : [Proc] / Process = procs_of(printed("/bin/ps", ["-axo", "pid=,ppid=,rss="]))
+
+#[doc("Megabytes the machine has; `0` when it will not say.")]
+pub fn physical_mb() : Int / Process {
+  let mac = memsize_mb(printed("/usr/sbin/sysctl", ["-n", "hw.memsize"]))
+  if mac > 0 { mac } else { meminfo_mb(printed("/bin/cat", ["/proc/meminfo"])) }
+}
+
+#[doc("End the process `pid` and everything it started; `init` and below are never signalled.")]
+pub fn end_tree(pid: Int) : Unit / Process = each(
+  tree_of(pid, processes()),
+  p => {
+    let _ = if p.pid > 1 { proc.kill(Child { pid: p.pid }, 9) } else { Ok(()) }
+  }
+)

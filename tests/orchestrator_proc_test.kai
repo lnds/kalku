@@ -35,6 +35,15 @@ fn launcher_of(pidfile: String) : KalkuSpec = KalkuSpec {
   args: ["-c", "sleep 60 & echo $! > #{pidfile}; wait"]
 }
 
+# The same, with the grandchild in a process group of its own, which is what
+# cargo is to the Rust kalku and what a forked child is to the Python one:
+# a kill aimed at the kalku's group does not reach it.
+fn launcher_apart(pidfile: String) : KalkuSpec = KalkuSpec {
+  life: Life { worker: 0, summons: 1 },
+  command: "/bin/sh",
+  args: ["-c", "set -m; sleep 60 & echo $! > #{pidfile}; wait"]
+}
+
 # `file.read` panics on a file that is not there, and a launcher that never
 # wrote one is a test failure with a reason rather than a crash.
 fn temp_under() : String / Env {
@@ -178,6 +187,33 @@ test "killing a kalku kills what its launcher started, not just the launcher" {
               sleep(BRIEF)
               # Said as words rather than a pair, which has no `Eq`, and
               # which would read as two booleans nobody can tell apart.
+              Ok("alive before: #{show(before)}, after: #{show(still_running(grandchild))}")
+            }
+          }
+        }
+      }
+    }
+  )
+
+  let _ = file.delete(pidfile)
+
+  assert outcome == Ok("alive before: true, after: false")
+}
+
+test "killing a kalku kills what it started even in a group of its own" {
+  let pidfile = "#{temp_under()}/kalku_apart_#{own_pid()}.pid"
+  let outcome = untold(
+    () => with_mailbox {
+      match summon(launcher_apart(pidfile)) {
+        Err(e) -> Err(e)
+        Ok(k) -> {
+          sleep(BRIEF)
+          match launched(pidfile) {
+            None -> Err("the launcher never said what it started")
+            Some(grandchild) -> {
+              let before = still_running(grandchild)
+              kill_now(k)
+              sleep(BRIEF)
               Ok("alive before: #{show(before)}, after: #{show(still_running(grandchild))}")
             }
           }
