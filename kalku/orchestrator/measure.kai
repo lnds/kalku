@@ -146,6 +146,12 @@ fn interview(
     Some(why) -> Err(why)
     None -> Ok(())
   })!
+  (match gone(asking.only, found.sites) {
+    [] -> Ok(())
+    names -> Err(
+      "no wekufe answers to #{join(names, ", ")} any more: a wekufe is named by the text it was cast in, and its file has changed since. Run `kalku run <file>` again to get new names"
+    )
+  })!
   Ok(Known {
     sites: found.sites,
     tests: suite,
