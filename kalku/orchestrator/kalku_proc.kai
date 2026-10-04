@@ -14,6 +14,7 @@ behind.
 import os.process as proc
 import time
 import kalku.orchestrator.telling
+import kalku.orchestrator.weighing
 import kalku.wire.enums
 import kalku.wire.envelope
 import kalku.wire.kalku_msg
@@ -172,7 +173,7 @@ outlives the run.
 The polite `shutdown` belongs to the caller, who can wait for `bye`; this
 is what happens when politeness runs out.
 
-The group, not the child: a launcher's grandchild is what holds the reni's
+The tree and the group, not the child: a launcher's grandchild is what holds the reni's
 build lock, and a lock nobody will release turns the next run into a hang
 with no cause. And the kill is verified, because something that signals
 and does not look is a promise rather than a mechanism. A death is not
@@ -181,6 +182,7 @@ and a group that survives `SIGKILL` is stuck in uninterruptible I/O,
 which is worth a loud line rather than silence.
 """)]
 pub fn kill_now(k: Kalku) : Unit / Process + Telling + Clock {
+  end_tree(k.child.pid)
   let _ = proc.kill_group(k.child, SIGKILL)
   let _ = proc.wait(k.child)
   if not group_gone(k, deadline_in(millis(REAPING_MS))) {
@@ -223,6 +225,7 @@ to deliver it. The ward reaps what is left when the run ends, so nothing
 outlives it either way.
 """)]
 pub fn silence(k: Kalku) : Unit / Process {
+  end_tree(k.child.pid)
   let _ = proc.kill_group(k.child, SIGKILL)
   ()
 }

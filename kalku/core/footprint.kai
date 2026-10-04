@@ -1,0 +1,84 @@
+#[doc("""
+How much memory a kalku holds, and when that is too much.
+
+A cast has a deadline, and a deadline is a bound on time: a wekufe that
+allocates without limit uses all the memory of the machine well inside it,
+and a machine that is thrashing has nobody left to hear `abort`. So the
+kaikai side also watches the size of everything a kalku has started and
+ends the cast when it passes a ceiling. The ceiling is decided here from
+what `ps` and the host say, and nothing in this module touches a process.
+""")]
+
+#[doc("One process, as `ps -axo pid=,ppid=,rss=` lists it.")]
+#[derive(Eq, Show)]
+pub type Proc = { pid: Int, ppid: Int, rss_kb: Int }
+
+#[doc("What a run assumes the machine has when the host would not say.")]
+pub const ASSUMED_TOTAL_MB : Int = 16384
+
+#[doc("The least a ceiling is ever worth: below it a suite's own build and fixtures would trip it.")]
+pub const FLOOR_MB : Int = 2048
+
+#[doc("""
+The processes in the output of `ps -axo pid=,ppid=,rss=`.
+
+A line that is not three numbers is skipped: the listing is a snapshot of a
+machine that is changing, and one odd line is not a reason to see nothing.
+""")]
+pub fn procs_of(text: String) : [Proc] = flat_map(lines(text), proc_of)
+
+fn proc_of(line: String) : [Proc] = match filter(split(trim(line), " "), w => w != "") {
+  [a, b, c] -> match (to_int(a), to_int(b), to_int(c)) {
+    (Some(pid), Some(ppid), Some(rss)) -> [Proc { pid: pid, ppid: ppid, rss_kb: rss }]
+    _ -> []
+  }
+  _ -> []
+}
+
+#[doc("The process `root` and everything it started, however deep.")]
+pub fn tree_of(root: Int, procs: [Proc]) : [Proc] = grown(filter(procs, p => p.pid == root), procs)
+
+fn grown(tree: [Proc], procs: [Proc]) : [Proc] {
+  let known = tree | (.pid)
+  let more = filter(procs, p => contains(known, p.ppid) and (not contains(known, p.pid)))
+  if is_empty(more) { tree } else { grown(tree ++ more, procs) }
+}
+
+#[doc("Megabytes resident in the process `root` and everything it started.")]
+pub fn tree_mb(root: Int, procs: [Proc]) : Int =
+  foldl(tree_of(root, procs), 0, (sum, p) => sum + p.rss_kb) / 1024
+
+#[doc("""
+The most memory one kalku may hold, in megabytes; `0` is no ceiling.
+
+What a project asked for is taken as it is. Otherwise it is a quarter of
+the machine shared between the workers, and never less than `FLOOR_MB`:
+a worker is one of several, and the machine has to stay usable for the
+person who started the run.
+""")]
+pub fn ceiling_mb(asked: Option[Int], total_mb: Int, workers: Int) : Int = match asked {
+  Some(n) -> n
+  None -> {
+    let total = if total_mb > 0 { total_mb } else { ASSUMED_TOTAL_MB }
+    let share = total / 4 / (if workers > 1 { workers } else { 1 })
+    if share > FLOOR_MB { share } else { FLOOR_MB }
+  }
+}
+
+#[doc("Whether `used_mb` is over the ceiling; a ceiling of `0` is never over.")]
+pub fn beyond(used_mb: Int, ceiling: Int) : Bool = ceiling > 0 and used_mb > ceiling
+
+#[doc("Megabytes from `sysctl -n hw.memsize`, which is a count of bytes; `0` when it is not one.")]
+pub fn memsize_mb(text: String) : Int = to_int(trim(text)).unwrap_or(0) / 1048576
+
+#[doc("Megabytes from the `MemTotal` line of `/proc/meminfo`, which is a count of kilobytes; `0` when there is none.")]
+pub fn meminfo_mb(text: String) : Int = match find(
+  lines(text),
+  l => starts_with(l, "MemTotal:")
+) {
+  Some(l) -> match filter(split(l, " "), w => w != "") {
+    [_, kb, ..._] -> to_int(kb).unwrap_or(0) / 1024
+    _ -> 0
+  }
+  None -> 0
+}

@@ -19,10 +19,12 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.planner
+import kalku.core.footprint
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.attending
 import kalku.orchestrator.pool
 import kalku.orchestrator.escalation
+import kalku.orchestrator.weighing
 import kalku.orchestrator.ward
 import kalku.orchestrator.telling
 
@@ -59,7 +61,7 @@ pub fn cast_all(
   spec: PoolSpec,
   casts: [Wekufe]
 ) : Casting / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling =
-  warded(() => run_plan(spec, casts))
+  warded(() => run_plan(with_ceiling(spec), casts))
 
 #[doc("""
 Summon a pool and keep it, for a caller that will cast more than once.
@@ -86,14 +88,16 @@ pub fn cast_over(
   casts: [Wekufe],
   from_id: Int
 ) : (Casting, [Slot], Int) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
+  let held = with_ceiling(spec)
   let done = turn(Run {
-    spec: spec,
+    spec: held,
     slots: slots,
     queue: casts,
     verdicts: [],
     next_id: from_id,
     failure: no_kalku(slots, casts),
-    cancelled: false
+    cancelled: false,
+    weigh_at: monotonic()
   })
   (
     Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled },
@@ -114,7 +118,8 @@ fn run_plan(
     verdicts: [],
     next_id: 1,
     failure: no_kalku(slots, casts),
-    cancelled: false
+    cancelled: false,
+    weigh_at: monotonic()
   })
   dismiss_all(done.slots, 0)
   banish_all(done.slots)
@@ -258,12 +263,13 @@ type Run = {
   verdicts: [Verdict],
   next_id: Int,
   failure: Option[String],
-  cancelled: Bool
+  cancelled: Bool,
+  weigh_at: Instant
 }
 
 fn turn(run: Run) : Run / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
   let busy = dispatch(run)
-  if over(busy) { busy } else { turn(listen(busy)) }
+  if over(busy) { busy } else { turn(listen(watched(busy))) }
 }
 
 # A run is over when nothing is left to cast and nobody is still working,
@@ -401,8 +407,74 @@ fn patience(run: Run) : Duration / Clock {
       None -> []
     }
   )
-  foldl(waits, seconds(1), (shortest, d) => if duration_lt(d, shortest) { d } else { shortest })
+  foldl(
+    waits,
+    between_looks(run),
+    (shortest, d) => if duration_lt(d, shortest) { d } else { shortest }
+  )
 }
+
+# ---- memory -------------------------------------------------------------
+
+#[doc("""
+The pool with its memory ceiling worked out, when it was left to the machine.
+
+Said once, because a ceiling nobody was told about is a kill nobody can
+explain.
+""")]
+pub fn with_ceiling(spec: PoolSpec) : PoolSpec / Process + Telling = if spec.memory_mb >= 0 {
+  spec
+} else {
+  let ceiling = ceiling_mb(None, physical_mb(), spec.workers)
+  Telling.tell_of("a cast may hold #{ceiling} MB before it is ended (run.memory_limit_mb)")
+  PoolSpec { ...spec, memory_mb: ceiling }
+}
+
+#[doc("How often the memory of a cast is looked at, at most.")]
+pub const WEIGH_MS : Int = 200
+
+# A cast is only held to a ceiling while it runs: a kalku that is building
+# the project is not casting anything, and a build can need more memory than
+# any test.
+fn casting(s: Slot) : Bool = match s.doing {
+  Working(job) -> job.awaiting == AwaitingCast
+  _ -> false
+}
+
+fn held_by(s: Slot, table: [Proc]) : Int = match s.kalku {
+  Some(k) -> tree_mb(k.child.pid, table)
+  None -> 0
+}
+
+fn watching(run: Run) : Bool = run.spec.memory_mb > 0 and any(run.slots, casting)
+
+fn between_looks(run: Run) : Duration = if watching(run) {
+  millis(WEIGH_MS)
+} else {
+  seconds(1)
+}
+
+# Sampled on a clock of its own and not on a timeout, so that a kalku that
+# keeps talking cannot postpone it.
+fn watched(run: Run) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling =
+  if (not watching(run)) or instant_lt(monotonic(), run.weigh_at) {
+    run
+  } else {
+    heavy(
+      Run { ...run, weigh_at: instant_add_duration(monotonic(), millis(WEIGH_MS)) },
+      processes()
+    )
+  }
+
+fn heavy(
+  run: Run,
+  table: [Proc]
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling =
+  match find(run.slots, s => casting(s) and beyond(held_by(s, table), run.spec.memory_mb)) {
+    None -> run
+    Some(slot) ->
+      heavy(react(run, slot, on_memory(held_by(slot, table), run.spec.memory_mb)), table)
+  }
 
 # ---- carrying a decision out --------------------------------------------
 

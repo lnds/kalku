@@ -292,7 +292,8 @@ fn summoning_in(c: Config, root: String, reni: String) : PoolSpec = PoolSpec {
   inline_limit_bytes: 65536,
   env: StrMap { entries: [] },
   greeting_ms: 60000,
-  summons_allowed: 2
+  summons_allowed: 2,
+  memory_mb: c.memory_limit_mb.unwrap_or(0 - 1)
 }
 
 fn asking_for(
