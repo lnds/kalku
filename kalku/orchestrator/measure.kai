@@ -21,6 +21,7 @@ import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.verdict
 import kalku.core.skipping
+import kalku.core.blaming
 import kalku.core.planner
 import kalku.core.equivalent
 import kalku.core.costing
@@ -208,17 +209,11 @@ fn durations_of(reply: KalkuReply) : [(String, Int)] = match reply {
 # must never do.
 fn refuse_red(reply: KalkuReply) : Result[Unit, String] = match reply {
   BaselineDone(m) -> if m.status == Red {
-    Err("the suite is already failing: #{failure_names(m.failures)}")
+    Err(red_suite(m.failures))
   } else {
     Ok(())
   }
   _ -> Ok(())
-}
-
-fn failure_names(failures: [Failure]) : String = if is_empty(failures) {
-  "no test named"
-} else {
-  join(failures | (.test_id), ", ")
 }
 
 fn sites_found_of(reply: KalkuReply) : Result[SitesFoundMsg, String] = match reply {
