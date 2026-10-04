@@ -1,4 +1,5 @@
 import actor
+import os.process as proc
 
 import kalku.wire.enums
 import kalku.wire.shapes
@@ -23,7 +24,8 @@ fn pool_of(script: String, workers: Int, summons: Int) : PoolSpec = PoolSpec {
   inline_limit_bytes: 65536,
   env: StrMap { entries: [] },
   greeting_ms: 5000,
-  summons_allowed: summons
+  summons_allowed: summons,
+  memory_mb: 0
 }
 
 # What a run says about itself is not what these tests are about, so the
@@ -223,4 +225,51 @@ test "a kalku that dies at birth is summoned exactly as often as allowed, and qu
 
   assert is_some(index_of(why, "summoned 2 time(s)"))
   assert is_some(index_of(why, "it wrote: fake: the project does not compile"))
+}
+
+fn drained(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drained(child, so_far ++ chunk) }
+}
+
+# `pgrep` says 0 when it found one, and the marker is in the command line of
+# the hog and of the shell that started it.
+fn hog_alive() : Bool / Process =
+  match proc.pipe_errs("/usr/bin/pgrep", ["-f", "kalku_hog_marker"]) {
+    Err(_) -> false
+    Ok(child) -> {
+      let _ = drained(child, "")
+      match proc.wait(child) {
+        Ok(Exited(0)) -> true
+        _ -> false
+      }
+    }
+  }
+
+fn said_of(c: Casting) : String = match head(c.verdicts) {
+  Some(v) -> v.said.unwrap_or("")
+  None -> ""
+}
+
+# A deadline bounds time, and a wekufe that allocates without limit takes the
+# machine well inside it. The ceiling is on what the kalku started, however
+# deep and in whichever group, and what it ends is `crashed`: not a kill,
+# because no assertion failed, and not a timeout, because it was not slow.
+test "a cast that goes over the memory ceiling is a crash, and what it started is gone" {
+  let spec = PoolSpec { ...pool_of("pool_memory_hog.ndjson", 1, 1), memory_mb: 200 }
+  let done = with_mailbox { casting(spec, casts(1, 60000)) }
+  let said = said_of(done)
+
+  assert tally(done) == [("crashed", 1)]
+  assert starts_with(said, "held ")
+  assert ends_with(said, " MB, over the memory ceiling of 200 MB")
+  assert not hog_alive()
+}
+
+test "a ceiling of zero lets a cast use what it likes" {
+  let spec = PoolSpec { ...pool_of("pool_memory_hog.ndjson", 1, 1), memory_mb: 0 }
+  let done = with_mailbox { casting(spec, casts(1, 1500)) }
+
+  assert tally(done) == [("timeout", 1)]
+  assert not hog_alive()
 }

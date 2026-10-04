@@ -43,7 +43,7 @@ pub type Slot = {
   wrote: String
 }
 
-#[doc("How to fill the pool: the command, what every kalku is told, and how often one may be replaced.")]
+#[doc("How to fill the pool: the command, what every kalku is told, how often one may be replaced, and the most memory one may hold (`0` for no ceiling, `-1` to work it out from the machine when the run starts).")]
 #[derive(Eq, Show)]
 pub type PoolSpec = {
   command: String,
@@ -54,7 +54,8 @@ pub type PoolSpec = {
   inline_limit_bytes: Int,
   env: StrMap,
   greeting_ms: Int,
-  summons_allowed: Int
+  summons_allowed: Int,
+  memory_mb: Int
 }
 
 #[doc("Summon every kalku in the pool and greet each one.")]

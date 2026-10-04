@@ -1,0 +1,49 @@
+import kalku.core.footprint
+
+fn listing() : String =
+  "  PID  PPID   RSS\n    1     0  1000\n  100     1  2048\n  101   100  3072\n  102   101  1024\n  200     1  9999\nnot a process\n"
+
+# A process listing is a snapshot of a machine that is changing; a line that
+# does not parse is skipped rather than taken for an empty machine.
+test "the processes of a listing are read, and what is not a process is skipped" {
+  let procs = procs_of(listing())
+
+  assert length(procs) == 5
+  assert procs_of("") == []
+  assert (procs | (.pid)) == [1, 100, 101, 102, 200]
+}
+
+# The test binary of a project is a grandchild of the kalku, through cargo or
+# a forked child; what the kalku started is counted however deep, and what
+# it did not start is not.
+test "a tree is the process and everything it started, and only that" {
+  let procs = procs_of(listing())
+
+  assert (tree_of(100, procs) | (.pid)) == [100, 101, 102]
+  assert tree_mb(100, procs) == 6
+  assert tree_mb(200, procs) == 9
+  assert tree_mb(999, procs) == 0
+}
+
+test "a ceiling is what the project asked for, or a quarter of the machine shared" {
+  assert ceiling_mb(Some(512), 65536, 4) == 512
+  assert ceiling_mb(Some(0), 65536, 4) == 0
+  assert ceiling_mb(None, 65536, 1) == 16384
+  assert ceiling_mb(None, 65536, 4) == 4096
+  assert ceiling_mb(None, 4096, 4) == FLOOR_MB
+  assert ceiling_mb(None, 0, 1) == ASSUMED_TOTAL_MB / 4
+  assert ceiling_mb(None, 65536, 0) == 16384
+}
+
+test "a ceiling is passed only when it is positive and the size is above it" {
+  assert beyond(101, 100)
+  assert not beyond(100, 100)
+  assert not beyond(1000000, 0)
+}
+
+test "the host's memory is read from what it prints" {
+  assert memsize_mb("68719476736\n") == 65536
+  assert memsize_mb("not a number") == 0
+  assert meminfo_mb("MemFree:   1 kB\nMemTotal:       65536000 kB\nBuffers: 2 kB\n") == 64000
+  assert meminfo_mb("nothing here\n") == 0
+}

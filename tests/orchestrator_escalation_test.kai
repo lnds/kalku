@@ -118,3 +118,14 @@ test "what the kalku said about a wekufe travels with the outcome" {
   assert r.outcome == Some(CompileError)
   assert r.said == Some("error: cannot find `shard_of` in this scope")
 }
+
+# A cast that is eating the machine leaves nobody to hear `abort`, so it is
+# not asked: the kalku is recycled, which ends what it started too. And the
+# wekufe is a `crashed`, never a kill.
+test "a kalku over its memory ceiling is recycled at once, and the wekufe is a crash that says why" {
+  let r = on_memory(900, 512)
+
+  assert r.outcome == Some(Crashed)
+  assert r.said == Some("held 900 MB, over the memory ceiling of 512 MB")
+  assert recycling(r) == Some("went over its memory ceiling")
+}

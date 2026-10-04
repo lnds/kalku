@@ -97,3 +97,17 @@ test "a timeout floor of zero is accepted, and a negative one is not" {
   assert problems_of("[run]\ntimeout_floor_ms = 0\n") == []
   assert has(first_problem("[run]\ntimeout_floor_ms = -1\n"), "must not be negative")
 }
+
+# A ceiling nobody wrote is worked out from the machine when the run starts,
+# so the config keeps it as an absence; zero is the project saying it wants
+# none.
+test "a memory ceiling is optional, zero means none, and a negative one is refused" {
+  assert config_of("[run]\nworkers = 2\n").memory_limit_mb == None
+  assert config_of("[run]\nmemory_limit_mb = 4096\n").memory_limit_mb == Some(4096)
+  assert config_of("[run]\nmemory_limit_mb = 0\n").memory_limit_mb == Some(0)
+  assert problems_of("[run]\nmemory_limit_mb = 0\n") == []
+  assert has(
+    first_problem("[run]\nmemory_limit_mb = -1\n"),
+    "run.memory_limit_mb: must not be negative"
+  )
+}

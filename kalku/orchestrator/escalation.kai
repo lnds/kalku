@@ -77,6 +77,20 @@ pub fn on_deadline(awaiting: Awaiting, caps: [Capability]) : Reaction {
 }
 
 #[doc("""
+What a kalku holding more memory than its ceiling means for the cast in flight.
+
+It is a `crashed` and never a kill: the wekufe did not fail an assertion,
+it took the machine. It is not asked to `abort` first, because a cast that
+is eating memory leaves nobody to hear it, and the kalku is recycled, which
+also ends everything it started.
+""")]
+pub fn on_memory(used_mb: Int, ceiling_mb: Int) : Reaction = Reaction {
+  outcome: Some(Crashed),
+  said: Some("held #{used_mb} MB, over the memory ceiling of #{ceiling_mb} MB"),
+  next: Recycle("went over its memory ceiling")
+}
+
+#[doc("""
 What a closed or unreadable pipe means.
 
 The wekufe it was casting is reported as `crashed`, never lost: a hole
