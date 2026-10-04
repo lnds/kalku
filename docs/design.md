@@ -259,7 +259,7 @@ cold ──prepare──► preparing ──ok──► baseline ──green─�
 | `timeout` | exceeded its timeout | reported apart |
 | `no_coverage` | no test executes the site | reported apart |
 | `compile_error` | the wekufe does not compile | excluded |
-| `crashed` | the cast produced no verdict: the kalku died, or it could not run the tests it was given | reported apart |
+| `crashed` | the cast produced no verdict: the kalku died, it could not run the tests it was given, or the wekufe held more memory than the ceiling (the message says how much) | reported apart |
 | `equivalent` | proven by identical bytecode, or declared with a written reason | excluded |
 | `nondeterministic` | cast several times and did not agree with itself | reported apart |
 

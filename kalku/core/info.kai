@@ -159,7 +159,8 @@ fn means(o: Outcome) : String {
   case Timeout -> "the wekufe ran past its deadline; an endless loop is not a failing assertion"
   case NoCoverage -> "no test reaches the line at all"
   case CompileError -> "the wekufe does not compile, so it says nothing about the suite"
-  case Crashed -> "the cast produced no verdict: the kalku died, or could not run its tests"
+  case Crashed ->
+    "the cast produced no verdict: the kalku died, could not run its tests, or the wekufe took more memory than its ceiling"
   case Nondeterministic ->
     "cast several times and did not agree with itself; a result nobody should trust"
   case Equivalent -> "the wekufe cannot be told apart from the original"

@@ -127,6 +127,8 @@ a kill — and neither is a timeout, a crash, or a wekufe that did not
 compile. The score is `killed / (killed + survived)` and nothing else
 moves it.
 
+A wekufe is named by the text it was cast in, so editing its file renames it; re-casting an old name says so, and a new `kalku run` gives the new ones.
+
 Read one back, or re-cast it after writing a test:
 
 ```sh
@@ -181,7 +183,7 @@ kalku info agents --snippet             # lines to paste into CLAUDE.md / AGENTS
 3. **Cast.** Load each wekufe into a warm kalku and run only the tests that cover it. Stop at the first failing test.
 4. **Report.** List the survivors first. The score comes after as context. Timeouts and crashes are reported separately and never counted as kills.
 
-Warm workers are the point. A timeout is aborted inside the running VM, and a worker is restarted only when it stops responding. After the first run, a warm session only re-casts what changed, which makes watch mode and fast CI possible.
+Warm workers are the point. A timeout is aborted inside the running VM, and a worker is restarted only when it stops responding. A cast also has a memory ceiling (`memory_limit_mb`; by default a quarter of the machine shared between the workers): a wekufe that allocates without limit ends as `crashed` instead of taking the machine, and what the kalku started is ended with it. After the first run, a warm session only re-casts what changed, which makes watch mode and fast CI possible.
 
 ## The cast
 

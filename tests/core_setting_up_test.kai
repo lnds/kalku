@@ -274,6 +274,7 @@ test "a Python project is told by any of the files that mean Python, and runs in
   assert detect(["requirements.txt", "src"]).map(.language) == Ok("python")
   let plan = plan_for(of("python"), "/r")
   assert has(plan.config, "language = \"python\"")
+  assert has(plan.config, "# memory_limit_mb = 8192")
   assert has(plan.summoner, "APP=\"$(command -v kalku-python)\"")
   assert has(plan.summoner, "kalku-python is not on PATH")
   assert has(plan.summoner, "exec \"$PY\" \"$APP\"")

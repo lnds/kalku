@@ -229,6 +229,10 @@ workers = 1
 
 # A cast that runs longer than this is a `timeout`, not a slow test.
 timeout_floor_ms = 60000
+
+# A cast that holds more memory than this ends as `crashed`. Left out, it is a
+# quarter of this machine shared between the workers; 0 means no ceiling.
+# memory_limit_mb = 8192
 """)
 
 # A shebang is only a shebang on the first line: the kernel reads the
