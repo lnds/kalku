@@ -1,3 +1,13 @@
+## v0.5.1 (2026-10-04)
+
+### Fixed
+
+- **measure**: a re-cast of a wekufe whose file has changed says so (#146)
+- **measure**: a red baseline says why each test failed, and where it ran (#147)
+- **python**: a failure's message is the line that says what went wrong (#148)
+- **init**: the Python summoner names kalku-python when it is not on PATH (#144)
+- **python**: sites lost to a form feed, to a U+2028, and to a parenthesised case (#142)
+
 ## v0.5.0 (2026-10-03)
 
 ### Added
