@@ -193,7 +193,7 @@ In Mapuche belief, a *kalku* is a sorcerer who works in a hidden cave, the *reni
 |---|---|
 | **kalku** | a worker bound to one language, which knows how to break code in that language |
 | **wekufe** | a mutant: your program with exactly one defect cast into it |
-| **spell** | a kind of defect: drop a `case` clause, shift `>=` to `>`, swap `and` for `or`, … |
+| **kalkutun** / **spell** | a kind of defect: drop a `case` clause, shift `>=` to `>`, swap `and` for `or`, … *Kalkutun* is the harm a kalku works; code and protocol say `spell` |
 | **reni** | an isolated workspace where wekufe are cast. Your working tree is never touched |
 
 Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads without the glossary.
