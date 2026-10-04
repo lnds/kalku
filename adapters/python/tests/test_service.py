@@ -811,14 +811,16 @@ def test_a_prepare_stopped_by_the_end_of_input_says_what_stopped_it(harness):
     h.scripts["collect"] = collected(T1)
     h.svc._eof = True
     said = h.one(type="prepare")
-    assert said["code"] == "aborted" and said["message"] == "the kalku was asked to stop"
+    assert said["code"] == "aborted" and said["fatal"] is True
+    assert said["message"] == "the kalku was asked to stop"
 
 
 def test_a_baseline_stopped_by_the_end_of_input_says_what_stopped_it(harness):
     h = harness()
     ready(h)
     h.svc._eof = True
-    assert h.one(type="baseline")["message"] == "the kalku was asked to stop"
+    said = h.one(type="baseline")
+    assert said["fatal"] is True and said["message"] == "the kalku was asked to stop"
 
 
 def test_a_child_is_always_closed_once_it_has_been_read(harness):
