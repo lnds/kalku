@@ -1,3 +1,13 @@
+## v0.5.0 (2026-10-03)
+
+### Added
+
+- **python**: a native Python kalku (#135)
+
+### Fixed
+
+- **core**: the files of a change and of a project are the language's own (#134)
+
 ## v0.4.0 (2026-10-03)
 
 ### Added
