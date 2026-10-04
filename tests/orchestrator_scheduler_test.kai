@@ -58,7 +58,8 @@ fn casts(n: Int, timeout_ms: Int) : [Wekufe] =
     | (i => Wekufe {
       site: site_named("w#{i.fst}"),
       tests: ["test/a_test.kai"],
-      timeout_ms: timeout_ms
+      timeout_ms: timeout_ms,
+      casts: 1
     })
 
 fn site_named(id: String) : Site = Site {
