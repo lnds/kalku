@@ -29,15 +29,15 @@ test "a root the server has not heard of gets a cold session" {
 }
 
 test "a session replaces the one for its root, and leaves the others alone" {
-  let one = Project { root: "/a", state: SessionReady, runs: 1 }
-  let two = Project { root: "/b", state: SessionRunning, runs: 0 }
+  let one = session("/a", SessionReady, 1)
+  let two = session("/b", SessionRunning, 0)
   let after = with_session(with_session([], one), two)
 
   assert length(after) == 2
   assert session_for(after, "/a").state == SessionReady
-  assert length(with_session(after, Project { root: "/a", state: SessionRunning, runs: 2 })) == 2
+  assert length(with_session(after, session("/a", SessionRunning, 2))) == 2
   assert session_for(
-    with_session(after, Project { root: "/a", state: SessionRunning, runs: 2 }),
+    with_session(after, session("/a", SessionRunning, 2)),
     "/a"
   ).runs
     == 2
@@ -46,7 +46,7 @@ test "a session replaces the one for its root, and leaves the others alone" {
 # A client that cannot ask what is happening has no way to decide whether
 # to wait, so `status` is answered from whatever the server knows.
 test "status names every session and the state it is in" {
-  let sessions = [Project { root: "/a", state: SessionRunning, runs: 3 }]
+  let sessions = [session("/a", SessionRunning, 3)]
 
   assert sessions_event(sessions)
     == SessionsEv(SessionsMsg {
@@ -75,6 +75,16 @@ fn a_slot(worker: Int, doing: Doing) : Slot = Slot {
   caps: [],
   doing: doing,
   wrote: ""
+}
+
+# A session as the server first makes one: no warm kalku yet.
+fn session(root: String, state: State, runs: Int) : Project = Project {
+  root: root,
+  state: state,
+  runs: runs,
+  slots: [],
+  fingerprint: "",
+  next_id: 1
 }
 
 fn warm(slots: [Slot], fingerprint: String) : Project = Project {
