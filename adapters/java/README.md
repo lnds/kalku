@@ -8,6 +8,18 @@ for: it knows the language. Planning, scheduling, caching and scoring belong to
 the kaikai side. The design, and why this is not a wrapper around an existing
 framework, is in [`docs/design.md`](../../docs/design.md).
 
+## Using it
+
+```sh
+cd my-project          # where pom.xml is
+kalku init             # writes .kalku.toml and .kalku/summon
+kalku run src/main/java/com/acme/Parser.java
+```
+
+`kalku-java` has to be on the `PATH` (it ships in the release tarball and in
+`brew install lnds/kalku/kalku`). It is one file: the script that picks the
+JDK, with the kalku's jar behind it.
+
 ## What it does
 
 - **Sites** from `javac`, the project's own compiler, through its public tree
@@ -26,8 +38,7 @@ framework, is in [`docs/design.md`](../../docs/design.md).
   project has, from 5.4 to 6.
 
 Not yet: several modules, Gradle, JUnit 4 or TestNG alone, `abort`, coverage
-per test. Nothing launches this kalku yet: `kalku init` does not know Maven
-projects.
+per test.
 
 ## Requirements
 
@@ -46,8 +57,9 @@ release that brought it.
 ## Running it
 
 ```sh
-mvn verify                 # compile with -Xlint:all -Werror, test, build the jar
-bin/kalku-java             # the protocol loop on stdin and stdout
+mvn verify                                  # compile with -Xlint:all -Werror, test, build the jar
+bin/kalku-java                              # the protocol loop, from what Maven compiled last
+make -C ../.. adapters/java/dist/kalku-java   # the one file a release ships
 ```
 
 `bin/kalku-java` is the summoning command. It reads the Java version before it

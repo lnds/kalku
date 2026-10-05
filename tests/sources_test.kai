@@ -111,6 +111,29 @@ test "a kaikai project's code is anywhere, including a file at the top" {
   assert relative(root, every_test(root, of("kaikai"))) == ["tests/gate_test.kai"]
 }
 
+test "a Maven project's code is under src/main, and its suite and what a build left are not" {
+  let root = scratch("java")
+  make(
+    root,
+    [
+      "pom.xml",
+      "src/main/java/fx/Calc.java",
+      "src/main/java/fx/Limits.java",
+      "src/main/resources/app.properties",
+      "src/test/java/fx/CalcTest.java",
+      "src/test/java/fx/Fixtures.java",
+      "target/generated-sources/fx/Gen.java",
+      ".mvn/wrapper/MavenWrapperDownloader.java",
+      "README.md"
+    ]
+  )
+
+  assert relative(root, every_source(root, of("java")))
+    == ["src/main/java/fx/Calc.java", "src/main/java/fx/Limits.java"]
+  assert relative(root, every_test(root, of("java")))
+    == ["src/test/java/fx/CalcTest.java", "src/test/java/fx/Fixtures.java"]
+}
+
 test "a Python project's code is found in packages and under src, and its suite and environment are not" {
   let root = scratch("python")
   make(

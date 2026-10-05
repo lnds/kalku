@@ -45,7 +45,7 @@ class Kalku < Formula
   end
 
   def install
-    bin.install "kalku", "kalku-kaikai", "kalku-rust", "kalku-python"
+    bin.install "kalku", "kalku-kaikai", "kalku-rust", "kalku-python", "kalku-java"
   end
 
   test do

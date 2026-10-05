@@ -32,7 +32,7 @@ macOS en Apple Silicon y Linux en x86_64 con GLIBC 2.38 o más nuevo: las
 plataformas para las que [kaikai](https://kaikai-lang.org/) publica
 un toolchain, y su piso es el piso de kalku. Los mismos tarballs están en
 cada [release](https://github.com/lnds/kalku/releases): descomprímelo y deja
-`kalku`, `kalku-kaikai`, `kalku-rust` y `kalku-python` en tu `PATH`.
+`kalku`, `kalku-kaikai`, `kalku-rust`, `kalku-python` y `kalku-java` en tu `PATH`.
 
 Desde el código fuente, con kaikai instalado (la versión de `.kaikai-version`):
 
@@ -214,7 +214,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | kaikai | nativo (delgado) | construido sobre `kai mutate`; así es como kalku se prueba a sí mismo |
 | Rust | nativo | los sites vienen de `syn`, el parser propio de Rust; **solo la edición 2024** (Rust 1.85 o posterior). Encuentra sites y los lanza, responde `abort` en el lugar, y selecciona tests por cobertura donde están las herramientas de LLVM |
 | Python | nativo | los sites vienen de `ast` y `tokenize`, el parser propio de Python; corre en el **intérprete del propio proyecto** (3.12 o posterior) solo con la biblioteca estándar. Cada corrida de la suite es un hijo creado con fork, así que `abort` es un kill y un wekufe nunca se filtra; la cobertura por test viene de `sys.monitoring`; se conservan las opciones de pytest del proyecto |
-| Java | nativo | los sites vienen de `javac`, el compilador del propio proyecto, a través de su API pública de árboles; corre en el **JDK del propio proyecto** (11 o posterior) sin dependencias. Construye el proyecto con Maven en el reni, compila cada wekufe en memoria y corre los tests en una JVM propia, con JUnit 5 o posterior; un solo módulo, y todavía nada lo invoca |
+| Java | nativo | los sites vienen de `javac`, el compilador del propio proyecto, a través de su API pública de árboles; corre en el **JDK del propio proyecto** (11 o posterior) sin dependencias. Construye el proyecto con Maven en el reni, compila cada wekufe en memoria y corre los tests en una JVM propia, con JUnit 5 o posterior. Maven, un solo módulo |
 | otros | driver | envuelve un framework existente (Stryker, …), normaliza sus resultados y recalcula el puntaje |
 
 ## Qué funciona hoy
@@ -241,7 +241,8 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **kalku de Python** — sites desde `ast`, `prepare`/`baseline`/`cast` en hijos creados con fork, `abort`, cobertura por test con `sys.monitoring`, `kalku init`, incluido en el release | hecho |
 | **kalku de Java** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde `javac`, detrás del protocolo de kalku, en Java 11, 17, 21 y 25 | hecho: encuentra sites |
 | kalku de Java: `prepare`, `baseline` y `cast` en el reni para un proyecto Maven de un solo módulo con JUnit 5 o posterior | hecho |
-| kalku de Java: `kalku init` para Maven, incluido en el release; Gradle; varios módulos; `abort`; cobertura por test | todavía no |
+| kalku de Java: `kalku init` para proyectos Maven, incluido en el release | hecho |
+| kalku de Java: Gradle; varios módulos; solo JUnit 4 o TestNG; `abort`; cobertura por test | todavía no |
 | **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python |
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |

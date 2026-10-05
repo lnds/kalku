@@ -154,7 +154,7 @@ What a Java tool has to survive is the JDK itself: a release every six months, e
 - **A runtime with no compiler** — a JRE, or an image cut down with `jlink` — is answered in the protocol, `toolchain_missing`, with the reason.
 - **The channel is bytes.** Lines are read and written as UTF-8 on the real descriptors, whatever the platform's charset is, because the JDK's default has not been the same on every release; `System.out` is pointed at stderr. No real is ever encoded: the shortest text of a double is not the same on every JDK.
 
-It finds sites and casts them, in a single-module Maven project whose tests run on the JUnit Platform (JUnit 5 or later). A project of several modules, or one with JUnit 4 or TestNG alone, is refused in `prepare`, by name. Nothing launches it yet: `kalku init` does not know Maven projects.
+It finds sites and casts them, in a single-module Maven project whose tests run on the JUnit Platform (JUnit 5 or later). A project of several modules, or one with JUnit 4 or TestNG alone, is refused in `prepare`, by name. `kalku init` takes a `pom.xml` for a Java project and writes a summoning that starts `kalku-java`, which ships as one file: the script that picks the JDK and turns away one that is too old, with the jar behind it.
 
 The loop, in the reni:
 
