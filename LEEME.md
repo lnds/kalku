@@ -12,7 +12,7 @@
   <a href="docs/video/kalku-explicado.mp4"><img src="docs/img/video-es.jpg" alt="Reproducir el video: la mascota de kalku junto a las palabras 'Tus tests pasan. ¿Pero prueban algo?'" width="720"></a>
 </p>
 
-**¿No conoces el mutation testing? [Mira kalku explicado en cuatro minutos](docs/video/kalku-explicado.mp4)**: qué es un wekufe, por qué 100% de cobertura no es lo mismo que buenos tests, y dos ejemplos resueltos, uno de ellos una regla de negocio. También [en inglés](docs/video/kalku-explained.mp4).
+**¿No conoces el mutation testing? [Mira kalku explicado en cuatro minutos](docs/video/kalku-explicado.mp4)**: qué es un wekufe, por qué 100% de cobertura no es lo mismo que buenos tests, y dos ejemplos resueltos, uno de ellos una regla de negocio. También [en inglés](README.md).
 
 kalku comprueba qué tan buena es de verdad una suite de tests rompiendo el código a propósito, un defecto pequeño a la vez, y mirando si algún test se da cuenta. Un defecto que ningún test detecta es un hoyo en la suite, y kalku lo reporta con un archivo, una línea y un diff.
 
