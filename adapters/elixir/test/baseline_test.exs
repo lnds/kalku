@@ -45,6 +45,17 @@ defmodule Kalku.BaselineTest do
       assert by_line[{"lib/mocked.ex", 12}] == ["test/mocked_test.exs:5"]
     end
 
+    # Replacing a module under `:cover` makes the mocking library export its
+    # counters to a file in the project's root, which it removes in the same
+    # `after_suite` callback the kalku leaves out.
+    test "a suite that mocks its own modules leaves the project as it was", %{reni: reni} do
+      before = File.ls!(project("mocked"))
+      done = reply(run(reni, "mocked", ["baseline"]), "baseline_done")
+
+      assert done["status"] == "green"
+      assert File.ls!(project("mocked")) == before
+    end
+
     # The net under it: where the lines the suite reached are not all
     # credited to some test, the attribution is withheld, because a wekufe
     # judged against too few tests is a survivor that is not a hole.
