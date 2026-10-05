@@ -112,6 +112,11 @@ fn next_within(patience: Duration) : String / Actor[OrchMsg] + Clock =
 
 fn next() : String / Actor[OrchMsg] + Clock = next_within(PATIENCE)
 
+# A pipe that has ended says so in one of two ways, depending on whether the
+# reader was reading when the process died or the reap closed it first.
+fn pipe_ended(word: String) : String =
+  if word == "closed" or word == "unreadable" { "pipe ended" } else { word }
+
 fn tell(r: KalkuReply) : String {
   case Ready(m) -> "ready #{m.language} protocol #{m.version}"
   case CastDone(m) -> "cast_done #{outcome_name(m.outcome)}"
@@ -326,15 +331,20 @@ test "a kalku that never answers is killed, and killing it leaves nothing behind
           let _a = ask(k, 3, Abort(AbortMsg { cast: 2 }))
           let still_hung = next_within(BRIEF)
           kill_now(k)
-          # Reaped by the kill, the pipe is gone rather than at end of input.
-          # Waited for rather than snatched at: this test asserts silence
-          # twice already, and a loaded machine that takes a moment to
-          # deliver the reader's last word is not a kalku that lived.
-          [ready, prepared, hung, still_hung, next()]
+          # The pipe ends, as a read error if the reap closed it under the
+          # reader and as end of input if the death reached the reader first:
+          # which of the two comes first is the scheduler's, and neither is a
+          # kalku that lived. Waited for rather than snatched at: this test
+          # asserts silence twice already, and a loaded machine that takes a
+          # moment to deliver the reader's last word is not a kalku that lived.
+          [ready, prepared, hung, still_hung, pipe_ended(next())]
         }
       }
     }
   )
 
-  assert told == ["ready fake protocol 1", "prepared", "silence", "silence", "unreadable"]
+  let expected = ["ready fake protocol 1", "prepared", "silence", "silence", "pipe ended"]
+  # A failure here names what was received, which an assertion does not.
+  let _ = if told == expected { () } else { Stderr.eprint("received #{told}") }
+  assert told == expected
 }
