@@ -1,3 +1,10 @@
+## v0.6.2 (2026-10-05)
+
+### Fixed
+
+- **mcp**: a run through the agent's tools is written to the ledger (#168)
+- **agent**: a survivor carries the first five covering tests and their count (#169)
+
 ## v0.6.1 (2026-10-04)
 
 ### Fixed
