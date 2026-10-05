@@ -27,6 +27,17 @@ import kalku.core.hint
 pub const CONTEXT_LINES : Int = 2
 
 #[doc("""
+How many of the tests that cover a survivor travel with it.
+
+A line that a whole suite reaches is covered by every test in it, and with
+a thousand tests that is tens of kilobytes per survivor: a run of twenty
+did not fit in what a host accepts as one tool result. An agent needs a
+few of them to see where the nearest tests are, and the count to know there
+are more; the full list is what `kalku show` answers.
+""")]
+pub const COVERING_SHOWN : Int = 5
+
+#[doc("""
 The whole report as NDJSON: a line per survivor, then the summary.
 
 `source` is asked for the lines of a file, so this module reads nothing
@@ -99,7 +110,8 @@ pub fn survivor_line(s: Survivor, source: (String) -> [String]) : String = json_
       ++ optional("original", s.site.original)
       ++ [("replacement", JStr(s.site.replacement))]
       ++ strings("context", context(s.site, source))
-      ++ strings("covering_tests", s.tests)
+      ++ strings("covering_tests", take(s.tests, COVERING_SHOWN))
+      ++ counted("covering_count", length(s.tests))
       ++ [("hint", JStr(hint_for(s.site)))]
   )
 )
@@ -194,6 +206,9 @@ fn optional(name: String, value: Option[String]) : [(String, JsonValue)] = match
   Some(text) -> [(name, JStr(text))]
   None -> []
 }
+
+fn counted(name: String, n: Int) : [(String, JsonValue)] =
+  if n > 0 { [(name, JNum(n))] } else { [] }
 
 fn strings(name: String, values: [String]) : [(String, JsonValue)] =
   if is_empty(values) { [] } else { [(name, JArr(values | (v => JStr(v))))] }

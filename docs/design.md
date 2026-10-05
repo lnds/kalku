@@ -500,9 +500,11 @@ One JSON object per survivor, complete enough to act on without opening other fi
 {"wekufe":"c1f3…","file":"lib/my_app/parser.ex","line":42,"enclosing":"MyApp.Parser.next_token/2",
  "spell":"compare","original":">=","replacement":">",
  "context":["defp next_token(s, i) when i >= 0 do","  case String.at(s, i) do"],
- "covering_tests":["test/my_app/parser_test.exs:18"],
+ "covering_tests":["test/my_app/parser_test.exs:18"],"covering_count":1,
  "hint":"No test tells i == 0 apart from i > 0. Add a case at the boundary i = 0."}
 ```
+
+`covering_tests` lists the first five tests that cover the line and `covering_count` how many there are. A line that a whole suite reaches is covered by every test in it, and listing a thousand of them per survivor made a run too large to fit in a tool result; the full list is what `kalku show <wekufe>` (and the `kalku_show` tool) answers.
 
 followed by one summary object (counts, score, suppression changes).
 
