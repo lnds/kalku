@@ -48,13 +48,14 @@ if [ "$major" -lt 11 ]; then
   exit 1
 fi
 
-# Shipped, the jar sits beside this script; in the repository, Maven built it.
+# Shipped, the jar sits beside this script. In the repository it is what Maven compiled
+# last, which is the classes: a jar there may be older than they are.
 if [ -f "$here/kalku-java.jar" ]; then
   classes=$here/kalku-java.jar
-elif [ -f "$here/../target/kalku-java.jar" ]; then
-  classes=$here/../target/kalku-java.jar
 elif [ -d "$here/../target/classes" ]; then
   classes=$here/../target/classes
+elif [ -f "$here/../target/kalku-java.jar" ]; then
+  classes=$here/../target/kalku-java.jar
 else
   echo "kalku-java: the kalku is not built. Run \`mvn package\` in $here/.." >&2
   exit 1

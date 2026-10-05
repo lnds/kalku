@@ -92,6 +92,22 @@ final class Source {
     return out;
   }
 
+  /**
+   * The offset of the character that begins at this byte of the file, or -1 when no character
+   * begins there.
+   */
+  int index(int at) {
+    int found = java.util.Arrays.binarySearch(byteAt, at);
+    if (found < 0) {
+      return -1;
+    }
+    // The two units of one character share a byte: the first of them is where it begins.
+    while (found > 0 && byteAt[found - 1] == at) {
+      found--;
+    }
+    return found;
+  }
+
   /** The protocol's position for an offset the compiler gave. */
   Position position(int index) {
     int lo = 0;

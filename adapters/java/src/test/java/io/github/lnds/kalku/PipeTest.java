@@ -103,7 +103,7 @@ class PipeTest {
             hello(),
             "{\"type\":\"sites\",\"id\":2,\"files\":[\"src/main/java/fx/unicode/NonAscii.java\"],"
                 + "\"spells\":[\"literal\",\"compare\"],\"exclude_calls\":[]}",
-            "{\"type\":\"prepare\",\"id\":3}",
+            "{\"type\":\"reset\",\"id\":3}",
             "this line is not the protocol",
             "{\"type\":\"shutdown\",\"id\":4}");
 
@@ -126,6 +126,59 @@ class PipeTest {
     }
     assertTrue(originals.contains("\"ñandú\""), originals.toString());
     assertTrue(originals.contains("\"😀😀\""), originals.toString());
+  }
+
+  // The whole of it, the way the kaikai side drives it: a project built in the reni, its
+  // baseline, a wekufe a test notices and one no test does. Maven and the tests' own JVM
+  // both print, and none of it may reach the channel.
+  @Test
+  void aRealProjectIsMeasuredAndTheChannelStaysClean() throws Exception {
+    CastTest.copy(Paths.get("src", "test", "projects", "calc"), root.resolve("calc"));
+    Path project = root.resolve("calc");
+    String hello =
+        "{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":"
+            + Json.encode(project.toString())
+            + ",\"reni\":"
+            + Json.encode(root.resolve("reni").toString())
+            + ",\"worker\":0,\"inline_limit_bytes\":65536,\"env\":{}}";
+    String file = "src/main/java/fx/Calc.java";
+
+    Ran first = summon(THIS_JAVA, hello, CastTest.sitesOf(file));
+    assertEquals(0, first.exit, first.err);
+    Map<?, ?> noticed = null;
+    Map<?, ?> unnoticed = null;
+    for (Object each : (List<?>) ((Map<?, ?>) Json.decode(first.out.get(1))).get("sites")) {
+      Map<?, ?> site = (Map<?, ?>) each;
+      if (">=".equals(site.get("original"))) {
+        noticed = site;
+      } else if ("\"some\"".equals(site.get("original"))) {
+        unnoticed = site;
+      }
+    }
+    List<String> tests =
+        Arrays.asList("fx.CalcTest#tenIsBigAndNineIsNot()", "fx.CalcTest#zeroHasItsOwnLabel()");
+
+    Ran ran =
+        summon(
+            THIS_JAVA,
+            hello,
+            "{\"type\":\"prepare\",\"id\":2}",
+            "{\"type\":\"baseline\",\"id\":3}",
+            CastTest.castOf(noticed, tests),
+            CastTest.castOf(unnoticed, tests),
+            "{\"type\":\"shutdown\",\"id\":6}");
+
+    assertEquals(0, ran.exit, ran.err);
+    assertEquals(6, ran.out.size(), ran.out + "\n" + ran.err);
+    List<Map<?, ?>> said = new ArrayList<>();
+    for (String line : ran.out) {
+      said.add((Map<?, ?>) Json.decode(line));
+    }
+    assertEquals("prepared", said.get(1).get("type"), ran.out.get(1));
+    assertEquals("green", said.get(2).get("status"), ran.out.get(2));
+    assertEquals("killed", said.get(3).get("outcome"), ran.out.get(3));
+    assertEquals("survived", said.get(4).get("outcome"), ran.out.get(4));
+    assertEquals("bye", said.get(5).get("type"));
   }
 
   @Test

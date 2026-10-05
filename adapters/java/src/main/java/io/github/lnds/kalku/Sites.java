@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
+import javax.lang.model.element.Modifier;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -67,6 +68,11 @@ import javax.tools.ToolProvider;
  * <p>A construct newer than Java 11 has no type this code can name, because it is compiled for
  * 11. It is reached all the same: the running JDK's own scanner walks it, and it is told apart
  * by the name of its kind.
+ *
+ * <p>A site in what a {@code final} field is set to is marked {@code dependents}: the compiler
+ * copies a constant into every class that uses it, so that wekufe is only whole once those
+ * classes are compiled again. Whether the field really is a constant needs types the parser
+ * does not have, so every final field is taken for one; the cost of being wrong is time.
  *
  * <p>Not proposed, on purpose:
  *
@@ -95,6 +101,8 @@ final class Sites {
     String spell;
     String original;
     String replacement;
+    // Whether the classes that use this one have to be compiled again for the wekufe to be whole.
+    boolean dependents;
   }
 
   /** A file that cannot be searched. */
@@ -112,13 +120,16 @@ final class Sites {
     final int end;
     final String replacement;
     final String enclosing;
+    final boolean dependents;
 
-    Candidate(String spell, int start, int end, String replacement, String enclosing) {
+    Candidate(
+        String spell, int start, int end, String replacement, String enclosing, boolean dependents) {
       this.spell = spell;
       this.start = start;
       this.end = end;
       this.replacement = replacement;
       this.enclosing = enclosing;
+      this.dependents = dependents;
     }
   }
 
@@ -167,6 +178,7 @@ final class Sites {
       s.spell = c.spell;
       s.original = src.slice(c.start, c.end);
       s.replacement = c.replacement;
+      s.dependents = c.dependents;
       s.start = src.position(c.start);
       s.end = src.position(c.end);
       s.ordinal = seen.merge(c.enclosing + "\u0000" + c.spell + "\u0000" + s.original, 1, Integer::sum);
@@ -285,6 +297,10 @@ final class Sites {
     private final Map<Tree, Boolean> skipped = new IdentityHashMap<>();
     // Statements that are the whole body of a `case ... ->`, where a statement has to stand.
     private final Map<Tree, Boolean> ruleBodies = new IdentityHashMap<>();
+    // What a `final` field is set to. The compiler copies a constant into every class that uses
+    // it, so a wekufe there is only whole once those classes are compiled again.
+    private final Map<Tree, Boolean> constants = new IdentityHashMap<>();
+    private int inConstant;
     private int anonymous;
     final List<Candidate> found = new ArrayList<>();
 
@@ -334,7 +350,7 @@ final class Sites {
 
     private void propose(String spell, int start, int end, String replacement) {
       if (spells.contains(spell) && start >= 0 && end >= start) {
-        found.add(new Candidate(spell, start, end, replacement, enclosing()));
+        found.add(new Candidate(spell, start, end, replacement, enclosing(), inConstant > 0));
       }
     }
 
@@ -405,7 +421,15 @@ final class Sites {
       if (kindIs(t, "SWITCH") || kindIs(t, "SWITCH_EXPRESSION")) {
         arms(t);
       }
-      return super.scan(t, p);
+      if (!constants.containsKey(t)) {
+        return super.scan(t, p);
+      }
+      inConstant++;
+      try {
+        return super.scan(t, p);
+      } finally {
+        inConstant--;
+      }
     }
 
     @Override
@@ -420,10 +444,39 @@ final class Sites {
       }
       String name = t.getSimpleName().toString();
       scope.push(name.isEmpty() ? "$" + (++anonymous) : name);
+      // Every field of an interface or an annotation is final, said or not.
+      boolean allFinal = t.getKind() == Tree.Kind.INTERFACE || t.getKind() == Tree.Kind.ANNOTATION_TYPE;
+      for (Tree member : t.getMembers()) {
+        if (member instanceof VariableTree) {
+          VariableTree field = (VariableTree) member;
+          boolean isFinal = field.getModifiers().getFlags().contains(Modifier.FINAL);
+          if ((allFinal || isFinal) && mayBeConstant(field.getInitializer())) {
+            constants.put(field.getInitializer(), true);
+          }
+        }
+      }
       try {
         return super.visitClass(t, p);
       } finally {
         scope.pop();
+      }
+    }
+
+    // What makes an object or calls a method is computed when the class loads, and copied
+    // nowhere. An enum's constants are fields of that kind.
+    private static boolean mayBeConstant(ExpressionTree initializer) {
+      if (initializer == null) {
+        return false;
+      }
+      switch (initializer.getKind()) {
+        case NEW_CLASS:
+        case NEW_ARRAY:
+        case METHOD_INVOCATION:
+        case LAMBDA_EXPRESSION:
+        case MEMBER_REFERENCE:
+          return false;
+        default:
+          return true;
       }
     }
 
