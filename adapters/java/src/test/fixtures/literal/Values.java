@@ -43,6 +43,20 @@ class Values {
     return empty + quoted + "tail";
   }
 
+  // Literals joined by `+` are one constant to the compiler, and one site.
+  String joined(String name) {
+    String two = "a" + "b";
+    String lines = "first, " +
+        "second" + name;
+    return name + "m" + "n" + two + lines;
+  }
+
+  // A version stamp no test can tell apart.
+  static class Kept implements java.io.Serializable {
+    private static final long serialVersionUID = 1L;
+    long other = 1L;
+  }
+
   // An annotation's values are metadata.
   @SuppressWarnings("unchecked")
   @Deprecated

@@ -72,6 +72,7 @@ import javax.tools.ToolProvider;
  *
  * <ul>
  *   <li>annotations and the default of an annotation's element: metadata, not behaviour;
+ *   <li>{@code serialVersionUID}, which no test of the program can tell apart;
  *   <li>the labels of a {@code case}, whose literals are structure and not values;
  *   <li>a condition that binds a pattern variable, where negating or reconnecting it changes
  *       what is in scope and the compiler, not a test, is what objects;
@@ -441,6 +442,16 @@ final class Sites {
       } finally {
         scope.pop();
       }
+    }
+
+    // The version stamp of a serialised form is read by the runtime when an object from another
+    // build arrives, never by the program: a wekufe there is one no test could kill.
+    @Override
+    public Void visitVariable(VariableTree t, Void p) {
+      if (t.getName().contentEquals("serialVersionUID") && t.getInitializer() != null) {
+        skipped.put(t.getInitializer(), true);
+      }
+      return super.visitVariable(t, p);
     }
 
     // `arm`: delete one case, only where a `default` remains, because without one a switch

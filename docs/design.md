@@ -162,10 +162,10 @@ It finds sites and does not cast yet. `prepare`, `baseline` and `cast` are answe
 | `compare` | `>=`↔`>`, `<=`↔`<`, `==`↔`!=` |
 | `connect` | `&&`↔`\|\|` |
 | `negate` | a `!` is dropped, and the condition `c` of an `if` becomes `!(c)` |
-| `literal` | `n`→`n+1` for plain decimal `int` and `long` literals within their type's range, `true`↔`false`, a non-empty string or text block → `""` |
+| `literal` | `n`→`n+1` for plain decimal `int` and `long` literals within their type's range, `true`↔`false`, a non-empty string or text block → `""`; literals joined by `+` are one constant to the compiler, and one site |
 | `call` | a call that is a whole statement becomes the empty statement `;`, so what follows it is still what follows it |
 
-Not proposed: annotations and the default of an annotation's element; the labels of a `case`, whose literals are structure (its guard and its body are code); a condition that binds a pattern variable (`o instanceof String s && …`), where negating or reconnecting it changes what is in scope; `this(...)` and `super(...)`; the update of a `for`; hexadecimal, octal, binary and underscored numbers; the arguments of a call that `exclude_calls` names; test sources, known by where Maven and Gradle keep them and by how test classes are named.
+Not proposed: annotations and the default of an annotation's element; `serialVersionUID`, which no test of the program can tell apart; the labels of a `case`, whose literals are structure (its guard and its body are code); a condition that binds a pattern variable (`o instanceof String s && …`), where negating or reconnecting it changes what is in scope; `this(...)` and `super(...)`; a call in the header of a `for` or as the whole body of a `case … ->`, where no empty statement can stand; hexadecimal, octal, binary and underscored numbers; the arguments of a call that `exclude_calls` names; test sources, known by where Maven and Gradle keep them and by how test classes are named.
 
 `enclosing` names a method with its package, its classes and the types of its parameters as the source writes them — `com.acme.Parser.next(int,List<String>)` — because overloads with the same number of parameters are ordinary in Java. A constructor is `<init>`, and an anonymous class is `$1`, `$2`, counted within its top-level class.
 
