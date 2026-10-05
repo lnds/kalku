@@ -267,6 +267,68 @@ class CastTest {
     assertTrue(((String) done.get("message")).startsWith(CALC + ":"), done.toString());
   }
 
+  // `fx.Account` calls a method an annotation processor writes. The wekufe is compiled with
+  // the processors the build names, or the call would not resolve and every wekufe in the
+  // file would look like one that does not compile.
+  @Test
+  void aWekufeIsCompiledWithTheProcessorsTheBuildNames() throws Exception {
+    Map<?, ?> said = castInGenerated(temp.resolve("generated"), false);
+    assertEquals("killed", said.get("outcome"), said.toString());
+  }
+
+  // The same project, with nothing in its build this kalku can find the processor by. From
+  // Java 23 the compiler runs none it is not told about, so the file does not compile here
+  // even unchanged. That is this kalku failing to reproduce the build, and it says so: it is
+  // not a `compile_error`, which would be a wekufe counted as caught.
+  @Test
+  void aBuildItCannotReproduceIsNeverBlamedOnTheWekufe() throws Exception {
+    Map<?, ?> said = castInGenerated(temp.resolve("unfound"), true);
+    if (Runtime.version().feature() < 23) {
+      assertEquals("killed", said.get("outcome"), said.toString());
+      return;
+    }
+    assertEquals("cast_failed", said.get("code"), said.toString());
+    assertEquals(true, said.get("fatal"));
+    assertTrue(((String) said.get("message")).contains("even unchanged"), said.toString());
+  }
+
+  // A cast of the one comparison in `fx.Account`. With `unfound`, the processor is named
+  // the way a build with managed versions names it: without its version.
+  private static Map<?, ?> castInGenerated(Path project, boolean unfound) throws Exception {
+    copy(PROJECTS.resolve("generated"), project);
+    if (unfound) {
+      Path pom = project.resolve("pom.xml");
+      String text = new String(Files.readAllBytes(pom), StandardCharsets.UTF_8);
+      String path = "<artifactId>lombok</artifactId>\n              <version>${lombok.version}</version>";
+      assertTrue(text.contains(path));
+      text =
+          text.replace(path, "<artifactId>lombok</artifactId>")
+              .replace(
+                  "<dependencies>",
+                  "<dependencyManagement><dependencies><dependency>"
+                      + "<groupId>org.projectlombok</groupId><artifactId>lombok</artifactId>"
+                      + "<version>${lombok.version}</version></dependency></dependencies>"
+                      + "</dependencyManagement>\n  <dependencies>");
+      Files.write(pom, text.getBytes(StandardCharsets.UTF_8));
+    }
+    String file = "src/main/java/fx/Account.java";
+    List<Map<?, ?>> found = ask(project, hello(project), sitesOf(file));
+    Map<?, ?> site = null;
+    for (Object each : (List<?>) found.get(1).get("sites")) {
+      if (">=".equals(((Map<?, ?>) each).get("original"))) {
+        site = (Map<?, ?>) each;
+      }
+    }
+    List<Map<?, ?>> said =
+        ask(
+            project,
+            hello(project),
+            "{\"type\":\"prepare\",\"id\":2}",
+            castOf(site, Collections.singletonList("fx.AccountTest#aHundredIsRich()")));
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    return said.get(2);
+  }
+
   // ---- what is not a verdict ---------------------------------------------------
 
   // A JVM that ends before its tests do did not fail an assertion. `System.exit` is the

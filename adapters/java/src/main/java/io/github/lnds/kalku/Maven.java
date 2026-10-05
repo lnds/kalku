@@ -259,6 +259,7 @@ final class Maven {
     for (Element arg : children(args)) {
       kept(build, text(arg));
     }
+    processors(build, child(set, "annotationProcessorPaths"));
     String one = text(set, "compilerArgument");
     if (one != null) {
       for (String arg : one.trim().split("\\s+")) {
@@ -269,6 +270,55 @@ final class Maven {
     if (build.compilerFlags.contains("--enable-preview")) {
       build.jvmFlags.add("--enable-preview");
     }
+  }
+
+  // Annotation processors a build names apart from its dependencies. They are where Maven
+  // put them, in the repository the dependencies came from; one that is not found there is
+  // left out, and a file that needs it then fails to compile even unchanged, which a cast
+  // says rather than blaming a wekufe.
+  private static void processors(Build build, Element paths) {
+    Path repository = repository(build);
+    List<String> jars = new ArrayList<>();
+    for (Element path : children(paths)) {
+      String group = text(path, "groupId");
+      String artifact = text(path, "artifactId");
+      String version = text(path, "version");
+      if (repository == null || group == null || artifact == null || version == null) {
+        return;
+      }
+      Path jar =
+          repository
+              .resolve(group.replace('.', '/'))
+              .resolve(artifact)
+              .resolve(version)
+              .resolve(artifact + "-" + version + ".jar");
+      if (!Files.isRegularFile(jar)) {
+        return;
+      }
+      jars.add(jar.toString());
+    }
+    if (!jars.isEmpty()) {
+      build.compilerFlags.add("-processorpath");
+      build.compilerFlags.add(String.join(File.pathSeparator, jars));
+    }
+  }
+
+  // The local repository, told from where the JUnit engine's jar is inside it.
+  private static Path repository(Build build) {
+    for (Path jar : build.libraries) {
+      Matcher engine = ENGINE.matcher(jar.getFileName().toString());
+      if (engine.matches()) {
+        Path at = jar.getParent();
+        for (String part : new String[] {engine.group(1), "junit-platform-engine", "platform", "junit", "org"}) {
+          if (at == null || !at.getFileName().toString().equals(part)) {
+            return null;
+          }
+          at = at.getParent();
+        }
+        return at;
+      }
+    }
+    return null;
   }
 
   // What a build asks of its warnings is not asked of a wekufe: one file compiled alone does
