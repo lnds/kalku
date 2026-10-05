@@ -45,7 +45,7 @@ jobs:
             python:
               - '{adapters/python/**,docs/protocol/fixtures/**}'
             java:
-              - '{adapters/java/**,docs/protocol/fixtures/**}'
+              - '{adapters/java/**,docs/protocol/fixtures/**,Makefile}'
       - id: project
         run: |
           echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
