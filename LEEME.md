@@ -18,7 +18,7 @@ kalku comprueba qué tan buena es de verdad una suite de tests rompiendo el cód
 
 Los agentes de código escriben tests rápido, pero un test puede ejecutar una línea sin comprobar nada sobre ella. La cobertura no detecta eso; el mutation testing sí. **Los agentes escriben tests rápido; kalku les dice si esos tests prueban algo.**
 
-Apunta primero a Elixir. Está escrito en [kaikai](https://github.com/lnds/kaikai) y usa kalku para probar su propio código.
+Apunta primero a Elixir. Está escrito en [kaikai](https://kaikai-lang.org/) y usa kalku para probar su propio código.
 
 > **Estado: pre-alpha.** Los kalku para Elixir, Rust, Python y kaikai vienen en el binario de Homebrew, y el de Elixir también está en [Hex](https://hex.pm/packages/kalku_elixir). Todo lo que sigue funciona hoy; [qué está hecho y qué no](#qué-funciona-hoy) está al final.
 
@@ -29,7 +29,7 @@ brew install lnds/kalku/kalku
 ```
 
 macOS en Apple Silicon y Linux en x86_64 con GLIBC 2.38 o más nuevo: las
-plataformas para las que [kaikai](https://github.com/lnds/kaikai) publica
+plataformas para las que [kaikai](https://kaikai-lang.org/) publica
 un toolchain, y su piso es el piso de kalku. Los mismos tarballs están en
 cada [release](https://github.com/lnds/kalku/releases): descomprímelo y deja
 `kalku`, `kalku-kaikai`, `kalku-rust` y `kalku-python` en tu `PATH`.
@@ -287,7 +287,7 @@ La documentación de referencia está en inglés:
 
 ## Compilar
 
-Requiere [kaikai](https://github.com/kaikailang-org/kaikai) (la versión de `.kaikai-version`), más [`km`](https://github.com/lnds/kimun) y `jq` para la barrera de calidad.
+Requiere [kaikai](https://kaikai-lang.org/) (la versión de `.kaikai-version`), más [`km`](https://github.com/lnds/kimun) y `jq` para la barrera de calidad.
 
 ```sh
 make build     # _build/kalku
