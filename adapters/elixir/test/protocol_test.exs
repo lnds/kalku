@@ -35,7 +35,7 @@ defmodule Kalku.ProtocolTest do
 
   test "every site fixture encodes canonically" do
     for {_file, line} <- lines("shapes"), String.contains?(line, "\"site_id\"") do
-      assert Protocol.encode_shape(:site, JSON.decode!(line)) == line
+      assert Protocol.encode_shape(:site, Kalku.Json.decode!(line)) == line
     end
   end
 
@@ -43,7 +43,7 @@ defmodule Kalku.ProtocolTest do
     for entry <-
           File.read!(Path.join([@fixtures, "invalid", "kalku_requests.ndjson"]))
           |> String.split("\n", trim: true) do
-      %{"expect" => kind, "line" => line} = JSON.decode!(entry)
+      %{"expect" => kind, "line" => line} = Kalku.Json.decode!(entry)
       assert {:error, ^kind, _detail, _id} = Protocol.decode(line, :request), line
     end
   end

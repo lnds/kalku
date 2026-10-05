@@ -8,7 +8,7 @@ defmodule Kalku.MixProject do
     [
       app: :kalku_elixir,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.16",
       start_permanent: false,
       deps: [],
       elixirc_paths: elixirc_paths(Mix.env()),

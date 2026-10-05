@@ -48,7 +48,7 @@ defmodule Kalku.Protocol do
   # ---- decode ------------------------------------------------------------
 
   defp parse(line) do
-    case JSON.decode(line) do
+    case Json.decode(line) do
       {:ok, map} when is_map(map) -> {:ok, map}
       {:ok, other} -> {:error, "not_object", "expected an object, got #{shape_name(other)}", nil}
       {:error, _} -> {:error, "not_json", "not valid JSON", nil}

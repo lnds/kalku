@@ -47,7 +47,7 @@ defmodule Kalku.CastTest do
 
       by_wekufe =
         for line <- lines,
-            {:ok, d} <- [JSON.decode(line)],
+            {:ok, d} <- [Kalku.Json.decode(line)],
             d["wekufe"],
             into: %{},
             do: {d["wekufe"], d}
@@ -170,7 +170,7 @@ defmodule Kalku.CastTest do
           broken
         ])
 
-      done = for l <- lines, {:ok, d} <- [JSON.decode(l)], d["type"] == "cast_done", do: d
+      done = for l <- lines, {:ok, d} <- [Kalku.Json.decode(l)], d["type"] == "cast_done", do: d
       by_wekufe = Map.new(done, &{&1["wekufe"], &1})
 
       assert by_wekufe["kept"]["outcome"] == "survived"
@@ -180,7 +180,7 @@ defmodule Kalku.CastTest do
   end
 
   defp mocked_cast(wekufe, id, from, to, replacement, line) do
-    JSON.encode!(%{
+    Kalku.Json.encode(%{
       "type" => "cast",
       "id" => id,
       "wekufe" => wekufe,
@@ -200,7 +200,7 @@ defmodule Kalku.CastTest do
   end
 
   defp cast(wekufe, id, {from, to}, replacement, tests) do
-    JSON.encode!(%{
+    Kalku.Json.encode(%{
       "type" => "cast",
       "id" => id,
       "wekufe" => wekufe,

@@ -66,7 +66,8 @@ defmodule Kalku.PrepareTest do
       lines = summon(reni, "green", [request("prepare", 2)])
 
       for line <- lines do
-        assert {:ok, _} = JSON.decode(line), "not a protocol line on stdout: #{inspect(line)}"
+        assert {:ok, _} = Kalku.Json.decode(line),
+               "not a protocol line on stdout: #{inspect(line)}"
       end
 
       assert length(lines) == 3
@@ -110,7 +111,7 @@ defmodule Kalku.PrepareTest do
         [
           app: :green,
           version: "0.1.0",
-          elixir: "~> 1.18",
+          elixir: "~> 1.16",
           deps: [{:kalku_elixir, path: "#{adapter}"}]
         ]
       end

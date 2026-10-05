@@ -55,7 +55,10 @@ defmodule Kalku.ReloadTest do
       ])
 
     casts =
-      for line <- lines, {:ok, %{"wekufe" => w} = d} <- [JSON.decode(line)], into: %{}, do: {w, d}
+      for line <- lines,
+          {:ok, %{"wekufe" => w} = d} <- [Kalku.Json.decode(line)],
+          into: %{},
+          do: {w, d}
 
     # Loaded, but nobody was running it: Door still held the old
     # expansion, so no test could have noticed.
@@ -78,7 +81,7 @@ defmodule Kalku.ReloadTest do
   end
 
   defp cast(wekufe, id, {from, to}, reload) do
-    JSON.encode!(%{
+    Kalku.Json.encode(%{
       "type" => "cast",
       "id" => id,
       "wekufe" => wekufe,

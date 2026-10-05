@@ -7,7 +7,7 @@ defmodule Concurrent.MixProject do
     [
       app: :concurrent,
       version: "0.1.0",
-      elixir: "~> 1.18",
+      elixir: "~> 1.16",
       deps: [{:kalku_elixir, path: "../../.."}]
     ]
   end

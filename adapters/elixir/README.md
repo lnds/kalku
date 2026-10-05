@@ -43,7 +43,7 @@ kalku run lib/thing.ex     # measure one file
 
 ## Requirements
 
-- Elixir **1.18** or newer (the built-in `JSON` module), OTP 27 or newer.
+- Elixir **1.16** or newer, OTP 26 or newer.
 - No runtime dependencies: the kalku runs inside the user's project runtime, so it must not bring anything that could conflict with the project's own dependencies.
 
 ## Running

@@ -15,11 +15,10 @@ defmodule Mix.Tasks.Kalku.Serve do
 
   @requirements []
 
-  # The floor this kalku is built on: `JSON` is in the standard library
-  # from 1.18, and the protocol is JSON. Below it the loop dies decoding
-  # its first message, which reaches the other side as a closed pipe and
-  # tells nobody that the version is the reason.
-  @elixir_floor "1.18.0"
+  # The oldest Elixir this kalku is tested on. Below it nothing is promised,
+  # and a loop that dies on the way up reaches the other side as a closed
+  # pipe that tells nobody the version is the reason.
+  @elixir_floor "1.16.0"
 
   @impl true
   def run(_args) do
@@ -40,7 +39,7 @@ defmodule Mix.Tasks.Kalku.Serve do
     if Version.match?(running, ">= #{@elixir_floor}") do
       nil
     else
-      "kalku_elixir needs Elixir #{@elixir_floor} or newer for the built-in JSON module; " <>
+      "kalku_elixir needs Elixir #{@elixir_floor} or newer; " <>
         "this project runs #{running}. Upgrade Elixir, or pin kalku_elixir out of this project."
     end
   end

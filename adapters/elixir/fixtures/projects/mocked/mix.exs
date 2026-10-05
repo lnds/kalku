@@ -9,7 +9,7 @@ defmodule Mocked.MixProject do
     [
       app: :mocked,
       version: "0.1.0",
-      elixir: "~> 1.18",
+      elixir: "~> 1.16",
       deps: [{:kalku_elixir, path: "../../.."}, {:mimic, "~> 1.7", only: :test}]
     ]
   end

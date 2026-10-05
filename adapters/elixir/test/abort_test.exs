@@ -36,7 +36,7 @@ defmodule Kalku.AbortTest do
     # The aborted cast reports nothing. The abort was its answer, and a
     # `cast_done` after it would be a second one.
     refute Enum.any?(lines, fn line ->
-             match?({:ok, %{"wekufe" => "looping"}}, JSON.decode(line))
+             match?({:ok, %{"wekufe" => "looping"}}, Kalku.Json.decode(line))
            end)
 
     done = reply(lines, "cast_done")
@@ -70,11 +70,11 @@ defmodule Kalku.AbortTest do
       ])
 
     assert reply(lines, "cast_done")["wekufe"] == "in-flight"
-    assert List.last(lines) |> JSON.decode!() |> Map.get("type") == "bye"
+    assert List.last(lines) |> Kalku.Json.decode!() |> Map.get("type") == "bye"
   end
 
   defp cast(wekufe, id, {from, to}, replacement, tests) do
-    JSON.encode!(%{
+    Kalku.Json.encode(%{
       "type" => "cast",
       "id" => id,
       "wekufe" => wekufe,
