@@ -276,27 +276,74 @@ class CastTest {
     assertEquals("killed", said.get("outcome"), said.toString());
   }
 
-  // The same project, with nothing in its build this kalku can find the processor by. From
-  // Java 23 the compiler runs none it is not told about, so the file does not compile here
-  // even unchanged. That is this kalku failing to reproduce the build, and it says so: it is
-  // not a `compile_error`, which would be a wekufe counted as caught.
+  // The same project, with the processor named the way a build that inherits its versions
+  // names it: without one. Maven knows the version, and so does what Maven resolved.
   @Test
-  void aBuildItCannotReproduceIsNeverBlamedOnTheWekufe() throws Exception {
-    Map<?, ?> said = castInGenerated(temp.resolve("unfound"), true);
-    if (Runtime.version().feature() < 23) {
-      assertEquals("killed", said.get("outcome"), said.toString());
-      return;
-    }
-    assertEquals("cast_failed", said.get("code"), said.toString());
-    assertEquals(true, said.get("fatal"));
-    assertTrue(((String) said.get("message")).contains("even unchanged"), said.toString());
+  void aProcessorNamedWithoutItsVersionIsFoundAllTheSame() throws Exception {
+    Map<?, ?> said = castInGenerated(temp.resolve("unversioned"), true);
+    assertEquals("killed", said.get("outcome"), said.toString());
   }
 
-  // A cast of the one comparison in `fx.Account`. With `unfound`, the processor is named
-  // the way a build with managed versions names it: without its version.
-  private static Map<?, ?> castInGenerated(Path project, boolean unfound) throws Exception {
+  // What this kalku reads of the build can be wrong, or not enough. Here it is made wrong on
+  // purpose, in the reni, after a build that worked: a language level no compiler has. The
+  // file then does not compile even unchanged. That is this kalku failing to reproduce the
+  // build, and it says so: a `compile_error` would be a wekufe counted as caught.
+  @Test
+  void aBuildItCannotReproduceIsNeverBlamedOnTheWekufe() throws Exception {
+    Path project = temp.resolve("misread");
+    copy(PROJECTS.resolve("calc"), project);
+    assertEquals(
+        "prepared",
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}").get(1).get("type"));
+    Path resolved =
+        reni.resolve("misread").resolve("work").resolve("0").resolve("project").resolve("target").resolve("kalku.pom.xml");
+    String text = new String(Files.readAllBytes(resolved), StandardCharsets.UTF_8);
+    String level = "<maven.compiler.release>11</maven.compiler.release>";
+    assertTrue(text.contains(level));
+    Files.write(
+        resolved,
+        text.replace(level, "<maven.compiler.release>99</maven.compiler.release>")
+            .getBytes(StandardCharsets.UTF_8));
+
+    for (Map<?, ?> site : Arrays.asList(site(CALC, ">=", ">"), site(LIMITS, "10", "11"))) {
+      List<Map<?, ?>> said =
+          ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", castOf(site, all));
+      assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+      assertEquals("cast_failed", said.get(2).get("code"), said.get(2).toString());
+      assertEquals(true, said.get(2).get("fatal"));
+      assertTrue(((String) said.get(2).get("message")).contains("even unchanged"), said.get(2).toString());
+    }
+  }
+
+  // A cast that changes nothing has to survive: the same text, compiled and run the way a
+  // wekufe is. If it did not, the difference would be between how this kalku compiles and
+  // runs and how the build does, and every kill it reported would be in doubt.
+  @Test
+  void aCastThatChangesNothingSurvives() throws Exception {
+    Map<?, ?> inOneFile = site(CALC, ">=", ">");
+    Map<?, ?> inAConstant = site(LIMITS, "10", "11");
+    for (Map<?, ?> site : Arrays.asList(inOneFile, inAConstant)) {
+      Map<?, ?> done = cast(rewritten(site, (String) site.get("original")), all);
+      assertEquals("survived", done.get("outcome"), site.get("reload") + ": " + done);
+    }
+  }
+
+  @Test
+  void aCastThatChangesNothingSurvivesWhereAProcessorWritesCode() throws Exception {
+    Map<?, ?> done = castInGenerated(temp.resolve("generated-unchanged"), false, ">=");
+    assertEquals("survived", done.get("outcome"), done.toString());
+  }
+
+  // A cast of the one comparison in `fx.Account`, which becomes `becomes`. With
+  // `unversioned`, the processor is named without its version and the project manages it.
+  private static Map<?, ?> castInGenerated(Path project, boolean unversioned) throws Exception {
+    return castInGenerated(project, unversioned, ">");
+  }
+
+  private static Map<?, ?> castInGenerated(Path project, boolean unversioned, String becomes)
+      throws Exception {
     copy(PROJECTS.resolve("generated"), project);
-    if (unfound) {
+    if (unversioned) {
       Path pom = project.resolve("pom.xml");
       String text = new String(Files.readAllBytes(pom), StandardCharsets.UTF_8);
       String path = "<artifactId>lombok</artifactId>\n              <version>${lombok.version}</version>";
@@ -324,7 +371,9 @@ class CastTest {
             project,
             hello(project),
             "{\"type\":\"prepare\",\"id\":2}",
-            castOf(site, Collections.singletonList("fx.AccountTest#aHundredIsRich()")));
+            castOf(
+                rewritten(site, becomes),
+                Collections.singletonList("fx.AccountTest#aHundredIsRich()")));
     assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
     return said.get(2);
   }

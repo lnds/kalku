@@ -364,6 +364,11 @@ final class Service {
             request.id, "unknown_test", "`" + test + "` is not a test this kalku knows", false);
       }
     }
+    // No test to run is no cast: the runner takes an empty choice for the whole suite, and a
+    // test nobody chose would then be what killed.
+    if (request.tests.isEmpty()) {
+      return unjudged(request, "no test was selected for this wekufe");
+    }
     long started = System.nanoTime();
     Path file = build.project.resolve(request.file).normalize();
     Source src;
@@ -477,7 +482,7 @@ final class Service {
     before.add(main);
     return Compiler.compile(
         Project.sources(Collections.singletonList(build.testSources)), null, null, testsAgainst,
-        test, build.compilerFlags, build.project);
+        test, build.testCompilerFlags, build.project);
   }
 
   private Compiler.Result unchanged(Path file, String text, boolean dependents)

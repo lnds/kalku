@@ -49,6 +49,7 @@ final class Maven {
     Path testSources;
     // What the build tells `javac`, so a wekufe is compiled the way the project is.
     List<String> compilerFlags = new ArrayList<>();
+    List<String> testCompilerFlags = new ArrayList<>();
     // What the build tells the JVM its tests run in.
     List<String> jvmFlags = new ArrayList<>();
     // The JUnit Platform the project's engines were written for.
@@ -220,87 +221,174 @@ final class Maven {
     build.testClasses = Paths.get(text(b, "testOutputDirectory"));
     build.sources = Paths.get(text(b, "sourceDirectory"));
     build.testSources = Paths.get(text(b, "testSourceDirectory"));
-    Element properties = child(project, "properties");
-    compiler(build, plugin(b, "maven-compiler-plugin"), properties);
+    compiler(build, project, plugin(b, "maven-compiler-plugin"));
     surefire(build, plugin(b, "maven-surefire-plugin"));
   }
 
-  // The settings a build can state as the plugin's own, or as the property it defaults to.
-  private static void compiler(Build build, Element plugin, Element properties) {
+  // What the build tells the compiler. A setting can be the plugin's own or the property it
+  // defaults to; an argument the build passes as written is kept as written and in its order,
+  // because an option and its value are two arguments and the same option may come twice.
+  private static void compiler(Build build, Element project, Element plugin) {
+    Element properties = child(project, "properties");
     Element set = configuration(plugin, "default-compile");
-    String release = setting(set, "release", properties, "maven.compiler.release");
-    String source = setting(set, "source", properties, "maven.compiler.source");
-    String target = setting(set, "target", properties, "maven.compiler.target");
-    if (release != null) {
-      build.compilerFlags.addAll(Arrays.asList("--release", release));
-    } else {
-      if (source != null) {
-        build.compilerFlags.addAll(Arrays.asList("-source", source));
-      }
-      if (target != null) {
-        build.compilerFlags.addAll(Arrays.asList("-target", target));
-      }
+    List<String> stated = stated(set);
+    List<String> flags = build.compilerFlags;
+    if (!stated.contains("--release") && !stated.contains("-source")) {
+      flags.addAll(
+          level(
+              setting(set, "release", properties, "maven.compiler.release"),
+              setting(set, "source", properties, "maven.compiler.source"),
+              setting(set, "target", properties, "maven.compiler.target")));
     }
     String encoding = setting(set, "encoding", properties, "project.build.sourceEncoding");
-    if (encoding != null) {
-      build.compilerFlags.addAll(Arrays.asList("-encoding", encoding));
+    if (encoding != null && !stated.contains("-encoding")) {
+      flags.addAll(Arrays.asList("-encoding", encoding));
     }
-    if ("true".equals(setting(set, "parameters", properties, "maven.compiler.parameters"))) {
-      build.compilerFlags.add("-parameters");
+    if ("true".equals(setting(set, "parameters", properties, "maven.compiler.parameters"))
+        && !stated.contains("-parameters")) {
+      flags.add("-parameters");
     }
     String proc = setting(set, "proc", properties, "maven.compiler.proc");
-    if (proc != null) {
-      build.compilerFlags.add("-proc:" + proc);
+    if (proc != null && stated.stream().noneMatch(a -> a.startsWith("-proc:"))) {
+      flags.add("-proc:" + proc);
     }
-    if ("true".equals(setting(set, "enablePreview", properties, "maven.compiler.enablePreview"))) {
-      build.compilerFlags.add("--enable-preview");
+    if ("true".equals(setting(set, "enablePreview", properties, "maven.compiler.enablePreview"))
+        && !stated.contains("--enable-preview")) {
+      flags.add("--enable-preview");
     }
-    Element args = child(set, "compilerArgs");
-    for (Element arg : children(args)) {
-      kept(build, text(arg));
-    }
-    processors(build, child(set, "annotationProcessorPaths"));
-    String one = text(set, "compilerArgument");
-    if (one != null) {
-      for (String arg : one.trim().split("\\s+")) {
-        kept(build, arg);
-      }
+    flags.addAll(stated);
+    if (!stated.contains("-processorpath") && !stated.contains("--processor-path")) {
+      processors(build, project, child(set, "annotationProcessorPaths"));
     }
     // A program compiled with preview features only runs where they are switched on.
-    if (build.compilerFlags.contains("--enable-preview")) {
+    if (flags.contains("--enable-preview")) {
       build.jvmFlags.add("--enable-preview");
+    }
+
+    // The tests are compiled as the sources are, unless the build gives them a level of
+    // their own.
+    Element tests = configuration(plugin, "default-testCompile");
+    List<String> testLevel =
+        level(
+            setting(tests, "testRelease", properties, "maven.compiler.testRelease"),
+            setting(tests, "testSource", properties, "maven.compiler.testSource"),
+            setting(tests, "testTarget", properties, "maven.compiler.testTarget"));
+    if (testLevel.isEmpty()) {
+      build.testCompilerFlags.addAll(flags);
+    } else {
+      build.testCompilerFlags.addAll(testLevel);
+      build.testCompilerFlags.addAll(withoutLevel(flags));
     }
   }
 
-  // Annotation processors a build names apart from its dependencies. They are where Maven
-  // put them, in the repository the dependencies came from; one that is not found there is
-  // left out, and a file that needs it then fails to compile even unchanged, which a cast
-  // says rather than blaming a wekufe.
-  private static void processors(Build build, Element paths) {
+  private static List<String> level(String release, String source, String target) {
+    List<String> out = new ArrayList<>();
+    if (release != null) {
+      out.addAll(Arrays.asList("--release", release));
+    } else {
+      if (source != null) {
+        out.addAll(Arrays.asList("-source", source));
+      }
+      if (target != null) {
+        out.addAll(Arrays.asList("-target", target));
+      }
+    }
+    return out;
+  }
+
+  private static List<String> withoutLevel(List<String> flags) {
+    List<String> out = new ArrayList<>();
+    for (int i = 0; i < flags.size(); i++) {
+      String flag = flags.get(i);
+      if (flag.equals("--release") || flag.equals("-source") || flag.equals("-target")) {
+        i++;
+      } else {
+        out.add(flag);
+      }
+    }
+    return out;
+  }
+
+  // The arguments a build passes to the compiler as written. What it asks of its warnings is
+  // left out: one file compiled alone does not warn the way the whole project does, and a
+  // warning is not what a cast measures.
+  private static List<String> stated(Element set) {
+    List<String> out = new ArrayList<>();
+    for (Element arg : children(child(set, "compilerArgs"))) {
+      out.add(text(arg));
+    }
+    String one = text(set, "compilerArgument");
+    if (one != null) {
+      out.addAll(Arrays.asList(one.trim().split("\\s+")));
+    }
+    out.removeIf(a -> a == null || a.isEmpty() || a.equals("-Werror") || a.startsWith("-Xlint"));
+    return out;
+  }
+
+  // Annotation processors a build names apart from its dependencies. Each is the jar Maven
+  // put in the repository the dependencies came from; its version is the one stated, or the
+  // one the project manages, which is how a build that inherits its versions names it.
+  //
+  // What a processor itself depends on is not looked for. A processor that needs more than
+  // its own jar fails to load, the file then does not compile even unchanged, and a cast says
+  // that rather than blame a wekufe.
+  private static void processors(Build build, Element project, Element paths) {
     Path repository = repository(build);
     List<String> jars = new ArrayList<>();
     for (Element path : children(paths)) {
       String group = text(path, "groupId");
       String artifact = text(path, "artifactId");
       String version = text(path, "version");
-      if (repository == null || group == null || artifact == null || version == null) {
-        return;
+      if (version == null || version.isEmpty()) {
+        version = managed(project, group, artifact);
       }
-      Path jar =
-          repository
-              .resolve(group.replace('.', '/'))
-              .resolve(artifact)
-              .resolve(version)
-              .resolve(artifact + "-" + version + ".jar");
-      if (!Files.isRegularFile(jar)) {
-        return;
+      Path jar = null;
+      if (repository != null && group != null && artifact != null && version != null) {
+        jar =
+            repository
+                .resolve(group.replace('.', '/'))
+                .resolve(artifact)
+                .resolve(version)
+                .resolve(artifact + "-" + version + ".jar");
       }
-      jars.add(jar.toString());
+      if (jar == null || !Files.isRegularFile(jar)) {
+        jar = among(build.libraries, artifact);
+      }
+      if (jar != null) {
+        jars.add(jar.toString());
+      }
     }
     if (!jars.isEmpty()) {
       build.compilerFlags.add("-processorpath");
       build.compilerFlags.add(String.join(File.pathSeparator, jars));
     }
+  }
+
+  // The version a project gives an artifact where it manages versions, or where it depends
+  // on it; Maven has already resolved both.
+  private static String managed(Element project, String group, String artifact) {
+    List<Element> known = new ArrayList<>();
+    known.addAll(children(child(child(project, "dependencyManagement"), "dependencies")));
+    known.addAll(children(child(project, "dependencies")));
+    for (Element dependency : known) {
+      if (artifact != null
+          && artifact.equals(text(dependency, "artifactId"))
+          && (group == null || group.equals(text(dependency, "groupId")))
+          && text(dependency, "version") != null) {
+        return text(dependency, "version");
+      }
+    }
+    return null;
+  }
+
+  private static Path among(List<Path> libraries, String artifact) {
+    for (Path jar : libraries) {
+      String name = jar.getFileName().toString();
+      if (artifact != null && name.startsWith(artifact + "-") && name.endsWith(".jar")) {
+        return jar;
+      }
+    }
+    return null;
   }
 
   // The local repository, told from where the JUnit engine's jar is inside it.
@@ -309,7 +397,8 @@ final class Maven {
       Matcher engine = ENGINE.matcher(jar.getFileName().toString());
       if (engine.matches()) {
         Path at = jar.getParent();
-        for (String part : new String[] {engine.group(1), "junit-platform-engine", "platform", "junit", "org"}) {
+        for (String part :
+            new String[] {engine.group(1), "junit-platform-engine", "platform", "junit", "org"}) {
           if (at == null || !at.getFileName().toString().equals(part)) {
             return null;
           }
@@ -319,18 +408,6 @@ final class Maven {
       }
     }
     return null;
-  }
-
-  // What a build asks of its warnings is not asked of a wekufe: one file compiled alone does
-  // not warn the way the whole project does, and a warning is not what a cast measures.
-  private static void kept(Build build, String arg) {
-    if (arg != null
-        && !arg.isEmpty()
-        && !arg.equals("-Werror")
-        && !arg.startsWith("-Xlint")
-        && !build.compilerFlags.contains(arg)) {
-      build.compilerFlags.add(arg);
-    }
   }
 
   private static void surefire(Build build, Element plugin) {

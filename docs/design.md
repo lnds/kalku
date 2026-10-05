@@ -169,7 +169,7 @@ What is not a verdict is never given one. A test JVM that ended before its tests
 
 Measured on the fixture project (2 source files, 5 tests, 14 sites, Java 21): `prepare` takes 3.9 s, nearly all of it Maven; the baseline 0.6 s; a cast 0.67 s on average, of which about 0.6 s is starting a JVM and JUnit. That last number is the price of a JVM for each cast and the first thing to bring down, with a test JVM that stays warm between casts; it was chosen first because it is the one arrangement in which nothing a wekufe does can outlive it.
 
-Not read from the build yet: surefire's `includes` and `excludes` (the default class names are used, so `*IT` classes are left to integration tests), environment variables it sets, and an annotation processor named without its version.
+Not read from the build yet: surefire's `includes` and `excludes` (the default class names are used, so `*IT` classes are left to integration tests), the environment variables it sets, and what an annotation processor itself depends on (the processor's own jar is found, by the version the build states or manages).
 
 | Spell | Java forms |
 |---|---|
