@@ -490,6 +490,7 @@ fn react(
     AskAbort -> chase(recorded, slot, Abort(AbortMsg { cast: job_id(slot) }), AwaitingAbort)
     AskReset -> chase(recorded, slot, Reset, AwaitingReset)
     Recycle(why) -> recycle(recorded, slot, why)
+    Replace(_) -> replace(recorded, slot)
   }
 }
 
@@ -553,14 +554,23 @@ fn recycle(
   why: String
 ) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
   banish(slot)
-  let fresh = refill(run.spec, slot, why)
-  let slots = put(run.slots, fresh)
+  renewed(run, put(run.slots, refill(run.spec, slot, why)))
+}
+
+fn replace(
+  run: Run,
+  slot: Slot
+) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
+  banish(slot)
+  renewed(run, put(run.slots, replace_slot(run.spec, slot)))
+}
+
+fn renewed(run: Run, slots: [Slot]) : Run =
   if all_gone(slots) {
     Run { ...run, slots: slots, failure: Some(join(epitaphs(slots), "; ")) }
   } else {
     Run { ...run, slots: slots }
   }
-}
 
 # ---- reading a slot -----------------------------------------------------
 

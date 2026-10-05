@@ -12,7 +12,7 @@ In Mapuche belief, a *kalku* is a sorcerer who works in a hidden cave, the *reni
 | **kalku** | A worker process bound to one language: the adapter running inside a warm runtime (for Elixir, a BEAM node with the project loaded). A kalku knows its language's dark arts and nothing else. |
 | **reni** | A project's isolated workspace: build artefacts, caches, per-worker databases. Mutants live and die here, never in the user's tree. |
 | **wekufe** | A mutant: the original program with exactly one defect cast into it. |
-| **spell** | A mutation operator: a class of defect a kalku can cast (`arm`, `compare`, …). |
+| **kalkutun** / **spell** | A mutation operator: a class of defect a kalku can cast (`arm`, `compare`, …). *Kalkutun* is the Mapuche word for the harm a kalku works; the two are synonyms in prose, and code and protocol say `spell`. |
 | **site** | A place in the source where a spell applies: file, token span, spell, replacement text. |
 | **summon** / **banish** | Start / stop a kalku. |
 

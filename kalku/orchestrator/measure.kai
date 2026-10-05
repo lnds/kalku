@@ -21,6 +21,7 @@ import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.verdict
 import kalku.core.skipping
+import kalku.core.stopping
 import kalku.core.blaming
 import kalku.core.planner
 import kalku.core.equivalent
@@ -80,12 +81,26 @@ pub fn measure(
   # A run arranges not to be orphaned before it summons anything: the
   # kalku it is about to start lead their own process groups, so an
   # interrupt reaches this fiber and nothing else.
-  let _watching = spawn_actor(() => as_cancellation(Actor.self()))
+  # The mailbox is named out here: inside the thunk `Actor.self()` is the
+  # new fiber's own, and the cancellation would be sent to itself.
+  let run = Actor.self()
+  let _watching = spawn_actor(() => as_cancellation(run))
   match discover(asking) {
     Err(why) -> Found { report: None, failure: Some(why), cast: [] }
     Ok(known) -> casting_them(asking, known)
   }
 }
+
+#[doc("""
+The identity of the kalku that reads the project before the pool exists.
+
+It is nobody's worker. A pool slot is worker 0 on its first summons, and the
+last words of the kalku that discovered the project arrive after it is gone,
+addressed to its life: with the same life they were taken for the death of
+that slot's kalku, which was recycled before it cast anything and cost a run
+one of the replacements it is allowed.
+""")]
+pub fn discovery_life() : Life = Life { worker: 0 - 1, summons: 0 }
 
 #[doc("""
 What can be broken in this project, asked of one kalku.
@@ -97,7 +112,7 @@ already failing, ends the run here.
 pub fn discover(
   asking: Asking
 ) : Result[Known, String] / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling {
-  let life = Life { worker: 0, summons: 1 }
+  let life = discovery_life()
   match summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args }) {
     Err(e) -> Err(e)
     Ok(k) -> {
@@ -413,9 +428,14 @@ fn casting_them(
   Telling.will_cost(length(casts), estimate_ms(casts, known.durations, asking.spec.workers))
   let casting = agreed(cast_all(asking.spec, casts))
   Telling.entered(PhaseReporting)
+  let stopped = stopped_short(
+    casting.failure,
+    length(uniq(casting.verdicts | (.wekufe))),
+    length(uniq(casts | (c => c.site.site_id)))
+  )
   Found {
-    report: Some(report_of(ready, casting, known)),
-    failure: None,
+    report: if is_some(stopped) { None } else { Some(report_of(ready, casting, known)) },
+    failure: stopped,
     cast: written_down(casting, known)
   }
 }

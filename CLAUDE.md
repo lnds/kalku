@@ -35,7 +35,7 @@ tools/              repo scripts (km-gate.sh)
 
 ## Vocabulary
 
-Use the glossary in `docs/design.md` consistently in code, docs, and protocol: **kalku** (language worker), **wekufe** (mutant), **spell** (mutation operator), **site**, **reni** (isolated workspace), **summon** / **banish** (start / stop a kalku), **cast** (run one wekufe). Do not mix in synonyms (`mutant`, `operator`, `adapter`, `worker`) where a glossary word exists.
+Use the glossary in `docs/design.md` consistently in code, docs, and protocol: **kalku** (language worker), **wekufe** (mutant), **spell** (mutation operator; **kalkutun** is its synonym in prose, while code and protocol keep `spell`), **site**, **reni** (isolated workspace), **summon** / **banish** (start / stop a kalku), **cast** (run one wekufe). Do not mix in synonyms (`mutant`, `operator`, `adapter`, `worker`) where a glossary word exists.
 
 Outcomes keep plain technical names — `killed`, `survived`, `timeout`, `no_coverage`, `compile_error`, `crashed`, `equivalent` — because they appear in CI logs and must read without the glossary.
 
