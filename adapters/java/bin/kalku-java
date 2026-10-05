@@ -1,0 +1,63 @@
+#!/bin/sh
+# Summons the Java kalku: the protocol loop on stdin and stdout.
+#
+# The kalku runs on the project's own JDK, so this is where a Java too old
+# for it is turned away. A jar built for Java 11 does not load on Java 8: it
+# dies with a class-version error and a closed pipe, which tells nobody what
+# to do. The version is read first, and the refusal names it.
+#
+# Which Java: $KALKU_JAVA, then $JAVA_HOME/bin/java, then `java` on the PATH.
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if [ -n "${KALKU_JAVA:-}" ]; then
+  java=$KALKU_JAVA
+elif [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+  java=$JAVA_HOME/bin/java
+else
+  java=java
+fi
+
+if ! command -v "$java" >/dev/null 2>&1; then
+  echo "kalku-java: no Java found ($java). Set JAVA_HOME to the project's JDK, or KALKU_JAVA to its java." >&2
+  exit 1
+fi
+
+# `java -version` writes to stderr, and every vendor keeps the quoted
+# version: `openjdk version "11.0.2"`, `java version "1.8.0_292"`.
+said=$("$java" -version 2>&1) || {
+  echo "kalku-java: $java -version failed: $said" >&2
+  exit 1
+}
+version=$(printf '%s\n' "$said" | sed -n 's/.* version "\([^"]*\)".*/\1/p' | head -n 1)
+major=${version%%[!0-9]*}
+if [ "$major" = 1 ]; then
+  # Before Java 9 the release was the second number: 1.8 is Java 8.
+  rest=${version#1.}
+  major=${rest%%[!0-9]*}
+fi
+case $major in
+  '' | *[!0-9]*)
+    echo "kalku-java: cannot tell which Java $java is. It said: $said" >&2
+    exit 1
+    ;;
+esac
+if [ "$major" -lt 11 ]; then
+  echo "kalku-java needs Java 11 or newer; $java is Java $version. Point JAVA_HOME (or KALKU_JAVA) at a newer JDK, or leave Java out of this project's kalku." >&2
+  exit 1
+fi
+
+# Shipped, the jar sits beside this script; in the repository, Maven built it.
+if [ -f "$here/kalku-java.jar" ]; then
+  classes=$here/kalku-java.jar
+elif [ -f "$here/../target/kalku-java.jar" ]; then
+  classes=$here/../target/kalku-java.jar
+elif [ -d "$here/../target/classes" ]; then
+  classes=$here/../target/classes
+else
+  echo "kalku-java: the kalku is not built. Run \`mvn package\` in $here/.." >&2
+  exit 1
+fi
+
+exec "$java" -cp "$classes" io.github.lnds.kalku.Main

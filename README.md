@@ -214,7 +214,8 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | kaikai | native (thin) | built on `kai mutate`; this is how kalku tests itself |
 | Rust | native | sites come from `syn`, Rust's own parser; the **2024 edition only** (Rust 1.85 or later). It finds sites and casts them, answers `abort` in place, and selects tests by coverage where the LLVM tools are |
 | Python | native | sites come from `ast` and `tokenize`, Python's own parser; it runs in the **project's own interpreter** (3.12 or later) with the standard library only. Every run of the suite is a forked child, so `abort` is a kill and a wekufe never leaks; coverage per test comes from `sys.monitoring`; the project's own pytest options are kept |
-| others | driver | wraps an existing framework (Stryker, PIT, …), normalizes its results, and recomputes the score |
+| Java | native | sites come from `javac`, the project's own compiler, through its public tree API; it runs on the **project's own JDK** (11 or later) with no dependencies. It finds sites and does not cast yet |
+| others | driver | wraps an existing framework (Stryker, …), normalizes its results, and recomputes the score |
 
 ## What works today
 
@@ -238,6 +239,8 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Rust kalku: `prepare`, `baseline` and `cast` in the reni, `abort`, per-test coverage with LLVM | done |
 | Rust kalku: `kalku init` for Cargo projects, shipped in the release | done |
 | **Python kalku** — sites from `ast`, `prepare`/`baseline`/`cast` in forked children, `abort`, per-test coverage with `sys.monitoring`, `kalku init`, shipped in the release | done |
+| **Java kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `javac`, behind the kalku protocol, on Java 11, 17, 21 and 25 | done: finds sites |
+| Java kalku: `prepare`, `baseline` and `cast`, `kalku init` for Maven and Gradle, shipped in the release | not yet |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |

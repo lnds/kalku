@@ -142,6 +142,33 @@ Python has mutation frameworks (`mutmut`, `cosmic-ray`), and the rule above says
 
 Not proposed: docstrings and bare strings, module dunders (`__all__`, `__version__`), annotations, the type a `cast(...)` or `TypeVar(...)` names, `if TYPE_CHECKING:`, `if __name__ == "__main__":`, the patterns of a `match`, the arguments of a call `exclude_calls` names, and test files. Only `arm` can leave a file that does not parse, so only its candidates are parsed before anyone is asked to cast them.
 
+### The Java kalku
+
+Java has a mutation framework, PIT, and it is a good one. kalku does not wrap it, for the reasons it does not wrap `cargo-mutants`: the driver path is not implemented, and nearly all of PIT's commits come from a single person, who also sells its commercial extension. The Java kalku is native, in the shape of the others, and written in Java.
+
+What a Java tool has to survive is the JDK itself: a release every six months, each with a new class-file version and often new syntax. A tool that mutates bytecode needs its bytecode library taught each of them. This kalku is built on one rule instead: **it reads and writes nothing whose format changes with the JDK, except through the project's own JDK.**
+
+- **It runs on the project's own JDK**, Java 11 or later, as the Python kalku runs in the project's interpreter. Its own code is compiled for Java 11 and has no dependencies, so it never chooses which version of anything the project gets. Java 8 is not supported: a jar built for 11 does not load there, so the summoning script reads the version first and refuses by name, rather than let the kalku die with a class-version error and a closed pipe.
+- **Sites come from `javac`**, the compiler that will build the project, through its public tree API (`com.sun.source`, in the module `jdk.compiler`) and nothing private to one release. The grammar is therefore always the project's own. A file this JDK cannot parse is skipped with the compiler's own words; the parser recovers from an error and still returns a tree, and a tree it had to guess at is never searched.
+- **A construct newer than Java 11 is reached without naming it.** The kalku is compiled for 11, so it cannot refer to the type of a switch expression or of a pattern. The running JDK's own tree scanner walks them, and the kalku tells them apart by the name of their kind. The same jar finds the cases of a `switch` expression on Java 17 and the guard of a pattern on Java 21.
+- **A runtime with no compiler** — a JRE, or an image cut down with `jlink` — is answered in the protocol, `toolchain_missing`, with the reason.
+- **The channel is bytes.** Lines are read and written as UTF-8 on the real descriptors, whatever the platform's charset is, because the JDK's default has not been the same on every release; `System.out` is pointed at stderr. No real is ever encoded: the shortest text of a double is not the same on every JDK.
+
+It finds sites and does not cast yet. `prepare`, `baseline` and `cast` are answered with `not_implemented`, not with silence.
+
+| Spell | Java forms |
+|---|---|
+| `arm` | delete a `case` of a `switch`, statement or expression — only while a `default` remains, because without one a switch that has to be exhaustive no longer is, and the compiler, not a test, is what rejects it |
+| `compare` | `>=`↔`>`, `<=`↔`<`, `==`↔`!=` |
+| `connect` | `&&`↔`\|\|` |
+| `negate` | a `!` is dropped, and the condition `c` of an `if` becomes `!(c)` |
+| `literal` | `n`→`n+1` for plain decimal `int` and `long` literals within their type's range, `true`↔`false`, a non-empty string or text block → `""`; literals joined by `+` are one constant to the compiler, and one site |
+| `call` | a call that is a whole statement becomes the empty statement `;`, so what follows it is still what follows it |
+
+Not proposed: annotations and the default of an annotation's element; `serialVersionUID`, which no test of the program can tell apart; the labels of a `case`, whose literals are structure (its guard and its body are code); a condition that binds a pattern variable (`o instanceof String s && …`), where negating or reconnecting it changes what is in scope; `this(...)` and `super(...)`; a call in the header of a `for` or as the whole body of a `case … ->`, where no empty statement can stand; hexadecimal, octal, binary and underscored numbers; the arguments of a call that `exclude_calls` names; test sources, known by where Maven and Gradle keep them and by how test classes are named.
+
+`enclosing` names a method with its package, its classes and the types of its parameters as the source writes them — `com.acme.Parser.next(int,List<String>)` — because overloads with the same number of parameters are ordinary in Java. A constructor is `<init>`, and an anonymous class is `$1`, `$2`, counted within its top-level class.
+
 ### The kaikai kalku
 
 kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mutate-list-json` catalogues sites from the AST, `kaic2 --mutate-apply <i>` writes the spliced source, and a shell driver owns the run loop. The kaikai kalku is a thin native kalku over those flags:
