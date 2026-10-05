@@ -1,0 +1,40 @@
+#[doc("""
+Reading and writing what a run left in a project: the ledger of every
+wekufe it cast, which is how `cast`, `show` and an agent's tools find a
+wekufe again by its name.
+
+The same file whether the run was started from the command line or by an
+agent's tool, and wherever the project is: a root that was named is where it
+is looked for.
+""")]
+
+import fs.file
+import kalku.wire.shapes
+import kalku.core.remembering
+
+#[doc("What a project's runs wrote down, or nothing when none has run.")]
+pub fn ledger_in(root: String) : [Remembered] / File {
+  let path = "#{root}/#{LEDGER_PATH}"
+  if file.exists(path) { read_all(file.read(path)) } else { [] }
+}
+
+#[doc("What the runs of the project in the current directory wrote down.")]
+pub fn ledger() : [Remembered] / File = ledger_in(".")
+
+#[doc("""
+Write down what a run cast, in the project it was asked about.
+
+Also when the run stopped short: those wekufe were measured, and a later
+`cast` or `show` has to know them.
+""")]
+pub fn remember_in(root: String, rs: [Remembered]) : Unit / File =
+  if is_empty(rs) {
+    ()
+  } else {
+    let path = "#{root}/#{LEDGER_PATH}"
+    let was = if file.exists(path) { file.read(path) } else { "" }
+    file.write(path, appended(was, rs))
+  }
+
+#[doc("Write down what a run cast, in the current directory's project.")]
+pub fn remember(rs: [Remembered]) : Unit / File = remember_in(".", rs)

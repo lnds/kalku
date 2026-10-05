@@ -55,6 +55,14 @@ what is true of it is what was true most recently.
 pub fn latest(all: [Remembered], wekufe: String) : Option[Remembered] =
   last(filter(all, r => r.wekufe == wekufe))
 
+#[doc("""
+What the ledger holds after these casts are written down: what it held,
+and one line each. Nothing is added for no casts, so an empty run does not
+leave a blank line behind.
+""")]
+pub fn appended(was: String, rs: [Remembered]) : String =
+  if is_empty(rs) { was } else { was ++ join(rs | line_of, "\n") ++ "\n" }
+
 #[doc("Every outcome a wekufe has had, oldest first.")]
 pub fn history(all: [Remembered], wekufe: String) : [Outcome] =
   filter(all, r => r.wekufe == wekufe) | (.outcome)
