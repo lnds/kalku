@@ -32,10 +32,21 @@ final class Protocol {
     long protocol;
     String root;
     String reni;
+    long worker;
+    Map<String, String> env;
     // `sites`
     List<String> files;
     List<String> spells;
     List<String> excludeCalls;
+    // `cast`
+    String wekufe;
+    String file;
+    int startByte;
+    int endByte;
+    String original;
+    String replacement;
+    boolean dependents;
+    List<String> tests;
     // `abort`
     long cast;
 
@@ -121,9 +132,9 @@ final class Protocol {
         r.protocol = integer(o, "protocol", "");
         r.root = string(o, "root", "");
         r.reni = string(o, "reni", "");
-        integer(o, "worker", "");
+        r.worker = integer(o, "worker", "");
         integer(o, "inline_limit_bytes", "");
-        env(o);
+        r.env = env(o);
         break;
       case "sites":
         r.files = strings(o, "files", "");
@@ -131,9 +142,10 @@ final class Protocol {
         r.excludeCalls = strings(o, "exclude_calls", "");
         break;
       case "cast":
-        string(o, "wekufe", "");
+        r.wekufe = string(o, "wekufe", "");
         site(required(o, "site", ""), "site");
-        strings(o, "tests", "");
+        r.tests = strings(o, "tests", "");
+        taken(r, (Map<?, ?>) o.get("site"));
         break;
       case "abort":
         r.cast = integer(o, "cast", "");
@@ -148,6 +160,20 @@ final class Protocol {
         // `prepare`, `baseline`, `reset` and `shutdown` carry nothing.
         break;
     }
+  }
+
+  // What a cast needs of its site, once the site is known to be well formed. A span may come
+  // without an end, from a kalku that could not tell it; this one always can, and says so
+  // when it is asked to cast one.
+  private static void taken(Request r, Map<?, ?> site) {
+    Map<?, ?> span = (Map<?, ?>) site.get("span");
+    r.file = (String) site.get("file");
+    r.startByte = ((Long) ((Map<?, ?>) span.get("start")).get("byte")).intValue();
+    Object end = span.get("end");
+    r.endByte = end == null ? -1 : ((Long) ((Map<?, ?>) end).get("byte")).intValue();
+    r.original = (String) site.get("original");
+    r.replacement = (String) site.get("replacement");
+    r.dependents = "dependents".equals(site.get("reload"));
   }
 
   // ---- field readers, each naming its path when it fails ---------------------
@@ -199,16 +225,19 @@ final class Protocol {
     return out;
   }
 
-  private static void env(Map<?, ?> o) throws DecodeError {
+  private static Map<String, String> env(Map<?, ?> o) throws DecodeError {
     Object v = required(o, "env", "");
     if (!(v instanceof Map)) {
       throw bad("env", "must be an object");
     }
+    Map<String, String> out = new LinkedHashMap<>();
     for (Map.Entry<?, ?> entry : ((Map<?, ?>) v).entrySet()) {
       if (!(entry.getValue() instanceof String)) {
         throw bad("env." + entry.getKey(), "must be a string");
       }
+      out.put((String) entry.getKey(), (String) entry.getValue());
     }
+    return out;
   }
 
   private static List<String> spells(Map<?, ?> o) throws DecodeError {
@@ -344,6 +373,39 @@ final class Protocol {
     return Json.encode(out);
   }
 
+  static String prepared(long id, long durationMs, long modules) {
+    Map<String, Object> out = message("prepared", id);
+    out.put("duration_ms", durationMs);
+    out.put("modules", modules);
+    return Json.encode(out);
+  }
+
+  static String baselineDone(long id, long durationMs, List<?> tests, List<?> failures) {
+    Map<String, Object> out = message("baseline_done", id);
+    out.put("status", failures.isEmpty() ? "green" : "red");
+    out.put("duration_ms", durationMs);
+    out.put("tests", tests);
+    out.put("failures", failures);
+    return Json.encode(out);
+  }
+
+  // `killedBy` and `message` are left out when there is nothing to say in them.
+  static String castDone(
+      long id, String wekufe, String outcome, String killedBy, String message, long durationMs) {
+    Map<String, Object> out = message("cast_done", id);
+    out.put("wekufe", wekufe);
+    out.put("outcome", outcome);
+    if (killedBy != null) {
+      out.put("killed_by", killedBy);
+    }
+    if (message != null) {
+      out.put("message", message);
+    }
+    out.put("duration_ms", durationMs);
+    out.put("dirty", false);
+    return Json.encode(out);
+  }
+
   static String aborted(long id, long cast, boolean restored) {
     Map<String, Object> out = message("aborted", id);
     out.put("cast", cast);
@@ -379,7 +441,7 @@ final class Protocol {
     out.put("spell", s.spell);
     out.put("original", s.original);
     out.put("replacement", s.replacement);
-    out.put("reload", "module");
+    out.put("reload", s.dependents ? "dependents" : "module");
     return out;
   }
 

@@ -80,7 +80,7 @@ class ServiceTest {
     assertEquals("java", ready.get("language"));
     assertEquals("test", ready.get("adapter"));
     assertTrue(((String) ready.get("runtime")).startsWith("Java "));
-    assertEquals(Arrays.asList("cast"), ready.get("capabilities"));
+    assertEquals(Arrays.asList("cast", "recompile_dependents"), ready.get("capabilities"));
   }
 
   @Test
@@ -142,13 +142,13 @@ class ServiceTest {
   }
 
   @Test
-  void whatItCannotDoYetItSaysInsteadOfGoingQuiet() throws Exception {
+  void whatItDoesNotDoItSaysInsteadOfGoingQuiet() throws Exception {
     List<Map<?, ?>> said =
         ask(
             hello(1),
-            "{\"type\":\"prepare\",\"id\":3}",
-            "{\"type\":\"baseline\",\"id\":4}",
-            "{\"type\":\"reset\",\"id\":5}");
+            "{\"type\":\"reset\",\"id\":3}",
+            "{\"type\":\"reload\",\"id\":4,\"files\":[]}",
+            "{\"type\":\"delegate\",\"id\":5,\"scope\":{\"all\":true}}");
     assertEquals(4, said.size());
     for (Map<?, ?> reply : said.subList(1, 4)) {
       assertEquals("error", reply.get("type"));
