@@ -75,3 +75,14 @@ test "a name no site carries any more is told apart from one that is still there
   assert gone([], found) == []
   assert gone(["lib/a.ex:4"], []) == ["lib/a.ex:4"]
 }
+
+# A run writes down what it cast, one line each, after what earlier runs
+# left; a run that cast nothing writes nothing, not a blank line.
+test "casts are appended to the ledger one line each, and no casts leave it as it was" {
+  let first = appended("", [cast_of("w1", 4, Survived)])
+  let both = appended(first, [cast_of("w2", 9, Killed)])
+
+  assert (read_all(both) | (.wekufe)) == ["w1", "w2"]
+  assert appended(both, []) == both
+  assert appended("", []) == ""
+}

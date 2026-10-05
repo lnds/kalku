@@ -24,6 +24,7 @@ import kalku.sources
 import kalku.core.info
 import kalku.core.mcp
 import kalku.core.remembering
+import kalku.ledgering
 import kalku.core.showing
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
@@ -186,6 +187,7 @@ fn measured(
 ) : Int / Stdout + Stderr + File + Process + Spawn + Clock + Signal = with_mailbox {
   let shape = wanted.shape
   let found = alone(() => telling(wanted.aloud, () => measure(asking)))
+  remember(found.cast)
   match found.failure {
     Some(why) -> {
       Stderr.eprint("kalku: #{why}")
@@ -197,7 +199,6 @@ fn measured(
         2
       }
       Some(whole) -> {
-        remember(found.cast)
         # The report is what was measured; the blockers are what the
         # project asked to be held to. Judging here rather than in the run
         # keeps the same measurement answerable to a different policy in
@@ -383,15 +384,6 @@ fn declared_equivalents(root: String) : Result[[equivalent.Entry], String] / Fil
 }
 
 # ---- the agent loop -----------------------------------------------------
-
-# What a run wrote down about this project, or nothing when none has run.
-fn ledger() : [Remembered] / File =
-  if file.exists(LEDGER_PATH) { read_all(file.read(LEDGER_PATH)) } else { [] }
-
-fn remember(rs: [Remembered]) : Unit / File {
-  let was = if file.exists(LEDGER_PATH) { file.read(LEDGER_PATH) } else { "" }
-  file.write(LEDGER_PATH, was ++ join(rs | line_of, "\n") ++ "\n")
-}
 
 # One wekufe in full: what it is, what came of it, and what came of it
 # before. A wekufe nobody has cast is not a wekufe kalku knows.
@@ -766,6 +758,7 @@ fn measured_for(
     Ok(cfg) -> match declared_equivalents(root_of(c)) {
       Err(why) -> refused(id, why)
       Ok(declared) -> as_agent(
+        root_of(c),
         id,
         with_mailbox {
           alone(() => untold(() => measure(asking_at(cfg, root_of(c), c.wekufe, declared))))
@@ -792,6 +785,7 @@ fn recast_for(
         match declared_equivalents(root_of(c)) {
           Err(why) -> refused(id, why)
           Ok(declared) -> as_agent(
+            root_of(c),
             id,
             with_mailbox {
               alone(
@@ -852,9 +846,12 @@ fn proposal_written(
 
 # The agent format is what a host hands an agent: one line per survivor,
 # everything needed to act on it, and a summary.
-fn as_agent(id: Option[Int], found: Found) : String / File = match found.report {
-  None -> refused(id, found.failure.unwrap_or("nothing measured"))
-  Some(r) -> answered(id, agent(r, of_files(sources_of(r))))
+fn as_agent(root: String, id: Option[Int], found: Found) : String / File {
+  remember_in(root, found.cast)
+  match found.report {
+    None -> refused(id, found.failure.unwrap_or("nothing measured"))
+    Some(r) -> answered(id, agent(r, of_files(sources_of(r))))
+  }
 }
 
 fn narrowed(
@@ -865,11 +862,6 @@ fn narrowed(
 ) : Asking / Env = Asking {
   ...asking_at(cfg, root, uniq(sites | (.file)), declared),
   only: sites | (.site_id)
-}
-
-fn ledger_in(root: String) : [Remembered] / File {
-  let path = "#{root}/#{LEDGER_PATH}"
-  if file.exists(path) { read_all(file.read(path)) } else { [] }
 }
 
 fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File {
