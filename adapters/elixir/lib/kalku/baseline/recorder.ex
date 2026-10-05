@@ -28,6 +28,12 @@ defmodule Kalku.Baseline.Recorder do
   @impl true
   def handle_cast({:test_finished, %ExUnit.Test{} = test}, state) do
     if ran?(test), do: Collector.record(record(test), [])
+    Kalku.Strays.sweep()
+    {:noreply, state}
+  end
+
+  def handle_cast({:suite_finished, _times}, state) do
+    Kalku.Strays.sweep()
     {:noreply, state}
   end
 
