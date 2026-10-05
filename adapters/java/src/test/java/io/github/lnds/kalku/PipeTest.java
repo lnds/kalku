@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -44,8 +45,12 @@ class PipeTest {
     builder.environment().put("LC_ALL", "C");
     builder.environment().remove("LANG");
     Process process = builder.start();
+    // A summoner that turns the runtime away exits without reading: writing to it then fails,
+    // or does not, as the scheduler has it. What it said and how it exited is what is judged.
     try (OutputStream in = process.getOutputStream()) {
       in.write((String.join("\n", requests) + "\n").getBytes(StandardCharsets.UTF_8));
+    } catch (IOException gone) {
+      // Nothing was listening.
     }
     Ran ran = new Ran();
     Thread errors =
