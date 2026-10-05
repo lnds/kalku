@@ -52,7 +52,7 @@ defmodule Kalku.KalkuCase do
   @doc "The body of the first reply of this type, or a failure saying what came instead."
   def reply(lines, type) do
     lines
-    |> Enum.map(&JSON.decode/1)
+    |> Enum.map(&Kalku.Json.decode/1)
     |> Enum.find_value(fn
       {:ok, %{"type" => ^type} = body} -> body
       _ -> nil
@@ -68,7 +68,7 @@ defmodule Kalku.KalkuCase do
 
   @doc "A `hello` naming this reni."
   def hello(reni, root \\ ".") do
-    JSON.encode!(%{
+    Kalku.Json.encode(%{
       "type" => "hello",
       "id" => 1,
       "protocol" => 1,

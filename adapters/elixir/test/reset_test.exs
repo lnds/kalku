@@ -24,7 +24,10 @@ defmodule Kalku.ResetTest do
       ])
 
     casts =
-      for line <- lines, {:ok, %{"wekufe" => w} = d} <- [JSON.decode(line)], into: %{}, do: {w, d}
+      for line <- lines,
+          {:ok, %{"wekufe" => w} = d} <- [Kalku.Json.decode(line)],
+          into: %{},
+          do: {w, d}
 
     # The wekufe changed application env, and the kalku noticed.
     assert casts["dirtier"]["dirty"] == true
@@ -65,7 +68,7 @@ defmodule Kalku.ResetTest do
   end
 
   defp cast(wekufe, id, {from, to}, replacement, tests) do
-    JSON.encode!(%{
+    Kalku.Json.encode(%{
       "type" => "cast",
       "id" => id,
       "wekufe" => wekufe,

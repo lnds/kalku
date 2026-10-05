@@ -214,7 +214,7 @@ defmodule Kalku.Baseline do
 
   defp coverage_field(entries, opts) do
     limit = Keyword.get(opts, :inline_limit_bytes, 65_536)
-    encoded = JSON.encode!(entries)
+    encoded = Kalku.Json.encode(entries)
 
     if byte_size(encoded) <= limit do
       %{"coverage" => entries}

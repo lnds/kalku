@@ -25,9 +25,10 @@ defmodule Kalku.Arms do
   def clauses(_node, _ctx, _src), do: []
 
   @doc "Arm candidates for the clauses of multi-clause functions in a module body."
-  def def_clauses(block, ctx, src) do
+  def def_clauses(block, closing, ctx, src) do
     block
     |> body_exprs()
+    |> ending_last(closing, src)
     |> Enum.filter(&match?({def, _, [_ | _]} when def in @defs, &1))
     |> Enum.group_by(&signature/1)
     |> Enum.flat_map(fn {{name, arity}, defs} ->
@@ -88,6 +89,48 @@ defmodule Kalku.Arms do
     last = get_in(meta, [:end, :line]) || get_in(meta, [:end_of_expression, :line])
     if last, do: {meta[:line], last}
   end
+
+  # Before Elixir 1.18 the parser does not say where the last expression of
+  # a block ends. It ends on the last line before the block's `end` that is
+  # neither blank nor a comment. A line inside a string can look like either,
+  # so the claim is checked: the expression ends on the first line from
+  # there on at which it parses on its own.
+  defp ending_last(exprs, closing, src) when is_integer(closing) do
+    case List.pop_at(exprs, -1) do
+      {{name, meta, args} = last, rest} when is_list(meta) ->
+        if ends?(meta), do: exprs, else: rest ++ [{name, ended(last, closing, src) ++ meta, args}]
+
+      _ ->
+        exprs
+    end
+  end
+
+  defp ending_last(exprs, _closing, _src), do: exprs
+
+  defp ends?(meta), do: Keyword.has_key?(meta, :end) or Keyword.has_key?(meta, :end_of_expression)
+
+  defp ended({_, meta, _}, closing, src) do
+    first = meta[:line]
+    from = last_code_line(src, closing - 1)
+
+    last =
+      is_integer(first) and Enum.find(max(from, first)..(closing - 1)//1, &whole?(src, first, &1))
+
+    if last, do: [end_of_expression: [line: last]], else: []
+  end
+
+  defp last_code_line(src, n) when n >= 1 do
+    case String.trim(Source.line(src, n)) do
+      "" -> last_code_line(src, n - 1)
+      "#" <> _ -> last_code_line(src, n - 1)
+      _ -> n
+    end
+  end
+
+  defp last_code_line(_src, _n), do: 0
+
+  defp whole?(src, first, last),
+    do: Source.parses?(Enum.map_join(first..last, "\n", &Source.line(src, &1)))
 
   defp signature({_, _, [head | _]}) do
     case head do

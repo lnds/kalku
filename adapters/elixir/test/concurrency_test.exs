@@ -7,7 +7,7 @@ defmodule Kalku.ConcurrencyTest do
     lines =
       summon(reni, "concurrent", [
         request("prepare", 2),
-        JSON.encode!(%{
+        Kalku.Json.encode(%{
           "type" => "sites",
           "id" => 3,
           "files" => ["lib/concurrent.ex"],

@@ -90,7 +90,7 @@ defmodule Kalku.BaselineTest do
 
       [first, second] =
         lines
-        |> Enum.map(&JSON.decode!/1)
+        |> Enum.map(&Kalku.Json.decode!/1)
         |> Enum.filter(&(&1["type"] == "baseline_done"))
 
       assert first["status"] == "green"
@@ -151,7 +151,10 @@ defmodule Kalku.BaselineTest do
     # A megabyte of JSON per worker is a cost the protocol lets us decline,
     # so past the limit the coverage goes to a file in the reni instead.
     test "coverage larger than the inline limit is spilled into the reni", %{reni: reni} do
-      hello = JSON.decode!(hello(reni)) |> Map.put("inline_limit_bytes", 10) |> JSON.encode!()
+      hello =
+        Kalku.Json.decode!(hello(reni))
+        |> Map.put("inline_limit_bytes", 10)
+        |> Kalku.Json.encode()
 
       done =
         reply(
@@ -166,7 +169,7 @@ defmodule Kalku.BaselineTest do
 
       refute Map.has_key?(done, "coverage")
       assert String.starts_with?(done["coverage_path"], reni)
-      assert done["coverage_path"] |> File.read!() |> JSON.decode!() |> length() > 3
+      assert done["coverage_path"] |> File.read!() |> Kalku.Json.decode!() |> length() > 3
     end
 
     test "baseline before prepare is refused, and not fatally", %{reni: reni} do
