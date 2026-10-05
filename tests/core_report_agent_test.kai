@@ -85,6 +85,7 @@ test "a survivor carries what it takes to close the hole" {
   assert field(line, "original") == JStr(">=")
   assert field(line, "replacement") == JStr(">")
   assert field(line, "covering_tests") == JArr([JStr("test/parser_test.exs:18")])
+  assert field(line, "covering_count") == JNum(1)
   assert has(line, "boundary where the two sides are equal")
 }
 
@@ -111,6 +112,7 @@ test "what the kalku does not know is absent, never null" {
   assert not has(line, "enclosing")
   assert not has(line, "original")
   assert not has(line, "covering_tests")
+  assert not has(line, "covering_count")
   assert not has(line, "context")
   assert field(line, "hint") != JNull
 }
@@ -233,3 +235,17 @@ test "a file that was not searched travels as a line of its own, and in the JSON
 }
 
 fn has_text(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+# A line the whole suite reaches is covered by every test in it. With a
+# thousand tests that was tens of kilobytes per survivor, and a run of twenty
+# came to more than a host takes as one tool result.
+test "an agent gets the first few covering tests and how many there are in all" {
+  let many = enumerate(repeat(0, 1200)) | (i => "tests/t_#{i.fst}.rs::t")
+  let line =
+    first_line(agent(report_of([survivor("lib/parser.ex", 2, Compare, many)], one()), lines_of))
+
+  assert field(line, "covering_tests")
+    == JArr(take(many, COVERING_SHOWN) | (t => JStr(t)))
+  assert field(line, "covering_count") == JNum(1200)
+  assert length(line) < 2000
+}
