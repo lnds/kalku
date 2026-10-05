@@ -45,6 +45,13 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
+      # The Java kalku is one file, a script with its jar behind it, compiled for
+      # Java 11 whatever JDK builds it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - run: make dist
 
       # A binary that only runs on the machine that built it is not a
@@ -56,6 +63,7 @@ jobs:
           "$RUNNER_TEMP/kalku" info spells | head -1
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-rust" | grep -q '"type":"bye"'
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-python" | grep -q '"type":"bye"'
+          printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-java" | grep -q '"type":"bye"'
 
       - name: Check the tarball is named for this platform
         run: ls dist/kalku-*-${{ matrix.platform }}.tar.gz

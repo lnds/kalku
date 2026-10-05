@@ -283,6 +283,34 @@ test "a Python project is told by any of the files that mean Python, and runs in
   assert starts_with(plan.summoner, "#!/bin/sh")
 }
 
+test "a Maven project is Java, and is summoned on its own JDK with nothing built on the way up" {
+  assert detect(["pom.xml", "src", "README.md"]).map(.language) == Ok("java")
+  let plan = plan_for(of("java"), "/r")
+  assert has(plan.config, "language = \"java\"")
+  assert has(plan.summoner, "exec kalku-java \"$@\"")
+  assert has(plan.summoner, "kalku-java is not on PATH")
+  assert has(plan.summoner, "KALKU_JAVA")
+  assert not has(plan.summoner, "mvn ")
+  assert summon_is_current(plan.summoner)
+  assert starts_with(plan.summoner, "#!/bin/sh")
+  assert plan.dependency == None
+}
+
+# Maven keeps the suite apart by directory, and a test class is known by its name too.
+test "Java sources are .java files outside the suite, which is named by directory or by suffix" {
+  let java = of("java")
+  assert is_source_of(java, "src/main/java/com/acme/Parser.java")
+  assert is_source_of(java, "src/main/java/com/acme/Testing.java")
+  assert not is_source_of(java, "src/test/java/com/acme/ParserTest.java")
+  assert not is_source_of(java, "src/test/java/com/acme/Fixtures.java")
+  assert not is_source_of(java, "src/main/java/com/acme/ParserTest.java")
+  assert not is_source_of(java, "src/main/java/com/acme/ParserIT.java")
+  assert not is_source_of(java, "src/main/resources/app.properties")
+  assert not is_source_of(java, "target/generated-sources/annotations/com/acme/Gen.java")
+  assert is_test_of(java, "src/test/java/com/acme/ParserTest.java")
+  assert not is_test_of(java, "src/main/java/com/acme/Parser.java")
+}
+
 # A Rust crate that ships Python bindings has both: asked, not guessed.
 test "a pyproject.toml beside a Cargo.toml is ambiguous" {
   assert detect(["Cargo.toml", "pyproject.toml"]) == Err(Ambiguous(["rust", "python"]))

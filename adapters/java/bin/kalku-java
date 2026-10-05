@@ -48,10 +48,13 @@ if [ "$major" -lt 11 ]; then
   exit 1
 fi
 
-# Shipped, the jar sits beside this script. In the repository it is what Maven compiled
-# last, which is the classes: a jar there may be older than they are.
-if [ -f "$here/kalku-java.jar" ]; then
-  classes=$here/kalku-java.jar
+# Shipped, this file is the kalku: its classes are a jar that follows the last line of this
+# script, which a JVM reads from the end and a shell never reaches. `make` writes `yes`
+# below when it puts the two together. In the repository the classes are what Maven compiled
+# last: a jar there may be older than they are.
+SELF_CONTAINED=no
+if [ "$SELF_CONTAINED" = yes ]; then
+  classes=$0
 elif [ -d "$here/../target/classes" ]; then
   classes=$here/../target/classes
 elif [ -f "$here/../target/kalku-java.jar" ]; then
@@ -62,3 +65,4 @@ else
 fi
 
 exec "$java" -cp "$classes" io.github.lnds.kalku.Main
+exit 127

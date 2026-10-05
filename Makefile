@@ -38,6 +38,13 @@ PYKALKU     := adapters/python/dist/kalku-python
 PYKALKU_SRC := $(wildcard adapters/python/src/kalku_python/*.py)
 PYTHON      ?= python3
 
+# The Java kalku: the summoning script and the jar in one file, so that it is found the way
+# the others are, by its one name on the PATH. The script is the head of the file and the jar
+# its tail: a shell stops at `exec`, and a JVM reads a jar from its end.
+JKALKU     := adapters/java/dist/kalku-java
+JKALKU_SRC := $(shell find adapters/java/src/main -type f) adapters/java/pom.xml adapters/java/bin/kalku-java
+MVN        ?= mvn
+
 # The scripted kalku the orchestrator tests talk to, built as its own package.
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
@@ -92,6 +99,13 @@ $(PYKALKU): $(PYKALKU_SRC)
 	mkdir -p adapters/python/dist/app/kalku_python
 	cp $(PYKALKU_SRC) adapters/python/dist/app/kalku_python/
 	$(PYTHON) -m zipapp adapters/python/dist/app -m "kalku_python.__main__:main" -p "/usr/bin/env python3" -o $@
+
+$(JKALKU): $(JKALKU_SRC)
+	cd adapters/java && $(MVN) -B -q -DskipTests package
+	@mkdir -p adapters/java/dist
+	sed 's/^SELF_CONTAINED=no$$/SELF_CONTAINED=yes/' adapters/java/bin/kalku-java > $@
+	cat adapters/java/target/kalku-java.jar >> $@
+	chmod +x $@
 
 # The Elixir kalku joins once its mix project exists.
 test-elixir:
@@ -158,23 +172,24 @@ self-mutate:
 # What a release ships: both binaries a user summons, side by side with
 # the licences they are shipped under. Flat, so a package manager can
 # install the tarball's contents without knowing this layout.
-dist: build $(KKALKU) $(RKALKU) $(PYKALKU)
+dist: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU)
 	@rm -rf $(DIST) && mkdir -p $(DIST)
-	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
-	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python LICENSE-MIT LICENSE-APACHE README.md
-	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/LICENSE-* $(DIST)/README.md
+	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
+	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python kalku-java LICENSE-MIT LICENSE-APACHE README.md
+	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/kalku-java $(DIST)/LICENSE-* $(DIST)/README.md
 	@cd $(DIST) && (command -v sha256sum >/dev/null && sha256sum $(notdir $(TARBALL)) \
 	  || shasum -a 256 $(notdir $(TARBALL))) > $(notdir $(TARBALL)).sha256
 	@echo "built $(TARBALL)"
 
-install: build $(KKALKU) $(RKALKU) $(PYKALKU)
+install: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(DESTDIR)$(PREFIX)/bin/
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python
+	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python $(DESTDIR)$(PREFIX)/bin/kalku-java
 
 clean:
 	rm -rf $(BUILD) $(DIST) .kai-cache
 	rm -f $(FAKE) $(KKALKU)
 	rm -rf adapters/kaikai/fixtures/reni
+	rm -rf adapters/java/dist adapters/java/target

@@ -45,7 +45,7 @@ jobs:
             python:
               - '{adapters/python/**,docs/protocol/fixtures/**}'
             java:
-              - '{adapters/java/**,docs/protocol/fixtures/**}'
+              - '{adapters/java/**,docs/protocol/fixtures/**,Makefile}'
       - id: project
         run: |
           echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
@@ -176,6 +176,13 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
       - run: mvn -B -q verify
+      # What a release ships is one file, the summoning script with the jar behind it. It has
+      # to start on every JDK the kalku runs on.
+      - name: The shipped file answers
+        working-directory: .
+        run: |
+          make adapters/java/dist/kalku-java
+          printf '{"type":"shutdown","id":1}\n' | adapters/java/dist/kalku-java | grep -q '"type":"bye"'
 
   # The one required check: green when every job that ran passed or was skipped.
   ci-ok:

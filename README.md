@@ -32,7 +32,7 @@ macOS on Apple Silicon and Linux on x86_64 with GLIBC 2.38 or newer —
 the platforms [kaikai](https://kaikai-lang.org/) publishes a
 toolchain for, and its floor is kalku's floor. The
 same tarballs are on every [release](https://github.com/lnds/kalku/releases):
-unpack it and put `kalku`, `kalku-kaikai`, `kalku-rust` and `kalku-python` on your `PATH`.
+unpack it and put `kalku`, `kalku-kaikai`, `kalku-rust`, `kalku-python` and `kalku-java` on your `PATH`.
 
 From source, with kaikai installed (the version in `.kaikai-version`):
 
@@ -214,7 +214,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | kaikai | native (thin) | built on `kai mutate`; this is how kalku tests itself |
 | Rust | native | sites come from `syn`, Rust's own parser; the **2024 edition only** (Rust 1.85 or later). It finds sites and casts them, answers `abort` in place, and selects tests by coverage where the LLVM tools are |
 | Python | native | sites come from `ast` and `tokenize`, Python's own parser; it runs in the **project's own interpreter** (3.12 or later) with the standard library only. Every run of the suite is a forked child, so `abort` is a kill and a wekufe never leaks; coverage per test comes from `sys.monitoring`; the project's own pytest options are kept |
-| Java | native | sites come from `javac`, the project's own compiler, through its public tree API; it runs on the **project's own JDK** (11 or later) with no dependencies. It builds the project with Maven in the reni, compiles each wekufe in memory, and runs the tests in a JVM of their own, on JUnit 5 or later; one module only, and nothing launches it yet |
+| Java | native | sites come from `javac`, the project's own compiler, through its public tree API; it runs on the **project's own JDK** (11 or later) with no dependencies. It builds the project with Maven in the reni, compiles each wekufe in memory, and runs the tests in a JVM of their own, on JUnit 5 or later. Maven, one module only |
 | others | driver | wraps an existing framework (Stryker, …), normalizes its results, and recomputes the score |
 
 ## What works today
@@ -241,7 +241,8 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **Python kalku** — sites from `ast`, `prepare`/`baseline`/`cast` in forked children, `abort`, per-test coverage with `sys.monitoring`, `kalku init`, shipped in the release | done |
 | **Java kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `javac`, behind the kalku protocol, on Java 11, 17, 21 and 25 | done: finds sites |
 | Java kalku: `prepare`, `baseline` and `cast` in the reni for a single-module Maven project on JUnit 5 or later | done |
-| Java kalku: `kalku init` for Maven, shipped in the release; Gradle; several modules; `abort`; per-test coverage | not yet |
+| Java kalku: `kalku init` for Maven projects, shipped in the release | done |
+| Java kalku: Gradle; several modules; JUnit 4 or TestNG alone; `abort`; per-test coverage | not yet |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |

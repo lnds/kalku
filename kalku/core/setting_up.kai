@@ -141,6 +141,17 @@ pub fn catalogue() : [Known] = [
       ".pytest_cache",
       ".eggs"
     ]
+  },
+  Known {
+    language: "java",
+    marker: "pom.xml",
+    also: [],
+    summon: java_summoner(),
+    sources: [".java"],
+    tests: ["test", "tests", "integrationTest", "testFixtures", "androidTest"],
+    test_prefixes: [],
+    test_suffixes: ["Test.java", "Tests.java", "IT.java"],
+    ignored: ["target", ".git", ".idea", ".mvn", "node_modules"]
   }
 ]
 
@@ -345,6 +356,34 @@ set -eu
 #{reni_off()}
 
 exec kalku-rust "$@"
+"""
+
+# The Java kalku runs on the project's own JDK and reads sources with that
+# JDK's own compiler, so which Java it is started with matters: the one in
+# `JAVA_HOME`, then `java` on the PATH, unless `KALKU_JAVA` names another.
+# The kalku picks it and turns away one that is too old; nothing is built
+# here, Maven runs inside `prepare`.
+fn java_summoner() : String = """
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the Java kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol. Nothing is built here: Maven runs
+# inside `prepare`, in a copy of this project in the reni, with its output
+# in a file there.
+#
+# The kalku runs on this project's own JDK, Java 11 or later: the one in
+# JAVA_HOME, then `java` on the PATH. Set KALKU_JAVA to choose another,
+# and KALKU_MAVEN to choose the Maven that builds the copy; without it the
+# project's own wrapper (`mvnw`) is used, then `mvn` on the PATH.
+set -eu
+#{reni_off()}
+
+command -v kalku-java >/dev/null || {
+  echo "kalku: kalku-java is not on PATH; put it beside kalku, as the release does" >&2
+  exit 127
+}
+exec kalku-java "$@"
 """
 
 # A kalku runs inside the project's own runtime, so the project has to
