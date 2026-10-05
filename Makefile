@@ -42,7 +42,7 @@ PYTHON      ?= python3
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir test-rust test-python fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
+.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
 
 all: build
 
@@ -52,7 +52,7 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 	@mkdir -p $(BUILD)
 	$(KAI) build . -o $@
 
-test: test-kaikai test-elixir test-rust test-python
+test: test-kaikai test-elixir test-rust test-python test-java
 
 test-kaikai: $(FAKE) $(KKALKU) properties
 	$(KAI) test
@@ -114,6 +114,14 @@ test-python:
 	  cd adapters/python && $(PYTHON) -m pytest -q; \
 	else echo "test-python: skipped (no adapters/python, or no pytest for $(PYTHON))"; fi
 
+# The Java kalku, held to the compiler's own lints and its tests, on whatever
+# JDK Maven finds. A machine without Maven skips it; CI runs it on every
+# long-term JDK from 11 on.
+test-java:
+	@if [ -f adapters/java/pom.xml ] && command -v mvn >/dev/null 2>&1; then \
+	  cd adapters/java && mvn -B -q verify; \
+	else echo "test-java: skipped (no adapters/java/pom.xml, or no mvn)"; fi
+
 fmt:
 	$(KAI) fmt .
 
@@ -131,7 +139,7 @@ km:
 # without waiting for the tests.
 ci: fmt-check lint build test-kaikai km
 
-check: ci test-elixir test-rust test-python
+check: ci test-elixir test-rust test-python test-java
 
 # kalku on its own sources, through its own kalku: the project's claim,
 # run rather than asserted. Measured by the last release, pinned in
