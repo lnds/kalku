@@ -10,4 +10,4 @@ own interpreter, next to the project's own packages, and must not choose
 which version of anything they get.
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"

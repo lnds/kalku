@@ -1,3 +1,11 @@
+## v0.8.0 (2026-10-05)
+
+### Added
+
+- **java**: `kalku init` knows a Maven project, and the Java kalku ships in the release (#178)
+- **java**: prepare, baseline and cast for a Maven project (#177)
+- **java**: a native Java kalku that finds sites (#176)
+
 ## v0.7.0 (2026-10-05)
 
 ### Added
