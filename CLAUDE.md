@@ -7,6 +7,7 @@ Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 ## Project language
 
 - Code, commit messages, PR titles/bodies, and all documentation are **English only**, even when the briefing is in Spanish.
+- `LEEME.md` is the one exception: the README in Spanish. A change to `README.md` carries the same change to `LEEME.md`.
 - Conversation with the user (Spanish) is not documentation and does not appear in the repo.
 
 ## The shape of the system
