@@ -1,3 +1,9 @@
+## v0.6.1 (2026-10-04)
+
+### Fixed
+
+- **orchestrator**: a run that stops short says so, a healthy kalku's last words kill nothing, and an interrupt reaches the run (#156)
+
 ## v0.6.0 (2026-10-04)
 
 ### Added

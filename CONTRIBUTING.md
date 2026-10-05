@@ -19,7 +19,7 @@ here, human or agent.
 
 ## Building and testing
 
-You need [kaikai](https://github.com/lnds/kaikai) at the version in
+You need [kaikai](https://kaikai-lang.org/) at the version in
 `.kaikai-version`, plus [`km`](https://github.com/lnds/kimun) and `jq`
 for the quality gate. Elixir 1.18 and OTP 27 for the Elixir kalku.
 
