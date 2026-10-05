@@ -1,3 +1,13 @@
+## v0.7.0 (2026-10-05)
+
+### Added
+
+- **elixir**: the Elixir kalku runs on Elixir 1.16 and OTP 26 (#171)
+
+### Fixed
+
+- **elixir**: a suite that mocks under cover leaves no file in the project (#173)
+
 ## v0.6.2 (2026-10-05)
 
 ### Fixed
