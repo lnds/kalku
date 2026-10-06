@@ -757,6 +757,120 @@ class CastTest {
     }
   }
 
+  // ---- JUnit 4 and TestNG --------------------------------------------------------
+
+  // `calc`'s own sources, with the build and the tests of another fixture in place of its own.
+  private static Path testedWith(String fixture, String as) throws IOException {
+    Path project = temp.resolve(as);
+    copy(PROJECTS.resolve("calc").resolve("src").resolve("main"), project.resolve("src").resolve("main"));
+    copy(PROJECTS.resolve(fixture), project);
+    return project;
+  }
+
+  // The outcome of every site of `calc` under this project's tests, cast against the tests
+  // coverage names for it; and what the baseline said, for whoever wants to look.
+  private static int killedIn(Path project, List<String> expected) throws Exception {
+    List<Map<?, ?>> said =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(CALC, LIMITS), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+    List<String> ran = new ArrayList<>();
+    for (Object test : (List<?>) done.get("tests")) {
+      ran.add((String) ((Map<?, ?>) test).get("test"));
+    }
+    Collections.sort(ran);
+    assertEquals(expected, ran);
+    Map<String, List<?>> by = reaching(done);
+    List<String> casts = new ArrayList<>(Arrays.asList(hello(project), "{\"type\":\"prepare\",\"id\":2}"));
+    List<Map<?, ?>> found = new ArrayList<>();
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      Map<?, ?> site = (Map<?, ?>) each;
+      Map<?, ?> start = (Map<?, ?>) ((Map<?, ?>) site.get("span")).get("start");
+      List<String> names = new ArrayList<>();
+      for (Object test : by.get(site.get("file") + ":" + start.get("line"))) {
+        names.add((String) test);
+      }
+      found.add(site);
+      casts.add(castOf(site, names));
+    }
+    assertEquals(14, found.size());
+    List<Map<?, ?>> outcomes = ask(project, casts.toArray(new String[0]));
+    int killed = 0;
+    for (int i = 0; i < found.size(); i++) {
+      assertEquals("cast_done", outcomes.get(i + 2).get("type"), found.get(i) + " " + outcomes.get(i + 2));
+      killed += "killed".equals(outcomes.get(i + 2).get("outcome")) ? 1 : 0;
+    }
+    return killed;
+  }
+
+  // Tests written for JUnit 4, in a project that has nothing of the JUnit Platform. The
+  // engine that runs them on it is fetched for the project, and the same code under the same
+  // tests, written the older way, gives the same outcomes. One of the test classes is JUnit
+  // 4's way of running a test with several sets of values: it is one test, as a method is.
+  @Test
+  void testsWrittenForJUnit4AreRunThroughItsEngine() throws Exception {
+    int killed =
+        killedIn(
+            testedWith("junit4", "with-junit4"),
+            Arrays.asList(
+                "fx.AddsTest#adds()",
+                "fx.CalcTest#clampsToTheLimit()",
+                "fx.CalcTest#tenIsBigAndNineIsNot()",
+                "fx.CalcTest#theBuildsOwnSettingsReachTheTests()",
+                "fx.CalcTest#zeroHasItsOwnLabel()"));
+    assertEquals(9, killed);
+  }
+
+  @Test
+  void testsWrittenForTestNGAreRunThroughItsEngine() throws Exception {
+    int killed =
+        killedIn(
+            testedWith("testng", "with-testng"),
+            Arrays.asList(
+                "fx.CalcTest#adds(int, int, int)",
+                "fx.CalcTest#clampsToTheLimit()",
+                "fx.CalcTest#tenIsBigAndNineIsNot()",
+                "fx.CalcTest#theBuildsOwnSettingsReachTheTests()",
+                "fx.CalcTest#zeroHasItsOwnLabel()"));
+    assertEquals(9, killed);
+  }
+
+  // And built by Gradle, which runs JUnit 4 when a build does not say otherwise.
+  @Test
+  void aGradleBuildThatTestsWithJUnit4IsMeasuredToo() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
+    Path project = testedWith("junit4", "gradle-junit4");
+    Files.delete(project.resolve("pom.xml"));
+    for (String file : Arrays.asList("build.gradle", "settings.gradle")) {
+      Files.copy(PROJECTS.resolve("gradle").resolve("junit4").resolve(file), project.resolve(file));
+    }
+    int killed =
+        killedIn(
+            project,
+            Arrays.asList(
+                "fx.AddsTest#adds()",
+                "fx.CalcTest#clampsToTheLimit()",
+                "fx.CalcTest#tenIsBigAndNineIsNot()",
+                "fx.CalcTest#theBuildsOwnSettingsReachTheTests()",
+                "fx.CalcTest#zeroHasItsOwnLabel()"));
+    assertEquals(9, killed);
+  }
+
+  // The engine that runs JUnit 4 needs 4.12. An older one is said, with its number.
+  @Test
+  void aJUnit4TooOldForItsEngineIsRefusedByItsVersion() throws Exception {
+    Path project = testedWith("junit4", "with-junit-4-11");
+    Path pom = project.resolve("pom.xml");
+    String text = new String(Files.readAllBytes(pom), StandardCharsets.UTF_8);
+    assertTrue(text.contains("<version>4.13.2</version>"));
+    Files.write(pom, text.replace("<version>4.13.2</version>", "<version>4.11</version>").getBytes(StandardCharsets.UTF_8));
+    Map<?, ?> said = ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}").get(1);
+    assertEquals("prepare_failed", said.get("code"), said.toString());
+    assertTrue(((String) said.get("message")).contains("JUnit 4.11"), said.toString());
+    assertTrue(((String) said.get("message")).contains("4.12 or later"), said.toString());
+  }
+
   // ---- what is not a verdict ---------------------------------------------------
 
   // A JVM that ends before its tests do did not fail an assertion. `System.exit` is the

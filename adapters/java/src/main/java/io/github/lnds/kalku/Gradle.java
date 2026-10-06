@@ -71,6 +71,9 @@ final class Gradle {
           init.toString(),
           "-Pkalku.out=" + described,
           "-Pkalku.jacoco=" + Maven.JACOCO,
+          "-Pkalku.bom=" + Maven.JUNIT_BOM,
+          "-Pkalku.vintage=" + Maven.VINTAGE,
+          "-Pkalku.testng=" + Maven.TESTNG_ENGINE,
           "kalkuDescribe");
       Files.write(builtBy, jdk.getBytes(StandardCharsets.UTF_8));
     }
@@ -227,6 +230,17 @@ final class Gradle {
     if (said.containsKey("jar")) {
       jars.put(build, Paths.get(one(said, "jar")));
     }
+    // Tests written for JUnit 4 or for TestNG: Gradle fetched the engine that runs them on the
+    // JUnit Platform, and the launcher of the same version.
+    if (build.platform == null && said.containsKey("engine")) {
+      Maven.engineFor(build.libraries, called);
+      List<Path> fetched = new ArrayList<>();
+      for (String jar : said.get("engine")) {
+        fetched.add(Paths.get(jar));
+      }
+      build.launcher = Maven.withEngine(build.libraries, fetched);
+      build.platform = Maven.PLATFORM;
+    }
 
     // The tests have to run on the JDK this kalku runs on, which is the one it compiles with.
     if (said.containsKey("javaHome")) {
@@ -245,11 +259,9 @@ final class Gradle {
     boolean hasTests = !Project.sources(java.util.Collections.singletonList(build.testSources)).isEmpty();
     if (hasTests && (build.platform == null || build.launcher == null)) {
       throw new Maven.Failed(
-          "no JUnit Platform engine is among the test dependencies of "
+          "none of JUnit 5, JUnit 4 and TestNG is among the test dependencies of "
               + called
-              + "; kalku runs tests through the JUnit Platform (JUnit 5 or later, "
-              + "`useJUnitPlatform()` in Gradle), and a project with JUnit 4 or TestNG alone is "
-              + "not measured yet");
+              + ", and kalku does not know another way to run its tests");
     }
     if (!hasTests) {
       build.platform = null;

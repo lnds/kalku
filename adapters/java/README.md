@@ -35,7 +35,8 @@ JDK, with the kalku's jar behind it.
   wekufe in a constant is compiled into every class and test that uses it.
 - **A test is a method**, `com.acme.ParserTest#reads(int, String)`, run through
   the JUnit Platform. The runner is compiled in the reni against the JUnit the
-  project has, from 5.4 to 6.
+  project has, from 5.4 to 6, or against the one fetched for a project on
+  JUnit 4 or TestNG.
 
 - **`abort`** ends the JVM the tests run in and everything it started; the
   kalku stays up for the next cast.
@@ -55,7 +56,9 @@ JDK, with the kalku's jar behind it.
   and a script added from outside the project; without its daemon. A build
   whose tests run on another JDK through a toolchain is refused by name.
 
-Not yet: JUnit 4 or TestNG alone.
+- **JUnit 4 and TestNG**: a project that tests with either, and has nothing of
+  the JUnit Platform, gets the engine that runs its framework on it fetched
+  into the reni. JUnit 4.12 or later.
 
 ## Requirements
 
@@ -90,7 +93,9 @@ class-version error on a closed pipe tells nobody what to do.
 `src/test/projects/` holds whole Maven projects written so that the outcome of
 each wekufe is known: `calc`; `generated`, part of whose code an annotation
 processor writes; `tables`, whose class fills a table when it is first used;
-and `shop`, two modules of which one uses the other.
+and `shop`, three modules of which one uses another and one is nothing but
+tests. `junit4` and `testng` are `calc` under tests written for those, and
+`gradle/` holds Gradle builds of the same sources.
 
 `src/test/fixtures/<spell>/` holds sources written a particular way on purpose,
 each beside the exact sites it must give (`*.sites.ndjson`). After reviewing a
