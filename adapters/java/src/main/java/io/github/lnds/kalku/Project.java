@@ -52,7 +52,9 @@ final class Project {
           @Override
           public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs)
               throws IOException {
-            if (dir.equals(inside) || (top.equals(dir.getParent()) && skipped(dir))) {
+            if (dir.equals(inside)
+                || (top.equals(dir.getParent()) && skipped(dir))
+                || output(dir)) {
               return FileVisitResult.SKIP_SUBTREE;
             }
             Path to = copy.resolve(top.relativize(dir).toString());
@@ -112,7 +114,26 @@ final class Project {
   }
 
   private static boolean built(Path copy, Path p) {
-    return NOT_COPIED.contains(copy.relativize(p).getName(0).toString());
+    if (NOT_COPIED.contains(copy.relativize(p).getName(0).toString())) {
+      return true;
+    }
+    for (Path at = p; at != null && !at.equals(copy); at = at.getParent()) {
+      if (output(at)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // What a build wrote: the `target` beside a `pom.xml`, in the project and in each of its
+  // modules. What the user's own build left there is not copied, since a build goes by times
+  // and would trust classes that are older than the sources beside them; and what the build
+  // in the reni left there is not taken away.
+  private static boolean output(Path dir) {
+    return dir.getFileName() != null
+        && dir.getFileName().toString().equals("target")
+        && dir.getParent() != null
+        && Files.isRegularFile(dir.getParent().resolve("pom.xml"));
   }
 
   /** Every {@code .java} file under these directories, in a stable order. */

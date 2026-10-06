@@ -548,6 +548,90 @@ class CastTest {
     assertEquals("killed", cast.get("outcome"), cast.toString());
   }
 
+  // ---- several modules ---------------------------------------------------------
+
+  // `shop` is two modules: `core`, and `app`, which uses it. What `core` computes for a
+  // discount only `app`'s tests look at, and `app` holds a copy of a constant of `core`'s.
+  @Test
+  void aSiteIsJudgedByTheTestsOfEveryModuleThatUsesIts() throws Exception {
+    Path shop = temp.resolve("shop");
+    copy(PROJECTS.resolve("shop"), shop);
+    // What the user's own build left in a module is not what is measured.
+    Path stale = shop.resolve("core").resolve("target").resolve("classes").resolve("stale.marker");
+    Files.createDirectories(stale.getParent());
+    Files.write(stale, new byte[] {1});
+
+    String prices = "core/src/main/java/fx/core/Prices.java";
+    String checkout = "app/src/main/java/fx/app/Checkout.java";
+    List<Map<?, ?>> said =
+        ask(shop, hello(shop), "{\"type\":\"prepare\",\"id\":2}", sitesOf(prices, checkout), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    assertEquals(2L, said.get(1).get("modules"));
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+
+    // A test says which module it is a test of, and its file is where that module keeps it.
+    Map<String, String> files = new LinkedHashMap<>();
+    for (Object each : (List<?>) done.get("tests")) {
+      files.put((String) ((Map<?, ?>) each).get("test"), (String) ((Map<?, ?>) each).get("file"));
+    }
+    Map<String, String> expected = new LinkedHashMap<>();
+    expected.put("core::fx.core.PricesTest#aPriceIsMoreThanNothing()", "core/src/test/java/fx/core/PricesTest.java");
+    expected.put("app::fx.app.CheckoutTest#aHundredShipsFree()", "app/src/test/java/fx/app/CheckoutTest.java");
+    expected.put(
+        "app::fx.app.CheckoutTest#fiftyGetsTheDiscountAndFortyNineDoesNot()",
+        "app/src/test/java/fx/app/CheckoutTest.java");
+    assertEquals(expected, files);
+    List<String> every = new ArrayList<>(files.keySet());
+
+    // A line of `core` that only a test of `app` reaches is credited to that test.
+    Map<String, List<?>> by = reaching(done);
+    assertEquals(
+        Arrays.asList("app::fx.app.CheckoutTest#fiftyGetsTheDiscountAndFortyNineDoesNot()"),
+        by.get(prices + ":10"));
+    assertEquals(Arrays.asList("core::fx.core.PricesTest#aPriceIsMoreThanNothing()"), by.get(prices + ":14"));
+    assertEquals(new java.util.HashSet<>(every), new java.util.HashSet<>(by.get(prices + ":6")));
+
+    List<Map<?, ?>> found = new ArrayList<>();
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      found.add((Map<?, ?>) each);
+    }
+    assertEquals(7, found.size(), found.toString());
+    List<String> selected = new ArrayList<>(Arrays.asList(hello(shop), "{\"type\":\"prepare\",\"id\":2}"));
+    List<String> whole = new ArrayList<>(selected);
+    for (Map<?, ?> site : found) {
+      Map<?, ?> start = (Map<?, ?>) ((Map<?, ?>) site.get("span")).get("start");
+      List<String> names = new ArrayList<>();
+      for (Object test : by.get(site.get("file") + ":" + start.get("line"))) {
+        names.add((String) test);
+      }
+      selected.add(castOf(site, names));
+      whole.add(castOf(site, every));
+    }
+    List<Map<?, ?>> narrow = ask(shop, selected.toArray(new String[0]));
+    List<Map<?, ?>> wide = ask(shop, whole.toArray(new String[0]));
+    for (int i = 0; i < found.size(); i++) {
+      Map<?, ?> site = found.get(i);
+      Map<?, ?> cast = narrow.get(i + 2);
+      // Every site of this project is one a test notices, in its own module or the other.
+      assertEquals("killed", cast.get("outcome"), site + " " + cast);
+      assertEquals("killed", wide.get(i + 2).get("outcome"), site + " " + wide.get(i + 2));
+      if (prices.equals(site.get("file")) && ">=".equals(site.get("original"))) {
+        assertEquals("app::fx.app.CheckoutTest#fiftyGetsTheDiscountAndFortyNineDoesNot()", cast.get("killed_by"));
+      }
+      if ("100".equals(site.get("original"))) {
+        // The constant is `core`'s, and the copy of it that a test notices is in `app`.
+        assertEquals("dependents", site.get("reload"));
+        assertEquals("app::fx.app.CheckoutTest#aHundredShipsFree()", cast.get("killed_by"));
+      }
+    }
+
+    Path built = reni.resolve("shop").resolve("work").resolve("0").resolve("project");
+    assertTrue(Files.isRegularFile(built.resolve("core/target/classes/fx/core/Prices.class")));
+    assertFalse(Files.exists(built.resolve("core/target/classes/stale.marker")));
+    assertFalse(Files.exists(shop.resolve("app").resolve("target")));
+  }
+
   // ---- what is not a verdict ---------------------------------------------------
 
   // A JVM that ends before its tests do did not fail an assertion. `System.exit` is the
@@ -633,7 +717,7 @@ class CastTest {
   }
 
   @Test
-  void aProjectOfSeveralModulesIsRefusedByName() throws Exception {
+  void aProjectWithNoCodeOfItsOwnIsRefusedByName() throws Exception {
     Path reactor = temp.resolve("reactor");
     Files.createDirectories(reactor);
     Files.write(
@@ -644,7 +728,7 @@ class CastTest {
             .getBytes(StandardCharsets.UTF_8));
     Map<?, ?> said = ask(reactor, hello(reactor), "{\"type\":\"prepare\",\"id\":2}").get(1);
     assertEquals("prepare_failed", said.get("code"), said.toString());
-    assertTrue(((String) said.get("message")).contains("several modules"), said.toString());
+    assertTrue(((String) said.get("message")).contains("no module of this project has code"), said.toString());
   }
 
   @Test

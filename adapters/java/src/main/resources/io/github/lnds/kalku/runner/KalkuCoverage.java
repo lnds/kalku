@@ -55,25 +55,31 @@ public final class KalkuCoverage {
   }
 
   public static void main(String[] args) throws IOException {
-    File classes = new File(args[0]);
-    Path dumps = Paths.get(args[1]);
+    Path dumps = Paths.get(args[0]);
+    // The class directories the places are in: a module's own, and those of the modules it uses.
+    Set<String> directories = new LinkedHashSet<>();
     Map<String, List<Place>> places = new HashMap<>();
     List<Place> inOrder = new ArrayList<>();
-    for (String line : Files.readAllLines(Paths.get(args[2]), StandardCharsets.UTF_8)) {
+    for (String line : Files.readAllLines(Paths.get(args[1]), StandardCharsets.UTF_8)) {
       String[] part = line.split("\t");
       Place place = new Place();
-      place.source = part[0];
-      place.from = Integer.parseInt(part[1]);
-      place.to = Integer.parseInt(part[2]);
-      place.key = part[3];
+      directories.add(part[0]);
+      // The same source name can be in two modules: a place is told by its directory too.
+      place.source = part[0] + "|" + part[1];
+      place.from = Integer.parseInt(part[2]);
+      place.to = Integer.parseInt(part[3]);
+      place.key = part[4];
       places.computeIfAbsent(place.source, s -> new ArrayList<>()).add(place);
       inOrder.add(place);
     }
 
     // Which lines have code at all, from the classes alone.
-    CoverageBuilder shape = new CoverageBuilder();
-    new Analyzer(new ExecutionDataStore(), shape).analyzeAll(classes);
-    Map<String, BitSet> coded = lines(shape, false);
+    Map<String, BitSet> coded = new HashMap<>();
+    for (String directory : directories) {
+      CoverageBuilder shape = new CoverageBuilder();
+      new Analyzer(new ExecutionDataStore(), shape).analyzeAll(new File(directory));
+      lines(shape, false, directory, coded);
+    }
     for (Place place : inOrder) {
       BitSet code = coded.get(place.source);
       place.all = code == null || code.get(place.from, place.to + 1).isEmpty();
@@ -83,7 +89,7 @@ public final class KalkuCoverage {
     for (String shared : new String[] {"init.exec", "outside.exec"}) {
       Path file = dumps.resolve(shared);
       if (Files.isRegularFile(file)) {
-        for (Map.Entry<String, BitSet> reached : reached(file, classes).entrySet()) {
+        for (Map.Entry<String, BitSet> reached : reached(file, directories).entrySet()) {
           for (Place place : places.getOrDefault(reached.getKey(), new ArrayList<>())) {
             if (!reached.getValue().get(place.from, place.to + 1).isEmpty()) {
               place.all = true;
@@ -95,12 +101,12 @@ public final class KalkuCoverage {
     }
 
     // What ran while each test did. A method run many times is one test.
-    for (String line : Files.readAllLines(Paths.get(args[3]), StandardCharsets.UTF_8)) {
+    for (String line : Files.readAllLines(Paths.get(args[2]), StandardCharsets.UTF_8)) {
       String[] part = line.split("\t", 2);
       if (part.length < 2 || part[1].isEmpty()) {
         continue;
       }
-      for (Map.Entry<String, BitSet> reached : reached(dumps.resolve(part[0]), classes).entrySet()) {
+      for (Map.Entry<String, BitSet> reached : reached(dumps.resolve(part[0]), directories).entrySet()) {
         for (Place place : places.getOrDefault(reached.getKey(), new ArrayList<>())) {
           if (!reached.getValue().get(place.from, place.to + 1).isEmpty()) {
             place.counted = true;
@@ -112,7 +118,7 @@ public final class KalkuCoverage {
       }
     }
 
-    try (Writer out = Files.newBufferedWriter(Paths.get(args[4]), StandardCharsets.UTF_8)) {
+    try (Writer out = Files.newBufferedWriter(Paths.get(args[3]), StandardCharsets.UTF_8)) {
       // First, in how many places something was counted. A place with no code names every
       // test without anything having been counted, so an agent that counted nothing would
       // still leave a map that looks like one; this number is what tells the two apart.
@@ -136,33 +142,39 @@ public final class KalkuCoverage {
   }
 
   // The lines of each source file that ran in what one file of counts holds.
-  private static Map<String, BitSet> reached(Path counted, File classes) throws IOException {
+  private static Map<String, BitSet> reached(Path counted, Set<String> directories)
+      throws IOException {
     ExecFileLoader loader = new ExecFileLoader();
     loader.load(counted.toFile());
     ExecutionDataStore store = loader.getExecutionDataStore();
-    CoverageBuilder builder = new CoverageBuilder();
-    Analyzer analyzer = new Analyzer(store, builder);
-    // Only the classes something ran in: the counts say which.
-    for (ExecutionData data : store.getContents()) {
-      File file = new File(classes, data.getName() + ".class");
-      if (data.hasHits() && file.isFile()) {
-        try (InputStream in = new FileInputStream(file)) {
-          analyzer.analyzeClass(in, data.getName());
+    Map<String, BitSet> out = new HashMap<>();
+    for (String directory : directories) {
+      CoverageBuilder builder = new CoverageBuilder();
+      Analyzer analyzer = new Analyzer(store, builder);
+      // Only the classes something ran in: the counts say which.
+      for (ExecutionData data : store.getContents()) {
+        File file = new File(directory, data.getName() + ".class");
+        if (data.hasHits() && file.isFile()) {
+          try (InputStream in = new FileInputStream(file)) {
+            analyzer.analyzeClass(in, data.getName());
+          }
         }
       }
+      lines(builder, true, directory, out);
     }
-    return lines(builder, true);
+    return out;
   }
 
-  // By source file, `a/b/C.java`: the lines that ran, or the lines that have code.
-  private static Map<String, BitSet> lines(CoverageBuilder builder, boolean ran) {
-    Map<String, BitSet> out = new HashMap<>();
+  // By class directory and source file, `dir|a/b/C.java`: the lines that ran, or the lines
+  // that have code.
+  private static void lines(
+      CoverageBuilder builder, boolean ran, String directory, Map<String, BitSet> out) {
     for (ISourceFileCoverage source : builder.getSourceFiles()) {
       String name =
           source.getPackageName().isEmpty()
               ? source.getName()
               : source.getPackageName() + "/" + source.getName();
-      BitSet lines = out.computeIfAbsent(name, n -> new BitSet());
+      BitSet lines = out.computeIfAbsent(directory + "|" + name, n -> new BitSet());
       for (int line = source.getFirstLine(); line >= 0 && line <= source.getLastLine(); line++) {
         int status = source.getLine(line).getStatus();
         if (ran
@@ -172,6 +184,5 @@ public final class KalkuCoverage {
         }
       }
     }
-    return out;
   }
 }

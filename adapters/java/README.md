@@ -46,7 +46,12 @@ JDK, with the kalku's jar behind it.
   wekufe is then cast only against the tests that reach it. It is withheld,
   and the whole suite used, whenever it cannot be trusted.
 
-Not yet: several modules, Gradle, JUnit 4 or TestNG alone.
+- **Several modules**: Maven runs once at the top; each module's tests run in a
+  JVM of its own; and a site is judged by its module's tests and by those of
+  every module that uses it. A test is then named with its module,
+  `core::com.acme.PricesTest#rounds()`.
+
+Not yet: Gradle, JUnit 4 or TestNG alone.
 
 ## Requirements
 
@@ -78,8 +83,8 @@ class-version error on a closed pipe tells nobody what to do.
 
 `src/test/projects/` holds whole Maven projects written so that the outcome of
 each wekufe is known: `calc`; `generated`, part of whose code an annotation
-processor writes; and `tables`, whose class fills a table when it is first
-used.
+processor writes; `tables`, whose class fills a table when it is first used;
+and `shop`, two modules of which one uses the other.
 
 `src/test/fixtures/<spell>/` holds sources written a particular way on purpose,
 each beside the exact sites it must give (`*.sites.ndjson`). After reviewing a

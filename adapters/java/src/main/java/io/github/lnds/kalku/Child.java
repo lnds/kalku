@@ -209,23 +209,35 @@ final class Child {
   /**
    * Runs every test with the coverage agent counting, and waits.
    *
+   * @param classes the class directories counted in: the module's own and those it uses
    * @param dumps where what each test reached is written
    */
   static Ran cover(
       Maven.Build build,
       Path runner,
       Maven.Coverage coverage,
+      List<Path> classes,
       Path dumps,
       Path scratch,
       Map<String, String> env)
       throws IOException {
     Project.clear(dumps);
     List<String> counting = new ArrayList<>();
-    // Only the project's own classes are counted in: by the packages its classes are in.
-    counting.add(
-        "-javaagent:" + coverage.agent + "=output=none,includes=" + String.join(":", packages(build.classes)));
+    // Only the project's own classes are counted in: by the packages its classes are in, in
+    // this module and in the ones it uses.
+    List<String> counted = new ArrayList<>();
+    for (Path each : classes) {
+      for (String pattern : packages(each)) {
+        if (!counted.contains(pattern)) {
+          counted.add(pattern);
+        }
+      }
+    }
+    counting.add("-javaagent:" + coverage.agent + "=output=none,includes=" + String.join(":", counted));
     counting.add("dumps:" + dumps);
-    counting.add("classes:" + build.classes);
+    for (Path each : classes) {
+      counting.add("classes:" + each);
+    }
     return start(
             build, runner, Collections.emptyList(), "cover", Collections.emptyList(), scratch, env,
             counting)
@@ -277,12 +289,11 @@ final class Child {
                 "-cp",
                 classpath.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator)),
                 "io.github.lnds.kalku.runner.KalkuCoverage",
-                build.classes.toString(),
                 dumps.toString(),
                 places.toString(),
                 tests.toString(),
                 out.toString())
-            .directory(build.project.toFile());
+            .directory(build.dir.toFile());
     builder.environment().clear();
     builder.environment().putAll(env);
     builder.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
@@ -361,7 +372,7 @@ final class Child {
                 RUNNER,
                 request.toString(),
                 events.toString())
-            .directory(build.project.toFile());
+            .directory(build.dir.toFile());
     builder.environment().clear();
     builder.environment().putAll(env);
     // What the tests print is theirs, and is kept beside the run for whoever needs it.

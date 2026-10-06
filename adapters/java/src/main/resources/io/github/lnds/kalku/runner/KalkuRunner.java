@@ -55,7 +55,7 @@ public final class KalkuRunner {
     Set<Path> roots = new LinkedHashSet<>();
     List<String> tests = new ArrayList<>();
     Path dumps = null;
-    Path classes = null;
+    List<Path> classes = new ArrayList<>();
     for (String line : asked.subList(1, asked.size())) {
       if (line.startsWith("root:")) {
         roots.add(Paths.get(line.substring(5)));
@@ -64,7 +64,7 @@ public final class KalkuRunner {
       } else if (line.startsWith("dumps:")) {
         dumps = Paths.get(line.substring(6));
       } else if (line.startsWith("classes:")) {
-        classes = Paths.get(line.substring(8));
+        classes.add(Paths.get(line.substring(8)));
       }
     }
     try (Writer out = Files.newBufferedWriter(Paths.get(args[1]), StandardCharsets.UTF_8)) {
@@ -299,8 +299,24 @@ public final class KalkuRunner {
     // happens to use it first, and that test would be the only one credited with it. So every
     // class of the project is initialised here, before any test, and what that ran is kept as
     // what every test may depend on.
-    void initialise(Path classes) throws IOException {
+    void initialise(List<Path> directories) throws IOException {
       List<String> names = new ArrayList<>();
+      for (Path classes : directories) {
+        if (Files.isDirectory(classes)) {
+          named(classes, names);
+        }
+      }
+      for (String name : names) {
+        try {
+          Class.forName(name, true, KalkuRunner.class.getClassLoader());
+        } catch (Throwable t) {
+          // A class that cannot be initialised here will say so in the test that needs it.
+        }
+      }
+      Files.write(dir.resolve("init.exec"), counted());
+    }
+
+    private static void named(Path classes, List<String> names) throws IOException {
       try (java.util.stream.Stream<Path> all = Files.walk(classes)) {
         all.filter(p -> p.toString().endsWith(".class"))
             .sorted()
@@ -313,14 +329,6 @@ public final class KalkuRunner {
                   }
                 });
       }
-      for (String name : names) {
-        try {
-          Class.forName(name, true, KalkuRunner.class.getClassLoader());
-        } catch (Throwable t) {
-          // A class that cannot be initialised here will say so in the test that needs it.
-        }
-      }
-      Files.write(dir.resolve("init.exec"), counted());
     }
 
     synchronized void outside() {

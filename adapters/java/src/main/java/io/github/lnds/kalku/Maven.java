@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -38,9 +39,23 @@ final class Maven {
     }
   }
 
-  /** A built project, as a cast needs to know it. */
+  /** A built project: its modules, in the order Maven builds them. */
+  static final class Reactor {
+    Path root;
+    List<Build> modules = new ArrayList<>();
+  }
+
+  /**
+   * One module of a built project, as a cast needs to know it. A project with a single
+   * `pom.xml` is one module, with no name.
+   */
   static final class Build {
     Path project;
+    // Where the module is, and that place from the top of the project: empty at the top.
+    Path dir;
+    String name = "";
+    // The other modules whose classes this one is compiled and tested against.
+    List<Build> uses = new ArrayList<>();
     // The jars the tests run with, the project's own classes left out.
     List<Path> libraries = new ArrayList<>();
     Path classes;
@@ -86,7 +101,7 @@ final class Maven {
    * @param fresh false when nothing changed since a build that is still there: Maven is slow
    *     to start, and what it would write is already written
    */
-  static Build build(Path project, Path lib, Map<String, String> env, boolean fresh)
+  static Reactor build(Path project, Path lib, Map<String, String> env, boolean fresh)
       throws Failed, IOException {
     Path classpath = project.resolve(CLASSPATH_FILE);
     Path pom = project.resolve(POM_FILE);
@@ -119,12 +134,39 @@ final class Maven {
       run(project, env, goals.toArray(new String[0]));
       Files.write(builtBy, jdk.getBytes(StandardCharsets.UTF_8));
     }
-    Build build = new Build();
-    build.project = project;
-    readClasspath(build, classpath);
-    readPom(build, pom);
-    launcher(build, lib, env);
-    return build;
+    Reactor reactor = new Reactor();
+    reactor.root = project;
+    for (Element resolved : resolved(pom)) {
+      // A project that only gathers modules has no code of its own.
+      if ("pom".equals(text(resolved, "packaging"))) {
+        continue;
+      }
+      Build build = new Build();
+      build.project = project;
+      Element b = child(resolved, "build");
+      build.dir = Paths.get(text(b, "directory")).getParent();
+      build.name = project.relativize(build.dir).toString().replace('\\', '/');
+      Path jars = build.dir.resolve(CLASSPATH_FILE);
+      if (Files.isRegularFile(jars)) {
+        readClasspath(build, jars);
+      }
+      readPom(build, resolved);
+      if (build.platform != null) {
+        launcher(build, lib, env);
+      }
+      reactor.modules.add(build);
+    }
+    if (reactor.modules.isEmpty()) {
+      throw new Failed("no module of this project has code of its own to measure");
+    }
+    for (Build build : reactor.modules) {
+      for (Build other : reactor.modules) {
+        if (other != build && build.libraries.contains(other.classes)) {
+          build.uses.add(other);
+        }
+      }
+    }
+    return reactor;
   }
 
   // ---- running Maven ---------------------------------------------------------
@@ -218,7 +260,8 @@ final class Maven {
     }
   }
 
-  private static void readPom(Build build, Path file) throws Failed, IOException {
+  // The projects Maven resolved: one, or as many as the build has modules.
+  private static List<Element> resolved(Path file) throws Failed, IOException {
     Element project;
     try {
       DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -231,25 +274,25 @@ final class Maven {
     } catch (Exception e) {
       throw new Failed("cannot read what Maven resolved (" + file + "): " + e.getMessage());
     }
-    // A reactor is written as several projects, and one that only gathers modules as `pom`.
-    if (!project.getTagName().equals("project")
-        || "pom".equals(text(project, "packaging"))
-        || child(project, "modules") != null) {
-      throw new Failed(
-          "this is a Maven project of several modules, which kalku does not measure yet; "
-              + "it measures a project with one `pom.xml` and its own sources");
-    }
-    if (build.platform == null) {
-      throw new Failed(
-          "no JUnit Platform engine is among the project's test dependencies; kalku runs tests "
-              + "through the JUnit Platform (JUnit 5 or later), and a project with JUnit 4 or "
-              + "TestNG alone is not measured yet");
-    }
+    return project.getTagName().equals("project")
+        ? Collections.singletonList(project)
+        : children(project);
+  }
+
+  private static void readPom(Build build, Element project) throws Failed, IOException {
     Element b = child(project, "build");
     build.classes = Paths.get(text(b, "outputDirectory"));
     build.testClasses = Paths.get(text(b, "testOutputDirectory"));
     build.sources = Paths.get(text(b, "sourceDirectory"));
     build.testSources = Paths.get(text(b, "testSourceDirectory"));
+    // A module with no tests of its own needs nothing to run them with.
+    if (build.platform == null && !Project.sources(Collections.singletonList(build.testSources)).isEmpty()) {
+      throw new Failed(
+          "no JUnit Platform engine is among the test dependencies of "
+              + (build.name.isEmpty() ? "the project" : "the module `" + build.name + "`")
+              + "; kalku runs tests through the JUnit Platform (JUnit 5 or later), and a "
+              + "project with JUnit 4 or TestNG alone is not measured yet");
+    }
     compiler(build, project, plugin(b, "maven-compiler-plugin"));
     surefire(build, plugin(b, "maven-surefire-plugin"));
   }
