@@ -125,15 +125,20 @@ final class Project {
     return false;
   }
 
-  // What a build wrote: the `target` beside a `pom.xml`, in the project and in each of its
-  // modules. What the user's own build left there is not copied, since a build goes by times
+  // What a build wrote: the `target` beside a `pom.xml`, or Gradle's directories beside a
+  // Gradle build, in the project and in each of its modules. What the user's own build left there is not copied, since a build goes by times
   // and would trust classes that are older than the sources beside them; and what the build
   // in the reni left there is not taken away.
   private static boolean output(Path dir) {
-    return dir.getFileName() != null
-        && dir.getFileName().toString().equals("target")
-        && dir.getParent() != null
-        && Files.isRegularFile(dir.getParent().resolve("pom.xml"));
+    if (dir.getFileName() == null || dir.getParent() == null) {
+      return false;
+    }
+    String name = dir.getFileName().toString();
+    if (name.equals("target")) {
+      return Files.isRegularFile(dir.getParent().resolve("pom.xml"));
+    }
+    // Gradle's are `build` and `.gradle`, beside a build or a settings file.
+    return (name.equals("build") || name.equals(".gradle")) && Gradle.builds(dir.getParent());
   }
 
   /** Every {@code .java} file under these directories, in a stable order. */

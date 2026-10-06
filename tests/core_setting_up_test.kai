@@ -283,8 +283,11 @@ test "a Python project is told by any of the files that mean Python, and runs in
   assert starts_with(plan.summoner, "#!/bin/sh")
 }
 
-test "a Maven project is Java, and is summoned on its own JDK with nothing built on the way up" {
+test "a Maven or a Gradle project is Java, and is summoned on its own JDK with nothing built on the way up" {
   assert detect(["pom.xml", "src", "README.md"]).map(.language) == Ok("java")
+  assert detect(["build.gradle", "settings.gradle", "src"]).map(.language) == Ok("java")
+  assert detect(["build.gradle.kts"]).map(.language) == Ok("java")
+  assert detect(["pom.xml", "build.gradle"]).map(.language) == Ok("java")
   let plan = plan_for(of("java"), "/r")
   assert has(plan.config, "language = \"java\"")
   assert has(plan.summoner, "exec kalku-java \"$@\"")
@@ -307,6 +310,11 @@ test "Java sources are .java files outside the suite, which is named by director
   assert not is_source_of(java, "src/main/java/com/acme/ParserIT.java")
   assert not is_source_of(java, "src/main/resources/app.properties")
   assert not is_source_of(java, "target/generated-sources/annotations/com/acme/Gen.java")
+  assert not is_source_of(
+    java,
+    "build/generated/sources/annotationProcessor/java/main/com/acme/Gen.java"
+  )
+  assert is_source_of(java, "app/src/main/java/com/acme/App.java")
   assert is_test_of(java, "src/test/java/com/acme/ParserTest.java")
   assert not is_test_of(java, "src/main/java/com/acme/Parser.java")
 }

@@ -43,6 +43,11 @@ final class Maven {
   static final class Reactor {
     Path root;
     List<Build> modules = new ArrayList<>();
+    // What counts coverage, when the build tool fetched it along with the build; and why it
+    // could not, when it could not. Maven fetches it later, when it is first asked for.
+    Coverage coverage;
+    String noCoverage;
+    boolean gradle;
   }
 
   /**
@@ -194,7 +199,7 @@ final class Maven {
     builder.redirectErrorStream(true).redirectOutput(log.toFile());
     int exit;
     try {
-      exit = builder.start().waitFor();
+      exit = heard(builder.start(), log);
     } catch (IOException e) {
       throw new Failed(
           "cannot run Maven (`"
@@ -209,6 +214,51 @@ final class Maven {
     if (exit != 0) {
       throw new Failed(said(log, exit));
     }
+  }
+
+  /**
+   * Waits for a build, saying on stderr what it says as it goes.
+   *
+   * <p>A build can take long without anything being wrong: the first one fetches everything a
+   * project depends on, and its build tool besides. What the build prints goes to a file, and
+   * every few seconds what is new in it is passed on, a few lines at most. Whoever is waiting
+   * then knows the build is alive and what it is doing, and if they give up, its last words
+   * are the build's and not silence.
+   */
+  static int heard(Process build, Path log) throws IOException, InterruptedException {
+    long read = 0;
+    while (!build.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+      read = passOn(log, read);
+    }
+    passOn(log, read);
+    return build.exitValue();
+  }
+
+  // The whole lines written since `from`, the last few of them; and where the next begin.
+  private static long passOn(Path log, long from) throws IOException {
+    if (!Files.isRegularFile(log) || Files.size(log) <= from) {
+      return from;
+    }
+    byte[] all = Files.readAllBytes(log);
+    int end = all.length;
+    while (end > from && all[end - 1] != '\n') {
+      end--;
+    }
+    if (end <= from) {
+      return from;
+    }
+    String text = new String(all, (int) from, end - (int) from, StandardCharsets.UTF_8);
+    List<String> lines = new ArrayList<>();
+    for (String line : text.split("\n")) {
+      if (!line.trim().isEmpty()) {
+        lines.add(line.length() > 300 ? line.substring(0, 300) : line);
+      }
+    }
+    if (!lines.isEmpty()) {
+      // One write, however much there was: what reads this is read in pieces.
+      System.err.println(String.join("\n", lines.subList(Math.max(0, lines.size() - 5), lines.size())));
+    }
+    return end;
   }
 
   // The project's own wrapper pins the Maven its build was written for.

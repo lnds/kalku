@@ -1,0 +1,4 @@
+// Nothing but tests of `core`: a project with no code of its own.
+dependencies {
+  testImplementation project(':core')
+}

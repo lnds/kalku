@@ -11,7 +11,7 @@ framework, is in [`docs/design.md`](../../docs/design.md).
 ## Using it
 
 ```sh
-cd my-project          # where pom.xml is
+cd my-project          # where pom.xml or build.gradle is
 kalku init             # writes .kalku.toml and .kalku/summon
 kalku run src/main/java/com/acme/Parser.java
 ```
@@ -51,15 +51,21 @@ JDK, with the kalku's jar behind it.
   every module that uses it. A test is then named with its module,
   `core::com.acme.PricesTest#rounds()`.
 
-Not yet: Gradle, JUnit 4 or TestNG alone.
+- **Gradle**: the build is asked by running it, with the project's own wrapper
+  and a script added from outside the project; without its daemon. A build
+  whose tests run on another JDK through a toolchain is refused by name.
+
+Not yet: JUnit 4 or TestNG alone.
 
 ## Requirements
 
 - **Java 11 or newer**, and a JDK, not a JRE: sources are read, and wekufe
   compiled, with the compiler that ships in it. The kalku runs on the project's own JDK —
   `KALKU_JAVA`, then `JAVA_HOME`, then `java` on the `PATH`.
-- **Maven**: the project's own wrapper (`mvnw`), or `mvn` on the `PATH`, or
-  `KALKU_MAVEN`. It fetches the project's dependencies and the JUnit launcher.
+- **Maven or Gradle**, whichever builds the project: its own wrapper (`mvnw`,
+  `gradlew`), or `mvn` / `gradle` on the `PATH`, or `KALKU_MAVEN` /
+  `KALKU_GRADLE`. It fetches the project's dependencies, the JUnit launcher and
+  the coverage agent.
 - No dependencies. The suite uses JUnit; the kalku itself uses the JDK and
   nothing else.
 

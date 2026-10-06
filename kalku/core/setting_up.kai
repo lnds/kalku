@@ -145,13 +145,13 @@ pub fn catalogue() : [Known] = [
   Known {
     language: "java",
     marker: "pom.xml",
-    also: [],
+    also: ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
     summon: java_summoner(),
     sources: [".java"],
     tests: ["test", "tests", "integrationTest", "testFixtures", "androidTest"],
     test_prefixes: [],
     test_suffixes: ["Test.java", "Tests.java", "IT.java"],
-    ignored: ["target", ".git", ".idea", ".mvn", "node_modules"]
+    ignored: ["target", "build", ".gradle", ".git", ".idea", ".mvn", "node_modules"]
   }
 ]
 
@@ -362,20 +362,21 @@ exec kalku-rust "$@"
 # JDK's own compiler, so which Java it is started with matters: the one in
 # `JAVA_HOME`, then `java` on the PATH, unless `KALKU_JAVA` names another.
 # The kalku picks it and turns away one that is too old; nothing is built
-# here, Maven runs inside `prepare`.
+# here, Maven or Gradle runs inside `prepare`.
 fn java_summoner() : String = """
 #!/bin/sh
 # kalku-summon-contract: 1
 # Summons the Java kalku for this project. Written by `kalku init`.
 #
-# stdout carries the kalku protocol. Nothing is built here: Maven runs
-# inside `prepare`, in a copy of this project in the reni, with its output
-# in a file there.
+# stdout carries the kalku protocol. Nothing is built here: Maven or Gradle
+# runs inside `prepare`, in a copy of this project in the reni, with its
+# output in a file there.
 #
 # The kalku runs on this project's own JDK, Java 11 or later: the one in
-# JAVA_HOME, then `java` on the PATH. Set KALKU_JAVA to choose another,
-# and KALKU_MAVEN to choose the Maven that builds the copy; without it the
-# project's own wrapper (`mvnw`) is used, then `mvn` on the PATH.
+# JAVA_HOME, then `java` on the PATH. Set KALKU_JAVA to choose another.
+# The copy is built by the project's own wrapper (`mvnw`, `gradlew`), then
+# by `mvn` or `gradle` on the PATH; KALKU_MAVEN and KALKU_GRADLE choose
+# another.
 set -eu
 #{reni_off()}
 
