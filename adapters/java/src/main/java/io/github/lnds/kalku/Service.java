@@ -863,13 +863,18 @@ final class Service {
       }
     }
     for (Maven.Build each : again) {
+      List<Path> sources = Project.sources(Collections.singletonList(each.sources));
+      // A module can be nothing but tests of another: it has no code of its own to compile.
+      if (sources.isEmpty()) {
+        continue;
+      }
       Path classes = into.resolve(String.valueOf(project.modules.indexOf(each))).resolve("classes");
       List<Path> against = new ArrayList<>(out.classes);
       against.add(each.classes);
       against.addAll(each.libraries);
       out.result =
           Compiler.compile(
-              Project.sources(Collections.singletonList(each.sources)),
+              sources,
               each == module ? file : null,
               each == module ? text : null,
               against, classes, each.compilerFlags, project.root);

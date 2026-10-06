@@ -550,8 +550,9 @@ class CastTest {
 
   // ---- several modules ---------------------------------------------------------
 
-  // `shop` is two modules: `core`, and `app`, which uses it. What `core` computes for a
-  // discount only `app`'s tests look at, and `app` holds a copy of a constant of `core`'s.
+  // `shop` is three modules: `core`; `app`, which uses it; and `audit`, which is nothing but
+  // a test of `core` and has no code of its own. What `core` computes for a discount only
+  // `app`'s tests look at, and `app` holds a copy of a constant of `core`'s.
   @Test
   void aSiteIsJudgedByTheTestsOfEveryModuleThatUsesIts() throws Exception {
     Path shop = temp.resolve("shop");
@@ -581,6 +582,7 @@ class CastTest {
     expected.put(
         "app::fx.app.CheckoutTest#fiftyGetsTheDiscountAndFortyNineDoesNot()",
         "app/src/test/java/fx/app/CheckoutTest.java");
+    expected.put("audit::fx.audit.PricesAuditTest#fiveIsAPrice()", "audit/src/test/java/fx/audit/PricesAuditTest.java");
     assertEquals(expected, files);
     List<String> every = new ArrayList<>(files.keySet());
 
@@ -589,7 +591,12 @@ class CastTest {
     assertEquals(
         Arrays.asList("app::fx.app.CheckoutTest#fiftyGetsTheDiscountAndFortyNineDoesNot()"),
         by.get(prices + ":10"));
-    assertEquals(Arrays.asList("core::fx.core.PricesTest#aPriceIsMoreThanNothing()"), by.get(prices + ":14"));
+    // And a line two modules' tests reach, to both.
+    assertEquals(
+        Arrays.asList(
+            "audit::fx.audit.PricesAuditTest#fiveIsAPrice()",
+            "core::fx.core.PricesTest#aPriceIsMoreThanNothing()"),
+        by.get(prices + ":14"));
     assertEquals(new java.util.HashSet<>(every), new java.util.HashSet<>(by.get(prices + ":6")));
 
     List<Map<?, ?>> found = new ArrayList<>();
