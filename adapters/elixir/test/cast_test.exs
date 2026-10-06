@@ -177,6 +177,54 @@ defmodule Kalku.CastTest do
       assert by_wekufe["broken"]["outcome"] == "killed"
       assert by_wekufe["broken"]["killed_by"] == "test/mocked_test.exs:9"
     end
+
+    # Stopping `:cover` after the baseline gives each module back by loading
+    # it from its file, and the copy a mocking library keeps of the module it
+    # replaced has none: it was gone, the mock stood for nothing, and every
+    # test driving it failed in every cast that did not compile that module
+    # again. A wekufe was then killed by a test that never reached it.
+    test "a test that drives a mock does not kill a wekufe it never reaches", %{reni: reni} do
+      # `charge/1`, against the test that mocks `Mocked.Fee` and calls nothing else.
+      elsewhere =
+        unreached("lib/mocked.ex", {"amount ", ">"}, ">=", 5, "test/late_copy_test.exs:11")
+
+      # `Mocked.Fee`, against the test that mocks `Mocked.Rate`.
+      other =
+        unreached("lib/mocked/fee.ex", {"amount, ", "10"}, "20", 3, "test/mocked_test.exs:9")
+
+      # One kalku each, so that neither cast is judged in a runtime the other
+      # has compiled in.
+      for cast <- [elsewhere, other] do
+        lines = summon(reni, "mocked", [request("prepare", 2), request("baseline", 3), cast])
+        assert reply(lines, "cast_done")["outcome"] == "survived"
+      end
+    end
+  end
+
+  # A wekufe that replaces `target` where it follows `lead`.
+  defp unreached(file, {lead, target}, replacement, line, test) do
+    source = File.read!(Path.join(project("mocked"), file))
+    {at, _} = :binary.match(source, lead <> target)
+    from = at + byte_size(lead)
+    to = from + byte_size(target)
+
+    Kalku.Json.encode(%{
+      "type" => "cast",
+      "id" => 4,
+      "wekufe" => "unreached",
+      "site" => %{
+        "site_id" => "unreached",
+        "file" => file,
+        "span" => %{
+          "start" => %{"line" => line, "col" => 1, "byte" => from},
+          "end" => %{"line" => line, "col" => 1, "byte" => to}
+        },
+        "spell" => "compare",
+        "replacement" => replacement,
+        "reload" => "module"
+      },
+      "tests" => [test]
+    })
   end
 
   defp mocked_cast(wekufe, id, from, to, replacement, line) do

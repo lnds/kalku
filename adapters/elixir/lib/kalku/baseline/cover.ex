@@ -57,10 +57,40 @@ defmodule Kalku.Baseline.Cover do
     end
   end
 
-  @doc "Stop counting and give the modules back untouched."
+  @doc """
+  Stop counting and give the modules back untouched.
+
+  `:cover` gives a module back by loading it from its file again. A module
+  that only exists in memory has no file to come back from and would be
+  gone: the copy a mocking library keeps of a module it replaced is one,
+  and without it every test that drives that mock fails on its own, in
+  every cast. Where there is such a module `:cover` is left running, it
+  stays as it is, and the others are given back here.
+  """
   def stop do
-    if Process.whereis(:cover_server), do: :cover.stop()
+    if Process.whereis(:cover_server), do: give_back(:cover.modules())
     :ok
+  end
+
+  defp give_back(modules) do
+    if Enum.all?(modules, &on_disk?/1) do
+      :cover.stop()
+    else
+      modules |> Enum.filter(&on_disk?/1) |> Enum.each(&load_from_file/1)
+    end
+  end
+
+  defp on_disk?(module), do: :code.get_object_code(module) != :error
+
+  # The file is loaded before the instrumented code is purged, so a fun
+  # that names the module keeps pointing at code that exists.
+  defp load_from_file(module) do
+    if :code.which(module) == :cover_compiled do
+      :code.purge(module)
+      :code.delete(module)
+      :code.load_file(module)
+      :code.purge(module)
+    end
   end
 
   defp ensure_started do
