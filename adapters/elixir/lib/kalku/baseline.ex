@@ -271,15 +271,23 @@ defmodule Kalku.Baseline do
     end
   end
 
-  # A library that sets itself up in `test_helper.exs` — a mocking library
-  # copies the modules it will replace — tidies up after itself in an
-  # `after_suite` callback, and ExUnit runs those at the end of every
-  # `ExUnit.run`. This runtime runs the suite again and again and stays warm,
-  # so that tidying would leave the next run with nothing set up: a test that
-  # passes alone fails, and a failing test is a kill. A wekufe identical to
-  # the original came back `killed` for that reason. The callbacks are left
-  # out; the runtime is thrown away when the run is over.
-  defp keep_suite_state, do: Application.put_env(:ex_unit, :after_suite, [])
+  @doc """
+  Leaves out what was registered to run when the suite ends.
+
+  A library that sets itself up — a mocking library copies the modules it
+  will replace — tidies up after itself in an `after_suite` callback, and
+  ExUnit runs those at the end of every `ExUnit.run`. This runtime runs the
+  suite again and again and stays warm, so that tidying would leave the next
+  run with nothing set up: a test that passes alone fails, and a failing
+  test is a kill. A wekufe identical to the original came back `killed` for
+  that reason. The callbacks are left out; the runtime is thrown away when
+  the run is over.
+
+  A callback is registered from `test_helper.exs` or from a test's own
+  `setup`, so they are left out once the suite is loaded and again each time
+  it has run (`Kalku.Baseline.Recorder`).
+  """
+  def keep_suite_state, do: Application.put_env(:ex_unit, :after_suite, [])
 
   defp load_files(root, files) do
     helper = Path.join(root, "test/test_helper.exs")
