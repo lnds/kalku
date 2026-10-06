@@ -92,14 +92,95 @@ final class Child {
         .error;
   }
 
+  /** A JVM that is running tests, between its start and what it is found to have said. */
+  static final class Running {
+    private final Process process;
+    private final Path events;
+
+    Running(Process process, Path events) {
+      this.process = process;
+      this.events = events;
+    }
+
+    /** Waits this long for the JVM to end, and says whether it has. */
+    boolean ended(long millis) {
+      try {
+        return process.waitFor(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return false;
+      }
+    }
+
+    /** What the JVM said, once it has ended. */
+    Ran finish() throws IOException {
+      Ran ran = new Ran();
+      try {
+        ran.exit = process.waitFor();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        process.destroyForcibly();
+        ran.crashed = "interrupted";
+        return ran;
+      } finally {
+        // Its input stayed open and silent until now: the runner leaves when it closes, which
+        // is when this process ends, however it ends.
+        process.getOutputStream().close();
+      }
+      read(ran, events);
+      return ran;
+    }
+
+    /**
+     * Ends the JVM and everything it started, and says whether all of it is gone.
+     *
+     * <p>What it started is listed before anything is ended: a process whose parent has died
+     * belongs to nobody, and can no longer be found through it.
+     */
+    boolean kill() throws IOException {
+      List<ProcessHandle> all = process.descendants().collect(Collectors.toList());
+      all.add(process.toHandle());
+      for (ProcessHandle each : all) {
+        each.destroyForcibly();
+      }
+      process.getOutputStream().close();
+      long deadline = System.nanoTime() + 5_000_000_000L;
+      while (System.nanoTime() < deadline) {
+        if (all.stream().noneMatch(ProcessHandle::isAlive)) {
+          return true;
+        }
+        try {
+          Thread.sleep(10);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          break;
+        }
+      }
+      return all.stream().noneMatch(ProcessHandle::isAlive);
+    }
+  }
+
+  /** Runs the tests in a JVM of their own and waits for it. */
+  static Ran run(
+      Maven.Build build,
+      Path runner,
+      List<Path> before,
+      String mode,
+      List<String> tests,
+      Path scratch,
+      Map<String, String> env)
+      throws IOException {
+    return start(build, runner, before, mode, tests, scratch, env).finish();
+  }
+
   /**
-   * Runs the tests in a JVM of their own and waits for it.
+   * Starts the tests in a JVM of their own.
    *
    * @param mode {@code discover} to list the tests, {@code run} to run them
    * @param tests the tests to run; none means every test of the project
    * @param before class directories that come before the project's own, as a cast's do
    */
-  static Ran run(
+  static Running start(
       Maven.Build build,
       Path runner,
       List<Path> before,
@@ -159,22 +240,7 @@ final class Child {
     // What the tests print is theirs, and is kept beside the run for whoever needs it.
     builder.redirectErrorStream(true).redirectOutput(log.toFile());
 
-    Ran ran = new Ran();
-    Process process = builder.start();
-    try {
-      // Its input stays open and silent: the runner leaves when it closes, which is when this
-      // process ends, however it ends.
-      ran.exit = process.waitFor();
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      process.destroyForcibly();
-      ran.crashed = "interrupted";
-      return ran;
-    } finally {
-      process.getOutputStream().close();
-    }
-    read(ran, events);
-    return ran;
+    return new Running(builder.start(), events);
   }
 
   private static void read(Ran ran, Path events) throws IOException {
