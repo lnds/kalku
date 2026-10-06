@@ -1,0 +1,22 @@
+plugins {
+  id 'java'
+}
+
+repositories {
+  mavenCentral()
+}
+
+java {
+  sourceCompatibility = JavaVersion.VERSION_11
+  targetCompatibility = JavaVersion.VERSION_11
+}
+
+// JUnit 4, which is what Gradle runs when a build does not say otherwise.
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+}
+
+test {
+  jvmArgs '-Dfx.from.argline=yes'
+  systemProperty 'fx.mode', 'strict'
+}
