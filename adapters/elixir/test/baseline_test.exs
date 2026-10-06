@@ -36,7 +36,7 @@ defmodule Kalku.BaselineTest do
       done = reply(run(reni, "mocked", ["baseline"]), "baseline_done")
 
       assert done["status"] == "green"
-      assert length(done["tests"]) == 2
+      assert length(done["tests"]) == 4
 
       by_line = Map.new(done["coverage"], &{{&1["file"], &1["line"]}, &1["tests"]})
       # `charge/1` runs in the test that drives the mock, and `total/2` in
@@ -53,6 +53,22 @@ defmodule Kalku.BaselineTest do
       done = reply(run(reni, "mocked", ["baseline"]), "baseline_done")
 
       assert done["status"] == "green"
+      assert File.ls!(project("mocked")) == before
+    end
+
+    # A test can set a library up itself, in its `setup`, and the library then
+    # asks to tidy up after the suite from there: registered after the suite
+    # was loaded, and run at the end of the same `ExUnit.run`. A mocking
+    # library tidying up there reads back the file the kalku has already
+    # taken out of the project, and the kalku went down with it.
+    test "what a test registers to run after the suite is left out too", %{reni: reni} do
+      before = File.ls!(project("mocked"))
+      done = reply(run(reni, "mocked", ["baseline"]), "baseline_done")
+
+      assert done["status"] == "green"
+      assert "test/tidied_late_test.exs:11" in Enum.map(done["tests"], & &1["test"])
+      assert "test/late_copy_test.exs:11" in Enum.map(done["tests"], & &1["test"])
+      refute Process.get(:last_stderr) =~ "terminating"
       assert File.ls!(project("mocked")) == before
     end
 

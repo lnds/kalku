@@ -32,7 +32,11 @@ defmodule Kalku.Baseline.Recorder do
     {:noreply, state}
   end
 
+  # ExUnit stops its formatters, and waits for them, before it reads the
+  # `after_suite` callbacks: one registered while the suite ran is left out
+  # here and never runs.
   def handle_cast({:suite_finished, _times}, state) do
+    Kalku.Baseline.keep_suite_state()
     Kalku.Strays.sweep()
     {:noreply, state}
   end
