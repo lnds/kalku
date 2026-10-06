@@ -9,6 +9,7 @@
   <modules>
     <module>core</module>
     <module>app</module>
+    <module>audit</module>
   </modules>
 
   <properties>

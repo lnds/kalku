@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>fx</groupId>
+    <artifactId>shop</artifactId>
+    <version>1.0.0</version>
+  </parent>
+  <artifactId>audit</artifactId>
+
+  <!-- Nothing but tests of `core`: a module with no code of its own. -->
+  <dependencies>
+    <dependency>
+      <groupId>fx</groupId>
+      <artifactId>core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+</project>
