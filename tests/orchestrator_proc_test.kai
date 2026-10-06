@@ -108,6 +108,9 @@ fn next_within(patience: Duration) : String / Actor[OrchMsg] + Clock =
     }
     Some(Wire(_, Closed)) -> "closed"
     Some(Wire(_, Unreadable(_))) -> "unreadable"
+    # What a kalku wrote on stderr, and what is not from a kalku at all, is not its next
+    # word: the wait goes on.
+    Some(_) -> next_within(patience)
   }
 
 fn next() : String / Actor[OrchMsg] + Clock = next_within(PATIENCE)
