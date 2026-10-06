@@ -243,8 +243,9 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Java kalku: `prepare`, `baseline` and `cast` in the reni for a single-module Maven project on JUnit 5 or later | done |
 | Java kalku: `kalku init` for Maven projects, shipped in the release | done |
 | Java kalku: `abort`, by ending the JVM the tests run in | done |
-| Java kalku: Gradle; several modules; JUnit 4 or TestNG alone; per-test coverage | not yet |
-| **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python |
+| Java kalku: per-test coverage, counted by JaCoCo and withheld wherever it cannot be trusted | done |
+| Java kalku: Gradle; several modules; JUnit 4 or TestNG alone | not yet |
+| **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | `--watch` and `--ci` | not yet |
