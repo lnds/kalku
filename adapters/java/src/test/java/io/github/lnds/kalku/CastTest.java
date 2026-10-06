@@ -51,6 +51,10 @@ class CastTest {
     root = temp.resolve("calc");
     reni = temp.resolve("reni");
     copy(PROJECTS.resolve("calc"), root);
+    // What `kalku init` leaves in a project is kalku's, not the project's.
+    Files.createDirectories(root.resolve(".kalku"));
+    Files.write(root.resolve(".kalku").resolve("summon"), "#!/bin/sh\n".getBytes(StandardCharsets.UTF_8));
+    Files.write(root.resolve(".kalku.toml"), "language = \"java\"\n".getBytes(StandardCharsets.UTF_8));
     treeBefore = tree(root);
 
     List<Map<?, ?>> said =
@@ -221,6 +225,12 @@ class CastTest {
   @Test
   void nothingIsWrittenInTheProject() throws Exception {
     assertEquals(treeBefore, tree(root));
+    // Nor does kalku's own configuration go into the copy that is built: a build that checks
+    // every file for a licence header fails on a file that is not the project's.
+    Path built = reni.resolve("calc").resolve("work").resolve("0").resolve("project");
+    assertFalse(Files.exists(built.resolve(".kalku.toml")));
+    assertFalse(Files.exists(built.resolve(".kalku")));
+    assertTrue(Files.exists(built.resolve("pom.xml")));
     assertTrue(Files.isDirectory(reni.resolve("calc").resolve("work").resolve("0").resolve("project").resolve("target")));
   }
 

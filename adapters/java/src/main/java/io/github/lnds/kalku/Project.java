@@ -25,9 +25,12 @@ import java.util.stream.Stream;
 final class Project {
   private Project() {}
 
-  // At the top of the project: what a build leaves, what version control keeps, and kalku's
-  // own directory. Deeper down the same names are ordinary packages.
-  private static final List<String> NOT_COPIED = Arrays.asList("target", ".git", ".kalku");
+  // At the top of the project: what a build leaves, what version control keeps, and what is
+  // kalku's own. Deeper down the same names are ordinary packages. kalku's files are left out
+  // because they are not the project's: a build that checks every file for a licence header
+  // would fail on them.
+  private static final List<String> NOT_COPIED =
+      Arrays.asList("target", ".git", ".kalku", ".kalku.toml");
 
   /**
    * Makes {@code copy} hold what {@code root} holds, and says how many files changed.
@@ -62,7 +65,7 @@ final class Project {
           public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
               throws IOException {
             // Only what is a file is copied: a link is not followed out of the project.
-            if (attrs.isRegularFile()) {
+            if (attrs.isRegularFile() && !(top.equals(file.getParent()) && skipped(file))) {
               Path to = copy.resolve(top.relativize(file).toString());
               kept.add(to);
               if (!same(file, to)) {
