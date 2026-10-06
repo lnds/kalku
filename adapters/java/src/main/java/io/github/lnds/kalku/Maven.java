@@ -62,6 +62,18 @@ final class Maven {
   private static final String DEPENDENCY = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1";
   private static final String HELP = "org.apache.maven.plugins:maven-help-plugin:3.5.1";
 
+  // A build often checks more than that the code compiles: licence headers, style, the
+  // version of Maven, what the repository's history says. Those checks are about the
+  // project as its owner keeps it, and the copy in the reni is not that: it has no history
+  // and it is only ever compiled. They are switched off by the names their plugins give.
+  private static final String[] CHECKS =
+      {
+        "rat.skip", "checkstyle.skip", "enforcer.skip", "spotless.check.skip", "license.skip",
+        "pmd.skip", "cpd.skip", "spotbugs.skip", "animal.sniffer.skip", "jacoco.skip",
+        "maven.javadoc.skip", "maven.gitcommitid.skip", "japicmp.skip", "cyclonedx.skip",
+        "sortpom.skip", "formatter.skip", "impsort.skip"
+      };
+
   private static final String CLASSPATH_FILE = "target/kalku.classpath";
   private static final String POM_FILE = "target/kalku.pom.xml";
   private static final String JDK_FILE = "target/kalku.jdk";
@@ -89,16 +101,22 @@ final class Maven {
       // Maven goes by times, and would keep what the other JDK compiled.
       boolean otherJdk = Files.isRegularFile(builtBy) && !sameJdk;
       Files.deleteIfExists(builtBy);
-      run(
-          project,
-          env,
-          otherJdk ? "clean" : "-DskipTests",
-          "-DskipTests",
-          "test-compile",
-          DEPENDENCY + ":build-classpath",
-          "-Dmdep.outputFile=" + CLASSPATH_FILE,
-          HELP + ":effective-pom",
-          "-Doutput=" + POM_FILE);
+      List<String> goals = new ArrayList<>();
+      if (otherJdk) {
+        goals.add("clean");
+      }
+      goals.add("-DskipTests");
+      for (String check : CHECKS) {
+        goals.add("-D" + check + "=true");
+      }
+      goals.addAll(
+          Arrays.asList(
+              "test-compile",
+              DEPENDENCY + ":build-classpath",
+              "-Dmdep.outputFile=" + CLASSPATH_FILE,
+              HELP + ":effective-pom",
+              "-Doutput=" + POM_FILE));
+      run(project, env, goals.toArray(new String[0]));
       Files.write(builtBy, jdk.getBytes(StandardCharsets.UTF_8));
     }
     Build build = new Build();
@@ -197,7 +215,11 @@ final class Maven {
     Element project;
     try {
       DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-      Document document = factory.newDocumentBuilder().parse(file.toFile());
+      String text = readable(new String(Files.readAllBytes(file), StandardCharsets.UTF_8));
+      Document document =
+          factory
+              .newDocumentBuilder()
+              .parse(new org.xml.sax.InputSource(new java.io.StringReader(text)));
       project = document.getDocumentElement();
     } catch (Exception e) {
       throw new Failed("cannot read what Maven resolved (" + file + "): " + e.getMessage());
@@ -223,6 +245,26 @@ final class Maven {
     build.testSources = Paths.get(text(b, "testSourceDirectory"));
     compiler(build, project, plugin(b, "maven-compiler-plugin"));
     surefire(build, plugin(b, "maven-surefire-plugin"));
+  }
+
+  /**
+   * What Maven wrote as the resolved project, made into XML a parser accepts. It is not always:
+   *
+   * <ul>
+   *   <li>Maven writes its own header and then the project, and the XML declaration can come
+   *       out a second time, in the middle, where no parser allows one. Only the first is kept.
+   *   <li>A property can have a name no XML element may have, {@code some.name?}, and Maven
+   *       writes it out as one all the same. No setting read here is called that; the tags are
+   *       dropped.
+   * </ul>
+   */
+  static String readable(String text) {
+    int first = text.indexOf("<?xml");
+    if (first >= 0) {
+      int after = text.indexOf("?>", first) + 2;
+      text = text.substring(0, after) + text.substring(after).replaceAll("<\\?xml[^>]*\\?>", "");
+    }
+    return text.replaceAll("</?[A-Za-z_][\\w.\\-]*[^\\w.\\-\\s>/:][^<>\\s/]*>", "");
   }
 
   // What the build tells the compiler. A setting can be the plugin's own or the property it
