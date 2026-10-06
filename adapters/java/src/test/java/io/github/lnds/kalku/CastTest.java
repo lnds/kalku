@@ -108,14 +108,7 @@ class CastTest {
   }
 
   static List<Map<?, ?>> ask(Path project, String... requests) throws Exception {
-    byte[] in = (String.join("\n", requests) + "\n").getBytes(StandardCharsets.UTF_8);
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    new Service(new ByteArrayInputStream(in), out, "test").serve();
-    List<Map<?, ?>> said = new ArrayList<>();
-    for (String line : new String(out.toByteArray(), StandardCharsets.UTF_8).split("\n")) {
-      said.add((Map<?, ?>) Json.decode(line));
-    }
-    return said;
+    return Talk.ask(requests);
   }
 
   static String hello(Path project) {

@@ -8,9 +8,11 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -18,6 +20,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Answering requests.
@@ -61,17 +66,84 @@ final class Service {
     this.adapter = adapter;
   }
 
+  // The lines of the channel, read by a thread of their own so that one can arrive while a
+  // cast is running: `abort` is the one request that may. The end of the input is in the
+  // queue too, as itself.
+  private static final Object END = new Object();
+  private final BlockingQueue<Object> arriving = new LinkedBlockingQueue<>();
+  // Lines that arrived while a cast was running and were not its `abort`: served after it.
+  private final Deque<Object> waiting = new ArrayDeque<>();
+  private boolean ended;
+
   /** Serves until `shutdown` or the end of input. */
   void serve() throws IOException {
-    while (true) {
-      String line = Framing.readLine(in, Protocol.MAX_LINE);
-      if (line == null) {
+    Thread reader =
+        new Thread(
+            () -> {
+              try {
+                String line;
+                while ((line = Framing.readLine(in, Protocol.MAX_LINE)) != null) {
+                  arriving.add(line);
+                }
+              } catch (IOException e) {
+                // A channel that cannot be read has ended.
+              }
+              arriving.add(END);
+            },
+            "kalku-channel");
+    reader.setDaemon(true);
+    reader.start();
+    while (!ended) {
+      Object line = waiting.isEmpty() ? take() : waiting.poll();
+      if (line == END || handle((String) line)) {
         return;
       }
-      boolean stop = handle(line);
-      if (stop) {
-        return;
+    }
+  }
+
+  private Object take() {
+    try {
+      return arriving.take();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return END;
+    }
+  }
+
+  // Whether `abort` has been asked of this cast, in what has arrived so far or arrives within
+  // `millis`. Anything else that arrived is kept for after the cast; the end of the input
+  // ends the cast too, since nobody is left to hear its outcome.
+  private Protocol.Request aborting(long cast, long millis) {
+    try {
+      Object line = millis > 0 ? arriving.poll(millis, TimeUnit.MILLISECONDS) : arriving.poll();
+      while (line != null) {
+        if (line == END) {
+          ended = true;
+          return null;
+        }
+        Protocol.Request asked = abortOf((String) line, cast);
+        if (asked != null) {
+          return asked;
+        }
+        waiting.add(line);
+        line = arriving.poll();
       }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      ended = true;
+    }
+    return null;
+  }
+
+  private static Protocol.Request abortOf(String line, long cast) {
+    if (line == Framing.TOO_LONG) {
+      return null;
+    }
+    try {
+      Protocol.Request request = Protocol.decode(line);
+      return request.type.equals("abort") && request.cast == cast ? request : null;
+    } catch (Protocol.DecodeError e) {
+      return null;
     }
   }
 
@@ -101,7 +173,8 @@ final class Service {
         say(Protocol.bye(request.id));
         return true;
       case "abort":
-        // A cast is answered before the next line is read, so none is ever running here.
+        // An `abort` that is read here found no cast running: the one it names has already
+        // been answered, and there is nothing that was not restored.
         say(Protocol.aborted(request.id, request.cast, true));
         return false;
       default:
@@ -122,7 +195,12 @@ final class Service {
         say(baseline(request));
         break;
       case "cast":
-        say(cast(request));
+        String done = cast(request);
+        // A cast that was aborted has been answered already, with `aborted`, and gets no
+        // outcome of its own.
+        if (done != null) {
+          say(done);
+        }
         break;
       default:
         say(
@@ -165,7 +243,7 @@ final class Service {
     }
     hello = request;
     return Protocol.ready(
-        request.id, adapter, runtime(), Arrays.asList("cast", "recompile_dependents"));
+        request.id, adapter, runtime(), Arrays.asList("cast", "recompile_dependents", "abort"));
   }
 
   // A runtime cut down to less than a JDK may lack the compiler's classes altogether, and then
@@ -414,7 +492,26 @@ final class Service {
           request.id, request.wekufe, "compile_error", null, compiled.error, ms(started));
     }
 
-    Child.Ran ran = run(build, before, "run", request.tests);
+    // The compiler runs in this process and is not stopped half way; what was asked meanwhile
+    // is heard before a JVM is started for nothing.
+    Protocol.Request stop = aborting(request.id, 0);
+    Child.Running running = null;
+    if (stop == null && !ended) {
+      running =
+          Child.start(
+              build, runner, before, "run", request.tests, work.resolve("run"), environment());
+      while (!running.ended(0) && stop == null && !ended) {
+        stop = aborting(request.id, 20);
+      }
+    }
+    if (stop != null || ended) {
+      boolean gone = running == null || running.ended(0) || running.kill();
+      if (stop != null) {
+        say(Protocol.aborted(stop.id, stop.cast, gone));
+      }
+      return null;
+    }
+    Child.Ran ran = running.finish();
     if (ran.problem() != null) {
       return unjudged(request, ran.problem());
     }

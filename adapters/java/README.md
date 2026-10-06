@@ -37,8 +37,10 @@ JDK, with the kalku's jar behind it.
   the JUnit Platform. The runner is compiled in the reni against the JUnit the
   project has, from 5.4 to 6.
 
-Not yet: several modules, Gradle, JUnit 4 or TestNG alone, `abort`, coverage
-per test.
+- **`abort`** ends the JVM the tests run in and everything it started; the
+  kalku stays up for the next cast.
+
+Not yet: several modules, Gradle, JUnit 4 or TestNG alone, coverage per test.
 
 ## Requirements
 

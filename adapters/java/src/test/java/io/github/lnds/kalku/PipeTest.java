@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,6 +17,7 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -47,8 +50,10 @@ class PipeTest {
     Process process = builder.start();
     // A summoner that turns the runtime away exits without reading: writing to it then fails,
     // or does not, as the scheduler has it. What it said and how it exited is what is judged.
-    try (OutputStream in = process.getOutputStream()) {
+    OutputStream in = process.getOutputStream();
+    try {
       in.write((String.join("\n", requests) + "\n").getBytes(StandardCharsets.UTF_8));
+      in.flush();
     } catch (IOException gone) {
       // Nothing was listening.
     }
@@ -63,13 +68,25 @@ class PipeTest {
               }
             });
     errors.start();
-    String said = new String(drain(process.getInputStream()), StandardCharsets.UTF_8);
+    // The channel stays open until each request has had its answer, as it does when the
+    // kaikai side holds it: an input that ends under a cast ends the cast.
+    BufferedReader out =
+        new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+    String line;
+    while (ran.out.size() < requests.length && (line = out.readLine()) != null) {
+      ran.out.add(line);
+    }
+    try {
+      in.close();
+    } catch (IOException gone) {
+      // It had already left.
+    }
+    while ((line = out.readLine()) != null) {
+      ran.out.add(line);
+    }
     assertTrue(process.waitFor(60, TimeUnit.SECONDS), "the kalku did not exit");
     errors.join();
     ran.exit = process.exitValue();
-    if (!said.isEmpty()) {
-      ran.out.addAll(Arrays.asList(said.split("\n")));
-    }
     return ran;
   }
 
@@ -179,6 +196,98 @@ class PipeTest {
     assertEquals("killed", said.get(3).get("outcome"), ran.out.get(3));
     assertEquals("survived", said.get(4).get("outcome"), ran.out.get(4));
     assertEquals("bye", said.get(5).get("type"));
+  }
+
+  // A wekufe that never ends, in a test that has also started a process of its own. `abort`
+  // ends the tests' JVM and what it started; the cast gets no outcome; and the same kalku,
+  // still up, gives the next cast the outcome it should.
+  @Test
+  void aCastThatHangsIsStoppedInPlaceAndLeavesNothingRunning() throws Exception {
+    CastTest.copy(Paths.get("src", "test", "projects", "calc"), root.resolve("calc"));
+    Path project = root.resolve("calc");
+    String hello =
+        "{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":"
+            + Json.encode(project.toString())
+            + ",\"reni\":"
+            + Json.encode(root.resolve("reni").toString())
+            + ",\"worker\":0,\"inline_limit_bytes\":65536,\"env\":{}}";
+    Ran first = summon(THIS_JAVA, hello, CastTest.sitesOf("src/main/java/fx/Calc.java"));
+    Map<?, ?> zero = null;
+    Map<?, ?> noticed = null;
+    for (Object each : (List<?>) ((Map<?, ?>) Json.decode(first.out.get(1))).get("sites")) {
+      Map<?, ?> site = (Map<?, ?>) each;
+      if ("\"zero\"".equals(site.get("original"))) {
+        zero = site;
+      } else if (">=".equals(site.get("original"))) {
+        noticed = site;
+      }
+    }
+    // A number nothing else on this machine sleeps for, so the process can be told apart.
+    String mark = String.valueOf(40_000 + (System.nanoTime() % 20_000));
+    String hangs =
+        "((java.util.function.Supplier<String>) () -> { try { new ProcessBuilder(\"sleep\", \""
+            + mark
+            + "\").start(); } catch (Exception e) { throw new IllegalStateException(e); } while (true) { } }).get()";
+    List<String> tests = Collections.singletonList("fx.CalcTest#zeroHasItsOwnLabel()");
+
+    ProcessBuilder builder = new ProcessBuilder(SUMMONER.toString());
+    builder.environment().put("KALKU_JAVA", THIS_JAVA);
+    builder.redirectError(ProcessBuilder.Redirect.DISCARD);
+    Process kalku = builder.start();
+    try (OutputStream in = kalku.getOutputStream();
+        BufferedReader out =
+            new BufferedReader(new InputStreamReader(kalku.getInputStream(), StandardCharsets.UTF_8))) {
+      tell(in, hello);
+      assertEquals("ready", heard(out).get("type"));
+      tell(in, "{\"type\":\"prepare\",\"id\":2}");
+      assertEquals("prepared", heard(out).get("type"));
+
+      tell(in, CastTest.castOf(CastTest.rewritten(zero, hangs), tests));
+      assertTrue(appears(mark, true), "the test never started its process");
+      tell(in, "{\"type\":\"abort\",\"id\":9,\"cast\":5}");
+      Map<?, ?> aborted = heard(out);
+      assertEquals("aborted", aborted.get("type"), aborted.toString());
+      assertEquals(5L, aborted.get("cast"));
+      assertEquals(true, aborted.get("restored"));
+      assertTrue(appears(mark, false), "what the test started is still running");
+
+      // The cast that was stopped is never answered: the next thing said is the next cast's.
+      tell(in, CastTest.castOf(noticed, Collections.singletonList("fx.CalcTest#tenIsBigAndNineIsNot()")));
+      Map<?, ?> next = heard(out);
+      assertEquals("cast_done", next.get("type"), next.toString());
+      assertEquals("killed", next.get("outcome"));
+
+      tell(in, "{\"type\":\"shutdown\",\"id\":7}");
+      assertEquals("bye", heard(out).get("type"));
+    } finally {
+      kalku.destroyForcibly();
+    }
+  }
+
+  private static void tell(OutputStream in, String line) throws IOException {
+    in.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+    in.flush();
+  }
+
+  private static Map<?, ?> heard(BufferedReader out) throws Exception {
+    String line = out.readLine();
+    assertTrue(line != null, "the kalku closed its output");
+    return (Map<?, ?>) Json.decode(line);
+  }
+
+  // Waits for a process whose command line holds `mark` to be there, or to be gone.
+  private static boolean appears(String mark, boolean wanted) throws InterruptedException {
+    long deadline = System.nanoTime() + 60_000_000_000L;
+    while (System.nanoTime() < deadline) {
+      boolean there =
+          ProcessHandle.allProcesses()
+              .anyMatch(p -> p.info().commandLine().orElse("").contains("sleep " + mark));
+      if (there == wanted) {
+        return true;
+      }
+      Thread.sleep(50);
+    }
+    return false;
   }
 
   @Test

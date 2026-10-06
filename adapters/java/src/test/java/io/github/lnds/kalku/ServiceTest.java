@@ -40,14 +40,7 @@ class ServiceTest {
 
   // What the service says, line by line, to these requests.
   private List<Map<?, ?>> ask(String... requests) throws Exception {
-    byte[] in = (String.join("\n", requests) + "\n").getBytes(StandardCharsets.UTF_8);
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    new Service(new ByteArrayInputStream(in), out, "test").serve();
-    List<Map<?, ?>> said = new ArrayList<>();
-    for (String line : new String(out.toByteArray(), StandardCharsets.UTF_8).split("\n")) {
-      said.add((Map<?, ?>) Json.decode(line));
-    }
-    return said;
+    return Talk.ask(requests);
   }
 
   private String hello(long protocol) {
@@ -80,7 +73,7 @@ class ServiceTest {
     assertEquals("java", ready.get("language"));
     assertEquals("test", ready.get("adapter"));
     assertTrue(((String) ready.get("runtime")).startsWith("Java "));
-    assertEquals(Arrays.asList("cast", "recompile_dependents"), ready.get("capabilities"));
+    assertEquals(Arrays.asList("cast", "recompile_dependents", "abort"), ready.get("capabilities"));
   }
 
   @Test
