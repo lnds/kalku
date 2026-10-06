@@ -1,3 +1,9 @@
+## v0.9.1 (2026-10-06)
+
+### Fixed
+
+- **orchestrator**: a kalku that says a great deal no longer ends the run (#197)
+
 ## v0.9.0 (2026-10-06)
 
 ### Added
