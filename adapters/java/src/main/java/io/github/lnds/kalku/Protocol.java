@@ -33,6 +33,7 @@ final class Protocol {
     String root;
     String reni;
     long worker;
+    long inlineLimit;
     Map<String, String> env;
     // `sites`
     List<String> files;
@@ -133,7 +134,7 @@ final class Protocol {
         r.root = string(o, "root", "");
         r.reni = string(o, "reni", "");
         r.worker = integer(o, "worker", "");
-        integer(o, "inline_limit_bytes", "");
+        r.inlineLimit = integer(o, "inline_limit_bytes", "");
         r.env = env(o);
         break;
       case "sites":
@@ -380,11 +381,23 @@ final class Protocol {
     return Json.encode(out);
   }
 
-  static String baselineDone(long id, long durationMs, List<?> tests, List<?> failures) {
+  // At most one of `coverage` and `coveragePath` is given; neither when coverage is withheld.
+  static String baselineDone(
+      long id,
+      long durationMs,
+      List<?> tests,
+      List<?> failures,
+      List<?> coverage,
+      String coveragePath) {
     Map<String, Object> out = message("baseline_done", id);
     out.put("status", failures.isEmpty() ? "green" : "red");
     out.put("duration_ms", durationMs);
     out.put("tests", tests);
+    if (coverage != null) {
+      out.put("coverage", coverage);
+    } else if (coveragePath != null) {
+      out.put("coverage_path", coveragePath);
+    }
     out.put("failures", failures);
     return Json.encode(out);
   }

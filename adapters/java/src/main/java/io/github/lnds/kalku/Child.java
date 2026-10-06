@@ -29,7 +29,6 @@ final class Child {
   private static final int OUT_OF_MEMORY = 3;
 
   private static final String RUNNER = "io.github.lnds.kalku.runner.KalkuRunner";
-  private static final String RUNNER_SOURCE = "runner/KalkuRunner.java";
 
   /** What a run of the tests said, and how its JVM ended. */
   static final class Ran {
@@ -64,10 +63,27 @@ final class Child {
    * @return what the compiler objected to, or null
    */
   static String compileRunner(Maven.Build build, Path out) throws IOException {
+    List<Path> classpath = new ArrayList<>(build.libraries);
+    classpath.add(build.launcher);
+    return compileShipped("KalkuRunner", classpath, out);
+  }
+
+  /**
+   * Compiles what reads coverage, against the reader that was fetched for it.
+   *
+   * @return what the compiler objected to, or null
+   */
+  static String compileReader(Maven.Coverage coverage, Path out) throws IOException {
+    return compileShipped("KalkuCoverage", coverage.readers, out);
+  }
+
+  // A program that travels in the kalku as source, compiled here by the project's JDK.
+  private static String compileShipped(String name, List<Path> classpath, Path out)
+      throws IOException {
     String source;
-    try (InputStream in = Child.class.getResourceAsStream(RUNNER_SOURCE)) {
+    try (InputStream in = Child.class.getResourceAsStream("runner/" + name + ".java")) {
       if (in == null) {
-        return "the runner's source is missing from the kalku";
+        return "the source of " + name + " is missing from the kalku";
       }
       ByteArrayOutputStream held = new ByteArrayOutputStream();
       byte[] buffer = new byte[8192];
@@ -78,9 +94,7 @@ final class Child {
       source = new String(held.toByteArray(), StandardCharsets.UTF_8);
     }
     Project.clear(out);
-    Path named = out.resolve("KalkuRunner.java");
-    List<Path> classpath = new ArrayList<>(build.libraries);
-    classpath.add(build.launcher);
+    Path named = out.resolve(name + ".java");
     return Compiler.compile(
             Collections.singletonList(named),
             named,
@@ -189,6 +203,113 @@ final class Child {
       Path scratch,
       Map<String, String> env)
       throws IOException {
+    return start(build, runner, before, mode, tests, scratch, env, null);
+  }
+
+  /**
+   * Runs every test with the coverage agent counting, and waits.
+   *
+   * @param dumps where what each test reached is written
+   */
+  static Ran cover(
+      Maven.Build build,
+      Path runner,
+      Maven.Coverage coverage,
+      Path dumps,
+      Path scratch,
+      Map<String, String> env)
+      throws IOException {
+    Project.clear(dumps);
+    List<String> counting = new ArrayList<>();
+    // Only the project's own classes are counted in: by the packages its classes are in.
+    counting.add(
+        "-javaagent:" + coverage.agent + "=output=none,includes=" + String.join(":", packages(build.classes)));
+    counting.add("dumps:" + dumps);
+    counting.add("classes:" + build.classes);
+    return start(
+            build, runner, Collections.emptyList(), "cover", Collections.emptyList(), scratch, env,
+            counting)
+        .finish();
+  }
+
+  // `a.*` for each package at the top of a class directory, and the name of each class that
+  // is in no package.
+  private static List<String> packages(Path classes) throws IOException {
+    List<String> out = new ArrayList<>();
+    if (Files.isDirectory(classes)) {
+      try (java.util.stream.Stream<Path> top = Files.list(classes)) {
+        for (Path p : top.sorted().collect(Collectors.toList())) {
+          String name = p.getFileName().toString();
+          if (Files.isDirectory(p) && !name.equals("META-INF")) {
+            out.add(name + ".*");
+          } else if (name.endsWith(".class")) {
+            out.add(name.substring(0, name.length() - 6));
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Reads what the agent counted, in a JVM of its own, and writes which tests reach which
+   * places.
+   *
+   * @return what went wrong, or null
+   */
+  static String read(
+      Maven.Build build,
+      Maven.Coverage coverage,
+      Path reader,
+      Path dumps,
+      Path places,
+      Path tests,
+      Path out,
+      Map<String, String> env)
+      throws IOException {
+    List<Path> classpath = new ArrayList<>();
+    classpath.add(reader);
+    classpath.addAll(coverage.readers);
+    Path log = dumps.resolve("reader.log");
+    ProcessBuilder builder =
+        new ProcessBuilder(
+                Paths.get(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp",
+                classpath.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator)),
+                "io.github.lnds.kalku.runner.KalkuCoverage",
+                build.classes.toString(),
+                dumps.toString(),
+                places.toString(),
+                tests.toString(),
+                out.toString())
+            .directory(build.project.toFile());
+    builder.environment().clear();
+    builder.environment().putAll(env);
+    builder.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
+    builder.redirectErrorStream(true).redirectOutput(log.toFile());
+    try {
+      int exit = builder.start().waitFor();
+      if (exit != 0) {
+        List<String> said = Files.readAllLines(log, StandardCharsets.UTF_8);
+        return "reading the counts ended with " + exit + ": " + (said.isEmpty() ? "" : said.get(0));
+      }
+      return null;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return "interrupted";
+    }
+  }
+
+  private static Running start(
+      Maven.Build build,
+      Path runner,
+      List<Path> before,
+      String mode,
+      List<String> tests,
+      Path scratch,
+      Map<String, String> env,
+      List<String> counting)
+      throws IOException {
     Files.createDirectories(scratch);
     Path request = scratch.resolve("request");
     Path events = scratch.resolve("events");
@@ -201,6 +322,9 @@ final class Child {
     asked.add("root:" + build.testClasses);
     for (String test : tests) {
       asked.add("test:" + test);
+    }
+    if (counting != null) {
+      asked.addAll(counting.subList(1, counting.size()));
     }
     Files.write(request, asked, StandardCharsets.UTF_8);
 
@@ -220,6 +344,9 @@ final class Child {
     options.add("-ea");
     options.add("-XX:+ExitOnOutOfMemoryError");
     options.addAll(build.jvmFlags);
+    if (counting != null) {
+      options.add(counting.get(0));
+    }
     options.add("-cp");
     options.add(classpath.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator)));
     Files.write(

@@ -243,7 +243,7 @@ final class Service {
     }
     hello = request;
     return Protocol.ready(
-        request.id, adapter, runtime(), Arrays.asList("cast", "recompile_dependents", "abort"));
+        request.id, adapter, runtime(), Arrays.asList("cast", "per_test_coverage", "recompile_dependents", "abort"));
   }
 
   // A runtime cut down to less than a JDK may lack the compiler's classes altogether, and then
@@ -419,7 +419,159 @@ final class Service {
         failures.add(failure);
       }
     }
-    return Protocol.baselineDone(request.id, ms(started), ranTests, failures);
+    // A red baseline ends the run: there is nothing to select tests for.
+    List<Map<String, Object>> reached = failures.isEmpty() ? coverage(ran) : null;
+    String spilled = null;
+    if (reached != null && Json.encode(reached).getBytes(StandardCharsets.UTF_8).length > hello.inlineLimit) {
+      // Past what the kaikai side takes on a line, the same entries go to a file in the reni.
+      Path file = Paths.get(hello.reni).resolve("coverage").resolve(hello.worker + ".json");
+      Files.createDirectories(file.getParent());
+      Files.write(file, (Json.encode(reached) + "\n").getBytes(StandardCharsets.UTF_8));
+      spilled = file.toString();
+      reached = null;
+    }
+    return Protocol.baselineDone(request.id, ms(started), ranTests, failures, reached, spilled);
+  }
+
+  // ---- coverage ------------------------------------------------------------
+
+  // Which tests reach which sites, as the entries `baseline_done` carries; or nothing, with
+  // the reason said on stderr, wherever the answer cannot be trusted. Nothing is the safe
+  // answer: every wekufe is then cast against the whole suite, slower and still right. A wrong
+  // answer would leave a site without the test that catches it, and it would never be cast.
+  private List<Map<String, Object>> coverage(Child.Ran plain) throws IOException {
+    try {
+      Maven.Coverage tools = Maven.coverage(build, work.resolve("lib"), environment());
+      Path reader = work.resolve("reader");
+      String refused = Child.compileReader(tools, reader);
+      if (refused != null) {
+        return withheld("what reads the counts does not compile: " + refused);
+      }
+      Path dumps = work.resolve("coverage");
+      Child.Ran counted =
+          Child.cover(build, runner, tools, dumps, work.resolve("run"), environment());
+      if (counted.problem() != null) {
+        return withheld(counted.problem());
+      }
+      // The agent changes when classes are loaded and what is in them. If a test then ends
+      // otherwise than it did without it, what was counted is not what the suite does.
+      if (!outcomes(plain).equals(outcomes(counted))) {
+        return withheld("the tests did not end the same way with the agent counting");
+      }
+      Path log = work.resolve("run").resolve("tests.log");
+      if (Files.isRegularFile(log)) {
+        String said = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
+        if (said.contains("Error while instrumenting") || said.contains("IllegalClassFormatException")) {
+          return withheld(
+              "JaCoCo " + Maven.JACOCO + " could not count in this project's classes, which this "
+                  + "JDK or the project's language level may be too new for");
+        }
+      }
+
+      // The places asked about: the statement each site is in.
+      Map<String, int[]> ranges = new LinkedHashMap<>();
+      Map<String, String> sourceOf = new LinkedHashMap<>();
+      for (Path file : Project.sources(Collections.singletonList(build.sources))) {
+        String relative = build.project.relativize(file).toString().replace('\\', '/');
+        List<Sites.Site> sites;
+        try {
+          sites =
+              Sites.find(
+                  relative, Source.read(file).text, new HashSet<>(Spell.CAST),
+                  Collections.emptyList());
+        } catch (Sites.ParseError | IOException e) {
+          continue;
+        }
+        for (Sites.Site site : sites) {
+          String key = relative + ":" + site.start.line;
+          int from = Math.min(site.statementLine, site.start.line);
+          int to = Math.max(site.end.line, site.start.line);
+          int[] range = ranges.get(key);
+          if (range == null) {
+            ranges.put(key, new int[] {from, to});
+            sourceOf.put(key, build.sources.relativize(file).toString().replace('\\', '/'));
+          } else {
+            range[0] = Math.min(range[0], from);
+            range[1] = Math.max(range[1], to);
+          }
+        }
+      }
+      List<String> places = new ArrayList<>();
+      for (Map.Entry<String, int[]> place : ranges.entrySet()) {
+        places.add(
+            sourceOf.get(place.getKey()) + "\t" + place.getValue()[0] + "\t" + place.getValue()[1]
+                + "\t" + place.getKey());
+      }
+      List<String> dumped = new ArrayList<>();
+      for (Map<?, ?> each : counted.of("cover")) {
+        dumped.add(each.get("dump") + "\t" + each.get("id"));
+      }
+      Path asked = dumps.resolve("places");
+      Path which = dumps.resolve("tests");
+      Path answer = dumps.resolve("reached");
+      Files.write(asked, places, StandardCharsets.UTF_8);
+      Files.write(which, dumped, StandardCharsets.UTF_8);
+      String wrong = Child.read(build, tools, reader, dumps, asked, which, answer, environment());
+      if (wrong != null) {
+        return withheld(wrong);
+      }
+
+      List<String> every = new ArrayList<>(outcomes(plain).keySet());
+      List<Map<String, Object>> entries = new ArrayList<>();
+      for (String line : Files.readAllLines(answer, StandardCharsets.UTF_8)) {
+        String[] part = line.split("\t");
+        List<String> reaching = new ArrayList<>();
+        if (part.length == 2 && part[1].equals("*")) {
+          reaching.addAll(every);
+        } else {
+          for (int i = 1; i < part.length; i++) {
+            // Only what the baseline itself ran is a test a cast can be given.
+            if (every.contains(part[i])) {
+              reaching.add(part[i]);
+            }
+          }
+          Collections.sort(reaching);
+        }
+        if (reaching.isEmpty()) {
+          continue;
+        }
+        int colon = part[0].lastIndexOf(':');
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("file", part[0].substring(0, colon));
+        entry.put("line", Long.parseLong(part[0].substring(colon + 1)));
+        entry.put("tests", reaching);
+        entries.add(entry);
+      }
+      // A suite that reaches no site at all is not something a suite does: it is an agent
+      // that counted nothing, and every site would be reported as one no test reaches.
+      if (entries.isEmpty() && !places.isEmpty()) {
+        return withheld("nothing was counted in any of the project's classes");
+      }
+      return entries;
+    } catch (Maven.Failed e) {
+      return withheld("the coverage agent could not be fetched: " + e.getMessage());
+    }
+  }
+
+  private static List<Map<String, Object>> withheld(String why) {
+    System.err.println(
+        "kalku: per-test coverage is not reportable for this run: "
+            + why
+            + ". Every wekufe will be cast against the whole suite instead, so this run is "
+            + "slower and every survivor is real.");
+    return null;
+  }
+
+  // How each test that ran ended, by its name.
+  private static Map<String, String> outcomes(Child.Ran ran) {
+    Map<String, String> out = new java.util.TreeMap<>();
+    for (Map<?, ?> event : ran.of("test")) {
+      String outcome = (String) event.get("outcome");
+      if (outcome.equals("passed") || outcome.equals("failed")) {
+        out.put((String) event.get("id"), outcome);
+      }
+    }
+    return out;
   }
 
   // The source a test is written in: `a.B$C#m()` is in `a/B.java` under the test sources.
