@@ -40,7 +40,13 @@ JDK, with the kalku's jar behind it.
 - **`abort`** ends the JVM the tests run in and everything it started; the
   kalku stays up for the next cast.
 
-Not yet: several modules, Gradle, JUnit 4 or TestNG alone, coverage per test.
+- **Coverage per test**, counted by JaCoCo (fetched by Maven into the reni) in
+  a second run of the suite, and read afterwards in a JVM of its own so that
+  its bytecode library is never on the class path of the project's tests. A
+  wekufe is then cast only against the tests that reach it. It is withheld,
+  and the whole suite used, whenever it cannot be trusted.
+
+Not yet: several modules, Gradle, JUnit 4 or TestNG alone.
 
 ## Requirements
 
@@ -71,8 +77,9 @@ class-version error on a closed pipe tells nobody what to do.
 ## Fixtures
 
 `src/test/projects/` holds whole Maven projects written so that the outcome of
-each wekufe is known: `calc`, and `generated`, part of whose code an annotation
-processor writes.
+each wekufe is known: `calc`; `generated`, part of whose code an annotation
+processor writes; and `tables`, whose class fills a table when it is first
+used.
 
 `src/test/fixtures/<spell>/` holds sources written a particular way on purpose,
 each beside the exact sites it must give (`*.sites.ndjson`). After reviewing a

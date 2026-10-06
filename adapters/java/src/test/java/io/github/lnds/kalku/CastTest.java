@@ -381,6 +381,173 @@ class CastTest {
     return said.get(2);
   }
 
+  // ---- coverage --------------------------------------------------------------
+
+  private static Map<String, List<?>> reaching(Map<?, ?> baselineDone) {
+    Map<String, List<?>> by = new LinkedHashMap<>();
+    for (Object each : (List<?>) baselineDone.get("coverage")) {
+      Map<?, ?> entry = (Map<?, ?>) each;
+      by.put(entry.get("file") + ":" + entry.get("line"), (List<?>) entry.get("tests"));
+    }
+    return by;
+  }
+
+  @Test
+  void eachSiteIsGivenTheTestsThatReachIt() {
+    Map<String, List<?>> by = reaching(baseline);
+    assertEquals(Arrays.asList("fx.CalcTest#tenIsBigAndNineIsNot()"), by.get(CALC + ":12"));
+    assertEquals(Arrays.asList("fx.CalcTest#clampsToTheLimit()"), by.get(CALC + ":16"));
+    assertEquals(Arrays.asList("fx.CalcTest#zeroHasItsOwnLabel()"), by.get(CALC + ":24"));
+    assertEquals(
+        Arrays.asList("fx.CalcTest$Settings#theBuildsOwnSettingsReachTheTests()"),
+        by.get(CALC + ":28"));
+  }
+
+  // The compiler gives a constant's line no code and copies its value into the classes that
+  // use it. A line with no code is not a line no test reaches: it is one every test may
+  // depend on, and a site there keeps the whole suite.
+  @Test
+  void aLineWithNoCodeOfItsOwnKeepsEveryTest() {
+    Map<String, List<?>> by = reaching(baseline);
+    assertEquals(new java.util.HashSet<>(all), new java.util.HashSet<>(by.get(CALC + ":4")));
+    assertEquals(new java.util.HashSet<>(all), new java.util.HashSet<>(by.get(LIMITS + ":6")));
+  }
+
+  // What selecting tests must never change: the outcome. Every site of the project, cast
+  // against the tests coverage names for it and against the whole suite.
+  @Test
+  void aCastAgainstTheTestsThatReachASiteEndsAsOneAgainstAllOfThem() throws Exception {
+    Map<String, List<?>> by = reaching(baseline);
+    List<String> selected = new ArrayList<>(Arrays.asList(hello(root), "{\"type\":\"prepare\",\"id\":2}"));
+    List<String> whole = new ArrayList<>(selected);
+    for (Map<?, ?> site : sites) {
+      Map<?, ?> start = (Map<?, ?>) ((Map<?, ?>) site.get("span")).get("start");
+      List<?> tests = by.get(site.get("file") + ":" + start.get("line"));
+      assertNotNull(tests, "no test is named for " + site);
+      List<String> names = new ArrayList<>();
+      for (Object test : tests) {
+        names.add((String) test);
+      }
+      selected.add(castOf(site, names));
+      whole.add(castOf(site, all));
+    }
+    List<Map<?, ?>> narrow = ask(root, selected.toArray(new String[0]));
+    List<Map<?, ?>> wide = ask(root, whole.toArray(new String[0]));
+    assertEquals(sites.size() + 2, narrow.size());
+    int killed = 0;
+    for (int i = 2; i < narrow.size(); i++) {
+      assertEquals("cast_done", narrow.get(i).get("type"), narrow.get(i).toString());
+      assertEquals(wide.get(i).get("outcome"), narrow.get(i).get("outcome"), sites.get(i - 2).toString());
+      killed += "killed".equals(narrow.get(i).get("outcome")) ? 1 : 0;
+    }
+    assertEquals(14, sites.size());
+    assertEquals(9, killed);
+  }
+
+  // Past what a line may carry, the same entries go to a file, as one JSON array.
+  @Test
+  void coverageTooLargeForALineGoesToAFile() throws Exception {
+    Path project = temp.resolve("spilled");
+    copy(PROJECTS.resolve("calc"), project);
+    String small = hello(project).replace("\"inline_limit_bytes\":65536", "\"inline_limit_bytes\":10");
+    Map<?, ?> done =
+        ask(project, small, "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":4}").get(2);
+    assertNull(done.get("coverage"));
+    Path file = Paths.get((String) done.get("coverage_path"));
+    assertTrue(file.startsWith(reni.resolve("spilled")), file.toString());
+    List<?> entries =
+        (List<?>) Json.decode(new String(Files.readAllBytes(file), StandardCharsets.UTF_8).trim());
+    assertEquals(((List<?>) baseline.get("coverage")).size(), entries.size());
+  }
+
+  // A class fills its table when it is first used, in whichever test comes first, and only
+  // that test would be credited with the lines that fill it. Here the first test does not
+  // look at what the table holds and the second does: counted naively, the wekufe below would
+  // be cast against the first alone and come back a survivor.
+  @Test
+  void whatAClassDoesWhenFirstUsedBelongsToEveryTest() throws Exception {
+    Path project = temp.resolve("tables");
+    copy(PROJECTS.resolve("tables"), project);
+    String file = "src/main/java/fx/Codes.java";
+    List<Map<?, ?>> said =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(file), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("green", said.get(3).get("status"), said.get(3).toString());
+    Map<String, List<?>> by = reaching(said.get(3));
+    Map<?, ?> inTable = null;
+    Map<?, ?> inLabel = null;
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      Map<?, ?> site = (Map<?, ?>) each;
+      if ("1".equals(site.get("original")) && "2".equals(site.get("replacement"))) {
+        inTable = site;
+      } else if ("\"many\"".equals(site.get("original"))) {
+        inLabel = site;
+      }
+    }
+    // The table is filled on line 14, and `label` returns on line 28, which only what runs
+    // before every test reaches.
+    for (Map<?, ?> site : Arrays.asList(inTable, inLabel)) {
+      Map<?, ?> start = (Map<?, ?>) ((Map<?, ?>) site.get("span")).get("start");
+      List<String> tests = new ArrayList<>();
+      for (Object test : by.get(file + ":" + start.get("line"))) {
+        tests.add((String) test);
+      }
+      assertEquals(3, tests.size(), site.toString());
+      Map<?, ?> done =
+          ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", castOf(site, tests)).get(2);
+      assertEquals("killed", done.get("outcome"), site + " " + done);
+    }
+    // Where the tests do tell which of them reaches a line, only that one is named.
+    assertEquals(Arrays.asList("fx.CodesTest#aKnowsItsNames()"), by.get(file + ":20"));
+  }
+
+  // A suite that does not end the same way with the agent counting as without it: here a
+  // test that looks for the agent and fails when it finds it. What was counted is then not
+  // what the suite does, so nothing of it is reported, the reason is said, and a cast against
+  // the whole suite still ends as it should.
+  @Test
+  void coverageThatCannotBeTrustedIsWithheldAndSaidSo() throws Exception {
+    Path project = temp.resolve("watched");
+    copy(PROJECTS.resolve("calc"), project);
+    Files.write(
+        project.resolve("src/test/java/fx/AgentTest.java"),
+        ("package fx;\n"
+                + "import static org.junit.jupiter.api.Assertions.assertFalse;\n"
+                + "import java.lang.management.ManagementFactory;\n"
+                + "import org.junit.jupiter.api.Test;\n"
+                + "class AgentTest {\n"
+                + "  @Test\n"
+                + "  void nothingIsWatching() {\n"
+                + "    assertFalse(ManagementFactory.getRuntimeMXBean().getInputArguments().toString().contains(\"jacoco\"));\n"
+                + "  }\n"
+                + "}\n")
+            .getBytes(StandardCharsets.UTF_8));
+    java.io.PrintStream err = System.err;
+    java.io.ByteArrayOutputStream said = new java.io.ByteArrayOutputStream();
+    Map<?, ?> done;
+    try {
+      System.setErr(new java.io.PrintStream(said, true, "UTF-8"));
+      done =
+          ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":4}")
+              .get(2);
+    } finally {
+      System.setErr(err);
+    }
+    assertEquals("green", done.get("status"), done.toString());
+    assertEquals(6, ((List<?>) done.get("tests")).size());
+    assertNull(done.get("coverage"));
+    assertNull(done.get("coverage_path"));
+    String why = new String(said.toByteArray(), StandardCharsets.UTF_8);
+    assertTrue(why.contains("per-test coverage is not reportable"), why);
+    assertTrue(why.contains("did not end the same way"), why);
+
+    List<String> every = new ArrayList<>(all);
+    every.add("fx.AgentTest#nothingIsWatching()");
+    Map<?, ?> cast =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", castOf(site(CALC, ">=", ">"), every))
+            .get(2);
+    assertEquals("killed", cast.get("outcome"), cast.toString());
+  }
+
   // ---- what is not a verdict ---------------------------------------------------
 
   // A JVM that ends before its tests do did not fail an assertion. `System.exit` is the

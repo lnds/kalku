@@ -54,24 +54,43 @@ public final class KalkuRunner {
     String mode = asked.get(0);
     Set<Path> roots = new LinkedHashSet<>();
     List<String> tests = new ArrayList<>();
+    Path dumps = null;
+    Path classes = null;
     for (String line : asked.subList(1, asked.size())) {
       if (line.startsWith("root:")) {
         roots.add(Paths.get(line.substring(5)));
       } else if (line.startsWith("test:")) {
         tests.add(line.substring(5));
+      } else if (line.startsWith("dumps:")) {
+        dumps = Paths.get(line.substring(6));
+      } else if (line.startsWith("classes:")) {
+        classes = Paths.get(line.substring(8));
       }
     }
     try (Writer out = Files.newBufferedWriter(Paths.get(args[1]), StandardCharsets.UTF_8)) {
       try {
         Launcher launcher = LauncherFactory.create();
-        LauncherDiscoveryRequest request = request(roots, tests);
+        boolean covering = mode.equals("cover");
+        LauncherDiscoveryRequest request = request(roots, tests, covering);
         if (mode.equals("discover")) {
           for (String id : found(launcher.discover(request))) {
             say(out, "{\"e\":\"found\",\"id\":" + quoted(id) + "}");
           }
         } else {
           Recorder recorder = new Recorder();
+          if (covering) {
+            recorder.cover = new Cover(dumps);
+            recorder.cover.initialise(classes);
+          }
           launcher.execute(request, recorder);
+          if (covering) {
+            recorder.cover.outside();
+            for (String[] taken : recorder.cover.taken) {
+              say(
+                  out,
+                  "{\"e\":\"cover\",\"id\":" + quoted(taken[0]) + ",\"dump\":" + quoted(taken[1]) + "}");
+            }
+          }
           for (Map.Entry<String, Result> entry : recorder.results.entrySet()) {
             Result r = entry.getValue();
             say(
@@ -114,8 +133,13 @@ public final class KalkuRunner {
     watch.start();
   }
 
-  private static LauncherDiscoveryRequest request(Set<Path> roots, List<String> tests) {
+  private static LauncherDiscoveryRequest request(
+      Set<Path> roots, List<String> tests, boolean covering) {
     LauncherDiscoveryRequestBuilder builder = LauncherDiscoveryRequestBuilder.request();
+    if (covering) {
+      // What a test reached is only known while one test runs at a time.
+      builder.configurationParameter("junit.jupiter.execution.parallel.enabled", "false");
+    }
     if (tests.isEmpty()) {
       builder.selectors(DiscoverySelectors.selectClasspathRoots(roots));
       builder.filters(ClassNameFilter.includeClassNamePatterns(TEST_CLASSES));
@@ -185,6 +209,7 @@ public final class KalkuRunner {
     final Map<String, Result> results = new LinkedHashMap<>();
     private final Map<String, Long> started = new ConcurrentHashMap<>();
     private TestPlan plan;
+    Cover cover;
 
     @Override
     public void testPlanExecutionStarted(TestPlan testPlan) {
@@ -193,6 +218,9 @@ public final class KalkuRunner {
 
     @Override
     public void executionStarted(TestIdentifier id) {
+      if (cover != null && id.isTest()) {
+        cover.outside();
+      }
       started.put(id.getUniqueId(), System.nanoTime());
     }
 
@@ -204,6 +232,9 @@ public final class KalkuRunner {
         return;
       }
       String name = name(plan, id);
+      if (cover != null && id.isTest()) {
+        cover.test(name);
+      }
       if (name == null) {
         return;
       }
@@ -229,6 +260,89 @@ public final class KalkuRunner {
       if (name != null && id.isTest()) {
         results.computeIfAbsent(name, n -> new Result()).outcome = "skipped";
       }
+    }
+  }
+
+  /**
+   * What each test reached, taken from the agent that counts it.
+   *
+   * <p>The agent is JaCoCo's, started with this JVM. It is asked through reflection, so this
+   * file compiles where there is no agent. Nothing it counted is thrown away: what ran while
+   * a test did is the test's, and everything else — what a class does when it is first used,
+   * what runs before and between tests — is kept apart, because every test may depend on it.
+   */
+  private static final class Cover {
+    final List<String[]> taken = new ArrayList<>();
+    private final Path dir;
+    private final Object agent;
+    private final java.lang.reflect.Method take;
+
+    Cover(Path dir) throws Exception {
+      this.dir = dir;
+      Files.createDirectories(dir);
+      agent = Class.forName("org.jacoco.agent.rt.RT").getMethod("getAgent").invoke(null);
+      take =
+          Class.forName("org.jacoco.agent.rt.IAgent")
+              .getMethod("getExecutionData", boolean.class);
+    }
+
+    // What was counted since the last time, which starts the count again.
+    private byte[] counted() {
+      try {
+        return (byte[]) take.invoke(agent, true);
+      } catch (ReflectiveOperationException e) {
+        throw new IllegalStateException(e);
+      }
+    }
+
+    // A class runs its static initialiser once in the life of a JVM, during whichever test
+    // happens to use it first, and that test would be the only one credited with it. So every
+    // class of the project is initialised here, before any test, and what that ran is kept as
+    // what every test may depend on.
+    void initialise(Path classes) throws IOException {
+      List<String> names = new ArrayList<>();
+      try (java.util.stream.Stream<Path> all = Files.walk(classes)) {
+        all.filter(p -> p.toString().endsWith(".class"))
+            .sorted()
+            .forEach(
+                p -> {
+                  String name = classes.relativize(p).toString().replace('\\', '/');
+                  name = name.substring(0, name.length() - 6).replace('/', '.');
+                  if (!name.endsWith("module-info") && !name.endsWith("package-info")) {
+                    names.add(name);
+                  }
+                });
+      }
+      for (String name : names) {
+        try {
+          Class.forName(name, true, KalkuRunner.class.getClassLoader());
+        } catch (Throwable t) {
+          // A class that cannot be initialised here will say so in the test that needs it.
+        }
+      }
+      Files.write(dir.resolve("init.exec"), counted());
+    }
+
+    synchronized void outside() {
+      try {
+        Files.write(
+            dir.resolve("outside.exec"),
+            counted(),
+            java.nio.file.StandardOpenOption.CREATE,
+            java.nio.file.StandardOpenOption.APPEND);
+      } catch (IOException e) {
+        throw new IllegalStateException(e);
+      }
+    }
+
+    synchronized void test(String name) {
+      String file = "t" + taken.size() + ".exec";
+      try {
+        Files.write(dir.resolve(file), counted());
+      } catch (IOException e) {
+        throw new IllegalStateException(e);
+      }
+      taken.add(new String[] {name == null ? "" : name, file});
     }
   }
 

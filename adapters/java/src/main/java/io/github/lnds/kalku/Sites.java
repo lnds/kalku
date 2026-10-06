@@ -103,6 +103,10 @@ final class Sites {
     String replacement;
     // Whether the classes that use this one have to be compiled again for the wekufe to be whole.
     boolean dependents;
+    // The line the statement around this site begins on. A site can sit on a line the compiler
+    // gives no code of its own, the second line of a condition, say: it is reached when its
+    // statement is.
+    int statementLine;
   }
 
   /** A file that cannot be searched. */
@@ -121,15 +125,23 @@ final class Sites {
     final String replacement;
     final String enclosing;
     final boolean dependents;
+    final int statement;
 
     Candidate(
-        String spell, int start, int end, String replacement, String enclosing, boolean dependents) {
+        String spell,
+        int start,
+        int end,
+        String replacement,
+        String enclosing,
+        boolean dependents,
+        int statement) {
       this.spell = spell;
       this.start = start;
       this.end = end;
       this.replacement = replacement;
       this.enclosing = enclosing;
       this.dependents = dependents;
+      this.statement = statement;
     }
   }
 
@@ -179,6 +191,7 @@ final class Sites {
       s.original = src.slice(c.start, c.end);
       s.replacement = c.replacement;
       s.dependents = c.dependents;
+      s.statementLine = src.position(Math.min(c.statement, c.start)).line;
       s.start = src.position(c.start);
       s.end = src.position(c.end);
       s.ordinal = seen.merge(c.enclosing + "\u0000" + c.spell + "\u0000" + s.original, 1, Integer::sum);
@@ -301,6 +314,8 @@ final class Sites {
     // it, so a wekufe there is only whole once those classes are compiled again.
     private final Map<Tree, Boolean> constants = new IdentityHashMap<>();
     private int inConstant;
+    // Where the statements the walk is inside of begin, innermost first.
+    private final Deque<Integer> statements = new ArrayDeque<>();
     private int anonymous;
     final List<Candidate> found = new ArrayList<>();
 
@@ -350,7 +365,10 @@ final class Sites {
 
     private void propose(String spell, int start, int end, String replacement) {
       if (spells.contains(spell) && start >= 0 && end >= start) {
-        found.add(new Candidate(spell, start, end, replacement, enclosing(), inConstant > 0));
+        int statement = statements.isEmpty() ? start : statements.peek();
+        found.add(
+            new Candidate(
+                spell, start, end, replacement, enclosing(), inConstant > 0, statement));
       }
     }
 
@@ -421,14 +439,23 @@ final class Sites {
       if (kindIs(t, "SWITCH") || kindIs(t, "SWITCH_EXPRESSION")) {
         arms(t);
       }
-      if (!constants.containsKey(t)) {
-        return super.scan(t, p);
+      boolean statement = (t instanceof StatementTree || t instanceof CaseTree) && placed(t);
+      boolean constant = constants.containsKey(t);
+      if (statement) {
+        statements.push(start(t));
       }
-      inConstant++;
+      if (constant) {
+        inConstant++;
+      }
       try {
         return super.scan(t, p);
       } finally {
-        inConstant--;
+        if (constant) {
+          inConstant--;
+        }
+        if (statement) {
+          statements.pop();
+        }
       }
     }
 
@@ -525,7 +552,10 @@ final class Sites {
       }
       for (Tree c : cases) {
         if (!isDefault(c) && placed(c)) {
+          // A case is reached when anything in it is: it is its own statement.
+          statements.push(start(c));
           propose(Spell.ARM, start(c), end(c), "");
+          statements.pop();
         }
       }
     }

@@ -243,8 +243,9 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | kalku de Java: `prepare`, `baseline` y `cast` en el reni para un proyecto Maven de un solo módulo con JUnit 5 o posterior | hecho |
 | kalku de Java: `kalku init` para proyectos Maven, incluido en el release | hecho |
 | kalku de Java: `abort`, terminando la JVM donde corren los tests | hecho |
-| kalku de Java: Gradle; varios módulos; solo JUnit 4 o TestNG; cobertura por test | todavía no |
-| **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python |
+| kalku de Java: cobertura por test, contada por JaCoCo y retenida donde no se pueda confiar en ella | hecho |
+| kalku de Java: Gradle; varios módulos; solo JUnit 4 o TestNG | todavía no |
+| **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python, Java |
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
 | `--watch` y `--ci` | todavía no |

@@ -131,8 +131,15 @@ final class Maven {
 
   private static void run(Path project, Map<String, String> env, String... goals)
       throws Failed, IOException {
+    run(project, project, env, goals);
+  }
+
+  // Maven run in `where`, as the project `of` would run it: with its wrapper, if it has one.
+  private static void run(Path where, Path of, Map<String, String> env, String... goals)
+      throws Failed, IOException {
+    Path project = where;
     List<String> command = new ArrayList<>();
-    command.add(executable(project, env));
+    command.add(executable(of, env));
     command.add("-B");
     command.add("-q");
     command.addAll(Arrays.asList(goals));
@@ -492,6 +499,56 @@ final class Maven {
       }
     }
     build.launcher = jar;
+  }
+
+  // ---- what reads coverage ----------------------------------------------------
+
+  /** The agent that counts what runs, and what reads its counts afterwards. */
+  static final class Coverage {
+    Path agent;
+    List<Path> readers = new ArrayList<>();
+  }
+
+  // The one version of JaCoCo this kalku asks for. A JDK newer than it knows is one whose
+  // classes it cannot count in, and coverage is then withheld rather than guessed.
+  static final String JACOCO = "0.8.15";
+
+  /**
+   * Fetches the coverage agent and its reader into the reni, once.
+   *
+   * <p>Neither is the kalku's dependency and neither goes on the class path of the project's
+   * tests. They are named in a pom of their own, so that Maven brings what they need as well.
+   */
+  static Coverage coverage(Build build, Path lib, Map<String, String> env)
+      throws Failed, IOException {
+    Path dir = lib.resolve("coverage-" + JACOCO);
+    Path jars = dir.resolve("jars");
+    Path agent = jars.resolve("org.jacoco.agent-" + JACOCO + "-runtime.jar");
+    if (!Files.isRegularFile(agent)) {
+      Files.createDirectories(dir);
+      String pom =
+          "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>"
+              + "<groupId>kalku</groupId><artifactId>coverage</artifactId><version>1</version>"
+              + "<packaging>pom</packaging><dependencies>"
+              + "<dependency><groupId>org.jacoco</groupId><artifactId>org.jacoco.core</artifactId>"
+              + "<version>" + JACOCO + "</version></dependency>"
+              + "<dependency><groupId>org.jacoco</groupId><artifactId>org.jacoco.agent</artifactId>"
+              + "<version>" + JACOCO + "</version><classifier>runtime</classifier></dependency>"
+              + "</dependencies></project>\n";
+      Files.write(dir.resolve("pom.xml"), pom.getBytes(StandardCharsets.UTF_8));
+      run(dir, build.project, env, DEPENDENCY + ":copy-dependencies", "-DoutputDirectory=" + jars);
+      if (!Files.isRegularFile(agent)) {
+        throw new Failed("Maven did not fetch the JaCoCo agent " + JACOCO);
+      }
+    }
+    Coverage coverage = new Coverage();
+    coverage.agent = agent;
+    try (java.util.stream.Stream<Path> all = Files.list(jars)) {
+      all.filter(p -> p.toString().endsWith(".jar") && !p.equals(agent))
+          .sorted()
+          .forEach(coverage.readers::add);
+    }
+    return coverage;
   }
 
   // ---- XML, as little of it as this needs --------------------------------------
