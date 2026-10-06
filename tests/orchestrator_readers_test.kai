@@ -1,0 +1,61 @@
+import actor
+import time
+import os.process as proc
+import kalku.orchestrator.kalku_proc
+
+# A kalku's readers run for as long as it lives, one turn for each chunk it
+# says. A large project's build and suite say a great deal over a long run,
+# and so do a few thousand casts: a reader that kept a little stack for each
+# turn ended the run after some thousands of them, with the whole binary.
+
+const LINE : String = "0123456789012345678901234567890123456789"
+
+const LINES : Int = 200000
+
+# A kalku that only talks: this many lines, on stderr or on stdout.
+fn talker(to_stderr: Bool) : KalkuSpec = KalkuSpec {
+  life: Life { worker: 0, summons: 1 },
+  command: "/bin/sh",
+  args: [
+    "-c",
+    "i=0; while [ $i -lt #{LINES} ]; do echo #{LINE}#{if to_stderr { " >&2" } else { "" }}; i=$((i+1)); done"
+  ]
+}
+
+# What was heard until the kalku fell silent: the bytes it wrote on stderr,
+# and the lines it said on stdout.
+fn heard_all(wrote: Int, said: Int) : (Int, Int) / Actor[OrchMsg] + Clock =
+  match receive_timeout(seconds(3)) {
+    None -> (wrote, said)
+    Some(Wire(_, Wrote(chunk))) -> heard_all(wrote + length(chunk), said)
+    Some(Wire(_, Said(_))) -> heard_all(wrote, said + 1)
+    Some(_) -> heard_all(wrote, said)
+  }
+
+test "a kalku that writes a great deal on stderr is read to the last byte" {
+  let heard = with_mailbox {
+    match summon(talker(true)) {
+      Err(_) -> (0, 0)
+      Ok(k) -> {
+        let me = Actor.self()
+        let _errs = spawn_actor(() => read_errs_loop(k, me))
+        heard_all(0, 0)
+      }
+    }
+  }
+  assert heard == ((LINES * (length(LINE) + 1), 0))
+}
+
+test "a kalku that says a great many lines on stdout has every one of them heard" {
+  let heard = with_mailbox {
+    match summon(talker(false)) {
+      Err(_) -> (0, 0)
+      Ok(k) -> {
+        let me = Actor.self()
+        let _reader = spawn_actor(() => read_loop(k, me))
+        heard_all(0, 0)
+      }
+    }
+  }
+  assert heard == ((0, LINES))
+}
