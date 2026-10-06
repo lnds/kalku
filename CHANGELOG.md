@@ -1,3 +1,18 @@
+## v0.9.0 (2026-10-06)
+
+### Added
+
+- **java**: projects that test with JUnit 4 or with TestNG (#188)
+- **java**: Gradle builds, asked by running them (#187)
+- **java**: Maven projects of several modules (#184)
+- **java**: per-test coverage, counted by JaCoCo and read away from the tests (#183)
+- **java**: a cast that hangs is aborted in place (#182)
+
+### Fixed
+
+- **java**: a module that is nothing but tests does not stop a constant from being cast (#185)
+- **java**: a real project builds in the reni (#181)
+
 ## v0.8.0 (2026-10-05)
 
 ### Added

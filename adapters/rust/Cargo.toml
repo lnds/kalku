@@ -1,6 +1,6 @@
 [package]
 name = "kalku-rust"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.85"
 description = "The Rust kalku: finds the places where a defect can be cast in a Rust project, and casts them"
