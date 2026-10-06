@@ -1,0 +1,108 @@
+// What the Java kalku asks of a Gradle build, added to it from outside: nothing here is
+// written into the project. For every project of the build that has Java code it compiles
+// the sources and the tests, and writes down what a cast needs to know: where the classes and
+// the sources are, what the tests run with, and what the build tells the compiler and the
+// tests' JVM. It also has Gradle fetch what the kalku needs and the project does not bring:
+// the JUnit launcher that fits the project's engines, and the coverage agent with its reader.
+//
+// It is run as `gradle -I <this file> -Pkalku.out=<directory> kalkuDescribe`.
+
+def kalkuOut = { project -> new File(project.gradle.startParameter.projectProperties['kalku.out']) }
+
+// One line a value, `key=value`: a path can hold anything but a newline.
+def kalkuLines = { String key, Collection values ->
+  values.findAll { it != null }.collect { key + '=' + it.toString() }
+}
+
+allprojects { project ->
+  project.plugins.withId('java') {
+    project.tasks.register('kalkuDescribe') { task ->
+      def sets = project.extensions.getByName('sourceSets')
+      def main = sets.getByName('main')
+      def test = sets.getByName('test')
+      def testTask = project.tasks.named('test').get()
+      task.dependsOn(test.output, main.output, testTask.classpath)
+      task.doLast {
+        def compile = project.tasks.named('compileJava').get()
+        def compileTest = project.tasks.named('compileTestJava').get()
+        def flags = { c ->
+          def out = []
+          def release = c.options.hasProperty('release') ? c.options.release.getOrNull() : null
+          if (release != null) {
+            out += ['--release', release.toString()]
+          } else {
+            out += ['-source', c.sourceCompatibility, '-target', c.targetCompatibility]
+          }
+          if (c.options.encoding != null) {
+            out += ['-encoding', c.options.encoding]
+          }
+          out += c.options.compilerArgs.collect { it.toString() }
+          def processors = c.options.annotationProcessorPath
+          if (processors != null && !processors.files.isEmpty()) {
+            out += ['-processorpath', processors.files.join(File.pathSeparator)]
+          }
+          out
+        }
+        def classpath = testTask.classpath.files.findAll { it.exists() }
+        def platform = null
+        classpath.each { f ->
+          def m = f.name =~ /^junit-platform-engine-(.+)\.jar$/
+          if (m.matches()) {
+            platform = m.group(1)
+          }
+        }
+        def fetched = { String... what ->
+          project.configurations.detachedConfiguration(
+              what.collect { project.dependencies.create(it) } as org.gradle.api.artifacts.Dependency[]
+          ).files
+        }
+        def lines = []
+        lines += kalkuLines('path', [project.path])
+        lines += kalkuLines('dir', [project.projectDir])
+        lines += kalkuLines('classes', [compile.destinationDirectory.get().asFile])
+        lines += kalkuLines('testClasses', [compileTest.destinationDirectory.get().asFile])
+        lines += kalkuLines('sources', main.java.srcDirs.findAll { it.exists() })
+        lines += kalkuLines('testSources', test.java.srcDirs.findAll { it.exists() })
+        lines += kalkuLines('classpath', classpath)
+        lines += kalkuLines('output', main.output.files + test.output.files)
+        def jar = project.tasks.findByName('jar')
+        if (jar != null) {
+          lines += kalkuLines('jar', [jar.archiveFile.get().asFile])
+        }
+        lines += kalkuLines('flag', flags(compile))
+        lines += kalkuLines('testFlag', flags(compileTest))
+        lines += kalkuLines('jvm', testTask.allJvmArgs.findAll {
+          // What Gradle itself adds for its own runner is not the build's.
+          !it.startsWith('-Dorg.gradle.') && !it.startsWith('-Dfile.encoding=')
+              && !it.startsWith('-Duser.') && !it.startsWith('-Djava.security.manager')
+              && !it.startsWith('-Xmx') && !it.startsWith('-Xms') && it != '-ea'
+        })
+        lines += kalkuLines('framework', [testTask.testFramework.getClass().simpleName])
+        def launcher = testTask.hasProperty('javaLauncher') ? testTask.javaLauncher.getOrNull() : null
+        if (launcher != null) {
+          lines += kalkuLines('javaHome', [launcher.metadata.installationPath.asFile])
+        }
+        if (platform != null) {
+          lines += kalkuLines('platform', [platform])
+          def has = classpath.find { it.name.startsWith('junit-platform-launcher-') }
+          lines += kalkuLines('launcher',
+              has != null ? [has] : fetched("org.junit.platform:junit-platform-launcher:${platform}"))
+        }
+        def jacoco = project.gradle.startParameter.projectProperties['kalku.jacoco']
+        if (jacoco != null) {
+          try {
+            lines += kalkuLines('agent', fetched("org.jacoco:org.jacoco.agent:${jacoco}:runtime"))
+            lines += kalkuLines('reader', fetched("org.jacoco:org.jacoco.core:${jacoco}"))
+          } catch (Exception e) {
+            // Coverage is then withheld; the project is measured all the same.
+            lines += kalkuLines('noCoverage', [e.message?.readLines()?.first()])
+          }
+        }
+        def out = kalkuOut(project)
+        out.mkdirs()
+        def name = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '.')
+        new File(out, name + '.describe').setText(lines.join('\n') + '\n', 'UTF-8')
+      }
+    }
+  }
+}

@@ -44,7 +44,7 @@ final class Service {
   private static final List<String> INHERITED =
       Arrays.asList(
           "PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "MAVEN_OPTS", "MAVEN_ARGS",
-          "KALKU_MAVEN");
+          "KALKU_MAVEN", "GRADLE_OPTS", "GRADLE_USER_HOME", "KALKU_GRADLE");
 
   private final InputStream in;
   private final OutputStream out;
@@ -355,11 +355,17 @@ final class Service {
       // Maven names its directories by where they really are, past any link on the way.
       copy = copy.toRealPath();
       work = copy.getParent();
-      if (!Files.isRegularFile(copy.resolve("pom.xml"))) {
+      // A project that has both is built the way its `pom.xml` says.
+      Maven.Reactor built;
+      if (Files.isRegularFile(copy.resolve("pom.xml"))) {
+        built = Maven.build(copy, work.resolve("lib"), environment(), changed > 0);
+      } else if (Gradle.builds(copy)) {
+        built = Gradle.build(copy, work, environment(), changed > 0);
+      } else {
         throw new Maven.Failed(
-            "no `pom.xml` at the root of the project: only Maven projects are measured yet");
+            "neither a `pom.xml` nor a Gradle build at the root of the project: kalku measures "
+                + "Java projects built by Maven or by Gradle");
       }
-      Maven.Reactor built = Maven.build(copy, work.resolve("lib"), environment(), changed > 0);
       long modules = 0;
       for (Maven.Build module : built.modules) {
         modules += Project.sources(Collections.singletonList(module.sources)).size();
@@ -500,7 +506,15 @@ final class Service {
         return withheld("the project has no tests");
       }
       Maven.Build any = plain.keySet().iterator().next();
-      Maven.Coverage tools = Maven.coverage(any, work.resolve("lib"), environment());
+      Maven.Coverage tools = project.coverage;
+      if (tools == null) {
+        if (project.gradle) {
+          return withheld(
+              "the coverage agent could not be fetched"
+                  + (project.noCoverage == null ? "" : ": " + project.noCoverage));
+        }
+        tools = Maven.coverage(any, work.resolve("lib"), environment());
+      }
       Path reader = work.resolve("reader");
       String refused = Child.compileReader(tools, reader);
       if (refused != null) {

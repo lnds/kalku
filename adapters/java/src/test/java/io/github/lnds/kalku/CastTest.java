@@ -639,6 +639,124 @@ class CastTest {
     assertFalse(Files.exists(shop.resolve("app").resolve("target")));
   }
 
+  // ---- Gradle ------------------------------------------------------------------
+
+  // Whether the `gradle` on this machine runs on the JDK these tests run on. No one version of
+  // Gradle runs on every JDK the kalku does: 9 needs Java 17, and 8 does not know Java 25.
+  private static boolean gradleRuns() {
+    try {
+      // A build, however empty: asked only for its version, Gradle answers on any JDK.
+      Path empty = Files.createDirectories(temp.resolve("gradle-probe"));
+      Files.write(empty.resolve("settings.gradle"), new byte[0]);
+      ProcessBuilder builder =
+          new ProcessBuilder("gradle", "--no-daemon", "-q", "help").directory(empty.toFile());
+      builder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+      builder.redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD);
+      return builder.start().waitFor() == 0;
+    } catch (IOException | InterruptedException e) {
+      return false;
+    }
+  }
+
+  // A project of the Maven fixtures, with a Gradle build in place of its `pom.xml`.
+  private static Path asGradle(String name) throws IOException {
+    Path project = temp.resolve("gradle-" + name);
+    copy(PROJECTS.resolve(name), project);
+    try (Stream<Path> walk = Files.walk(project)) {
+      for (Path pom : walk.filter(p -> p.getFileName().toString().equals("pom.xml")).collect(Collectors.toList())) {
+        Files.delete(pom);
+      }
+    }
+    Path build = PROJECTS.resolve("gradle").resolve(name);
+    try (Stream<Path> walk = Files.walk(build)) {
+      for (Path file : walk.filter(Files::isRegularFile).collect(Collectors.toList())) {
+        Path to = project.resolve(build.relativize(file).toString());
+        Files.createDirectories(to.getParent());
+        Files.copy(file, to);
+      }
+    }
+    return project;
+  }
+
+  // The same sources, built by Gradle instead of Maven: the same tests, the same map of which
+  // test reaches what, and the same outcome for every site.
+  @Test
+  void aGradleBuildOfTheSameCodeGivesTheSameOutcomes() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
+    Path project = asGradle("calc");
+    List<String> before = tree(project);
+    List<Map<?, ?>> said =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(CALC, LIMITS), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+    List<String> ran = new ArrayList<>();
+    for (Object test : (List<?>) done.get("tests")) {
+      ran.add((String) ((Map<?, ?>) test).get("test"));
+    }
+    // The nested test only passes with the JVM argument and the system property the build
+    // gives its tests: Gradle's `jvmArgs` and `systemProperty`, as Maven's `argLine`.
+    assertEquals(new java.util.HashSet<>(all), new java.util.HashSet<>(ran));
+    assertEquals(reaching(baseline), reaching(done));
+
+    List<String> casts = new ArrayList<>(Arrays.asList(hello(project), "{\"type\":\"prepare\",\"id\":2}"));
+    List<Map<?, ?>> found = new ArrayList<>();
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      found.add((Map<?, ?>) each);
+      casts.add(castOf((Map<?, ?>) each, all));
+    }
+    assertEquals(14, found.size());
+    List<Map<?, ?>> outcomes = ask(project, casts.toArray(new String[0]));
+    int killed = 0;
+    for (int i = 0; i < found.size(); i++) {
+      assertEquals("cast_done", outcomes.get(i + 2).get("type"), outcomes.get(i + 2).toString());
+      killed += "killed".equals(outcomes.get(i + 2).get("outcome")) ? 1 : 0;
+    }
+    assertEquals(9, killed);
+    // Gradle writes `build` and `.gradle` beside the build file: in the reni, not here.
+    assertEquals(before, tree(project));
+  }
+
+  // Two projects of one Gradle build, one using the other, which Gradle puts on the other's
+  // class path as a jar. A site in the one is still noticed by the tests of the other, and a
+  // constant of the one is still compiled again in the other.
+  @Test
+  void aGradleBuildOfSeveralProjectsIsJudgedAcrossThem() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
+    Path project = asGradle("shop");
+    String prices = "core/src/main/java/fx/core/Prices.java";
+    String checkout = "app/src/main/java/fx/app/Checkout.java";
+    List<Map<?, ?>> said =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(prices, checkout), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+    List<String> every = new ArrayList<>();
+    for (Object test : (List<?>) done.get("tests")) {
+      every.add((String) ((Map<?, ?>) test).get("test"));
+    }
+    assertEquals(4, every.size(), every.toString());
+    assertEquals(
+        Arrays.asList("app::fx.app.CheckoutTest#fiftyGetsTheDiscountAndFortyNineDoesNot()"),
+        reaching(done).get(prices + ":10"));
+
+    List<String> casts = new ArrayList<>(Arrays.asList(hello(project), "{\"type\":\"prepare\",\"id\":2}"));
+    List<Map<?, ?>> found = new ArrayList<>();
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      found.add((Map<?, ?>) each);
+      casts.add(castOf((Map<?, ?>) each, every));
+    }
+    assertEquals(7, found.size());
+    List<Map<?, ?>> outcomes = ask(project, casts.toArray(new String[0]));
+    for (int i = 0; i < found.size(); i++) {
+      Map<?, ?> cast = outcomes.get(i + 2);
+      assertEquals("killed", cast.get("outcome"), found.get(i) + " " + cast);
+      if ("100".equals(found.get(i).get("original"))) {
+        assertEquals("app::fx.app.CheckoutTest#aHundredShipsFree()", cast.get("killed_by"));
+      }
+    }
+  }
+
   // ---- what is not a verdict ---------------------------------------------------
 
   // A JVM that ends before its tests do did not fail an assertion. `System.exit` is the
@@ -706,6 +824,39 @@ class CastTest {
       assertEquals("green", said.get(2).get("status"), version + ": " + said.get(2));
       assertEquals(5, ((List<?>) said.get(2).get("tests")).size(), version);
     }
+  }
+
+  // A build that takes long is not a kalku that has gone quiet. Here the build tool is a
+  // script that says what it is fetching, takes its time, and fails: what it said is on
+  // stderr while it is still running, where whoever waits can read it, and is what the
+  // failure quotes.
+  @Test
+  void whatABuildSaysWhileItRunsIsPassedOn() throws Exception {
+    Path project = temp.resolve("slow");
+    copy(PROJECTS.resolve("calc"), project);
+    Path maven = temp.resolve("slow-mvn");
+    Files.write(
+        maven,
+        ("#!/bin/sh\necho 'Downloading the whole world'\nsleep 7\n"
+                + "echo '[ERROR] the world did not arrive'\nexit 1\n")
+            .getBytes(StandardCharsets.UTF_8));
+    Files.setPosixFilePermissions(
+        maven, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+    String hello =
+        hello(project).replace("\"env\":{}", "\"env\":{\"KALKU_MAVEN\":" + Json.encode(maven.toString()) + "}");
+    java.io.PrintStream err = System.err;
+    java.io.ByteArrayOutputStream said = new java.io.ByteArrayOutputStream();
+    Map<?, ?> failed;
+    try {
+      System.setErr(new java.io.PrintStream(said, true, "UTF-8"));
+      failed = ask(project, hello, "{\"type\":\"prepare\",\"id\":2}").get(1);
+    } finally {
+      System.setErr(err);
+    }
+    assertEquals("prepare_failed", failed.get("code"), failed.toString());
+    assertTrue(((String) failed.get("message")).contains("the world did not arrive"), failed.toString());
+    String heard = new String(said.toByteArray(), StandardCharsets.UTF_8);
+    assertTrue(heard.contains("Downloading the whole world"), heard);
   }
 
   // ---- projects that cannot be measured ----------------------------------------
