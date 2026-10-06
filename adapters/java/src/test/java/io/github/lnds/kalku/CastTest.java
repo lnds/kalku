@@ -500,6 +500,54 @@ class CastTest {
     assertEquals(Arrays.asList("fx.CodesTest#aKnowsItsNames()"), by.get(file + ":20"));
   }
 
+  // A suite that does not end the same way with the agent counting as without it: here a
+  // test that looks for the agent and fails when it finds it. What was counted is then not
+  // what the suite does, so nothing of it is reported, the reason is said, and a cast against
+  // the whole suite still ends as it should.
+  @Test
+  void coverageThatCannotBeTrustedIsWithheldAndSaidSo() throws Exception {
+    Path project = temp.resolve("watched");
+    copy(PROJECTS.resolve("calc"), project);
+    Files.write(
+        project.resolve("src/test/java/fx/AgentTest.java"),
+        ("package fx;\n"
+                + "import static org.junit.jupiter.api.Assertions.assertFalse;\n"
+                + "import java.lang.management.ManagementFactory;\n"
+                + "import org.junit.jupiter.api.Test;\n"
+                + "class AgentTest {\n"
+                + "  @Test\n"
+                + "  void nothingIsWatching() {\n"
+                + "    assertFalse(ManagementFactory.getRuntimeMXBean().getInputArguments().toString().contains(\"jacoco\"));\n"
+                + "  }\n"
+                + "}\n")
+            .getBytes(StandardCharsets.UTF_8));
+    java.io.PrintStream err = System.err;
+    java.io.ByteArrayOutputStream said = new java.io.ByteArrayOutputStream();
+    Map<?, ?> done;
+    try {
+      System.setErr(new java.io.PrintStream(said, true, "UTF-8"));
+      done =
+          ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":4}")
+              .get(2);
+    } finally {
+      System.setErr(err);
+    }
+    assertEquals("green", done.get("status"), done.toString());
+    assertEquals(6, ((List<?>) done.get("tests")).size());
+    assertNull(done.get("coverage"));
+    assertNull(done.get("coverage_path"));
+    String why = new String(said.toByteArray(), StandardCharsets.UTF_8);
+    assertTrue(why.contains("per-test coverage is not reportable"), why);
+    assertTrue(why.contains("did not end the same way"), why);
+
+    List<String> every = new ArrayList<>(all);
+    every.add("fx.AgentTest#nothingIsWatching()");
+    Map<?, ?> cast =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", castOf(site(CALC, ">=", ">"), every))
+            .get(2);
+    assertEquals("killed", cast.get("outcome"), cast.toString());
+  }
+
   // ---- what is not a verdict ---------------------------------------------------
 
   // A JVM that ends before its tests do did not fail an assertion. `System.exit` is the

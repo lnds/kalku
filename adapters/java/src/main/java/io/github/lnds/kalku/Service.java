@@ -520,6 +520,15 @@ final class Service {
       List<Map<String, Object>> entries = new ArrayList<>();
       for (String line : Files.readAllLines(answer, StandardCharsets.UTF_8)) {
         String[] part = line.split("\t");
+        if (part[0].equals("#counted")) {
+          // A suite that reaches no site at all is not something a suite does: it is an
+          // agent that counted nothing, and every site with code would be reported as one
+          // no test reaches.
+          if (part[1].equals("0") && !places.isEmpty()) {
+            return withheld("nothing was counted in any of the project's classes");
+          }
+          continue;
+        }
         List<String> reaching = new ArrayList<>();
         if (part.length == 2 && part[1].equals("*")) {
           reaching.addAll(every);
@@ -541,11 +550,6 @@ final class Service {
         entry.put("line", Long.parseLong(part[0].substring(colon + 1)));
         entry.put("tests", reaching);
         entries.add(entry);
-      }
-      // A suite that reaches no site at all is not something a suite does: it is an agent
-      // that counted nothing, and every site would be reported as one no test reaches.
-      if (entries.isEmpty() && !places.isEmpty()) {
-        return withheld("nothing was counted in any of the project's classes");
       }
       return entries;
     } catch (Maven.Failed e) {

@@ -49,6 +49,8 @@ public final class KalkuCoverage {
     int from;
     int to;
     boolean all;
+    // Whether anything the agent counted fell in this place, in a test or outside one.
+    boolean counted;
     final Set<String> tests = new LinkedHashSet<>();
   }
 
@@ -85,6 +87,7 @@ public final class KalkuCoverage {
           for (Place place : places.getOrDefault(reached.getKey(), new ArrayList<>())) {
             if (!reached.getValue().get(place.from, place.to + 1).isEmpty()) {
               place.all = true;
+              place.counted = true;
             }
           }
         }
@@ -99,14 +102,25 @@ public final class KalkuCoverage {
       }
       for (Map.Entry<String, BitSet> reached : reached(dumps.resolve(part[0]), classes).entrySet()) {
         for (Place place : places.getOrDefault(reached.getKey(), new ArrayList<>())) {
-          if (!place.all && !reached.getValue().get(place.from, place.to + 1).isEmpty()) {
-            place.tests.add(part[1]);
+          if (!reached.getValue().get(place.from, place.to + 1).isEmpty()) {
+            place.counted = true;
+            if (!place.all) {
+              place.tests.add(part[1]);
+            }
           }
         }
       }
     }
 
     try (Writer out = Files.newBufferedWriter(Paths.get(args[4]), StandardCharsets.UTF_8)) {
+      // First, in how many places something was counted. A place with no code names every
+      // test without anything having been counted, so an agent that counted nothing would
+      // still leave a map that looks like one; this number is what tells the two apart.
+      int counted = 0;
+      for (Place place : inOrder) {
+        counted += place.counted ? 1 : 0;
+      }
+      out.write("#counted\t" + counted + "\n");
       for (Place place : inOrder) {
         out.write(place.key);
         if (place.all) {
