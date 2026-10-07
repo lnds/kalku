@@ -1,3 +1,16 @@
+## v0.9.3 (2026-10-07)
+
+### Fixed
+
+- **elixir**: a test whose module cannot be set up is not a test that passed (#223)
+- **elixir**: a failing suite is refused without measuring its coverage first (#220)
+- **elixir**: what the project prints no longer ends the run (#216)
+- **elixir**: an application that logs while it starts no longer ends the run (#215)
+
+### Changed
+
+- **elixir**: per-test coverage costs what the tests cost, not the suite squared (#221)
+
 ## v0.9.2 (2026-10-06)
 
 ### Fixed
