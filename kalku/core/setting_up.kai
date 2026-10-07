@@ -13,6 +13,8 @@ summons, which is why it is written into the project as a script the
 owner can read and change.
 """)]
 
+import kalku.version
+
 #[doc("""
 A language kalku can set a project up for.
 
@@ -23,6 +25,10 @@ the beginnings and endings of the names of files that are, and `ignored`
 directories that are neither (what a build
 leaves, what a version control keeps). A change or a whole project is
 read through these, so the core does not need to know a layout.
+
+`summon` is the summoning `init` writes into a project, and `outside` the
+one a run writes into the reni of a project nobody set up: it has to reach
+the kalku without the project having been changed to hold it.
 """)]
 #[derive(Eq, Show)]
 pub type Known = {
@@ -30,6 +36,7 @@ pub type Known = {
   marker: String,
   also: [String],
   summon: String,
+  outside: String,
   sources: [String],
   tests: [String],
   test_prefixes: [String],
@@ -78,6 +85,9 @@ pub fn contract_of(script: String) : Option[Int] = match find(
 pub fn summon_is_current(script: String) : Bool =
   contract_of(script) == Some(SUMMON_CONTRACT)
 
+#[doc("The name a summoning has in the reni of a project nobody set up.")]
+pub const OUTSIDE_SUMMONER : String = "summon"
+
 #[doc("Where a project's configuration is written.")]
 pub const CONFIG_PATH : String = ".kalku.toml"
 
@@ -88,6 +98,7 @@ pub fn catalogue() : [Known] = [
     marker: "mix.exs",
     also: [],
     summon: elixir_summoner(),
+    outside: elixir_outside(),
     sources: [".ex"],
     tests: ["test"],
     test_prefixes: [],
@@ -99,6 +110,7 @@ pub fn catalogue() : [Known] = [
     marker: "kai.toml",
     also: [],
     summon: kaikai_summoner(),
+    outside: kaikai_summoner(),
     sources: [".kai"],
     tests: ["tests"],
     test_prefixes: [],
@@ -110,6 +122,7 @@ pub fn catalogue() : [Known] = [
     marker: "Cargo.toml",
     also: [],
     summon: rust_summoner(),
+    outside: rust_summoner(),
     sources: [".rs"],
     tests: ["tests", "benches", "examples"],
     test_prefixes: [],
@@ -121,6 +134,7 @@ pub fn catalogue() : [Known] = [
     marker: "pyproject.toml",
     also: ["setup.py", "setup.cfg", "requirements.txt"],
     summon: python_summoner(),
+    outside: python_summoner(),
     sources: [".py"],
     tests: ["tests", "test"],
     test_prefixes: ["test_", "conftest"],
@@ -147,6 +161,7 @@ pub fn catalogue() : [Known] = [
     marker: "pom.xml",
     also: ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
     summon: java_summoner(),
+    outside: java_summoner(),
     sources: [".java"],
     tests: ["test", "tests", "integrationTest", "testFixtures", "androidTest"],
     test_prefixes: [],
@@ -251,6 +266,9 @@ timeout_floor_ms = 60000
 # `execve` will start.
 fn summoner_text(known: Known) : String = trim_left(known.summon)
 
+#[doc("The summoning for a project nobody set up, which a run writes into the reni.")]
+pub fn outside_text(known: Known) : String = trim_left(known.outside)
+
 # stdout carries the protocol, so everything a build prints goes to
 # stderr and nothing reads stdin. `exec` puts the kalku itself at the end
 # of the pipe, with no shell left to outlive it.
@@ -268,22 +286,7 @@ set -eu
 # this kalku. It is not written into this file on purpose: this file goes
 # into the repository, and a path baked in here is a path from whatever
 # machine and whatever directory `kalku init` happened to run in.
-RENI="${1:?this script is summoned by kalku, which passes the reni as the first argument}"
-
-MIX_ENV=test
-MIX_BUILD_PATH="$RENI/build"
-export MIX_ENV MIX_BUILD_PATH
-
-mkdir -p "$MIX_BUILD_PATH"
-
-# The path with every symlink resolved, because mix writes relative
-# symlinks into it — a dependency's `priv` — and counts the levels from
-# the path it was given. On macOS a temporary directory lives under
-# `/var`, which is itself a link to `private/var`, so a path counted
-# there comes out one level short and the links dangle.
-MIX_BUILD_PATH="$(cd "$MIX_BUILD_PATH" && pwd -P)"
-export MIX_BUILD_PATH
-
+#{build_in_reni()}
 # Both, and in this order. `deps.compile` leaves a path dependency for
 # the project's own build, and `mix kalku.serve` would then compile it
 # while the protocol is already running — mix announces what it compiles
@@ -292,6 +295,31 @@ mix deps.compile >&2 </dev/null
 mix compile >&2 </dev/null
 
 exec mix kalku.serve "$@"
+"""
+
+# A project nobody set up does not depend on the kalku, and is not made
+# to: the kalku comes from the package registry into the reni, in the
+# version of the kalku that writes this, and its own summoner builds it
+# there. `KALKU_ELIXIR` names one that is already somewhere — a checkout,
+# for whoever is working on the kalku itself.
+fn elixir_outside() : String = """
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the Elixir kalku for a project that was not set up for it.
+# Written by `kalku run` into the reni, and again by every run.
+#
+# stdout carries the kalku protocol, so everything here writes to stderr
+# and nothing reads stdin. The project is left as it is: the kalku is
+# fetched into the reni and built there, beside the project's build.
+set -eu
+
+#{build_in_reni()}
+KALKU="${KALKU_ELIXIR:-$RENI/kalku_elixir-#{VERSION}}"
+if [ ! -f "$KALKU/bin/kalku-elixir" ]; then
+  mix hex.package fetch kalku_elixir #{VERSION} --unpack --output "$KALKU" >&2 </dev/null
+fi
+
+exec sh "$KALKU/bin/kalku-elixir" "$@"
 """
 
 fn kaikai_summoner() : String = """
@@ -500,6 +528,26 @@ fn segments(path: String) : [String] = match split(path, "/") {
   [] -> []
   parts -> take(parts, length(parts) - 1)
 }
+
+# The build goes into the reni, which is what keeps a run out of the
+# project's own `_build`.
+fn build_in_reni() : String = """
+RENI="${1:?this script is summoned by kalku, which passes the reni as the first argument}"
+
+MIX_ENV=test
+MIX_BUILD_PATH="$RENI/build"
+export MIX_ENV MIX_BUILD_PATH
+
+mkdir -p "$MIX_BUILD_PATH"
+
+# The path with every symlink resolved, because mix writes relative
+# symlinks into it — a dependency's `priv` — and counts the levels from
+# the path it was given. On macOS a temporary directory lives under
+# `/var`, which is itself a link to `private/var`, so a path counted
+# there comes out one level short and the links dangle.
+MIX_BUILD_PATH="$(cd "$MIX_BUILD_PATH" && pwd -P)"
+export MIX_BUILD_PATH
+"""
 
 # What every summoning does first, said once: it is handed the reni and these
 # kalku are told where it is through `hello`, so it is taken off the arguments.
