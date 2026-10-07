@@ -93,6 +93,8 @@ Three things it does that are easy to miss:
 
 It costs a **second pass over the suite**, and that is not an oversight. `:cover` counts per line, not per test, and ExUnit delivers its formatter events asynchronously — a `test_started` can arrive after the test it announces has already run, so clearing counters there clears the *next* test's lines. The only honest attribution is to run each test on its own, with the counters cleared before it. That happens once, in the baseline.
 
+The pass is kept close to what the tests themselves cost. A test is run in the module it is written in, not in the whole suite with the rest excluded, and after it only the modules it entered are read and cleared: reading `:cover` costs time per module, and one test enters few of a large project's. While it runs, a line on stderr every ten seconds says how many tests are done and where the time went.
+
 Only the project's own modules are instrumented: nobody mutates a dependency, so counting its lines would cost time and say nothing.
 
 Coverage travels inline when it fits under `hello.inline_limit_bytes`, and otherwise is written to `coverage.json` in the reni and reported as `coverage_path` — a megabyte of JSON per worker is a cost the protocol lets us decline.

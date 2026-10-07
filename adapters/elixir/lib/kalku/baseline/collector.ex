@@ -12,7 +12,7 @@ defmodule Kalku.Baseline.Collector do
 
   defmodule Test do
     @moduledoc "One test, as the protocol needs it."
-    defstruct id: nil, file: nil, line: nil, duration_ms: 0, failure: nil, lines: []
+    defstruct id: nil, module: nil, file: nil, line: nil, duration_ms: 0, failure: nil, lines: []
   end
 
   @name __MODULE__
