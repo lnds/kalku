@@ -106,6 +106,8 @@ The kalku declares OTP's `:tools` application, which is where `:cover` lives.
 
 The original modules are kept before anything is compiled and reloaded on every path out, including a compile error. A wekufe that outlived its cast would be attributed to the next one, and the next one's result would be a lie.
 
+While its tests run, the wekufe's compiled modules are also written to a directory of their own in the reni, at the front of the code path. Code that asks for a module's object code — a mocking library does, to build the copy it keeps of a module it replaces — is then given the wekufe and not the original from the build. The originals are never written over.
+
 | Outcome | When |
 |---|---|
 | `equivalent` | the compiled code is the original's, so no test could notice; no test is run |

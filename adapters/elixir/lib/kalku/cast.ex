@@ -12,7 +12,7 @@ defmodule Kalku.Cast do
   attributed to the next one, and the next one's result would be a lie.
   """
 
-  alias Kalku.Cast.Tests
+  alias Kalku.Cast.{Beams, Tests}
   alias Kalku.Deps
 
   @doc """
@@ -51,6 +51,7 @@ defmodule Kalku.Cast do
   def abort(%{pid: pid, file: file, originals: originals, before: before}) do
     Process.exit(pid, :kill)
     stop_the_rest(before)
+    Beams.clear()
     # What the cast compiled is loaded under its file by now, whatever stood
     # there when it started.
     restore(originals ++ originals_of(file)) == :ok
@@ -173,7 +174,10 @@ defmodule Kalku.Cast do
     if identical?(compiled, originals) do
       %{outcome: "equivalent", code_hash: hash_of(compiled)}
     else
-      Map.put(Tests.run(root, tests), :code_hash, hash_of(compiled))
+      Beams.put(compiled)
+      ran = Tests.run(root, tests)
+      Beams.clear()
+      Map.put(ran, :code_hash, hash_of(compiled))
     end
   end
 
