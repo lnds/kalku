@@ -222,6 +222,29 @@ defmodule Kalku.CastTest do
       done = for l <- lines, {:ok, d} <- [Kalku.Json.decode(l)], d["type"] == "cast_done", do: d
       assert Enum.map(done, & &1["outcome"]) == ["killed", "survived"]
     end
+
+    # A mocking library builds the copy it keeps of a module from the module's
+    # file, where the original is. A test that drove a mock of the wekufe's
+    # module put the original back behind it, and the tests after it never
+    # met the wekufe: it survived a test that kills it.
+    test "a wekufe is still there after a test has mocked its module", %{reni: reni} do
+      before = File.ls!(project("mocked"))
+      fee = {"lib/mocked/fee.ex", {"amount, ", "10"}, "20", 3}
+      # The first mocks `Mocked.Fee`, the second takes the real fee.
+      both = ["test/late_copy_test.exs:11", "test/late_copy_test.exs:15"]
+
+      lines =
+        summon(reni, "mocked", [
+          request("prepare", 2),
+          request("baseline", 3),
+          cast_of(4, fee, both)
+        ])
+
+      done = reply(lines, "cast_done")
+      assert done["outcome"] == "killed"
+      assert done["killed_by"] == "test/late_copy_test.exs:15"
+      assert File.ls!(project("mocked")) == before
+    end
   end
 
   defp cast_of(id, {file, place, replacement, line}, test),
@@ -249,7 +272,7 @@ defmodule Kalku.CastTest do
         "replacement" => replacement,
         "reload" => "module"
       },
-      "tests" => [test]
+      "tests" => List.wrap(test)
     })
   end
 
