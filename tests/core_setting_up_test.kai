@@ -359,6 +359,7 @@ test "the summoning for a project nobody set up brings the kalku with it" {
   assert has(script, "MIX_BUILD_PATH=\"$RENI/build\"")
   assert has(script, ">&2 </dev/null")
   assert not has(script, "mix deps.get")
+  assert index_of(script, "mix compile >&2 </dev/null") < index_of(script, "exec sh")
 }
 
 # Only a kalku that lives inside the project's runtime needs another way

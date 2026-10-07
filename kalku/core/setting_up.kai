@@ -319,6 +319,12 @@ if [ ! -f "$KALKU/bin/kalku-elixir" ]; then
   mix hex.package fetch kalku_elixir #{VERSION} --unpack --output "$KALKU" >&2 </dev/null
 fi
 
+# As the summoning `init` writes does: a path dependency left for the
+# project's own build would otherwise be compiled while the protocol is
+# already running, and mix announces what it compiles on stdout.
+mix deps.compile >&2 </dev/null
+mix compile >&2 </dev/null
+
 exec sh "$KALKU/bin/kalku-elixir" "$@"
 """
 
