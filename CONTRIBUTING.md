@@ -28,6 +28,7 @@ make build         # the binary
 make ci            # what CI runs on the kaikai side
 make check         # that, plus the Elixir kalku's tests
 make self-mutate   # kalku on its own sources, through its own kalku
+make field         # kalku on public projects at pinned commits (slow, needs the network)
 ```
 
 `make ci` has to pass, and it includes `km`: every file scores **A− or
