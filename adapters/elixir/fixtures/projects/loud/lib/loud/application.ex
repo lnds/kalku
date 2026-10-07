@@ -6,6 +6,7 @@ defmodule Loud.Application do
   @impl true
   def start(_type, _args) do
     Logger.error("loud: could not reach what it wanted while starting")
-    Supervisor.start_link([], strategy: :one_for_one)
+    IO.puts("loud: starting")
+    Supervisor.start_link([Loud.Chatter], strategy: :one_for_one)
   end
 end
