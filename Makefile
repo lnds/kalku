@@ -49,7 +49,7 @@ MVN        ?= mvn
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java fmt fmt-check lint km ci check properties bench clean self-mutate dist install uninstall
+.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java fmt fmt-check lint km ci check properties bench clean self-mutate field dist install uninstall
 
 all: build
 
@@ -168,6 +168,13 @@ SELF_WORKERS ?= 2
 
 self-mutate:
 	sh tools/self-mutate.sh $(SELF_MODULE) $(SELF_LIMIT) $(SELF_WORKERS) || true
+
+# kalku on public projects, each at a pinned commit and cloned under the
+# temporary directory: what the fixtures are too small to show. Slow, and
+# it needs the network, so it is run by hand before a release and not by
+# CI. `make field FIELD=ecto` tries one.
+field: build
+	sh tools/field.sh $(FIELD)
 
 # What a release ships: both binaries a user summons, side by side with
 # the licences they are shipped under. Flat, so a package manager can
