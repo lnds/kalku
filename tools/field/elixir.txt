@@ -9,3 +9,12 @@
 plug     https://github.com/elixir-plug/plug          9fa11c8ebedbe68531eba25d8f81b9282e0514da  lib/plug/conn/query.ex lib/plug/conn/utils.ex
 ecto     https://github.com/elixir-ecto/ecto          f6eb492964dbd32bc6924d5330d1cc05b41e89a1  lib/ecto/changeset.ex
 phoenix  https://github.com/phoenixframework/phoenix  bd1801833b4fd7ceb02497cc7ba2d05e9bd391c8  lib/phoenix/router/route.ex lib/phoenix/naming.ex
+
+# Written by `tools/field/generate.exs` instead of cloned: what to generate
+# stands where the commit would. One trait each, of those that have ended
+# a run.
+thousand  generated  --modules=100,--tests=10                 lib/field/m1.ex lib/field/m50.ex
+printing  generated  --modules=20,--tests=10,--trait=stdout   lib/field/m1.ex
+replaced  generated  --modules=20,--tests=10,--trait=mimic    lib/field/m1.ex lib/field/m2.ex
+unready   generated  --modules=20,--tests=10,--trait=unready  lib/field/m1.ex
+tool      generated  --modules=20,--tests=10,--trait=tool     lib/field/m1.ex
