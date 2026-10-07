@@ -84,6 +84,7 @@ It answers `baseline_done` with `status` (`green` or `red`), every test named by
 Two things it does that are easy to miss:
 
 - ExUnit's formatters write to stdout, which is the protocol, so the suite runs with a formatter that prints nothing and forwards each result to a collector that **outlives the suite** — ExUnit stops its formatters when the suite ends.
+- The project writes to stdout too, from anywhere: a test that prints, a process of an application, the application as it starts. The loop keeps the device behind stdin and stdout for the protocol and makes standard error the group leader of every process that had it, so what the project prints is on stderr and what it starts afterwards inherits that.
 - The loaded test modules are remembered. ExUnit runs the suite it is given and does not keep it for a second run, and a file already required loads nothing the second time; a kalku runs the suite once per wekufe, not once per life.
 
 ### Per-test coverage

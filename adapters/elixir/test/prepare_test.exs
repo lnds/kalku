@@ -88,6 +88,23 @@ defmodule Kalku.PrepareTest do
       assert Process.get(:last_stderr) =~ "loud: could not reach what it wanted"
     end
 
+    # A runtime writes on stdout by default, from anywhere: a test, a process
+    # of the application, the application as it starts.
+    test "what the project prints does not reach stdout", %{reni: reni} do
+      lines = summon(reni, "loud", [request("prepare", 2), request("baseline", 3)])
+
+      for line <- lines do
+        assert {:ok, _} = Kalku.Json.decode(line),
+               "not a protocol line on stdout: #{inspect(line)}"
+      end
+
+      assert reply(lines, "baseline_done")["status"] == "green"
+
+      for said <- ["starting", "a test printing", "the application printing"] do
+        assert Process.get(:last_stderr) =~ "loud: " <> said
+      end
+    end
+
     test "a project that does not compile is a fatal error naming the file", %{reni: reni} do
       broken = broken_copy()
       lines = drive_in(broken, reni, [hello(reni), request("prepare", 2), request("shutdown", 3)])

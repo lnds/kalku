@@ -32,6 +32,7 @@ defmodule Kalku.Loop do
   it before reading again could never receive one.
   """
   def run do
+    Kalku.Channel.take()
     Kalku.Log.to_stderr()
     reader = start_reading(self())
     loop(%__MODULE__{reader: reader})
@@ -42,7 +43,7 @@ defmodule Kalku.Loop do
   end
 
   defp read_lines(owner) do
-    case IO.binread(:stdio, :line) do
+    case Kalku.Channel.read_line() do
       data when is_binary(data) ->
         send(owner, {:said, String.trim_trailing(data, "\n")})
         read_lines(owner)
@@ -119,7 +120,7 @@ defmodule Kalku.Loop do
     %{state | casting: casting}
   end
 
-  defp emit(line), do: IO.binwrite(:stdio, line <> "\n") == :ok
+  defp emit(line), do: Kalku.Channel.write_line(line)
 
   @doc """
   Handles one request line. Returns `{:reply, line, state}` to continue or
