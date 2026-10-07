@@ -83,5 +83,32 @@ defmodule Kalku.Baseline.Recorder do
     e -> "kalku could not read this failure: #{Exception.message(e)}"
   end
 
+  # A test whose module could not be set up was never run, and is not a test
+  # that passed: counted as one, a suite that cannot start is green and a
+  # wekufe that breaks `setup_all` survives every test it stopped.
+  defp failure_message(%ExUnit.Test{state: {:invalid, module}}) do
+    "its module could not be set up, so it did not run" <> why(module)
+  end
+
   defp failure_message(_test), do: nil
+
+  defp why(%{state: {:failed, failures}} = module) do
+    module
+    |> ExUnit.Formatter.format_test_all_failure(failures, 1, :infinity, fn _kind, msg -> msg end)
+    |> String.split("\n", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.drop(1)
+    |> Enum.take_while(&(&1 != "stacktrace:"))
+    |> Enum.take(8)
+    |> Enum.join("\n")
+    |> String.trim()
+    |> case do
+      "" -> ""
+      said -> ":\n" <> said
+    end
+  rescue
+    _ -> ""
+  end
+
+  defp why(_module), do: ""
 end

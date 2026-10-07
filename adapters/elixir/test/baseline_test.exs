@@ -107,7 +107,15 @@ defmodule Kalku.BaselineTest do
       done = reply(run(reni, "red", ["baseline"]), "baseline_done")
 
       assert done["status"] == "red"
-      assert [%{"test" => "test/red_test.exs:10", "message" => message}] = done["failures"]
+
+      assert [%{"test" => "test/red_test.exs:10", "message" => message}, unready] =
+               done["failures"]
+
+      # A test whose module fails in `setup_all` never runs. It is not a test
+      # that passed, and what stopped it is said.
+      assert unready["test"] == "test/unready_test.exs:9"
+      assert unready["message"] =~ "could not be set up"
+      assert unready["message"] =~ "nothing here can be set up"
 
       assert message =~ "Assertion with == failed"
       assert message =~ "left:  :negative"
@@ -115,7 +123,7 @@ defmodule Kalku.BaselineTest do
 
       # The test that passed is still reported: red is about the suite,
       # not about every test in it.
-      assert length(done["tests"]) == 2
+      assert length(done["tests"]) == 3
     end
 
     # Each test is run a second time, alone, to learn which lines it reaches.
