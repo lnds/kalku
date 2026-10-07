@@ -73,6 +73,21 @@ defmodule Kalku.PrepareTest do
       assert length(lines) == 3
     end
 
+    # Starting the project's applications installs the logger's handlers, on
+    # stdout, and an application is free to log while it starts: before the
+    # kalku can look at what was installed.
+    test "an application that logs while it starts does not write on stdout", %{reni: reni} do
+      lines = summon(reni, "loud", [request("prepare", 2)])
+
+      for line <- lines do
+        assert {:ok, _} = Kalku.Json.decode(line),
+               "not a protocol line on stdout: #{inspect(line)}"
+      end
+
+      assert reply(lines, "prepared")["modules"] > 0
+      assert Process.get(:last_stderr) =~ "loud: could not reach what it wanted"
+    end
+
     test "a project that does not compile is a fatal error naming the file", %{reni: reni} do
       broken = broken_copy()
       lines = drive_in(broken, reni, [hello(reni), request("prepare", 2), request("shutdown", 3)])
