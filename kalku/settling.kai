@@ -59,8 +59,8 @@ swept.
 """)]
 pub fn reni_here(root: String) : String / Env = reni_for(temp_dir(), named_after(root))
 
-#[doc("A project nobody set up: what it is written in, and the summoning a run wrote for it.")]
-pub type Passing = { language: String, summon: String, reni: String }
+#[doc("A project nobody set up: its language, the summoning a run wrote for it, and the configuration `init` would have written.")]
+pub type Passing = { language: String, summon: String, reni: String, config: String }
 
 #[doc("""
 Get ready to measure a project that `init` never saw, without touching it.
@@ -83,7 +83,12 @@ pub fn passing_through(root: String) : Option[Passing] / File + Env + Process =
       let summon = "#{reni}/#{OUTSIDE_SUMMONER}"
       file.write(summon, outside_text(known))
       runnable_now(summon)
-      Some(Passing { language: known.language, summon: summon, reni: reni })
+      Some(Passing {
+        language: known.language,
+        summon: summon,
+        reni: reni,
+        config: plan_for(known, reni).config
+      })
     }
   }
 
@@ -285,7 +290,7 @@ fn build_file_of(root: String, known: Known) : String / File {
 fn called(root: String) : String = if root == "." { "this directory" } else { root }
 
 #[doc("""
-The settings of a project that has no `.kalku.toml`: kalku's own.
+The settings of a project that has no `.kalku.toml`: the ones `init` would write.
 
 A project nobody set up is measured all the same, and is not changed to do
 it: trying the tool should cost a command, and `init` is for the project
@@ -303,9 +308,17 @@ pub fn unsettled(root: String) : Result[Config, String] / Stderr + File + Env + 
         "kalku: no #{CONFIG_PATH} in #{called(root)}: measuring it as #{p.language} and leaving it as it is."
           ++ " What the run keeps is in #{p.reni}; `kalku init` sets the project up to keep it."
       )
-      Ok(Config { ...defaults(), language: Some(p.language), summon: Some(p.summon) })
+      Ok(Config { ...as_init_would(p), language: Some(p.language), summon: Some(p.summon) })
     }
   }
+
+# The run a project gets before `init` is the run it gets after: the same
+# workers, the same patience with a slow cast. Read from the text `init`
+# writes, so the two cannot drift apart.
+fn as_init_would(p: Passing) : Config = match config.parse(p.config) {
+  Ok(c) -> c
+  Err(_) -> defaults()
+}
 
 #[doc("""
 Why an argument for an equivalent cannot be kept in a project nobody set up.

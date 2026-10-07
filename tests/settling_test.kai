@@ -7,6 +7,7 @@ import kalku.wire.shapes
 import kalku.wire.enums
 import kalku.core.setting_up
 import kalku.core.remembering
+import kalku.core.config
 
 # What is under test is what lands on a disk and where, so every test here
 # has a real directory for a project and lets the reni fall where it does.
@@ -131,4 +132,29 @@ test "a project that was set up keeps its own ledger" {
   assert not file.exists("#{reni_here(dir)}/runs.ndjson")
 
   gone(dir)
+}
+
+fn without_summon(c: Option[Config]) : Option[Config] = match c {
+  None -> None
+  Some(c) -> Some(Config { ...c, summon: None })
+}
+
+# `init` writes a timeout floor a real suite needs and one worker for the
+# one build path there is. A run before `init` judged by other numbers
+# would call a slow cast a `timeout` that the same project, set up, calls
+# killed.
+test "a project nobody set up is measured with the settings init would write" {
+  let dir = project("same", "mix.exs")
+  let written = find(catalogue(), k => k.language == "elixir").map(
+    k => config.parse(plan_for(k, reni_here(dir)).config).ok()
+  )
+  let used = unsettled(dir)
+
+  assert is_some(written)
+  assert Some(without_summon(used.ok())) == written.map(without_summon)
+  assert used.map(.timeout_floor_ms) == Ok(60000)
+  assert used.map(.summon) == Ok(Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"))
+
+  gone(dir)
+  gone(reni_here(dir))
 }
