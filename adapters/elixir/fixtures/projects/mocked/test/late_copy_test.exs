@@ -12,4 +12,7 @@ defmodule LateCopyTest do
     Mocked.Fee |> expect(:of, fn _ -> 2 end)
     assert Mocked.Fee.of(100) == 2
   end
+  test "takes the real fee" do
+    assert Mocked.Fee.of(100) == 10
+  end
 end

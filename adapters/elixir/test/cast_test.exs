@@ -186,11 +186,11 @@ defmodule Kalku.CastTest do
     test "a test that drives a mock does not kill a wekufe it never reaches", %{reni: reni} do
       # `charge/1`, against the test that mocks `Mocked.Fee` and calls nothing else.
       elsewhere =
-        unreached("lib/mocked.ex", {"amount ", ">"}, ">=", 5, "test/late_copy_test.exs:11")
+        replacing(4, "lib/mocked.ex", {"amount ", ">"}, ">=", 5, "test/late_copy_test.exs:11")
 
       # `Mocked.Fee`, against the test that mocks `Mocked.Rate`.
       other =
-        unreached("lib/mocked/fee.ex", {"amount, ", "10"}, "20", 3, "test/mocked_test.exs:9")
+        replacing(4, "lib/mocked/fee.ex", {"amount, ", "10"}, "20", 3, "test/mocked_test.exs:9")
 
       # One kalku each, so that neither cast is judged in a runtime the other
       # has compiled in.
@@ -199,10 +199,36 @@ defmodule Kalku.CastTest do
         assert reply(lines, "cast_done")["outcome"] == "survived"
       end
     end
+
+    # A cast keeps the modules of its file to put them back, and a module
+    # that is a mock when the cast starts was not among them: the wekufe was
+    # compiled over the mock and stayed loaded for the rest of the run, where
+    # the next cast was judged with it.
+    test "a wekufe in a module the suite mocks does not outlive its cast", %{reni: reni} do
+      real = "test/late_copy_test.exs:15"
+      fee = {"lib/mocked/fee.ex", {"amount, ", "10"}, "20", 3}
+      total = {"lib/mocked.ex", {"a ", "+"}, "-", 12}
+
+      lines =
+        summon(reni, "mocked", [
+          request("prepare", 2),
+          request("baseline", 3),
+          # The test that takes the real fee notices a fee that changed,
+          cast_of(4, fee, real),
+          # and not a total it never asks for, once that fee is back.
+          cast_of(5, total, real)
+        ])
+
+      done = for l <- lines, {:ok, d} <- [Kalku.Json.decode(l)], d["type"] == "cast_done", do: d
+      assert Enum.map(done, & &1["outcome"]) == ["killed", "survived"]
+    end
   end
 
+  defp cast_of(id, {file, place, replacement, line}, test),
+    do: replacing(id, file, place, replacement, line, test)
+
   # A wekufe that replaces `target` where it follows `lead`.
-  defp unreached(file, {lead, target}, replacement, line, test) do
+  defp replacing(id, file, {lead, target}, replacement, line, test) do
     source = File.read!(Path.join(project("mocked"), file))
     {at, _} = :binary.match(source, lead <> target)
     from = at + byte_size(lead)
@@ -210,10 +236,10 @@ defmodule Kalku.CastTest do
 
     Kalku.Json.encode(%{
       "type" => "cast",
-      "id" => 4,
-      "wekufe" => "unreached",
+      "id" => id,
+      "wekufe" => "w#{id}",
       "site" => %{
-        "site_id" => "unreached",
+        "site_id" => "w#{id}",
         "file" => file,
         "span" => %{
           "start" => %{"line" => line, "col" => 1, "byte" => from},
