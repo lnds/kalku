@@ -130,12 +130,58 @@ defmodule Kalku.Baseline do
   tests that reach its line instead of all of them.
   """
   def measure_each(tests, modules) do
-    for test <- tests do
-      Cover.reset()
-      run_only(test, modules)
-      %{test | lines: Cover.covered()}
+    started = now()
+    Cover.reset()
+
+    {measured, _} =
+      Enum.map_reduce(tests, %{done: 0, of: length(tests), said: started, spent: {0, 0, 0}}, fn
+        test, progress ->
+          {running, _} = :timer.tc(fn -> run_only(test, modules) end)
+          {finding, entered} = :timer.tc(&Cover.entered/0)
+
+          {reading, lines} =
+            :timer.tc(fn ->
+              lines = Cover.covered(entered)
+              Cover.reset(entered)
+              lines
+            end)
+
+          {%{test | lines: lines}, told(progress, {running, finding, reading}, started)}
+      end)
+
+    measured
+  end
+
+  @every_ms 10_000
+
+  # A large suite takes minutes here, and a run that says nothing for
+  # minutes cannot be told from one that hangs. Where the time went is said
+  # too, because it is the first thing asked of a pass that is slow.
+  defp told(progress, {running, finding, reading}, started) do
+    {ran, found, read} = progress.spent
+
+    progress = %{
+      progress
+      | done: progress.done + 1,
+        spent: {ran + running, found + finding, read + reading}
+    }
+
+    if now() - progress.said >= @every_ms do
+      IO.puts(:stderr, so_far(progress, now() - started))
+      %{progress | said: now()}
+    else
+      progress
     end
   end
+
+  defp so_far(%{done: done, of: total, spent: {ran, found, read}}, elapsed_ms) do
+    "kalku: per-test coverage: #{done} of #{total} tests (#{div(done * 100, total)}%) in " <>
+      "#{div(elapsed_ms, 1000)}s — #{div(ran, 1_000_000)}s running them, " <>
+      "#{div(found, 1_000_000)}s finding the modules they entered, " <>
+      "#{div(read, 1_000_000)}s reading their lines"
+  end
+
+  defp now, do: System.monotonic_time(:millisecond)
 
   # By file and line together, the way `mix test path:LINE` does. By line
   # alone, every test written on that line of any file runs too, and each
@@ -148,10 +194,20 @@ defmodule Kalku.Baseline do
       max_cases: 1
     )
 
-    ExUnit.run(modules)
+    ExUnit.run(holding(test, modules))
   after
     ExUnit.configure(exclude: [], include: [])
   end
+
+  @doc """
+  The modules ExUnit is handed to run one test: the one it is written in.
+
+  ExUnit walks every module it is given and announces each of their tests,
+  excluded or not. Handed the whole suite once per test, that is the
+  suite's size squared.
+  """
+  def holding(%{module: nil}, modules), do: modules
+  def holding(%{module: module}, _modules), do: [module]
 
   # Coverage is what lets a wekufe be cast against the few tests that
   # reach its line instead of the whole suite, but `:cover` counts per
