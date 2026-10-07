@@ -104,7 +104,7 @@ fn told_about(asked: Asked) : Int / Stdout + Stderr = if asked.snippet_only {
 # do, and failing to is the same answer from either: say why, and stop.
 fn with_settings[e](
   body: (Config) -> Int / Stderr + e
-) : Int / Stderr + Env + File + e = match settings() {
+) : Int / Stderr + Env + File + Process + e = match settings() {
   Err(why) -> {
     Stderr.eprint("kalku: #{why}")
     2
@@ -184,7 +184,7 @@ fn measured(
   asking: Asking,
   wanted: Wanted,
   policy: Policy
-) : Int / Stdout + Stderr + File + Process + Spawn + Clock + Signal = with_mailbox {
+) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_mailbox {
   let shape = wanted.shape
   let found = alone(() => telling(wanted.aloud, () => measure(asking)))
   remember(found.cast)
@@ -238,7 +238,7 @@ fn of_files(sources: [(String, [String])]) : (String) -> [String] =
 
 # ---- what a run was asked for -------------------------------------------
 
-fn settings() : Result[Config, String] / File = settings_in(".")
+fn settings() : Result[Config, String] / Stderr + File + Env + Process = settings_in(".")
 
 # A summoning is written into the project once and kept for as long as the
 # project lives, so a fix to it reaches nobody who already ran `init`. The
@@ -387,6 +387,11 @@ fn declared_equivalents(root: String) : Result[[equivalent.Entry], String] / Fil
 
 # One wekufe in full: what it is, what came of it, and what came of it
 # before. A wekufe nobody has cast is not a wekufe kalku knows.
+fn not_kept(root: String) : Int / Stderr {
+  Stderr.eprint("kalku: #{why_not_kept(root)}")
+  2
+}
+
 # A wekufe nobody has cast is a name kalku cannot place, and saying so is
 # the only honest answer to a question about it.
 fn unheard_of(wekufe: String) : Int / Stderr {
@@ -394,7 +399,7 @@ fn unheard_of(wekufe: String) : Int / Stderr {
   2
 }
 
-fn shown(wekufe: String, shape: Shape) : Int / Stdout + Stderr + File {
+fn shown(wekufe: String, shape: Shape) : Int / Stdout + Stderr + File + Env {
   let all = ledger()
   match latest(all, wekufe) {
     None -> unheard_of(wekufe)
@@ -452,10 +457,11 @@ fn asking_again(
 # Proposed, never applied: an agent may say why a wekufe cannot be told
 # apart, and a person decides whether that is true. `.kalku/equivalent`
 # is not written here, ever.
-fn proposed(wekufe: String, reason: String) : Int / Stdout + Stderr + File {
+fn proposed(wekufe: String, reason: String) : Int / Stdout + Stderr + File + Env {
   let all = ledger()
   match latest(all, wekufe) {
     None -> unheard_of(wekufe)
+    Some(_) if not set_up(".") -> not_kept(".")
     Some(r) -> if r.outcome != Survived {
       {
         Stderr.eprint(
@@ -477,10 +483,11 @@ fn proposed(wekufe: String, reason: String) : Int / Stdout + Stderr + File {
 # into the record every run reads; rejecting keeps it somewhere else, so
 # that a case argued twice is visible and the wekufe goes back to being a
 # survivor that wants a test.
-fn answered_by_hand(wekufe: String, yes: Bool, why: String) : Int / Stdout + Stderr + File {
+fn answered_by_hand(wekufe: String, yes: Bool, why: String) : Int / Stdout + Stderr + File + Env {
   let all = ledger()
   match latest(all, wekufe) {
     None -> unheard_of(wekufe)
+    Some(_) if not set_up(".") -> not_kept(".")
     Some(r) -> {
       let queue = read_or_empty(PROPOSED_PATH)
       match if yes { accepted(queue, r.site, why) } else { rejected(queue, r.site, why) } {
@@ -677,12 +684,12 @@ fn shortened(path: String, root: String) : String =
 
 # A server is asked about a root rather than standing in one, so the
 # config is read from there.
-fn settings_in(root: String) : Result[Config, String] / File {
+fn settings_in(root: String) : Result[Config, String] / Stderr + File + Env + Process {
   let path = "#{root}/#{CONFIG_PATH}"
   if file.exists(path) {
     usable(read_settings(file.read(path))!, root)
   } else {
-    Err("no #{CONFIG_PATH} in #{root}; run `kalku init` there")
+    unsettled(root)
   }
 }
 
@@ -801,7 +808,7 @@ fn recast_for(
   }
 }
 
-fn shown_for(id: Option[Int], c: Call) : String / File = match head(c.wekufe) {
+fn shown_for(id: Option[Int], c: Call) : String / File + Env = match head(c.wekufe) {
   None -> refused(id, "`kalku_show` needs a wekufe")
   Some(w) -> {
     let all = ledger_in(root_of(c))
@@ -812,7 +819,7 @@ fn shown_for(id: Option[Int], c: Call) : String / File = match head(c.wekufe) {
   }
 }
 
-fn proposal_for(id: Option[Int], c: Call) : String / File = match head(c.wekufe) {
+fn proposal_for(id: Option[Int], c: Call) : String / File + Env = match head(c.wekufe) {
   None -> refused(id, "`kalku_propose_equivalent` needs a wekufe")
   Some(w) -> if is_empty(trim(c.reason)) {
     refused(id, "`kalku_propose_equivalent` needs a reason a person can weigh")
@@ -826,10 +833,11 @@ fn proposal_written(
   root: String,
   wekufe: String,
   reason: String
-) : String / File {
+) : String / File + Env {
   let all = ledger_in(root)
   match latest(all, wekufe) {
     None -> refused(id, "nothing known about `#{wekufe}`; run `kalku_run` first")
+    Some(_) if not set_up(root) -> refused(id, why_not_kept(root))
     Some(r) -> if r.outcome != Survived {
       refused(
         id,
@@ -846,7 +854,7 @@ fn proposal_written(
 
 # The agent format is what a host hands an agent: one line per survivor,
 # everything needed to act on it, and a summary.
-fn as_agent(root: String, id: Option[Int], found: Found) : String / File {
+fn as_agent(root: String, id: Option[Int], found: Found) : String / File + Env {
   remember_in(root, found.cast)
   match found.report {
     None -> refused(id, found.failure.unwrap_or("nothing measured"))

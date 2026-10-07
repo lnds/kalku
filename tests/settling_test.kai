@@ -1,0 +1,160 @@
+import fs.dir as folders
+import fs.file
+import os.process as proc
+import kalku.settling
+import kalku.ledgering
+import kalku.wire.shapes
+import kalku.wire.enums
+import kalku.core.setting_up
+import kalku.core.remembering
+import kalku.core.config
+
+# What is under test is what lands on a disk and where, so every test here
+# has a real directory for a project and lets the reni fall where it does.
+
+# Two `kai test` runs at once share a TMPDIR, so a project is named after
+# the process that owns it — and its reni with it.
+fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $PPID"]) {
+  Err(_) -> "0"
+  Ok(child) -> {
+    let out = drained(child, "")
+    let _ = proc.wait(child)
+    trim(out)
+  }
+}
+
+fn drained(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drained(child, so_far ++ chunk) }
+}
+
+fn gone(dir: String) : Unit / Process {
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]).map(c => {
+    let _ = drained(c, "")
+    proc.wait(c)
+  })
+  ()
+}
+
+fn project(name: String, marker: String) : String / Env + Process + File {
+  let base = Env.get("TMPDIR").unwrap_or("/tmp")
+  let under = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
+  let dir = "#{under}/kalku_settling_#{own_pid()}_#{name}"
+  gone(dir)
+  gone(reni_here(dir))
+  let _ = folders.create_dir(dir)
+  file.write("#{dir}/#{marker}", "")
+  dir
+}
+
+fn a_cast(wekufe: String) : Remembered = Remembered {
+  wekufe: wekufe,
+  site: Site {
+    site_id: "lib/a.ex:4",
+    file: "lib/a.ex",
+    enclosing: Some("A.f/1"),
+    ordinal: Some(1),
+    span: Span { start: Position { line: 4, col: 3, byte: 40 }, end: None },
+    spell: Compare,
+    original: Some(">="),
+    replacement: ">",
+    reload: ModuleOnly
+  },
+  outcome: Survived,
+  tests: []
+}
+
+# Trying kalku on a project used to mean `init`, which writes two files
+# into it and a line into its build file. A run does none of that: what
+# `init` would have written is in the reni, and the project holds what it
+# held.
+test "a project nobody set up gets its summoning in the reni, and nothing in itself" {
+  let dir = project("stranger", "mix.exs")
+  let passing = passing_through(dir)
+
+  assert passing.map(.language) == Some("elixir")
+  assert passing.map(.reni) == Some(reni_here(dir))
+  assert passing.map(.summon) == Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}")
+  assert summon_is_current(file.read("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"))
+  assert folders.list_dir(dir) == ["mix.exs"]
+
+  gone(dir)
+  gone(reni_here(dir))
+}
+
+# The reni is a temporary directory: what is in it may be from another
+# version of kalku, or from nobody.
+test "the summoning in the reni is written again by every run" {
+  let dir = project("again", "mix.exs")
+  let _ = passing_through(dir)
+  let summon = "#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"
+  file.write(summon, "not a summoning")
+  let _ = passing_through(dir)
+
+  assert summon_is_current(file.read(summon))
+
+  gone(dir)
+  gone(reni_here(dir))
+}
+
+test "a directory that does not say what it is written in is not guessed at" {
+  let dir = project("mute", "README.md")
+
+  assert is_none(passing_through(dir))
+  assert folders.list_dir(dir) == ["README.md"]
+
+  gone(dir)
+}
+
+# The ledger is how `cast` and `show` find a wekufe again, so a project
+# nobody set up still has one — beside the rest of what its runs keep.
+test "what a run cast in a project nobody set up is remembered in the reni" {
+  let dir = project("ledger", "mix.exs")
+  let _ = passing_through(dir)
+  remember_in(dir, [a_cast("w1")])
+
+  assert (ledger_in(dir) | (.wekufe)) == ["w1"]
+  assert file.exists("#{reni_here(dir)}/runs.ndjson")
+  assert folders.list_dir(dir) == ["mix.exs"]
+
+  gone(dir)
+  gone(reni_here(dir))
+}
+
+test "a project that was set up keeps its own ledger" {
+  let dir = project("settled", "mix.exs")
+  file.write("#{dir}/#{CONFIG_PATH}", "")
+  let _ = folders.create_dir("#{dir}/.kalku")
+  remember_in(dir, [a_cast("w1")])
+
+  assert (ledger_in(dir) | (.wekufe)) == ["w1"]
+  assert file.exists("#{dir}/#{LEDGER_PATH}")
+  assert not file.exists("#{reni_here(dir)}/runs.ndjson")
+
+  gone(dir)
+}
+
+fn without_summon(c: Option[Config]) : Option[Config] = match c {
+  None -> None
+  Some(c) -> Some(Config { ...c, summon: None })
+}
+
+# `init` writes a timeout floor a real suite needs and one worker for the
+# one build path there is. A run before `init` judged by other numbers
+# would call a slow cast a `timeout` that the same project, set up, calls
+# killed.
+test "a project nobody set up is measured with the settings init would write" {
+  let dir = project("same", "mix.exs")
+  let written = find(catalogue(), k => k.language == "elixir").map(
+    k => config.parse(plan_for(k, reni_here(dir)).config).ok()
+  )
+  let used = unsettled(dir)
+
+  assert is_some(written)
+  assert Some(without_summon(used.ok())) == written.map(without_summon)
+  assert used.map(.timeout_floor_ms) == Ok(60000)
+  assert used.map(.summon) == Ok(Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"))
+
+  gone(dir)
+  gone(reni_here(dir))
+}

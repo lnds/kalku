@@ -83,21 +83,28 @@ point it at a file or two rather than at everything.
 
 ## Measure an Elixir project
 
-The Elixir kalku runs *inside* the project it measures — that is how it
-loads a wekufe into a warm BEAM instead of rebuilding — so the project
-depends on it, for tests only:
-
-```elixir
-# mix.exs, in deps/0
-{:kalku_elixir, "~> 0.1", only: :test, runtime: false}
-```
-
-Then, from the root of that project:
+From the root of the project, with nothing set up:
 
 ```sh
-mix deps.get
-kalku init                    # detects Elixir, writes .kalku.toml and .kalku/summon
 kalku run lib/thing.ex        # measure one file
+```
+
+A project without a `.kalku.toml` is measured as it is and left as it is.
+The run says so, and says where it keeps what it needs: the reni, under
+this machine's temporary directory. Nothing is written in the project —
+not its `mix.exs`, not its `mix.lock`, not a file beside them.
+
+The Elixir kalku runs *inside* the project it measures — that is how it
+loads a wekufe into a warm BEAM instead of rebuilding. For a project that
+does not depend on it, the run fetches `kalku_elixir` from Hex into the
+reni, in its own version, and builds it there with the project's Elixir.
+
+To keep kalku in a project — a configuration the team shares, equivalents
+that are argued and recorded, a gate in CI — set it up:
+
+```sh
+kalku init                    # detects Elixir, writes .kalku.toml and .kalku/summon
+mix deps.get
 ```
 
 `init` reads the project's own markers — `mix.exs`, `kai.toml` — says what

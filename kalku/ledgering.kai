@@ -6,20 +6,34 @@ wekufe again by its name.
 The same file whether the run was started from the command line or by an
 agent's tool, and wherever the project is: a root that was named is where it
 is looked for.
+
+A project that was set up keeps it. One that was not is left as it is, and
+the ledger goes where the rest of its runs go, in the reni.
 """)]
 
 import fs.file
 import kalku.wire.shapes
 import kalku.core.remembering
+import kalku.core.setting_up
+import kalku.settling
+
+#[doc("True when `init` has been run in this project.")]
+pub fn set_up(root: String) : Bool / File = file.exists("#{root}/#{CONFIG_PATH}")
+
+fn ledger_of(root: String) : String / File + Env = if set_up(root) {
+  "#{root}/#{LEDGER_PATH}"
+} else {
+  "#{reni_here(root)}/runs.ndjson"
+}
 
 #[doc("What a project's runs wrote down, or nothing when none has run.")]
-pub fn ledger_in(root: String) : [Remembered] / File {
-  let path = "#{root}/#{LEDGER_PATH}"
+pub fn ledger_in(root: String) : [Remembered] / File + Env {
+  let path = ledger_of(root)
   if file.exists(path) { read_all(file.read(path)) } else { [] }
 }
 
 #[doc("What the runs of the project in the current directory wrote down.")]
-pub fn ledger() : [Remembered] / File = ledger_in(".")
+pub fn ledger() : [Remembered] / File + Env = ledger_in(".")
 
 #[doc("""
 Write down what a run cast, in the project it was asked about.
@@ -27,14 +41,14 @@ Write down what a run cast, in the project it was asked about.
 Also when the run stopped short: those wekufe were measured, and a later
 `cast` or `show` has to know them.
 """)]
-pub fn remember_in(root: String, rs: [Remembered]) : Unit / File =
+pub fn remember_in(root: String, rs: [Remembered]) : Unit / File + Env =
   if is_empty(rs) {
     ()
   } else {
-    let path = "#{root}/#{LEDGER_PATH}"
+    let path = ledger_of(root)
     let was = if file.exists(path) { file.read(path) } else { "" }
     file.write(path, appended(was, rs))
   }
 
 #[doc("Write down what a run cast, in the current directory's project.")]
-pub fn remember(rs: [Remembered]) : Unit / File = remember_in(".", rs)
+pub fn remember(rs: [Remembered]) : Unit / File + Env = remember_in(".", rs)

@@ -16,6 +16,7 @@ import fs.file
 import fs.dir
 import os.process as proc
 import kalku.core.setting_up
+import kalku.core.config
 
 #[doc("Set a project up, asking before anything is written.")]
 pub fn settle(
@@ -57,6 +58,52 @@ means something wrong on the machine it came from once the directory is
 swept.
 """)]
 pub fn reni_here(root: String) : String / Env = reni_for(temp_dir(), named_after(root))
+
+#[doc("A project nobody set up: its language, the summoning a run wrote for it, and the configuration `init` would have written.")]
+pub type Passing = { language: String, summon: String, reni: String, config: String }
+
+#[doc("""
+Get ready to measure a project that `init` never saw, without touching it.
+
+What `init` would have written into the project is decided the same way
+and kept in the reni instead: the language from the project's own markers,
+the summoning as a script there. It is written again by every run, because
+the reni is a temporary directory and nobody is expected to have read what
+is in it.
+
+`None` when the project does not say what it is written in.
+""")]
+pub fn passing_through(root: String) : Option[Passing] / File + Env + Process =
+  match which_language(root, None) {
+    Err(_) -> None
+    Ok(known) -> {
+      let reni = reni_here(root)
+      let _ = dir.create_dir(above(reni))
+      let _ = dir.create_dir(reni)
+      let summon = "#{reni}/#{OUTSIDE_SUMMONER}"
+      file.write(summon, outside_text(known))
+      runnable_now(summon)
+      Some(Passing {
+        language: known.language,
+        summon: summon,
+        reni: reni,
+        config: plan_for(known, reni).config
+      })
+    }
+  }
+
+fn above(path: String) : String =
+  slice(path, 0, length(path) - length(last_segment(path)) - 1)
+
+# Waited for, unlike the one `init` starts: a run summons the script next.
+fn runnable_now(path: String) : Unit / Process =
+  match proc.start_piped("/bin/chmod", ["+x", path]) {
+    Err(_) -> ()
+    Ok(child) -> {
+      let _ = proc.wait(child)
+      ()
+    }
+  }
 
 # The reni is named after the project, and a project named `.` is
 # whatever directory one is standing in — which the shell knows and this
@@ -237,3 +284,49 @@ fn build_file_of(root: String, known: Known) : String / File {
   let path = "#{root}/#{known.marker}"
   if file.exists(path) { file.read(path) } else { "" }
 }
+
+# ---- a project nobody set up --------------------------------------------
+
+fn called(root: String) : String = if root == "." { "this directory" } else { root }
+
+#[doc("""
+The settings of a project that has no `.kalku.toml`: the ones `init` would write.
+
+A project nobody set up is measured all the same, and is not changed to do
+it: trying the tool should cost a command, and `init` is for the project
+that decides to keep it. Said aloud, because a run that found no
+configuration and one started in the wrong directory look alike otherwise.
+""")]
+pub fn unsettled(root: String) : Result[Config, String] / Stderr + File + Env + Process =
+  match passing_through(root) {
+    None -> Err(
+      "no #{CONFIG_PATH} in #{called(root)}, and nothing there says what it is written in;"
+        ++ " `kalku init --lang <language>` sets it up"
+    )
+    Some(p) -> {
+      Stderr.eprint(
+        "kalku: no #{CONFIG_PATH} in #{called(root)}: measuring it as #{p.language} and leaving it as it is."
+          ++ " What the run keeps is in #{p.reni}; `kalku init` sets the project up to keep it."
+      )
+      Ok(Config { ...as_init_would(p), language: Some(p.language), summon: Some(p.summon) })
+    }
+  }
+
+# The run a project gets before `init` is the run it gets after: the same
+# workers, the same patience with a slow cast. Read from the text `init`
+# writes, so the two cannot drift apart.
+fn as_init_would(p: Passing) : Config = match config.parse(p.config) {
+  Ok(c) -> c
+  Err(_) -> defaults()
+}
+
+#[doc("""
+Why an argument for an equivalent cannot be kept in a project nobody set up.
+
+What is argued equivalent is the project's own record, read by every run
+after it. A project nobody set up is one kalku does not write in, so the
+argument has nowhere to be kept until its owner says it may be.
+""")]
+pub fn why_not_kept(root: String) : String =
+  "#{called(root)} was not set up, and what is argued equivalent is the project's to keep;"
+    ++ " run `kalku init` there first"

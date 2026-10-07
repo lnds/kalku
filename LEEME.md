@@ -84,21 +84,29 @@ que apúntalo a uno o dos archivos y no a todo.
 
 ## Medir un proyecto Elixir
 
-El kalku de Elixir corre *dentro* del proyecto que mide —así es como carga
-un wekufe en una BEAM caliente en vez de recompilar—, por lo que el proyecto
-depende de él, solo para tests:
-
-```elixir
-# mix.exs, in deps/0
-{:kalku_elixir, "~> 0.1", only: :test, runtime: false}
-```
-
-Después, desde la raíz de ese proyecto:
+Desde la raíz del proyecto, sin configurar nada:
 
 ```sh
-mix deps.get
-kalku init                    # detects Elixir, writes .kalku.toml and .kalku/summon
 kalku run lib/thing.ex        # measure one file
+```
+
+Un proyecto sin `.kalku.toml` se mide tal como está y se deja tal como
+está. La corrida lo dice, y dice dónde guarda lo que necesita: el reni, bajo
+el directorio temporal de esta máquina. No se escribe nada en el proyecto:
+ni su `mix.exs`, ni su `mix.lock`, ni un archivo junto a ellos.
+
+El kalku de Elixir corre *dentro* del proyecto que mide —así es como carga
+un wekufe en una BEAM caliente en vez de recompilar—. Para un proyecto que
+no depende de él, la corrida descarga `kalku_elixir` desde Hex al reni, en
+su misma versión, y lo compila ahí con el Elixir del proyecto.
+
+Para dejar kalku en un proyecto —una configuración que el equipo comparte,
+equivalentes que se argumentan y se registran, un control en CI—,
+configúralo:
+
+```sh
+kalku init                    # detects Elixir, writes .kalku.toml and .kalku/summon
+mix deps.get
 ```
 
 `init` lee los marcadores propios del proyecto —`mix.exs`, `kai.toml`—, dice
