@@ -1,3 +1,13 @@
+## v0.9.2 (2026-10-06)
+
+### Fixed
+
+- **elixir**: a line run through a mocked module is reported under its own file (#213)
+- **elixir**: a wekufe is no longer hidden by a test that mocks its module (#208)
+- **elixir**: a wekufe in a module the suite mocks no longer outlives its cast (#206)
+- **elixir**: a test that drives a mock no longer kills a wekufe it never reaches (#205)
+- **elixir**: a test that sets a mocking library up in its own setup no longer ends the run (#201)
+
 ## v0.9.1 (2026-10-06)
 
 ### Fixed
