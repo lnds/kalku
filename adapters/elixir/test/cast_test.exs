@@ -247,6 +247,44 @@ defmodule Kalku.CastTest do
     end
   end
 
+  describe "against a suite that sets itself up once" do
+    setup :a_reni
+
+    # ExUnit does not run the tests of a module whose `setup_all` raised: it
+    # reports them invalid. Read as tests that passed, a wekufe that stops a
+    # whole module from running survived it.
+    test "a wekufe that breaks `setup_all` is killed by the tests it stopped", %{reni: reni} do
+      source = File.read!(Path.join(project("set_up"), "lib/set_up.ex"))
+      {from, 2} = :binary.match(source, "10")
+
+      wekufe =
+        Kalku.Json.encode(%{
+          "type" => "cast",
+          "id" => 4,
+          "wekufe" => "fewer",
+          "site" => %{
+            "site_id" => "fewer",
+            "file" => "lib/set_up.ex",
+            "span" => %{
+              "start" => %{"line" => 4, "col" => 1, "byte" => from},
+              "end" => %{"line" => 4, "col" => 1, "byte" => from + 2}
+            },
+            "spell" => "literal",
+            "replacement" => "9",
+            "reload" => "module"
+          },
+          "tests" => ["test/set_up_test.exs:11"]
+        })
+
+      lines = summon(reni, "set_up", [request("prepare", 2), request("baseline", 3), wekufe])
+
+      assert reply(lines, "baseline_done")["status"] == "green"
+      done = reply(lines, "cast_done")
+      assert done["outcome"] == "killed"
+      assert done["killed_by"] == "test/set_up_test.exs:11"
+    end
+  end
+
   defp cast_of(id, {file, place, replacement, line}, test),
     do: replacing(id, file, place, replacement, line, test)
 
