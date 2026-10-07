@@ -57,6 +57,7 @@ defmodule Kalku.Baseline.Recorder do
 
     %Collector.Test{
       id: "#{file}:#{line}",
+      module: test.module,
       file: file,
       line: line,
       duration_ms: div(test.time || 0, 1000),

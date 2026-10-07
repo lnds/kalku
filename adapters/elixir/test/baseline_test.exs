@@ -132,6 +132,15 @@ defmodule Kalku.BaselineTest do
       assert length(said) - 1 == 1
     end
 
+    test "a test is run alone in its own module, not in all of them" do
+      test = %Kalku.Baseline.Collector.Test{module: SomeTest, file: "test/some_test.exs", line: 3}
+
+      assert Kalku.Baseline.holding(test, [SomeTest, OtherTest]) == [SomeTest]
+      # A test nobody named the module of still has to be found.
+      assert Kalku.Baseline.holding(%{test | module: nil}, [SomeTest, OtherTest]) ==
+               [SomeTest, OtherTest]
+    end
+
     test "the suite runs in the kalku's own runtime, so it can be asked twice", %{reni: reni} do
       lines = run(reni, "green", ["baseline", "baseline"])
 

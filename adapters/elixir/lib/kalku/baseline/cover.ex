@@ -3,8 +3,8 @@ defmodule Kalku.Baseline.Cover do
   Which lines each test executes.
 
   `:cover` counts per line, not per test, so the attribution comes from
-  running one test at a time: the counters are cleared before each test
-  and read after it. That is why a baseline with coverage runs the suite
+  running one test at a time: the counters are read after each test and
+  cleared for the next. That is why a baseline with coverage runs the suite
   serially — a parallel suite would attribute one test's lines to
   whichever test happened to be running beside it.
 
@@ -49,6 +49,70 @@ defmodule Kalku.Baseline.Cover do
       {:ok, entries} -> executed(entries)
       _ -> []
     end
+  end
+
+  @doc """
+  The modules entered since the last reset, and those it cannot tell about.
+
+  Reading the counters costs time for every module it reads, entered or
+  not, and one test enters few of a large project's. So the counters are
+  looked at where they are kept before they are read: in the loaded code
+  when the runtime counts lines itself, in a counter array otherwise.
+
+  The array is `:cover`'s own business and may not be where it is looked
+  for. A module nothing can be told about is taken as entered: what that
+  costs is time, never a line.
+
+  Reading the counters empties them, so this has to be asked before
+  `covered/1`, and it only knows of what ran since the last read.
+  """
+  def entered, do: Enum.filter(:cover.modules(), &entered?/1)
+
+  @doc "The lines of these modules executed since the last reset, as `covered/0` gives them."
+  def covered([]), do: []
+
+  def covered(modules) do
+    case :cover.analyse(modules, :coverage, :line) do
+      {:result, entries, _failed} -> executed(entries)
+      _ -> []
+    end
+  end
+
+  @doc """
+  Forgets what has been counted in these modules, and leaves the others.
+
+  Forgetting everything walks everything `:cover` has ever read, which
+  after the first read is every line of the project. The modules a test
+  entered are the only ones that have anything to forget.
+  """
+  def reset(modules), do: Enum.each(modules, &:cover.reset/1)
+
+  defp entered?(module) do
+    case {counted_in_code(module), counted_in_array(module)} do
+      {:unknown, :unknown} -> true
+      {in_code, in_array} -> in_code == true or in_array == true
+    end
+  end
+
+  # Called by name: a runtime that does not count lines itself does not have
+  # these functions either.
+  defp counted_in_code(module) do
+    if function_exported?(:code, :coverage_support, 0) and apply(:code, :coverage_support, []) do
+      Enum.any?(apply(:code, :get_coverage, [:cover_id_line, module]), fn {_, n} -> n > 0 end)
+    else
+      :unknown
+    end
+  rescue
+    _ -> :unknown
+  end
+
+  defp counted_in_array(module) do
+    case :persistent_term.get({:cover, module}, nil) do
+      nil -> :unknown
+      array -> Enum.any?(1..:counters.info(array).size//1, &(:counters.get(array, &1) > 0))
+    end
+  rescue
+    _ -> :unknown
   end
 
   defp executed(entries) do
