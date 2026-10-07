@@ -107,7 +107,7 @@ defmodule Kalku.BaselineTest do
       done = reply(run(reni, "red", ["baseline"]), "baseline_done")
 
       assert done["status"] == "red"
-      assert [%{"test" => "test/red_test.exs:8", "message" => message}] = done["failures"]
+      assert [%{"test" => "test/red_test.exs:10", "message" => message}] = done["failures"]
 
       assert message =~ "Assertion with == failed"
       assert message =~ "left:  :negative"
@@ -116,6 +116,20 @@ defmodule Kalku.BaselineTest do
       # The test that passed is still reported: red is about the suite,
       # not about every test in it.
       assert length(done["tests"]) == 2
+    end
+
+    # Each test is run a second time, alone, to learn which lines it reaches.
+    # That is for choosing the tests of a cast, and a failing suite has no
+    # casts: on a large suite the answer came hours after it was known.
+    test "a failing suite is not run a second time to measure coverage", %{reni: reni} do
+      done = reply(run(reni, "red", ["baseline"]), "baseline_done")
+
+      assert done["status"] == "red"
+      refute Map.has_key?(done, "coverage")
+      refute Map.has_key?(done, "coverage_path")
+
+      said = String.split(Process.get(:last_stderr), "red: the passing test ran")
+      assert length(said) - 1 == 1
     end
 
     test "the suite runs in the kalku's own runtime, so it can be asked twice", %{reni: reni} do
