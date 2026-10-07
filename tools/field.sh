@@ -5,19 +5,22 @@
 #   tools/field.sh [name...]
 #
 # Each project is cloned under the machine's temporary directory, never
-# into this tree. Its own suite is run first, plainly; kalku is run only
-# on a project whose suite passes here, because a suite that fails for
-# want of a tool or a service says nothing about kalku. Then kalku
-# measures the files the list names, in a project it was never set up in,
-# and the project's tree is checked for anything written into it.
+# into this tree, or written there by `tools/field/generate.exs`. Its own
+# suite is run first, plainly. Then kalku measures the files the list
+# names, in a project it was never set up in, and the project's tree is
+# checked for anything written into it.
+#
+# A project whose suite does not pass here is one kalku has to refuse: a
+# suite that fails for want of a tool or a service says nothing about a
+# wekufe, and a kalku that measured it anyway would be inventing a score.
 #
 #   KALKU          the binary to try (default: the one built here)
 #   KALKU_ELIXIR   the Elixir kalku to summon (default: this checkout's)
 #   FIELD_DIR      where the clones go (default: $TMPDIR/kalku-field)
 #   FIELD_LIMIT    how many wekufe a run casts (default: 20)
 #
-# Exits 1 when kalku failed on a project whose suite passes, or wrote in
-# its tree.
+# Exits 1 when kalku failed on a project whose suite passes, measured one
+# whose suite does not, or wrote in a project's tree.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -65,7 +68,14 @@ grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' | while read -r name
   logs="$work/$name.logs"
   mkdir -p "$logs"
 
-  fetched "$dir" "$url" "$sha"
+  if [ "$url" = generated ]; then
+    # What to generate is written where a commit would be, commas for spaces.
+    # shellcheck disable=SC2046
+    [ -f "$dir/mix.exs" ] ||
+      elixir "$root/tools/field/generate.exs" "$dir" $(echo "$sha" | tr ',' ' ') 2>"$logs/generate.log"
+  else
+    fetched "$dir" "$url" "$sha"
+  fi
   (cd "$dir" && mix deps.get >"$logs/deps.log" 2>&1) || {
     printf '%-9s %s\n' "$name" "skipped: its dependencies could not be fetched ($logs/deps.log)"
     continue
@@ -75,12 +85,6 @@ grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' | while read -r name
   if (cd "$dir" && MIX_ENV="test" mix test >"$logs/plain.log" 2>&1); then plain=0; else plain=$?; fi
   plain_s=$(( $(seconds) - from ))
   suite=$(grep -E '^([0-9]+ (tests|doctests|properties)|Result: )' "$logs/plain.log" | tail -1 | sed 's/^Result: //' || true)
-
-  if [ "$plain" -ne 0 ]; then
-    printf '%-9s %-40s %7ss %8s  %s\n' "$name" "${suite:-did not run}" "$plain_s" - \
-      "skipped: its own suite does not pass here ($logs/plain.log)"
-    continue
-  fi
 
   # A reni from an earlier try would hide what a first run costs.
   rm -rf "${TMPDIR:-/tmp}/kalku/$name"
@@ -102,15 +106,23 @@ grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' | while read -r name
   (cd "$dir" && find . -path ./.git -prune -o -type f -newer "$stamp" -print) >"$logs/written"
   written=$(wc -l <"$logs/written" | tr -d ' ')
 
-  if [ "$status" -ge 2 ]; then
+  refusal=$(grep '^kalku: the suite is already failing' "$logs/kalku.err" || true)
+  bad=0
+  if [ "$plain" -ne 0 ] && [ -n "$refusal" ]; then
+    said="refused, as its own suite fails here too: ${refusal#kalku: }"
+  elif [ "$plain" -ne 0 ]; then
+    said="MEASURED A SUITE THAT FAILS ($logs/plain.log): $(tail -1 "$logs/kalku.out")"
+    bad=1
+  elif [ "$status" -ge 2 ]; then
     said="FAILED ($status): $(grep '^kalku: ' "$logs/kalku.err" | grep -v 'no .kalku.toml' | tail -1)"
+    bad=1
   else
     said=$(tail -1 "$logs/kalku.out")
   fi
   [ "$written" -eq 0 ] || said="$said; WROTE $written file(s) in the project ($logs/written)"
 
-  printf '%-9s %-40s %7ss %7ss  %s\n' "$name" "$suite" "$plain_s" "$kalku_s" "$said"
-  if [ "$status" -ge 2 ] || [ "$written" -ne 0 ]; then echo "$name" >>"$work/broke"; fi
+  printf '%-9s %-40s %7ss %7ss  %s\n' "$name" "${suite:-did not run}" "$plain_s" "$kalku_s" "$said"
+  if [ "$bad" -ne 0 ] || [ "$written" -ne 0 ]; then echo "$name" >>"$work/broke"; fi
 done
 
 if [ -s "$work/broke" ]; then
