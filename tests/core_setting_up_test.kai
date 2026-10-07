@@ -5,6 +5,7 @@ fn elixir() : Known = Known {
   marker: "mix.exs",
   also: [],
   summon: "",
+  outside: "",
   sources: [],
   tests: [],
   test_prefixes: [],
@@ -341,4 +342,29 @@ test "Python sources are .py files outside the suite, which is named by director
   assert is_test_of(python, "pkg/test_core.py")
   assert is_test_of(python, "conftest.py")
   assert not is_test_of(python, "pkg/core.py")
+}
+
+# A project nobody set up does not have the kalku among its dependencies,
+# and adding it is what a run must not do. So its summoning says nothing
+# of the project's build file and fetches the kalku itself, in the version
+# of the kalku that wrote it: any other is a kalku this one was not tested
+# against.
+test "the summoning for a project nobody set up brings the kalku with it" {
+  let known = find(catalogue(), k => k.language == "elixir").unwrap_or(elixir())
+  let script = outside_text(known)
+
+  assert summon_is_current(script)
+  assert has(script, "mix hex.package fetch kalku_elixir #{VERSION} --unpack")
+  assert has(script, "$RENI/kalku_elixir-#{VERSION}}")
+  assert has(script, "MIX_BUILD_PATH=\"$RENI/build\"")
+  assert has(script, ">&2 </dev/null")
+  assert not has(script, "mix deps.get")
+  assert index_of(script, "mix compile >&2 </dev/null") < index_of(script, "exec sh")
+}
+
+# Only a kalku that lives inside the project's runtime needs another way
+# in. The rest are programs beside kalku, summoned the same way whether
+# the project was set up or not.
+test "a kalku that is its own program is summoned the same way set up or not" {
+  assert all(catalogue() |? (k => k.language != "elixir"), k => k.outside == k.summon)
 }

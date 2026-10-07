@@ -47,6 +47,7 @@ fn of(language: String) : Known = match find(catalogue(), k => k.language == lan
     marker: "",
     also: [],
     summon: "",
+    outside: "",
     sources: [],
     tests: [],
     test_prefixes: [],
