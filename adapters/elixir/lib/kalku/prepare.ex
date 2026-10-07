@@ -146,8 +146,12 @@ defmodule Kalku.Prepare do
   defp exit_message(reason), do: inspect(reason)
 
   # Starting applications installs the logger's handlers again, which puts
-  # them back on stdout — where the protocol lives.
+  # them back on stdout — where the protocol lives. An application may log
+  # while it starts, so the handler is asked for on stderr before that, in
+  # the configuration starting reads, and looked at again afterwards.
   defp start_apps do
+    Mix.Task.rerun("app.config", [])
+    Kalku.Log.start_on_stderr()
     Mix.Task.rerun("app.start", [])
     Kalku.Log.to_stderr()
     :ok

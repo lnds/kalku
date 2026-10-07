@@ -15,6 +15,39 @@ defmodule Kalku.Log do
   stops one.
   """
 
+  @doc """
+  Ask for the default handler on stderr in the logger's own configuration.
+
+  That is what the logger reads when it starts, so a line logged while the
+  project's applications start is already written where it belongs. A
+  project that turned the default handler off, or put a module of its own
+  in its place, is left as it is.
+  """
+  def start_on_stderr do
+    case Application.get_env(:logger, :default_handler, []) do
+      asked when is_list(asked) ->
+        if Keyword.get(asked, :module, :logger_std_h) == :logger_std_h do
+          Application.put_env(:logger, :default_handler, on_stderr(asked))
+        end
+
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  # A handler that was asked to write to a file is not writing on stdout.
+  defp on_stderr(asked) do
+    config = asked |> Keyword.get(:config, []) |> Map.new()
+
+    if Map.get(config, :type, :standard_io) == :standard_io do
+      Keyword.put(asked, :config, Map.put(config, :type, :standard_error))
+    else
+      asked
+    end
+  end
+
   @doc "Point the default handler at stderr, however many times it takes."
   def to_stderr do
     case :logger.get_handler_config(:default) do
