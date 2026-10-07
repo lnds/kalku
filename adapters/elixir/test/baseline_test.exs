@@ -36,7 +36,7 @@ defmodule Kalku.BaselineTest do
       done = reply(run(reni, "mocked", ["baseline"]), "baseline_done")
 
       assert done["status"] == "green"
-      assert length(done["tests"]) == 4
+      assert length(done["tests"]) == 5
 
       by_line = Map.new(done["coverage"], &{{&1["file"], &1["line"]}, &1["tests"]})
       # `charge/1` runs in the test that drives the mock, and `total/2` in

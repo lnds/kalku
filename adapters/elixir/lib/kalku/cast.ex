@@ -33,7 +33,7 @@ defmodule Kalku.Cast do
         send(owner, {:cast_done, id, done})
       end)
 
-    %{id: id, pid: pid, wekufe: wekufe, originals: originals, before: before}
+    %{id: id, pid: pid, wekufe: wekufe, file: file, originals: originals, before: before}
   end
 
   @doc """
@@ -48,10 +48,12 @@ defmodule Kalku.Cast do
   Returns whether the runtime was restored, which is what decides between
   a kalku kept warm and a kalku recycled.
   """
-  def abort(%{pid: pid, originals: originals, before: before}) do
+  def abort(%{pid: pid, file: file, originals: originals, before: before}) do
     Process.exit(pid, :kill)
     stop_the_rest(before)
-    restore(originals) == :ok
+    # What the cast compiled is loaded under its file by now, whatever stood
+    # there when it started.
+    restore(originals ++ originals_of(file)) == :ok
   rescue
     _ -> false
   end
@@ -126,10 +128,11 @@ defmodule Kalku.Cast do
 
     case compile(spliced, file) do
       {:error, message} ->
-        restore(originals ++ borrowed)
+        restore(originals ++ borrowed ++ originals_of(file))
         {:ok, done(wekufe, "compile_error", started, message: message)}
 
       {:ok, compiled} ->
+        originals = originals ++ stood_in_for(compiled, originals)
         recompile(dependents)
         outcome = measure(root, compiled, originals, tests)
         restore(originals ++ borrowed)
@@ -204,6 +207,17 @@ defmodule Kalku.Cast do
   # no object code on disk cannot be restored, so it is not touched.
   defp originals_of(file) do
     for module <- modules_from(file), {:ok, binary} <- [object_code(module)], do: {module, binary}
+  end
+
+  # A module the suite has replaced — a mocking library puts a mock in its
+  # place — is not loaded from this file when the cast starts, so it is not
+  # among the originals, and the cast compiles its wekufe over the mock all
+  # the same. Its original is the one on disk, like every other.
+  defp stood_in_for(compiled, originals) do
+    for {module, _} <- compiled,
+        not List.keymember?(originals, module, 0),
+        {:ok, binary} <- [object_code(module)],
+        do: {module, binary}
   end
 
   defp modules_from(file) do
