@@ -28,6 +28,7 @@ defmodule Kalku.Prepare do
          :ok <- inside_reni(reni),
          :ok <- partition(env),
          {:ok, modules} <- compile(),
+         :ok <- own_needs(),
          :ok <- start_apps(),
          :ok <- suite(root),
          :ok <- Kalku.Runtime.mark(Mix.Project.config()[:app]) do
@@ -105,6 +106,18 @@ defmodule Kalku.Prepare do
       _ ->
         path
     end
+  end
+
+  # What the kalku itself runs on, and the project may not: `:cover` is in
+  # `:tools`, which no project lists. Asked for after compiling, because
+  # compiling is when Mix takes off the code path what the project does not
+  # depend on, and loaded there and then, because a cast compiles again.
+  defp own_needs do
+    Mix.ensure_application!(:tools)
+    Mix.ensure_application!(:crypto)
+    {:module, :cover} = Code.ensure_loaded(:cover)
+    {:module, :crypto} = Code.ensure_loaded(:crypto)
+    :ok
   end
 
   defp test_env do

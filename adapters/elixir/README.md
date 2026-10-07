@@ -61,6 +61,12 @@ Run from the root of the project being measured. `bin/kalku-elixir` is the suppo
 
 Summoning `mix kalku.serve` directly still works once the dependencies are built, but on a cold start it puts the compiler's output on the protocol channel. The script exists so nobody has to remember that; it refuses to start at all without a `MIX_BUILD_PATH`.
 
+### A project that does not depend on it
+
+`bin/kalku-elixir` also measures a project whose `mix.exs` does not name `kalku_elixir`, and leaves that project as it found it. It compiles the kalku with the project's own Elixir into `$MIX_BUILD_PATH/kalku_elixir/ebin` — inside the reni, built once and again only when the Elixir, the OTP or the kalku changes — and starts `mix kalku.serve` with that directory on the code path.
+
+Mix takes off the code path whatever a project does not depend on, each time it compiles. So the kalku loads all of its own modules as it starts, and asks for `:tools` and `:crypto` after `prepare` has compiled rather than before.
+
 ## Preparing
 
 `prepare` compiles the project into the reni with protocol consolidation **off** — a consolidated protocol is built from every implementation at once, so a wekufe cast into a `defimpl` would be silently ignored and counted as a survivor.
