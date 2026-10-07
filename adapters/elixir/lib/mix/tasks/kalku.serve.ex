@@ -25,11 +25,22 @@ defmodule Mix.Tasks.Kalku.Serve do
     case too_old() do
       nil ->
         Mix.shell(Mix.Shell.Quiet)
+        load_all()
         Kalku.Loop.run()
 
       said ->
         IO.puts(:stderr, said)
         exit({:shutdown, 1})
+    end
+  end
+
+  # Mix takes off the code path whatever the project does not depend on,
+  # when it compiles, and a kalku summoned from outside the project is
+  # exactly that. A module already loaded stays loaded, so all of them
+  # are loaded before anything is compiled.
+  defp load_all do
+    for beam <- Path.wildcard(Path.join(Path.dirname(:code.which(__MODULE__)), "*.beam")) do
+      beam |> Path.basename(".beam") |> String.to_atom() |> Code.ensure_loaded()
     end
   end
 

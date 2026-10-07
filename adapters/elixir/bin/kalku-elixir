@@ -28,4 +28,14 @@ fi
 mix deps.compile >&2 </dev/null
 # `exec` hands the process to the kalku, so a signal reaches it rather
 # than a shell that would outlive it.
-exec mix kalku.serve "$@"
+if grep -q kalku_elixir mix.exs 2>/dev/null; then
+  exec mix kalku.serve "$@"
+fi
+
+# A project that does not depend on the kalku is measured all the same,
+# and is not changed to do it: the kalku is compiled into the reni, beside
+# the project's build, and put on the code path of this one runtime.
+HERE="$(cd "$(dirname "$0")/.." && pwd -P)"
+EBIN="$MIX_BUILD_PATH/kalku_elixir/ebin"
+elixir "$HERE/bin/build.exs" "$HERE" "$EBIN" >&2 </dev/null
+exec elixir -pa "$EBIN" -S mix kalku.serve "$@"
