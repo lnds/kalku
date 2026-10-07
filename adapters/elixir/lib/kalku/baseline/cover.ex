@@ -106,8 +106,38 @@ defmodule Kalku.Baseline.Cover do
   # A module names the file it was compiled from, which is what a site is
   # reported against.
   defp source(module) do
-    module.module_info(:compile)[:source] |> to_string()
+    case module.module_info(:compile)[:source] do
+      nil -> written_in(module)
+      source -> to_string(source)
+    end
   rescue
     _ -> "unknown"
+  end
+
+  # A module made from another one's code, not from a file, names no source:
+  # the copy a mocking library keeps of a module it replaced is one. `:cover`
+  # holds the code it instrumented, and the code says where it was written.
+  # Asked once per module: a baseline reads the counters after every test.
+  defp written_in(module) do
+    case Process.get({__MODULE__, module}) do
+      nil ->
+        file = file_in_code(module)
+        Process.put({__MODULE__, module}, file)
+        file
+
+      file ->
+        file
+    end
+  end
+
+  defp file_in_code(module) do
+    with {:file, beam} when is_binary(beam) <- :cover.is_compiled(module),
+         {:ok, {_, [abstract_code: {_, forms}]}} <- :beam_lib.chunks(beam, [:abstract_code]),
+         {:attribute, _, :file, {file, _}} <-
+           Enum.find(forms, &match?({:attribute, _, :file, _}, &1)) do
+      to_string(file)
+    else
+      _ -> "unknown"
+    end
   end
 end

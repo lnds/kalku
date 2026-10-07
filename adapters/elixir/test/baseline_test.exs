@@ -43,6 +43,12 @@ defmodule Kalku.BaselineTest do
       # the one that does not touch it.
       assert by_line[{"lib/mocked.ex", 5}] == ["test/mocked_test.exs:9"]
       assert by_line[{"lib/mocked.ex", 12}] == ["test/mocked_test.exs:5"]
+
+      # A line run through the copy the library keeps of a module it replaced
+      # is a line of that module's file. Named anything else it matches no
+      # site, and a wekufe a test reaches is reported as reached by none.
+      assert by_line[{"lib/mocked/fee.ex", 3}] == ["test/late_copy_test.exs:15"]
+      assert Enum.all?(done["coverage"], &String.starts_with?(&1["file"], "lib/"))
     end
 
     # Replacing a module under `:cover` makes the mocking library export its
