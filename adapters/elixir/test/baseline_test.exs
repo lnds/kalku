@@ -126,6 +126,20 @@ defmodule Kalku.BaselineTest do
       assert length(done["tests"]) == 3
     end
 
+    # A suite that is green under `mix test` and red here is red for a way
+    # this run is unlike that one. This kalku copies nothing: what a test
+    # can tell is that the build is somewhere else, and the refusal used to
+    # speak of a copy of the project all the same.
+    test "the baseline says how it was unlike `mix test`, and where the build is", %{reni: reni} do
+      done = reply(run(reni, "red", ["baseline"]), "baseline_done")
+
+      assert [build, loading] = done["differences"]
+      assert build =~ Path.join(reni, "build")
+      assert build =~ "MIX_BUILD_PATH"
+      assert loading =~ "alias"
+      refute Enum.any?(done["differences"], &(&1 =~ "copy"))
+    end
+
     # Each test is run a second time, alone, to learn which lines it reaches.
     # That is for choosing the tests of a cast, and a failing suite has no
     # casts: on a large suite the answer came hours after it was known.
