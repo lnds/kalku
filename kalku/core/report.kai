@@ -23,9 +23,16 @@ const SHOWN_TESTS : Int = 3
 # Enough of a toolchain's diagnostic to name the file and the error.
 const SAID_LINES : Int = 6
 
-#[doc("A wekufe that lived, and the tests that ran without noticing.")]
+#[doc("""
+A wekufe that lived, and the tests that ran without noticing.
+
+`chosen` is whether those tests were picked because they reach the site.
+Without per-test coverage they are the whole suite, and a suite is not a
+list of the tests that cover a line: said as one, it names tests from files
+that never touch the code and reads as an attribution nobody made.
+""")]
 #[derive(Eq, Show)]
-pub type Survivor = { site: Site, tests: [String] }
+pub type Survivor = { site: Site, tests: [String], chosen: Bool }
 
 #[doc("""
 How many survivors sit on a line a change touched.
@@ -150,8 +157,13 @@ fn block(s: Survivor) : [String] =
     ++ (diff_of(s.site) | (line => "  #{line}"))
     ++ [covered_by(s), "  #{hint_for(s.site)}", ""]
 
-fn covered_by(s: Survivor) : String =
-  if is_empty(s.tests) { "  no test covers it" } else { "  covered by #{counted(s.tests)}" }
+fn covered_by(s: Survivor) : String = if is_empty(s.tests) {
+  "  no test covers it"
+} else if s.chosen {
+  "  covered by #{counted(s.tests)}"
+} else {
+  "  judged by the whole suite, #{length(s.tests)} test(s): which of them reach it was not measured"
+}
 
 # Named while the list is short enough to read, counted past that. Not
 # the first few of a long list: without coverage to select by, the order

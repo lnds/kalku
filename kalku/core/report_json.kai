@@ -45,8 +45,9 @@ fn survivor(s: Survivor) : JsonValue = JObj(
     ++ optional("original", s.site.original.map(o => JStr(o)))
     ++ [
       ("replacement", JStr(s.site.replacement)),
-      ("covering_tests", JArr(s.tests | (t => JStr(t))))
+      ("covering_tests", JArr(if s.chosen { s.tests | (t => JStr(t)) } else { [] }))
     ]
+    ++ (if s.chosen { [] } else { [("judged_by_whole_suite", JNum(length(s.tests)))] })
 )
 
 fn optional(key: String, value: Option[JsonValue]) : [(String, JsonValue)] = match value {

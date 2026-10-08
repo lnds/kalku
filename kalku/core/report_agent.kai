@@ -110,8 +110,7 @@ pub fn survivor_line(s: Survivor, source: (String) -> [String]) : String = json_
       ++ optional("original", s.site.original)
       ++ [("replacement", JStr(s.site.replacement))]
       ++ strings("context", context(s.site, source))
-      ++ strings("covering_tests", take(s.tests, COVERING_SHOWN))
-      ++ counted("covering_count", length(s.tests))
+      ++ judged_by(s)
       ++ [("hint", JStr(hint_for(s.site)))]
   )
 )
@@ -205,6 +204,16 @@ fn suppression_field(s: SuppressionChanges) : [(String, JsonValue)] =
 fn optional(name: String, value: Option[String]) : [(String, JsonValue)] = match value {
   Some(text) -> [(name, JStr(text))]
   None -> []
+}
+
+# The tests that cover the site, where that was measured. Where it was not,
+# the whole suite judged it, and its first five tests are no nearer the
+# site than its last.
+fn judged_by(s: Survivor) : [(String, JsonValue)] = if s.chosen {
+  strings("covering_tests", take(s.tests, COVERING_SHOWN))
+    ++ counted("covering_count", length(s.tests))
+} else {
+  counted("judged_by_whole_suite", length(s.tests))
 }
 
 fn counted(name: String, n: Int) : [(String, JsonValue)] =

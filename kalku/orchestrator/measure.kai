@@ -613,7 +613,13 @@ fn site_named(known: Known, wekufe: String, tests: [String]) : [Survivor] = matc
   known.sites,
   s => s.site_id == wekufe
 ) {
-  Some(s) -> [Survivor { site: s, tests: if is_empty(tests) { known.tests } else { tests } }]
+  Some(s) -> [
+    Survivor {
+      site: s,
+      tests: if is_empty(tests) { known.tests } else { tests },
+      chosen: is_some(known.coverage)
+    }
+  ]
   None -> []
 }
 
