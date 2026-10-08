@@ -224,7 +224,7 @@ fn durations_of(reply: KalkuReply) : [(String, Int)] = match reply {
 # must never do.
 fn refuse_red(reply: KalkuReply) : Result[Unit, String] = match reply {
   BaselineDone(m) -> if m.status == Red {
-    Err(red_suite(m.failures))
+    Err(red_suite(m.failures, m.differences.unwrap_or([])))
   } else {
     Ok(())
   }

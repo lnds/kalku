@@ -112,6 +112,10 @@ fn prepared(id: Int, state: Serving) : Int / Stdin + Stdout + Stderr + File + Pr
 
 # ---- baseline ------------------------------------------------------------
 
+# What a test can tell of where it ran, said with every baseline: it is
+# what a reader needs when a suite fails here and not in their tree.
+const IN_A_COPY : String = "it ran in a copy of the package kept in the reni: what the copy leaves out, `.git` for one, is not there"
+
 fn baseline_of(state: Serving) : KalkuReply / Process = match state.work {
   None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
   Some(w) -> report_of(test_all(w))
@@ -129,7 +133,8 @@ fn report_of(r: Ran) : KalkuReply = match r.mishap {
     tests: r.tests,
     coverage: None,
     coverage_path: None,
-    failures: failures_of(r)
+    failures: failures_of(r),
+    differences: Some([IN_A_COPY])
   })
 }
 

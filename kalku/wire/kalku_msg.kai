@@ -75,7 +75,8 @@ pub type BaselineDoneMsg = {
   tests: [TestTiming],
   coverage: Option[[CoverageEntry]],
   coverage_path: Option[String],
-  failures: [Failure]
+  failures: [Failure],
+  differences: Option[[String]]
 }
 
 #[doc("`sites_found`: the sites in the requested files.")]

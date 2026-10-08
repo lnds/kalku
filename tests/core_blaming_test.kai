@@ -11,17 +11,21 @@ fn failing(n: Int, message: String) : Failure =
 # project that lacks something the tests read.
 test "a red suite says why each of the first tests failed" {
   let said =
-    red_suite([failing(1, "fatal: not a git repository\nsecond line\nthird line"), failing(2, "")])
+    red_suite(
+      [failing(1, "fatal: not a git repository\nsecond line\nthird line"), failing(2, "")],
+      []
+    )
 
   assert starts_with(said, "the suite is already failing, 2 test(s):\n")
   assert has(said, "  tests/t.rs::t1:\n    fatal: not a git repository\n    second line\n")
   assert not has(said, "third line")
-  assert has(said, "  tests/t.rs::t2: no message\n")
+  assert has(said, "  tests/t.rs::t2: no message")
   assert not has(said, "more")
 }
 
 test "only the first few are shown, and the rest are counted" {
-  let said = red_suite(map(enumerate(repeat(0, 8)), i => failing(i.fst, "boom")))
+  let said =
+    red_suite(map(enumerate(repeat(0, 8)), i => failing(i.fst, "boom")), ["it ran in a copy"])
 
   assert has(said, "8 test(s)")
   assert has(said, "t4:\n    boom")
@@ -29,10 +33,23 @@ test "only the first few are shown, and the rest are counted" {
   assert has(said, "\n  and 3 more\n")
 }
 
-test "a suite that is red the reni's way is told where it ran" {
-  assert has(red_suite([failing(1, "x")]), "`.git` for one")
+# The refusal used to end by saying the suite ran in a copy of the project,
+# whatever had run it. A kalku that builds elsewhere and copies nothing sent
+# its reader looking for a file the copy had left out.
+test "how the run differed is said in the kalku's own words" {
+  let said = red_suite([failing(1, "x")], ["the build is in /tmp/reni/build", "it ran serially"])
+
+  assert has(said, "not run exactly as you run it")
+  assert has(said, "\n  - the build is in /tmp/reni/build\n  - it ran serially")
+  assert not has(said, "copy")
+}
+
+test "a kalku that names no difference has none invented for it" {
+  let said = red_suite([failing(1, "x")], [])
+
+  assert ends_with(said, "  tests/t.rs::t1:\n    x")
 }
 
 test "a red suite with no test named still says so" {
-  assert red_suite([]) == "the suite is already failing: no test named"
+  assert red_suite([], ["it ran in a copy"]) == "the suite is already failing: no test named"
 }

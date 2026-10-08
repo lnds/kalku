@@ -210,8 +210,11 @@ Run the full suite, with per-test coverage when capable. `baseline` has no field
 | `coverage`? | [{`file`, `line`, `tests`}] | inline coverage |
 | `coverage_path`? | string | the same entries, as one JSON array, in a file |
 | `failures` | [{`test`, `message`}] | empty when green |
+| `differences`? | [string] | how this run of the suite was unlike the project's own test command, one sentence each |
 
 Rules: at most one of `coverage` / `coverage_path` (neither when the kalku lacks `per_test_coverage`); `status: "red"` requires at least one failure, `"green"` requires none. `red` aborts the run.
+
+`differences` is what a test could tell: a copy of the project in place of the tree, a build kept somewhere else, a suite run serially. Only the kalku knows which of these is so, and the kaikai side quotes the sentences as they are when it refuses a red suite — a test that fails for one of them fails under the kalku and not in the project.
 
 ```json
 {"type":"baseline","id":3}

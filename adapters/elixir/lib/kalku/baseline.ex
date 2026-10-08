@@ -289,10 +289,28 @@ defmodule Kalku.Baseline do
       "status" => if(failures == [], do: "green", else: "red"),
       "duration_ms" => duration_ms,
       "tests" => timings,
-      "failures" => failures
+      "failures" => failures,
+      "differences" => differences()
     }
 
     {:ok, Map.merge(body, coverage_field(coverage(named, root), opts))}
+  end
+
+  @doc """
+  How this run of the suite is unlike `mix test` in the project.
+
+  What a test can tell, and nothing else: a suite that is green under
+  `mix test` and red here is red for one of these, and the reader is owed
+  which they are before going to look.
+  """
+  def differences do
+    [
+      "the build is in #{Mix.Project.build_path()} (MIX_BUILD_PATH), not in `_build`: " <>
+        "a test that names `_build`, or looks there for what a build leaves, " <>
+        "fails here and passes under `mix test`",
+      "the kalku loads `test/test_helper.exs` and the test files itself: " <>
+        "an alias the project gives `mix test`, and what the alias sets up first, is not run"
+    ]
   end
 
   @doc """
