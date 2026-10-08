@@ -27,23 +27,63 @@ defmodule Kalku.Baseline do
 
     with {:ok, files} <- test_files(root),
          :ok <- start_exunit(measuring),
-         {:ok, modules} <- load(root, files) do
-      if measuring, do: Cover.reset()
-      ExUnit.run(modules)
-      # What the suite as a whole reached. Per-test attribution has to add
-      # up to this, and where it does not, something swallowed it.
-      whole = if measuring, do: MapSet.new(Cover.covered()), else: MapSet.new()
-      tests = Collector.taken()
-
-      measured =
-        if measuring and green?(tests), do: attributed(tests, modules, whole), else: tests
-
-      Collector.stop()
-      Cover.stop()
+         {:ok, modules} <- load(root, files),
+         {:ok, measured} <- through(modules, measuring) do
       Kalku.Runtime.mark(Mix.Project.config()[:app])
       report(measured, System.monotonic_time(:millisecond) - started, root, opts)
     end
   end
+
+  # The suite is run by ExUnit, and ExUnit is something a test can take
+  # down: a project that stops applications on its way out, reached from a
+  # test, stops the one running it. That is a suite that could not be run,
+  # and it is said like any other, not left for the pipe closing to say.
+  defp through(modules, measuring) do
+    {:ok, ran(modules, measuring)}
+  rescue
+    e -> could_not_run(Exception.message(e))
+  catch
+    kind, reason -> could_not_run(Exception.format(kind, reason, __STACKTRACE__))
+  after
+    Collector.stop()
+    Cover.stop()
+  end
+
+  defp ran(modules, measuring) do
+    if measuring, do: Cover.reset()
+    seen_through(modules)
+    # What the suite as a whole reached. Per-test attribution has to add
+    # up to this, and where it does not, something swallowed it.
+    whole = if measuring, do: MapSet.new(Cover.covered()), else: MapSet.new()
+    tests = Collector.taken()
+
+    if measuring and green?(tests), do: attributed(tests, modules, whole), else: tests
+  end
+
+  @doc """
+  Runs these modules, and raises unless ExUnit said the run was over.
+  """
+  def seen_through(modules) do
+    Collector.again()
+    # Stopped under the run before this one, it is started for this one.
+    {:ok, _} = Application.ensure_all_started(:ex_unit)
+    ExUnit.run(modules)
+    (Collector.ended?() and standing?()) || raise "ExUnit stopped before it had run them all"
+  end
+
+  # ExUnit can be stopped under a run and still see it to an end of sorts,
+  # with the tests it lost left out of what it reports.
+  defp standing?, do: is_pid(Process.whereis(ExUnit.Server))
+
+  defp could_not_run(why) do
+    {:error, "baseline_failed",
+     "the suite stopped being run before it ended: " <> Kalku.Baseline.first_lines(why)}
+  end
+
+  @doc "The head of a failure: what went wrong, without the whole stack under it."
+  def first_lines(text),
+    do:
+      text |> String.split("\n", trim: true) |> Enum.take(3) |> Enum.map_join(" ", &String.trim/1)
 
   @doc """
   Loads the suite into this runtime without running it.
@@ -194,7 +234,7 @@ defmodule Kalku.Baseline do
       max_cases: 1
     )
 
-    ExUnit.run(holding(test, modules))
+    seen_through(holding(test, modules))
   after
     ExUnit.configure(exclude: [], include: [])
   end

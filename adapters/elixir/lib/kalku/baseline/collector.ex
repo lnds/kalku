@@ -26,7 +26,7 @@ defmodule Kalku.Baseline.Collector do
   """
   def start(measuring) do
     stop()
-    Agent.start_link(fn -> %{tests: [], measuring: measuring} end, name: @name)
+    Agent.start_link(fn -> %{tests: [], measuring: measuring, ended: false} end, name: @name)
   end
 
   @doc "True when this run is counting lines."
@@ -35,6 +35,21 @@ defmodule Kalku.Baseline.Collector do
   @doc "Remember one finished test, and the lines it executed."
   def record(%Test{} = test, lines),
     do: Agent.update(@name, &%{&1 | tests: [%{test | lines: lines} | &1.tests]})
+
+  @doc "Remember that ExUnit said the suite was over."
+  def ended, do: Agent.update(@name, &%{&1 | ended: true})
+
+  @doc """
+  True when the run in hand was seen through to its end.
+
+  ExUnit returns from a run it could not finish as it does from one it
+  could — its own application stopped under it, say — and the tests it
+  never got to are then tests nobody heard of: a suite of none, and green.
+  """
+  def ended?, do: Agent.get(@name, & &1.ended)
+
+  @doc "Start listening for the end of another run."
+  def again, do: Agent.update(@name, &%{&1 | ended: false})
 
   @doc "Every test the suite ran, in the order they are written."
   def taken, do: @name |> Agent.get(& &1.tests) |> Enum.sort_by(&{&1.file, &1.line})
