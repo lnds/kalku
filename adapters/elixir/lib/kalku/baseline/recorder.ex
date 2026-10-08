@@ -36,6 +36,7 @@ defmodule Kalku.Baseline.Recorder do
   # `after_suite` callbacks: one registered while the suite ran is left out
   # here and never runs.
   def handle_cast({:suite_finished, _times}, state) do
+    Collector.ended()
     Kalku.Baseline.keep_suite_state()
     Kalku.Strays.sweep()
     {:noreply, state}

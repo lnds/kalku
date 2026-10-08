@@ -37,11 +37,30 @@ defmodule Kalku.Cast.Tests do
   defp measure(root, ids, modules) do
     {:ok, _} = Collector.start(false)
     select(root, ids)
-    ExUnit.run(modules)
-    ran = Collector.taken()
+
+    case told_by(modules) do
+      {:ok, ran} -> judged(ran, ids, root)
+      {:error, why} -> unjudged("the tests stopped being run before they ended: " <> why)
+    end
+  end
+
+  # A wekufe can take down what runs the tests, and a run that ended that
+  # way judged nothing: not a kill, since no test said so, and not left
+  # unanswered either.
+  defp told_by(modules) do
+    Kalku.Baseline.seen_through(modules)
+    {:ok, Collector.taken()}
+  rescue
+    e -> {:error, Exception.message(e)}
+  catch
+    kind, reason ->
+      {:error, Kalku.Baseline.first_lines(Exception.format(kind, reason, __STACKTRACE__))}
+  after
     Collector.stop()
     reset()
+  end
 
+  defp judged(ran, ids, root) do
     case Enum.find(ran, &(&1.failure != nil)) do
       nil ->
         ran_anything(ran, ids)
