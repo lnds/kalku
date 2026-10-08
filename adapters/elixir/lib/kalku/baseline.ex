@@ -57,7 +57,7 @@ defmodule Kalku.Baseline do
     whole = if measuring, do: MapSet.new(Cover.covered()), else: MapSet.new()
     tests = Collector.taken()
 
-    if measuring and green?(tests), do: attributed(tests, modules, whole), else: tests
+    if measuring and judged_by_some?(tests), do: attributed(tests, modules, whole), else: tests
   end
 
   @doc """
@@ -103,10 +103,15 @@ defmodule Kalku.Baseline do
     end
   end
 
-  # A suite that is already failing is not measured with: which tests reach
-  # a line is asked to choose the tests of a cast, and there will be none.
-  # Running every test again to learn it is time spent before saying so.
-  defp green?(tests), do: Enum.all?(tests, &(&1.failure == nil))
+  # A suite in which nothing passes judges nothing: which tests reach a line
+  # is asked to choose the tests of a cast, and there will be none. Running
+  # every test again to learn it is time spent before saying so.
+  #
+  # One with tests that pass is measured with those, and every test is run
+  # again, the failing ones too: the lines only they reach are lines the
+  # suite reached, and left uncredited they would read as attribution that
+  # went missing. Which tests judge is for the kaikai side to say.
+  defp judged_by_some?(tests), do: Enum.any?(tests, &(&1.failure == nil))
 
   # Coverage this kalku cannot stand behind is not reported at all.
   #

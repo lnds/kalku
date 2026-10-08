@@ -141,17 +141,42 @@ defmodule Kalku.BaselineTest do
     end
 
     # Each test is run a second time, alone, to learn which lines it reaches.
-    # That is for choosing the tests of a cast, and a failing suite has no
-    # casts: on a large suite the answer came hours after it was known.
-    test "a failing suite is not run a second time to measure coverage", %{reni: reni} do
+    # A suite with a failing test used to end the run, so the second pass was
+    # skipped for it. It is now measured with the tests that pass, and those
+    # are chosen by the same coverage as in any other run.
+    test "a suite with tests that pass is measured, the failing ones too", %{reni: reni} do
       done = reply(run(reni, "red", ["baseline"]), "baseline_done")
+
+      assert done["status"] == "red"
+      by_line = Map.new(done["coverage"], &{&1["line"], &1["tests"]})
+
+      # The clause the passing test takes, and the one only the failing test
+      # reaches: left uncredited, it would be a line the suite reached and
+      # no test did, and the whole attribution would be withheld.
+      assert "test/red_test.exs:5" in by_line[4]
+      assert "test/red_test.exs:10" in by_line[5]
+    end
+
+    # That is for choosing the tests of a cast, and a suite in which nothing
+    # passes has no casts: on a large suite the answer came hours after it
+    # was known.
+    test "a suite in which nothing passes is not run a second time", %{reni: reni} do
+      lines =
+        drive_in(nothing_passes(), reni, [
+          hello(reni),
+          request("prepare", 2),
+          request("baseline", 3),
+          request("shutdown", 4)
+        ])
+
+      done = reply(lines, "baseline_done")
 
       assert done["status"] == "red"
       refute Map.has_key?(done, "coverage")
       refute Map.has_key?(done, "coverage_path")
       refute Map.has_key?(done, "coverage_packed_path")
 
-      said = String.split(Process.get(:last_stderr), "red: the passing test ran")
+      said = String.split(Process.get(:last_stderr), "red: the test that used to pass ran")
       assert length(said) - 1 == 1
     end
 
@@ -283,5 +308,35 @@ defmodule Kalku.BaselineTest do
       assert error["code"] == "not_prepared"
       assert error["fatal"] == false
     end
+  end
+
+  # The `red` fixture with its one passing test made to fail.
+  defp nothing_passes do
+    dir = Path.join(System.tmp_dir!(), "kalku-hopeless-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf!(dir) end)
+    File.cp_r!(project("red"), dir)
+    File.rm_rf!(Path.join(dir, "_build"))
+
+    rewrite(Path.join(dir, "mix.exs"), ~s({:kalku_elixir, path: "../../.."}), "")
+
+    rewrite(
+      Path.join(dir, "test/red_test.exs"),
+      "the passing test ran",
+      "the test that used to pass ran"
+    )
+
+    rewrite(
+      Path.join(dir, "test/red_test.exs"),
+      "classify(1) == :non_negative",
+      "classify(1) == :negative"
+    )
+
+    dir
+  end
+
+  defp rewrite(path, was, now) do
+    text = File.read!(path)
+    true = String.contains?(text, was)
+    File.write!(path, String.replace(text, was, now, global: false))
   end
 end
