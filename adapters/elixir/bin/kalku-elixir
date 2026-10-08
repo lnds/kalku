@@ -22,10 +22,23 @@ if [ -z "${MIX_BUILD_PATH:-}" ]; then
   exit 2
 fi
 
+# rebar3 keeps a cache of its own in `_build` under each dependency it
+# builds, whatever Mix was told about where the build goes. Its base
+# directory goes into the reni with the rest.
+REBAR_BASE_DIR="$MIX_BUILD_PATH/rebar3"
+export REBAR_BASE_DIR
+
 # Dependencies first, with their output where it belongs and with no
 # access to stdin: stdin is the protocol, and a build that reads even one
 # byte of it leaves the loop at end of input before its first request.
 mix deps.compile >&2 </dev/null
+
+# Mix builds a dependency given by path again whenever a task starts, and
+# says so on stdout before the task has run a line. The task quiets the
+# shell once it is running; this quiets it for what comes before.
+MIX_QUIET=1
+export MIX_QUIET
+
 # `exec` hands the process to the kalku, so a signal reaches it rather
 # than a shell that would outlive it.
 if grep -q kalku_elixir mix.exs 2>/dev/null; then

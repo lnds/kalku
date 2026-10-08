@@ -73,6 +73,35 @@ defmodule Kalku.PrepareTest do
       assert length(lines) == 3
     end
 
+    # Mix builds a dependency given by path again each time a task starts,
+    # before the task has run a line, and a dependency rebar3 builds is
+    # announced on stdout: two lines ahead of `ready`.
+    test "a path dependency built as the kalku starts does not write on stdout", %{reni: reni} do
+      lines = summon(reni, "erlang", [request("prepare", 2), request("baseline", 3)])
+
+      for line <- lines do
+        assert {:ok, _} = Kalku.Json.decode(line),
+               "not a protocol line on stdout: #{inspect(line)}"
+      end
+
+      assert reply(lines, "baseline_done")["status"] == "green"
+    end
+
+    # rebar3 keeps what it knows of a build in `_build` beside the sources it
+    # compiled, wherever Mix was told the build goes: a file written under the
+    # project's dependency on every run.
+    test "a dependency rebar3 builds is not written into", %{reni: reni} do
+      theirs = Path.join(project("erlang"), "vendor/tally")
+      File.rm_rf!(Path.join(theirs, "_build"))
+      before = File.ls!(theirs)
+
+      lines = summon(reni, "erlang", [request("prepare", 2), request("baseline", 3)])
+
+      assert reply(lines, "baseline_done")["status"] == "green"
+      assert File.ls!(theirs) == before
+      assert File.dir?(Path.join(reni, "build/rebar3"))
+    end
+
     # Starting the project's applications installs the logger's handlers, on
     # stdout, and an application is free to log while it starts: before the
     # kalku can look at what was installed.

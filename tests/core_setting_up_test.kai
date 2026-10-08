@@ -89,11 +89,16 @@ test "the summoning keeps the build off the protocol channel" {
 # worse, one directory's: the reni is named after wherever `kalku init`
 # was standing. A run knows its own reni and hands it over.
 test "the reni is not written into the summoning either" {
-  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+  let plan = plan_for(
+    find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()),
+    "/one/machine/reni"
+  )
 
-  assert not has(plan.summoner, "/r")
+  assert not has(plan.summoner, "/one/machine/reni")
   assert has(plan.summoner, "RENI=\"${1:?")
   assert has(plan.summoner, "MIX_BUILD_PATH=\"$RENI/build\"")
+  # rebar3 keeps a cache under each dependency it builds, in the project.
+  assert has(plan.summoner, "REBAR_BASE_DIR=\"$MIX_BUILD_PATH/rebar3\"")
 }
 
 # Every summoning takes the reni first, whatever the language, so the

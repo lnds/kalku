@@ -12,7 +12,7 @@ defmodule Kalku.Baseline do
   runtime cold for the casts that follow.
   """
 
-  alias Kalku.Baseline.{Collector, Cover, Recorder}
+  alias Kalku.Baseline.{Calls, Collector, Cover, Recorder}
 
   @doc """
   Runs the suite and reports what it did.
@@ -172,6 +172,7 @@ defmodule Kalku.Baseline do
   def measure_each(tests, modules) do
     started = now()
     Cover.reset()
+    Calls.start(:cover.modules())
 
     {measured, _} =
       Enum.map_reduce(tests, %{done: 0, of: length(tests), said: started, spent: {0, 0, 0}}, fn
@@ -183,12 +184,13 @@ defmodule Kalku.Baseline do
             :timer.tc(fn ->
               lines = Cover.covered(entered)
               Cover.reset(entered)
-              lines
+              Enum.uniq(Calls.taken() ++ lines)
             end)
 
           {%{test | lines: lines}, told(progress, {running, finding, reading}, started)}
       end)
 
+    Calls.stop()
     measured
   end
 

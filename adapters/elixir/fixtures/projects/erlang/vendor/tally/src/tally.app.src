@@ -1,0 +1,7 @@
+{application, tally, [
+  {description, "Counts things."},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [kernel, stdlib]},
+  {modules, []}
+]}.
