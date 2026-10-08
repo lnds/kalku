@@ -1,3 +1,18 @@
+## v0.10.0 (2026-10-08)
+
+### Added
+
+- a project nobody set up is measured, and left as it was (#235)
+- **elixir**: a project that does not depend on the kalku is measured, and left as it was (#234)
+
+### Fixed
+
+- a kalku that writes a great deal during one wait no longer ends the run (#242)
+
+### Changed
+
+- a wait holds only the last lines a kalku wrote (#243)
+
 ## v0.9.3 (2026-10-07)
 
 ### Fixed
