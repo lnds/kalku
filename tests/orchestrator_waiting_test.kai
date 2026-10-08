@@ -1,4 +1,60 @@
+import actor
+import kalku.wire.shapes
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.attending
+import kalku.orchestrator.telling
 import kalku.orchestrator.measure
+
+const LINES : Int = 60000
+
+# A kalku whose build talks all the way up and then dies without a word of
+# the protocol: what it wrote is all there is to wait through.
+fn talkative() : PoolSpec = PoolSpec {
+  command: "/bin/sh",
+  args: [
+    "-c",
+    "i=0; while [ $i -lt #{LINES} ]; do echo \"line $i of a very talkative build\" >&2; i=$((i+1)); done; sleep 1"
+  ],
+  workers: 1,
+  root: ".",
+  reni: ".kalku",
+  inline_limit_bytes: 65536,
+  env: StrMap { entries: [] },
+  greeting_ms: 5000,
+  summons_allowed: 1,
+  memory_mb: 0
+}
+
+fn asking_of(spec: PoolSpec) : Asking = Asking {
+  spec: spec,
+  files: [],
+  only: [],
+  spells: [],
+  exclude_calls: [],
+  exclude: [],
+  equivalents: [],
+  limit: 0,
+  timeout_floor_ms: 1000,
+  touched: None
+}
+
+# One wait takes a turn for every chunk the kalku writes meanwhile. A wait
+# that kept a little stack for each turn ended the run, and the whole
+# binary with it, on a project whose build or suite logs through it.
+test "a kalku that writes a great deal before its first answer is waited through" {
+  let answer = with_mailbox { alone(() => untold(() => discover(asking_of(talkative())))) }
+
+  match answer {
+    Ok(_) -> {
+      assert false
+    }
+    Err(why) -> {
+      assert is_some(index_of(why, "closed its pipe before saying `ready`"))
+      assert is_some(index_of(why, "line #{LINES - 1} of a very talkative build"))
+    }
+  }
+}
 
 # `prepare` can honestly take minutes, and a run that says so once and
 # then goes quiet for ten of them cannot be told from one that has hung.
