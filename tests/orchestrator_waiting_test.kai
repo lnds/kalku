@@ -39,6 +39,26 @@ fn asking_of(spec: PoolSpec) : Asking = Asking {
   touched: None
 }
 
+fn after_writing(said: [String], from: Int, upto: Int) : [String] = if from >= upto {
+  said
+} else {
+  after_writing(heard_last(said, "line #{from}\n"), from + 1, upto)
+}
+
+# A stack trace ends where the reason is, so the end is what is kept — and
+# only the end, however much came before it.
+test "of what a kalku writes, only its last lines are held" {
+  let early = heard_last([], "one\n\ntwo\n")
+  assert early == ["one", "two"]
+
+  let late = after_writing(early, 0, 1000)
+  assert length(late) == 12
+  assert (late | (l => l == "line 999"))
+    == [false, false, false, false, false, false, false, false, false, false, false, true]
+  assert (late | (l => l == "line 988"))
+    == [true, false, false, false, false, false, false, false, false, false, false, false]
+}
+
 # One wait takes a turn for every chunk the kalku writes meanwhile. A wait
 # that kept a little stack for each turn ended the run, and the whole
 # binary with it, on a project whose build or suite logs through it.
