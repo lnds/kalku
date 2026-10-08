@@ -1,6 +1,6 @@
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.9.3"
+version = "0.10.0"
 version_files = ["VERSION", "kai.toml:^version", "kalku/version.kai:VERSION", "adapters/elixir/mix.exs:@version", "adapters/rust/Cargo.toml:^version", "adapters/python/pyproject.toml:^version", "adapters/python/src/kalku_python/__init__.py:__version__", "adapters/java/pom.xml:^  <version>"]
 tag_format = "v$version"
 update_changelog_on_bump = true

@@ -6,7 +6,7 @@
 
   <groupId>io.github.lnds</groupId>
   <artifactId>kalku-java</artifactId>
-  <version>0.9.3</version>
+  <version>0.10.0</version>
   <packaging>jar</packaging>
 
   <name>kalku-java</name>
