@@ -1,0 +1,40 @@
+import kalku.wire.shapes
+import kalku.core.told
+
+fn covers(file: String, line: Int, tests: [String]) : CoverageEntry =
+  CoverageEntry { file: file, line: line, tests: tests }
+
+test "the tests that reach a line are found by its file and line together" {
+  let told = told_by(
+    Some([
+      covers("lib/a.ex", 3, ["t1"]),
+      covers("lib/b.ex", 3, ["t2"]),
+      covers("lib/a.ex", 30, ["t3"])
+    ]),
+    []
+  )
+
+  assert reaching(told, "lib/a.ex", 3) == Some(["t1"])
+  assert reaching(told, "lib/b.ex", 3) == Some(["t2"])
+}
+
+# No test reaching a line is an answer; no coverage at all is not knowing,
+# and the two send a wekufe to different places: one is not cast, the other
+# faces the whole suite.
+test "a line nobody reaches is not a baseline that could not say" {
+  assert reaching(told_by(Some([covers("lib/a.ex", 3, ["t1"])]), []), "lib/a.ex", 4) == Some([])
+  assert reaching(told_by(None, []), "lib/a.ex", 3) == None
+}
+
+test "a line reported twice keeps the tests of both" {
+  let told = told_by(Some([covers("lib/a.ex", 3, ["t1"]), covers("lib/a.ex", 3, ["t2"])]), [])
+
+  assert reaching(told, "lib/a.ex", 3) == Some(["t1", "t2"])
+}
+
+test "what tests cost is summed, and a test nobody timed costs nothing" {
+  let told = told_by(None, [("t1", 10), ("t2", 40)])
+
+  assert cost_of(told, ["t1", "t2", "t9"]) == 50
+  assert cost_of(told, []) == 0
+}

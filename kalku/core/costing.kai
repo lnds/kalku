@@ -14,6 +14,7 @@ so in the words around it.
 """)]
 
 import kalku.core.planner
+import kalku.core.told
 
 #[doc("""
 How long the tests of these wekufe took in the baseline, in milliseconds.
@@ -22,11 +23,10 @@ The work, before it is shared out: one wekufe costs what the tests that
 judge it cost. A cast that fails stops at the first failing test, so this
 is the most those tests can cost, not the least.
 """)]
-pub fn tests_ms(casts: [Wekufe], durations: [(String, Int)]) : Int =
-  sum(casts | (c => judged_by(c.tests, durations)))
-
-fn judged_by(tests: [String], durations: [(String, Int)]) : Int =
-  sum(tests | (t => duration_of(t, durations)))
+pub fn tests_ms(casts: [Wekufe], durations: [(String, Int)]) : Int {
+  let told = told_by(None, durations)
+  sum(casts | (c => cost_of(told, c.tests)))
+}
 
 #[doc("""
 How long a run is likely to take, in milliseconds.
@@ -72,11 +72,3 @@ fn plural(n: Int, unit: String) : String = if n == 1 { "1 #{unit}" } else { "#{n
 
 # Half up, so an estimate never rounds its way down to nothing.
 fn rounded_div(n: Int, by: Int) : Int = (n + by / 2) / by
-
-fn duration_of(test_id: String, durations: [(String, Int)]) : Int = match find(
-  durations,
-  d => d.fst == test_id
-) {
-  Some(found) -> found.snd
-  None -> 0
-}

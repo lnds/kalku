@@ -130,3 +130,26 @@ test "a glob matches by its pieces, in order" {
   let inputs = Inputs { ...inputs_of([A, web], None), exclude: ["lib/my_app_web/*"] }
   assert ids_cast(plan(inputs, nothing_cached)) == ["a"]
 }
+
+fn numbered(prefix: String, n: Int) : [String] =
+  enumerate(list.repeat(0, n)) | (i => "#{prefix}#{i.fst}")
+
+# What a plan costs has to grow with the suite and with the sites, not with
+# the one times the square of the other. Each site's budget used to look
+# every one of its tests up in the list of all of them: with no coverage to
+# narrow it, a suite of a few thousand tests and a few hundred sites kept a
+# run silent for minutes between the baseline and the first cast, and one
+# of 6,800 for half an hour. At this size that was more than a minute.
+test "a large suite with no coverage is planned without looking each test up in all of them" {
+  let tests = numbered("test/t_test.exs:", 4000)
+  let sites = numbered("s", 400) | (id => site_of(id, "lib/a.ex", 3, ModuleOnly))
+  let inputs = Inputs {
+    ...inputs_of(sites, None),
+    all_tests: tests,
+    durations: tests | (t => (t, 2))
+  }
+  let p = plan(inputs, nothing_cached)
+
+  assert length(p.to_cast) == 400
+  assert all(p.to_cast, c => c.timeout_ms == 3 * 2 * 4000)
+}
