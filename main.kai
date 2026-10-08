@@ -709,6 +709,7 @@ fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
   counts: r.counts,
   survivors_on_changed_lines: r.on_changed_lines,
   suppression_changes: r.suppressions,
+  left_out: if is_empty(r.left_out.tests) { None } else { Some(r.left_out.tests | (.test_id)) },
   exit: exit_code(r.blockers)
 })
 

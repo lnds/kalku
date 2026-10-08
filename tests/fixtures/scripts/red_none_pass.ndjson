@@ -1,0 +1,4 @@
+{"expect":"hello","reply":{"type":"ready","protocol":1,"language":"fake","adapter":"fake_kalku 0.1","runtime":"none","spells":["arm","compare"],"capabilities":["cast","per_test_coverage","abort","reset"]}}
+{"expect":"prepare","reply":{"type":"prepared","duration_ms":1,"modules":1}}
+{"expect":"baseline","reply":{"type":"baseline_done","status":"red","duration_ms":10,"tests":[{"test":"test/a_test.exs:3","file":"test/a_test.exs","duration_ms":4},{"test":"test/a_test.exs:9","file":"test/a_test.exs","duration_ms":6}],"failures":[{"test":"test/a_test.exs:3","message":"boom"},{"test":"test/a_test.exs:9","message":"boom"}],"differences":["the build is elsewhere"]}}
+{"expect":"shutdown","reply":{"type":"bye"}}

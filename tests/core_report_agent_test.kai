@@ -4,6 +4,7 @@ import kalku.wire.shapes
 import kalku.core.verdict
 import kalku.core.gate
 import kalku.core.report
+import kalku.core.blaming
 import kalku.core.report_agent
 import kalku.core.report_json
 
@@ -49,12 +50,15 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   troubles: [],
   skipped: [],
   uncovered: [],
-  blockers: []
+  blockers: [],
+  left_out: nobody_left_out()
 }
 
 fn one() : Counts = tally([Cast(Killed), Cast(Survived)])
 
 fn first_line(text: String) : String = head(lines(text)).unwrap_or("")
+
+fn last_line(text: String) : String = last(lines(text)).unwrap_or("")
 
 fn field(line: String, name: String) : JsonValue = match json_decode(line) {
   Some(v) -> get(v, name)
@@ -263,4 +267,22 @@ test "an agent is not told the whole suite covers the line" {
   assert field(line, "judged_by_whole_suite") == JNum(105)
   assert not has(line, "covering_tests")
   assert not has(line, "covering_count")
+}
+
+# An agent that reads a score and not which tests stood behind it takes a
+# suite with failing tests for one that judged.
+test "an agent is told which tests a run went on without" {
+  let r = Report {
+    ...report_of([], one()),
+    left_out: LeftOut {
+      tests: [Failure { test_id: "test/ssl_test.exs:120", message: "boom" }],
+      differences: ["the build is elsewhere"],
+      sites: []
+    }
+  }
+  let summary = last_line(agent(r, lines_of))
+
+  assert field(summary, "left_out") == JArr([JStr("test/ssl_test.exs:120")])
+  assert field(summary, "differences") == JArr([JStr("the build is elsewhere")])
+  assert not has(last_line(agent(report_of([], one()), lines_of)), "left_out")
 }

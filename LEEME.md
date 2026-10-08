@@ -194,7 +194,7 @@ kalku info agents --snippet             # lines to paste into CLAUDE.md / AGENTS
                   versioned NDJSON protocol
 ```
 
-1. **Línea base.** Corre la suite una vez y registra qué tests cubren qué líneas. Si la suite ya está fallando, se detiene, porque los mutantes sobre tests que fallan no miden nada.
+1. **Línea base.** Corre la suite una vez y registra qué tests cubren qué líneas. Un test que ya falla no juzga nada, así que la corrida sigue sin él y lo nombra en cada reporte, junto a un puntaje que entonces es de los tests que pasan; esa corrida termina con código `2`. Si ningún test pasa, se detiene.
 2. **Plan.** Encuentra los lugares donde aplica cada spell, usando el parser propio del lenguaje y no expresiones regulares. Se salta las líneas que ningún test cubre y los mutantes declarados equivalentes.
 3. **Cast.** Carga cada wekufe en un kalku caliente y corre solo los tests que lo cubren. Se detiene en el primer test que falla.
 4. **Reporte.** Lista primero los sobrevivientes. El puntaje viene después, como contexto. Los timeouts y las caídas se reportan aparte y nunca se cuentan como kills.

@@ -35,3 +35,28 @@ fn reached(by_line: Map[String, [String]], e: CoverageEntry) : Map[String, [Stri
   map.update(by_line, place(e.file, e.line), e.tests, before => before ++ e.tests)
 
 fn place(file: String, line: Int) : String = "#{file}:#{line}"
+
+#[doc("Coverage with some tests taken out of it, and the lines that had no other.")]
+pub type Narrowed = { coverage: [CoverageEntry], only_theirs: [String] }
+
+#[doc("""
+Coverage as it stands once these tests judge nothing.
+
+A line only they reached is left with no test, and is named apart: nothing
+reaches it that can judge, which is not the same as nothing reaching it,
+and a reader told to write a test for it would be writing one that exists.
+""")]
+pub fn without(entries: [CoverageEntry], tests: [String]) : Narrowed {
+  let gone = map.from(tests | (t => (t, true)))
+  let kept =
+    entries | (e => CoverageEntry { ...e, tests: e.tests |? (t => is_none(map.get(gone, t))) })
+  Narrowed {
+    coverage: kept,
+    only_theirs: list.zip(entries, kept)
+      |? (pair => (not list.is_empty(pair.fst.tests)) and list.is_empty(pair.snd.tests))
+      | (pair => place(pair.fst.file, pair.fst.line))
+  }
+}
+
+#[doc("How a line is named among `only_theirs`.")]
+pub fn place_of(file: String, line: Int) : String = place(file, line)

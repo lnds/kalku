@@ -21,6 +21,7 @@ import kalku.core.score
 import kalku.core.recurring
 import kalku.core.gate
 import kalku.core.report
+import kalku.core.blaming
 import kalku.core.hint
 
 #[doc("How many lines of context travel with a survivor, on each side.")]
@@ -141,9 +142,21 @@ fn summary_line(r: Report) : String = json_encode(
       ++ score_field(r.counts)
       ++ repeated_field(r)
       ++ suppression_field(r.suppressions)
+      ++ left_out_fields(r.left_out)
       ++ [("exit", JNum(exit_code(r.blockers)))]
   )
 )
+
+# The tests a run went on without travel with the score they qualify: an
+# agent that reads a score and not which tests stood behind it will take a
+# suite with failing tests for one that judged.
+fn left_out_fields(out: LeftOut) : [(String, JsonValue)] = if is_empty(out.tests) {
+  []
+} else {
+  [("left_out", JArr(out.tests | (f => JStr(f.test_id))))]
+    ++ strings("differences", out.differences)
+    ++ strings("reached_only_by_left_out", out.sites | (s => s.site_id))
+}
 
 # A pattern travels only when there is one, and as a fact rather than as
 # advice: the agent is told that five survivors share a call, and decides.

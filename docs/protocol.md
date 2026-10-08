@@ -213,7 +213,7 @@ Run the full suite, with per-test coverage when capable. `baseline` has no field
 | `failures` | [{`test`, `message`}] | empty when green |
 | `differences`? | [string] | how this run of the suite was unlike the project's own test command, one sentence each |
 
-Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); `status: "red"` requires at least one failure, `"green"` requires none. `red` aborts the run.
+Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run.
 
 A packed file is one JSON object: `tests`, every test id once, and `reached`, a list of {`file`, `lines`, `tests`} where `lines` are the lines of that file the same tests reach and `tests` are positions in the list of ids, from 0. It stands for one entry per line. Written line by line, a function most of a suite calls names most of the suite on each of its lines, and a project's coverage is the same few thousand ids a hundred megabytes over.
 
@@ -464,6 +464,7 @@ Unlike the kalku protocol's `progress`, which reports how far one long request h
 | `counts` | Counts | |
 | `survivors_on_changed_lines` | int | survivors on a line the run's diff touched; `0` when the run was not asked about a change. Sites on those lines that no test reaches block too, and are named in the report's `blocked_by`, not counted here |
 | `suppression_changes` | Suppression changes | |
+| `left_out`? | [test id] | tests that failed before anything was cast, and judged nothing; absent when every test judged |
 | `exit` | int | the exit code a CLI client should return (*Running in CI* in `docs/design.md`) |
 
 **Counts:** `killed`, `survived`, `timeout`, `no_coverage`, `compile_error`, `crashed`, `nondeterministic` (ints), `equivalent` ({`bytecode`, `declared`} ints).
