@@ -98,7 +98,7 @@ defmodule Kalku.BaselineTest do
     test "a suite that mocks nothing still reports coverage", %{reni: reni} do
       done = reply(run(reni, "green", ["baseline"]), "baseline_done")
 
-      assert Map.has_key?(done, "coverage") or Map.has_key?(done, "coverage_path")
+      assert Map.has_key?(done, "coverage") or Map.has_key?(done, "coverage_packed_path")
     end
 
     # A suite that is already failing cannot say whether a wekufe was
@@ -149,6 +149,7 @@ defmodule Kalku.BaselineTest do
       assert done["status"] == "red"
       refute Map.has_key?(done, "coverage")
       refute Map.has_key?(done, "coverage_path")
+      refute Map.has_key?(done, "coverage_packed_path")
 
       said = String.split(Process.get(:last_stderr), "red: the passing test ran")
       assert length(said) - 1 == 1
@@ -246,8 +247,33 @@ defmodule Kalku.BaselineTest do
         )
 
       refute Map.has_key?(done, "coverage")
-      assert String.starts_with?(done["coverage_path"], reni)
-      assert done["coverage_path"] |> File.read!() |> Kalku.Json.decode!() |> length() > 3
+      assert String.starts_with?(done["coverage_packed_path"], reni)
+
+      # Packed: each test named once, and the lines the same tests reach
+      # listed together. Written line by line, a project's coverage was the
+      # same few thousand names a hundred megabytes over.
+      packed = done["coverage_packed_path"] |> File.read!() |> Kalku.Json.decode!()
+      assert "test/green_test.exs:4" in packed["tests"]
+      assert length(packed["tests"]) == length(Enum.uniq(packed["tests"]))
+
+      at = Enum.find_index(packed["tests"], &(&1 == "test/green_test.exs:4"))
+      classify = Enum.find(packed["reached"], &(4 in &1["lines"]))
+      assert classify["file"] == "lib/green.ex"
+      assert at in classify["tests"]
+
+      # And it says what the inline form says.
+      inline = reply(run(reni, "green", ["baseline"]), "baseline_done")["coverage"]
+
+      unpacked =
+        for group <- packed["reached"], line <- group["lines"] do
+          %{
+            "file" => group["file"],
+            "line" => line,
+            "tests" => group["tests"] |> Enum.map(&Enum.at(packed["tests"], &1)) |> Enum.sort()
+          }
+        end
+
+      assert Enum.sort_by(unpacked, &{&1["file"], &1["line"]}) == inline
     end
 
     test "baseline before prepare is refused, and not fatally", %{reni: reni} do

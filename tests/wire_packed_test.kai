@@ -1,0 +1,39 @@
+import kalku.wire.shapes
+import kalku.wire.envelope
+import kalku.wire.packed
+
+const TEXT : String =
+  "{\"tests\":[\"test/a_test.exs:3\",\"test/a_test.exs:9\",\"test/b_test.exs:4\"],\"reached\":[{\"file\":\"lib/a.ex\",\"lines\":[2,3,7],\"tests\":[0,2]},{\"file\":\"lib/b.ex\",\"lines\":[5],\"tests\":[1]}]}"
+
+test "packed coverage unpacks to one entry for each line, with the tests by name" {
+  let both = ["test/a_test.exs:3", "test/b_test.exs:4"]
+
+  assert decode_packed(TEXT)
+    == Ok([
+      CoverageEntry { file: "lib/a.ex", line: 2, tests: both },
+      CoverageEntry { file: "lib/a.ex", line: 3, tests: both },
+      CoverageEntry { file: "lib/a.ex", line: 7, tests: both },
+      CoverageEntry { file: "lib/b.ex", line: 5, tests: ["test/a_test.exs:9"] }
+    ])
+}
+
+test "coverage that reached nothing is still coverage" {
+  assert decode_packed("{\"tests\":[],\"reached\":[]}") == Ok([])
+}
+
+# A position with no test behind it would otherwise be a line some test
+# reaches and nobody can name: a wekufe there would be cast against nothing.
+test "a test that is not in the list is an error, not a test with no name" {
+  let past = "{\"tests\":[\"t\"],\"reached\":[{\"file\":\"lib/a.ex\",\"lines\":[1],\"tests\":[1]}]}"
+  let before =
+    "{\"tests\":[\"t\"],\"reached\":[{\"file\":\"lib/a.ex\",\"lines\":[1],\"tests\":[-1]}]}"
+
+  assert is_err(decode_packed(past))
+  assert is_err(decode_packed(before))
+}
+
+test "a file that is not packed coverage is refused" {
+  assert is_err(decode_packed("[]"))
+  assert is_err(decode_packed("not json at all"))
+  assert is_err(decode_packed("{\"tests\":[]}"))
+}

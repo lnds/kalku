@@ -26,8 +26,8 @@ fn check_ready(m: ReadyMsg) : Result[Unit, ProtocolError] {
 
 fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
   require(
-    not (is_some(m.coverage) and is_some(m.coverage_path)),
-    "baseline_done: at most one of coverage, coverage_path"
+    given(m.coverage) + given(m.coverage_path) + given(m.coverage_packed_path) <= 1,
+    "baseline_done: at most one of coverage, coverage_path, coverage_packed_path"
   )!
   require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
 }
@@ -45,3 +45,5 @@ fn check_delegated(m: DelegatedMsg) : Result[Unit, ProtocolError] =
     is_some(m.outcomes) != is_some(m.outcomes_path),
     "delegated: exactly one of outcomes, outcomes_path"
   )
+
+fn given[a](o: Option[a]) : Int = if is_some(o) { 1 } else { 0 }
