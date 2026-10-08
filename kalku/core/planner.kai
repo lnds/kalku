@@ -13,6 +13,7 @@ every wekufe; nothing is silently skipped for lack of knowing.
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.changed_lines
+import kalku.core.told
 
 #[doc("How far a run reaches: the whole project, the lines a change touched, or listed files.")]
 #[derive(Eq, Show)]
@@ -85,9 +86,13 @@ pub fn plan(inputs: Inputs, cached: (String) -> Option[Outcome]) : Plan {
   let live = filter(reachable, s => not contains(inputs.suppressed_ids, s.site_id))
   let known = flat_map(live, s => remembered(s, cached))
   let fresh = filter(live, s => is_empty(remembered(s, cached)))
+  let said = Said {
+    told: told_by(inputs.coverage, inputs.durations),
+    whole_ms: cost_of(told_by(None, inputs.durations), inputs.all_tests)
+  }
   Plan {
-    to_cast: order(flat_map(fresh, s => castable(s, inputs))),
-    no_coverage: filter(fresh, s => is_empty(covering(s, inputs))),
+    to_cast: order(flat_map(fresh, s => castable(s, inputs, said))),
+    no_coverage: filter(fresh, s => is_empty(judging(s, inputs, said))),
     suppressed: suppressed,
     cached: known
   }
@@ -114,8 +119,24 @@ pub fn timeout_for(site: Site, tests: [String], inputs: Inputs) : Int
 
 # ---- buckets -----------------------------------------------------------
 
-fn castable(site: Site, inputs: Inputs) : [Wekufe] {
-  let tests = covering(site, inputs)
+# The baseline, indexed once for the whole plan, and what the whole suite
+# costs: the same for every site it judges, so summed once.
+type Said = { told: Told, whole_ms: Int }
+
+fn judging(site: Site, inputs: Inputs, said: Said) : [String] =
+  reaching(said.told, site.file, site.span.start.line).unwrap_or(inputs.all_tests)
+
+fn budget_for(site: Site, tests: [String], inputs: Inputs, said: Said) : Int {
+  let spent = if is_none(inputs.coverage) { said.whole_ms } else { cost_of(said.told, tests) }
+  let floor = max_int(TIMEOUT_FACTOR * spent, inputs.timeout_floor_ms)
+  match site.reload {
+    Dependents -> floor * DEPENDENTS_FACTOR
+    ModuleOnly -> floor
+  }
+}
+
+fn castable(site: Site, inputs: Inputs, said: Said) : [Wekufe] {
+  let tests = judging(site, inputs, said)
   if is_empty(tests) {
     []
   } else {
@@ -123,7 +144,7 @@ fn castable(site: Site, inputs: Inputs) : [Wekufe] {
       Wekufe {
         site: site,
         tests: tests,
-        timeout_ms: timeout_for(site, tests, inputs),
+        timeout_ms: budget_for(site, tests, inputs, said),
         casts: agreements_for(site.spell)
       }
     ]
@@ -176,10 +197,14 @@ fn consume(rest: String, parts: [String], first: Bool) : Bool = match parts {
 
 # Fewest covering tests first, then the cheapest, then the id: a hole shows
 # up sooner, and the same inputs always give the same plan.
-fn order(casts: [Wekufe]) : [Wekufe] = sort_by(casts, compare_casts)
+# How many tests judge each is counted once, not at every comparison.
+fn order(casts: [Wekufe]) : [Wekufe] =
+  sort_by(casts | (c => (length(c.tests), c)), compare_casts) | (.snd)
 
-fn compare_casts(a: Wekufe, b: Wekufe) : Int {
-  let by_tests = length(a.tests) - length(b.tests)
+fn compare_casts(left: (Int, Wekufe), right: (Int, Wekufe)) : Int {
+  let a = left.snd
+  let b = right.snd
+  let by_tests = left.fst - right.fst
   let by_budget = a.timeout_ms - b.timeout_ms
   if by_tests != 0 {
     by_tests
