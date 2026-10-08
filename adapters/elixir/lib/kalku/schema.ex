@@ -87,7 +87,8 @@ defmodule Kalku.Schema do
       tests: {:list, {:shape, :test_timing}},
       coverage: {:opt, {:list, {:shape, :coverage}}},
       coverage_path: {:opt, :string},
-      failures: {:list, {:shape, :failure}}
+      failures: {:list, {:shape, :failure}},
+      differences: {:opt, {:list, :string}}
     ],
     "progress" => [done: :int, total: :int],
     "sites_found" => [sites: {:list, {:shape, :site}}, skipped: {:list, {:shape, :skipped}}],

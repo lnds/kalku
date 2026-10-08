@@ -3,8 +3,8 @@ What a run says when the suite is red before anything was cast.
 
 A baseline that fails ends the run, and the reader has to find out why
 from what is printed: the names of the tests are not enough, since the
-reason is in each failure's message and a run in a copy of the project
-can fail for a reason the reader's own tree does not have.
+reason is in each failure's message, and a suite a kalku runs is not run
+exactly as the reader runs it. What differs is the first place to look.
 """)]
 
 import kalku.wire.shapes
@@ -16,15 +16,26 @@ fn blamed(f: Failure) : String = match take(lines(trim(f.message)), 2) {
   why -> "  #{f.test_id}:\n#{join(why | (l => "    #{l}"), "\n")}"
 }
 
+# The kalku's own words. Whether a suite ran in a copy of the project or
+# against a build kept elsewhere is something only the kalku knows, and
+# saying the wrong one sends the reader looking for a difference that is
+# not there.
+fn unlike_yours(differences: [String]) : String = if is_empty(differences) {
+  ""
+} else {
+  "\nThe suite was not run exactly as you run it, and a test can fail for that alone:\n#{join(differences | (d => "  - #{d}"), "\n")}"
+}
+
 #[doc("""
 The refusal for a suite that is already failing: how many tests, the first
-few with the first two lines of why each failed, and where the suite ran.
+few with the first two lines of why each failed, and how the run differed
+from the reader's own, as the kalku that ran it tells it.
 """)]
-pub fn red_suite(failures: [Failure]) : String = if is_empty(failures) {
+pub fn red_suite(failures: [Failure], differences: [String]) : String = if is_empty(failures) {
   "the suite is already failing: no test named"
 } else {
   let shown = take(failures, SHOWN)
   let more = length(failures) - length(shown)
   let rest = if more > 0 { "\n  and #{more} more" } else { "" }
-  "the suite is already failing, #{length(failures)} test(s):\n#{join(shown | blamed, "\n")}#{rest}\nIt ran in the reni, a copy of the project made for this run: a test that depends on something the copy leaves out, `.git` for one, fails there and not in your tree."
+  "the suite is already failing, #{length(failures)} test(s):\n#{join(shown | blamed, "\n")}#{rest}#{unlike_yours(differences)}"
 }

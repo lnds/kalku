@@ -553,6 +553,12 @@ mkdir -p "$MIX_BUILD_PATH"
 # there comes out one level short and the links dangle.
 MIX_BUILD_PATH="$(cd "$MIX_BUILD_PATH" && pwd -P)"
 export MIX_BUILD_PATH
+
+# rebar3 keeps a cache of its own in `_build` under each dependency it
+# builds, whatever Mix was told about where the build goes. Its base
+# directory goes into the reni with the rest.
+REBAR_BASE_DIR="$MIX_BUILD_PATH/rebar3"
+export REBAR_BASE_DIR
 """
 
 # What every summoning does first, said once: it is handed the reni and these
