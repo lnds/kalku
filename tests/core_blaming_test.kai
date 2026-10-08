@@ -16,7 +16,7 @@ test "a red suite says why each of the first tests failed" {
       []
     )
 
-  assert starts_with(said, "the suite is already failing, 2 test(s):\n")
+  assert starts_with(said, "the suite is already failing, 2 test(s), and none of it passes:\n")
   assert has(said, "  tests/t.rs::t1:\n    fatal: not a git repository\n    second line\n")
   assert not has(said, "third line")
   assert has(said, "  tests/t.rs::t2: no message")

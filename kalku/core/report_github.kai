@@ -19,10 +19,22 @@ pub fn step_summary(r: Report) : String =
   join(
     ["## kalku", "", summary_line(r), ""]
       ++ survivor_table(r)
+      ++ left_out(r)
       ++ suppressions(r)
       ++ blocked(r),
     "\n"
   )
+
+fn left_out(r: Report) : [String] = if is_empty(r.left_out.tests) {
+  []
+} else {
+  [
+    "**Left out, failing before anything was cast (#{length(r.left_out.tests)}):** they judged nothing, and the score is of the tests that pass.",
+    ""
+  ]
+    ++ (r.left_out.tests | (f => "- `#{f.test_id}`"))
+    ++ [""]
+}
 
 fn annotation(s: Survivor) : String {
   let at = "file=#{s.site.file},line=#{s.site.span.start.line}"

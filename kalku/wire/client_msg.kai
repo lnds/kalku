@@ -82,6 +82,7 @@ pub type ReportMsg = {
   counts: Counts,
   survivors_on_changed_lines: Int,
   suppression_changes: SuppressionChanges,
+  left_out: Option[[String]],
   exit: Int
 }
 

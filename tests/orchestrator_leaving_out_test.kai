@@ -1,0 +1,78 @@
+import actor
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.planner.{plan}
+import kalku.core.told
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.attending
+import kalku.orchestrator.telling
+import kalku.orchestrator.measure
+
+const FAKE : String = "./tests/fake_kalku/fake_kalku"
+
+fn asking_of(script: String) : Asking = Asking {
+  spec: PoolSpec {
+    command: FAKE,
+    args: ["tests/fixtures/scripts/#{script}"],
+    workers: 1,
+    root: ".",
+    reni: ".kalku",
+    inline_limit_bytes: 65536,
+    env: StrMap { entries: [] },
+    greeting_ms: 5000,
+    summons_allowed: 1,
+    memory_mb: 0
+  },
+  files: ["lib/a.ex"],
+  only: [],
+  spells: [],
+  exclude_calls: [],
+  exclude: [],
+  equivalents: [],
+  limit: 0,
+  timeout_floor_ms: 1000,
+  touched: None
+}
+
+fn learnt(script: String) : Result[measure.Known, String] / Process + Spawn + Clock + File =
+  with_mailbox { alone(() => untold(() => discover(asking_of(script)))) }
+
+fn nothing_cached(id: String) : Option[Outcome] = None
+
+# A test that already fails would fail against every wekufe it was sent
+# with, and each of those would be a kill nobody made. It is taken out once,
+# where what the baseline said is put together, so that nothing a cast is
+# ever handed can hold it: not the suite, not the coverage, not the plan.
+test "a test that fails before anything is cast is handed to no cast" {
+  match learnt("red_some_pass.ndjson") {
+    Err(why) -> {
+      assert why == "a suite with a test that passes should be measured"
+    }
+    Ok(known) -> {
+      assert known.tests == ["test/a_test.exs:3"]
+      assert (known.left_out | (.test_id)) == ["test/a_test.exs:9"]
+      assert known.differences == ["the build is elsewhere"]
+
+      let ready = plan(inputs_for(asking_of("red_some_pass.ndjson"), known), nothing_cached)
+      assert (ready.to_cast | (c => (c.site.site_id, c.tests))) == [("s3", ["test/a_test.exs:3"])]
+
+      # Line 7 only the failing test reaches; line 9 nothing does. Neither
+      # is cast, and they are not the same thing to tell a reader.
+      assert (ready.no_coverage | (.site_id)) == ["s7", "s9"]
+      assert known.only_theirs == [place_of("lib/a.ex", 7)]
+    }
+  }
+}
+
+test "a suite in which nothing passes is still refused, in the kalku's words" {
+  match learnt("red_none_pass.ndjson") {
+    Ok(_) -> {
+      assert false
+    }
+    Err(why) -> {
+      assert is_some(index_of(why, "2 test(s), and none of it passes"))
+      assert is_some(index_of(why, "the build is elsewhere"))
+    }
+  }
+}

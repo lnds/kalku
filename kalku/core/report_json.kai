@@ -28,8 +28,26 @@ pub fn json(r: Report, exit: Int) : String = encode_value(
         ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
         ("exit", JNum(exit))
       ]
+      ++ left_out(r)
   )
 )
+
+# Present only when a run went on without some tests, so a run in which
+# every test judged writes the bytes it always wrote.
+fn left_out(r: Report) : [(String, JsonValue)] = if is_empty(r.left_out.tests) {
+  []
+} else {
+  [
+    (
+      "left_out",
+      JArr(
+        r.left_out.tests | (f => JObj([("test", JStr(f.test_id)), ("message", JStr(f.message))]))
+      )
+    ),
+    ("differences", JArr(r.left_out.differences | (d => JStr(d)))),
+    ("reached_only_by_left_out", JArr(r.left_out.sites | (s => JStr(s.site_id))))
+  ]
+}
 
 fn skipped_file(s: Skipped) : JsonValue = JObj(
   [("file", JStr(s.file)), ("reason", JStr(s.reason)), ("message", JStr(s.message))]

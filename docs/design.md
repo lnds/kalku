@@ -235,7 +235,7 @@ N kalku are summoned (default: CPU cores). Each loads the compiled project and s
 
 One kalku runs the full suite once with per-test coverage. The baseline yields:
 
-- **Green or red.** A red suite aborts the run: mutating on top of failing tests measures nothing.
+- **Green or red.** A test that already fails judges nothing: it would fail against every wekufe it was sent with. A run goes on without such tests, sends them with no cast, and names them in every report beside the score, which is then a score of the tests that pass; the run does not pass a gate (exit `2`). A suite in which nothing passes aborts the run.
 - **Coverage map:** `(file, line) → [test ids]`.
 - **Durations** per test, from which each wekufe's timeout is derived (`max(3 × covering tests' baseline, floor)`).
 
@@ -478,7 +478,7 @@ Changes to suppressions are surfaced, never silent: if a PR adds entries to `.ka
 |---|---|
 | `0` | measured; nothing to report |
 | `1` | measured; survivors on changed lines, sites on changed lines that no test reaches, or the score is below threshold or baseline |
-| `2` | could not measure: red baseline, failed prepare, orphan equivalent entry, config error |
+| `2` | could not measure: tests that fail before anything is cast, failed prepare, orphan equivalent entry, config error |
 
 "Your tests have holes" and "kalku could not run" are different failures and CI must be able to tell them apart.
 

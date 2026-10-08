@@ -193,7 +193,7 @@ kalku info agents --snippet             # lines to paste into CLAUDE.md / AGENTS
                   versioned NDJSON protocol
 ```
 
-1. **Baseline.** Run the suite once and record which tests cover which lines. If the suite is already failing, stop, because mutants on top of failing tests measure nothing.
+1. **Baseline.** Run the suite once and record which tests cover which lines. A test that already fails judges nothing, so the run goes on without it and names it in every report, beside a score that is then of the tests that pass; such a run exits `2`. If nothing passes, stop.
 2. **Plan.** Find the places where each spell applies, using the language's own parser rather than regexes. Skip lines no test covers and mutants declared equivalent.
 3. **Cast.** Load each wekufe into a warm kalku and run only the tests that cover it. Stop at the first failing test.
 4. **Report.** List the survivors first. The score comes after as context. Timeouts and crashes are reported separately and never counted as kills.

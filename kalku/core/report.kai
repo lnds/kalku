@@ -15,6 +15,7 @@ import kalku.core.hint
 import kalku.core.recurring
 import kalku.core.changed_lines
 import kalku.core.skipping
+import kalku.core.blaming
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
@@ -68,7 +69,8 @@ pub type Report = {
   troubles: [Trouble],
   skipped: [Skipped],
   uncovered: [Site],
-  blockers: [Blocker]
+  blockers: [Blocker],
+  left_out: LeftOut
 }
 
 #[doc("A wekufe that produced nothing to score, and what the kalku said about it.")]
@@ -82,6 +84,7 @@ pub fn human(r: Report) : String = join(
     ++ uncovered_block(r)
     ++ skipped_block(r)
     ++ trouble_blocks(r)
+    ++ left_out_block(r.left_out, r.left_out.sites | where_of)
     ++ [summary_line(r)]
     ++ suppression_block(r)
     ++ blocker_block(r),
@@ -121,7 +124,8 @@ pub fn summary_line(r: Report) : String {
       ++ aside("compile error", c.compile_error)
       ++ aside("crashed", c.crashed)
       ++ aside("nondeterministic", c.nondeterministic)
-      ++ equivalents(c.equivalent),
+      ++ equivalents(c.equivalent)
+      ++ aside("test(s) left out", length(r.left_out.tests)),
     " · "
   )
 }

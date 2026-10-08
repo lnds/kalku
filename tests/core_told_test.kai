@@ -38,3 +38,28 @@ test "what tests cost is summed, and a test nobody timed costs nothing" {
   assert cost_of(told, ["t1", "t2", "t9"]) == 50
   assert cost_of(told, []) == 0
 }
+
+# A test that fails before anything is cast judges nothing, and is taken out
+# of what reaches each line. Left in, it would fail against every wekufe it
+# was sent with, and each of those would be a kill nobody made.
+test "tests that judge nothing are taken out of every line they reach" {
+  let narrowed = without(
+    [covers("lib/a.ex", 3, ["t1", "broken"]), covers("lib/a.ex", 4, ["t2"])],
+    ["broken"]
+  )
+
+  assert narrowed.coverage == [covers("lib/a.ex", 3, ["t1"]), covers("lib/a.ex", 4, ["t2"])]
+  assert narrowed.only_theirs == []
+}
+
+# Not the same as a line nothing reaches: the test is there, and failing.
+test "a line only they reached is named apart from one nothing reaches" {
+  let narrowed = without(
+    [covers("lib/a.ex", 3, ["broken"]), covers("lib/a.ex", 4, []), covers("lib/b.ex", 3, ["t1"])],
+    ["broken"]
+  )
+
+  assert narrowed.coverage
+    == [covers("lib/a.ex", 3, []), covers("lib/a.ex", 4, []), covers("lib/b.ex", 3, ["t1"])]
+  assert narrowed.only_theirs == [place_of("lib/a.ex", 3)]
+}

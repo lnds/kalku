@@ -25,6 +25,7 @@ import kalku.core.verdict
 import kalku.core.skipping
 import kalku.core.stopping
 import kalku.core.blaming
+import kalku.core.told
 import kalku.core.planner
 import kalku.core.equivalent
 import kalku.core.costing
@@ -62,7 +63,10 @@ pub type Known = {
   tests: [String],
   coverage: Option[[CoverageEntry]],
   durations: [(String, Int)],
-  skipped: [Skipped]
+  skipped: [Skipped],
+  left_out: [Failure],
+  differences: [String],
+  only_theirs: [String]
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -145,9 +149,16 @@ fn interview(
   Telling.tell_of("running the suite once, for a baseline")
   tell(k, 3, Baseline)!
   let baseline = await_kind(k, "baseline_done")!
-  refuse_red(baseline)!
-  let suite = suite_of(baseline)
-  Telling.tell_of("the suite is green: #{length(suite)} test(s)")
+  let failing = failures_of(baseline)
+  let suite = judging_of(baseline, failing)
+  refuse_red(baseline, suite)!
+  Telling.tell_of(
+    if is_empty(failing) {
+      "the suite is green: #{length(suite)} test(s)"
+    } else {
+      going_on_without(failing, length(suite))
+    }
+  )
   tell(
     k,
     4,
@@ -169,12 +180,16 @@ fn interview(
       "no wekufe answers to #{join(names, ", ")} any more: a wekufe is named by the text it was cast in, and its file has changed since. Run `kalku run <file>` again to get new names"
     )
   })!
+  let narrowed = (coverage_from(baseline)!).map(entries => without(entries, failing | (.test_id)))
   Ok(Known {
     sites: found.sites,
     tests: suite,
-    coverage: coverage_from(baseline)!,
+    coverage: narrowed.map(n => n.coverage),
     durations: durations_of(baseline),
-    skipped: found.skipped
+    skipped: found.skipped,
+    left_out: failing,
+    differences: differences_of(baseline),
+    only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([])
   })
 }
 
@@ -225,11 +240,30 @@ fn durations_of(reply: KalkuReply) : [(String, Int)] = match reply {
   _ -> []
 }
 
-# A red baseline ends the run: a wekufe on top of a failing test measures
-# nothing, and pretending otherwise is the one thing a measuring tool
-# must never do.
-fn refuse_red(reply: KalkuReply) : Result[Unit, String] = match reply {
-  BaselineDone(m) -> if m.status == Red {
+# A test that already fails judges nothing: it would fail against every
+# wekufe it was sent with, and each of those would be a kill nobody made.
+# So it is taken out here, once, of everything a cast is ever handed: the
+# suite, and the coverage that chooses from it.
+fn failures_of(reply: KalkuReply) : [Failure] = match reply {
+  BaselineDone(m) -> m.failures
+  _ -> []
+}
+
+fn differences_of(reply: KalkuReply) : [String] = match reply {
+  BaselineDone(m) -> m.differences.unwrap_or([])
+  _ -> []
+}
+
+fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
+  let gone = failing | (.test_id)
+  suite_of(reply) |? (t => not contains(gone, t))
+}
+
+# A suite in which nothing passes ends the run: there is nothing to measure
+# with, and pretending otherwise is the one thing a measuring tool must
+# never do.
+fn refuse_red(reply: KalkuReply, judging: [String]) : Result[Unit, String] = match reply {
+  BaselineDone(m) -> if m.status == Red and is_empty(judging) {
     Err(red_suite(m.failures, m.differences.unwrap_or([])))
   } else {
     Ok(())
@@ -423,7 +457,10 @@ fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) 
     tests: known.tests,
     coverage: known.coverage,
     durations: known.durations,
-    skipped: known.skipped
+    skipped: known.skipped,
+    left_out: known.left_out,
+    differences: known.differences,
+    only_theirs: known.only_theirs
   }
 }
 
@@ -532,10 +569,20 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     },
     troubles: troubles_of(casting, known),
     skipped: known.skipped,
-    uncovered: ready.no_coverage,
-    blockers: []
+    uncovered: ready.no_coverage |? (s => not theirs_only(known, s)),
+    blockers: [],
+    left_out: LeftOut {
+      tests: known.left_out,
+      differences: known.differences,
+      sites: ready.no_coverage |? (s => theirs_only(known, s))
+    }
   }
 }
+
+# A site only a left-out test reaches is not a site nothing reaches: the
+# test is there, and failing.
+fn theirs_only(known: Known, s: Site) : Bool =
+  contains(known.only_theirs, place_of(s.file, s.span.start.line))
 
 #[doc("""
 The report, judged by what the project asked to be held to.
@@ -567,7 +614,7 @@ pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Rep
       r.counts,
       change,
       policy,
-      trouble_of(r.skipped),
+      trouble_of(r.skipped).or_else(() => trouble_with(r.left_out)),
       was_partial(r),
       is_some(touched)
     )

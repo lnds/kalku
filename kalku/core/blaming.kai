@@ -1,19 +1,41 @@
 #[doc("""
-What a run says when the suite is red before anything was cast.
+What a run says about the tests that fail before anything was cast.
 
-A baseline that fails ends the run, and the reader has to find out why
-from what is printed: the names of the tests are not enough, since the
-reason is in each failure's message, and a suite a kalku runs is not run
-exactly as the reader runs it. What differs is the first place to look.
+A test that already fails judges nothing: it would fail against every
+wekufe it was sent with. Where nothing passes there is nothing to measure
+with and the run is refused. Where some of the suite passes, the run goes
+on without the tests that do not, and says which they were every time it
+reports: a score is of the tests that judged, and a reader has to be able
+to see which did not.
+
+The reason is in each failure's message, and a suite a kalku runs is not
+run exactly as the reader runs it. What differs is the first place to look.
 """)]
 
 import kalku.wire.shapes
 
 const SHOWN : Int = 5
 
+#[doc("""
+The tests a run went on without, how the run of the suite was unlike the
+reader's own, and the sites only those tests reach.
+""")]
+#[derive(Eq, Show)]
+pub type LeftOut = { tests: [Failure], differences: [String], sites: [Site] }
+
+#[doc("A run in which every test judged.")]
+pub fn nobody_left_out() : LeftOut = LeftOut { tests: [], differences: [], sites: [] }
+
 fn blamed(f: Failure) : String = match take(lines(trim(f.message)), 2) {
   [] -> "  #{f.test_id}: no message"
   why -> "  #{f.test_id}:\n#{join(why | (l => "    #{l}"), "\n")}"
+}
+
+fn named(failures: [Failure]) : String {
+  let shown = take(failures, SHOWN)
+  let more = length(failures) - length(shown)
+  let rest = if more > 0 { "\n  and #{more} more" } else { "" }
+  "#{join(shown | blamed, "\n")}#{rest}"
 }
 
 # The kalku's own words. Whether a suite ran in a copy of the project or
@@ -27,15 +49,56 @@ fn unlike_yours(differences: [String]) : String = if is_empty(differences) {
 }
 
 #[doc("""
-The refusal for a suite that is already failing: how many tests, the first
+The refusal for a suite in which nothing passes: how many tests, the first
 few with the first two lines of why each failed, and how the run differed
 from the reader's own, as the kalku that ran it tells it.
 """)]
 pub fn red_suite(failures: [Failure], differences: [String]) : String = if is_empty(failures) {
   "the suite is already failing: no test named"
 } else {
-  let shown = take(failures, SHOWN)
-  let more = length(failures) - length(shown)
-  let rest = if more > 0 { "\n  and #{more} more" } else { "" }
-  "the suite is already failing, #{length(failures)} test(s):\n#{join(shown | blamed, "\n")}#{rest}#{unlike_yours(differences)}"
+  "the suite is already failing, #{length(failures)} test(s), and none of it passes:\n#{named(failures)}#{unlike_yours(differences)}"
+}
+
+#[doc("What a run says, once, as it goes on without the tests that fail.")]
+pub fn going_on_without(failures: [Failure], passing: Int) : String =
+  "#{length(failures)} test(s) fail before anything is cast and judge nothing; going on with the #{passing} that pass"
+
+#[doc("""
+The block a report carries for the tests it went on without: which, why,
+how the run differed, and the sites that only those tests reach. Empty when
+every test judged.
+""")]
+pub fn left_out_block(out: LeftOut, sites: [String]) : [String] = if is_empty(out.tests) {
+  []
+} else {
+  [
+    "left out, failing before anything was cast (#{length(out.tests)} test(s)). They judged nothing, and the score is of the tests that pass:",
+    "#{named(out.tests)}#{unlike_yours(out.differences)}"
+  ]
+    ++ only_theirs(sites)
+    ++ [""]
+}
+
+# Not "no test reaches these": a test does, and it is failing.
+fn only_theirs(sites: [String]) : [String] = if is_empty(sites) {
+  []
+} else {
+  ["reached only by tests that were left out, so not judged:"] ++ (sites | (s => "  #{s}"))
+}
+
+#[doc("""
+Why a run that left tests out is not the answer to what was asked, for the
+gate to hear; `None` when every test judged.
+
+The measurement is shown, because it is true of the tests that pass. It
+does not pass, because a suite with failing tests is not a suite somebody
+can be told is good enough: a gate that let it through would let through a
+change that broke the tests which would have noticed it.
+""")]
+pub fn trouble_with(out: LeftOut) : Option[String] = if is_empty(out.tests) {
+  None
+} else {
+  Some(
+    "the whole suite: #{length(out.tests)} test(s) fail before anything is cast, and the score is of the rest"
+  )
 }

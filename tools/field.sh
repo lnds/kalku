@@ -10,17 +10,19 @@
 # names, in a project it was never set up in, and the project's tree is
 # checked for anything written into it.
 #
-# A project whose suite does not pass here is one kalku has to refuse: a
-# suite that fails for want of a tool or a service says nothing about a
-# wekufe, and a kalku that measured it anyway would be inventing a score.
+# A test that fails before anything is cast judges nothing, so kalku goes
+# on without it and has to say so: a run that left tests out and did not
+# name them would be giving the score of part of a suite as the suite's.
+# That holds whether the test fails for everybody, for want of a tool or a
+# service, or only under kalku, for where the build is.
 #
 #   KALKU          the binary to try (default: the one built here)
 #   KALKU_ELIXIR   the Elixir kalku to summon (default: this checkout's)
 #   FIELD_DIR      where the clones go (default: $TMPDIR/kalku-field)
 #   FIELD_LIMIT    how many wekufe a run casts (default: 20)
 #
-# Exits 1 when kalku failed on a project whose suite passes, measured one
-# whose suite does not, or wrote in a project's tree.
+# Exits 1 when kalku failed on a project, left tests out without naming
+# them, or wrote in a project's tree.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -106,18 +108,20 @@ grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' | while read -r name
   (cd "$dir" && find . -path ./.git -prune -o -type f -newer "$stamp" -print) >"$logs/written"
   written=$(wc -l <"$logs/written" | tr -d ' ')
 
+  score=$(grep -E '^(PARTIAL: .* · )?score ' "$logs/kalku.out" | tail -1 || true)
+  named=$(grep -c '^left out, failing before anything was cast' "$logs/kalku.out" || true)
   refusal=$(grep '^kalku: the suite is already failing' "$logs/kalku.err" || true)
   bad=0
-  if [ "$plain" -ne 0 ] && [ -n "$refusal" ]; then
-    said="refused, as its own suite fails here too: ${refusal#kalku: }"
-  elif [ "$plain" -ne 0 ]; then
-    said="MEASURED A SUITE THAT FAILS ($logs/plain.log): $(tail -1 "$logs/kalku.out")"
-    bad=1
-  elif [ "$status" -ge 2 ]; then
+  if [ -n "$refusal" ]; then
+    said="refused, nothing in its suite passing: ${refusal#kalku: }"
+  elif [ -z "$score" ]; then
     said="FAILED ($status): $(grep '^kalku: ' "$logs/kalku.err" | grep -v 'no .kalku.toml' | tail -1)"
     bad=1
+  elif [ "$plain" -ne 0 ] && [ "$named" -eq 0 ]; then
+    said="MEASURED A SUITE THAT FAILS AND NAMED NO TEST LEFT OUT ($logs/plain.log): $score"
+    bad=1
   else
-    said=$(tail -1 "$logs/kalku.out")
+    said=$score
   fi
   [ "$written" -eq 0 ] || said="$said; WROTE $written file(s) in the project ($logs/written)"
 

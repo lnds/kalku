@@ -3,6 +3,7 @@ import kalku.wire.shapes
 import kalku.core.verdict
 import kalku.core.gate
 import kalku.core.report
+import kalku.core.blaming
 import kalku.core.changed_lines
 import kalku.core.report_json
 import kalku.core.report_github
@@ -43,7 +44,8 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     troubles: [],
     skipped: [],
     uncovered: [],
-    blockers: blockers
+    blockers: blockers,
+    left_out: nobody_left_out()
   }
 
 fn plain() : Report =
@@ -321,4 +323,62 @@ test "a file that was not searched is named with why, above the summary" {
   assert has(text, "files that were not searched:\n  lib/b.ex: parse_error: line 3")
   assert index_of(text, "files that were not searched") < index_of(text, "score ")
   assert not has(human(plain()), "not searched")
+}
+
+fn failing(id: String, message: String) : Failure = Failure { test_id: id, message: message }
+
+fn left(tests: [Failure], sites: [Site]) : LeftOut = LeftOut {
+  tests: tests,
+  differences: ["the build is in /tmp/reni/build, not in `_build`"],
+  sites: sites
+}
+
+# A suite with three failing tests in 686 used to end the run: nothing was
+# measured, and the other 683 judged nothing either. The run goes on with
+# them, and a score of part of a suite read as the suite's is the thing a
+# report must not allow: the tests that judged nothing are named where the
+# score is, with why they failed and how the run was unlike the reader's.
+test "the tests a run went on without are named beside the score" {
+  let r = Report {
+    ...report_of([], tally([Cast(Killed), Cast(Survived)]), []),
+    left_out: left(
+      [failing("test/ssl_test.exs:120", "Assertion with =~ failed\ncode: assert x")],
+      []
+    )
+  }
+  let text = human(r)
+
+  assert has(text, "left out, failing before anything was cast (1 test(s))")
+  assert has(text, "  test/ssl_test.exs:120:\n    Assertion with =~ failed")
+  assert has(text, "  - the build is in /tmp/reni/build")
+  assert has(text, "· 1 test(s) left out")
+}
+
+# "No test reaches these" tells a reader to write a test. For a site only a
+# failing test reaches, the test is there.
+test "a site only a left-out test reaches is not said to be reached by none" {
+  let r = Report {
+    ...report_of([], tally([Cast(NoCoverage)]), []),
+    left_out: left([failing("test/a_test.exs:3", "boom")], [arm_site()])
+  }
+  let text = human(r)
+
+  assert has(
+    text,
+    "reached only by tests that were left out, so not judged:\n  #{where_of(arm_site())}"
+  )
+  assert not has(text, "no test reaches these")
+}
+
+test "a run in which every test judged says nothing about leaving any out" {
+  let text = human(report_of([], tally([Cast(Killed)]), []))
+
+  assert not has(text, "left out")
+}
+
+# A gate that let it through would let through a change that broke the
+# tests which would have noticed it.
+test "a run that left tests out is shown, and does not pass" {
+  assert trouble_with(nobody_left_out()) == None
+  assert is_some(trouble_with(left([failing("t", "boom")], [])))
 }
