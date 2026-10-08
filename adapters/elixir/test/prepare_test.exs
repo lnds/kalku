@@ -73,6 +73,20 @@ defmodule Kalku.PrepareTest do
       assert length(lines) == 3
     end
 
+    # Mix builds a dependency given by path again each time a task starts,
+    # before the task has run a line, and a dependency rebar3 builds is
+    # announced on stdout: two lines ahead of `ready`.
+    test "a path dependency built as the kalku starts does not write on stdout", %{reni: reni} do
+      lines = summon(reni, "erlang", [request("prepare", 2), request("baseline", 3)])
+
+      for line <- lines do
+        assert {:ok, _} = Kalku.Json.decode(line),
+               "not a protocol line on stdout: #{inspect(line)}"
+      end
+
+      assert reply(lines, "baseline_done")["status"] == "green"
+    end
+
     # Starting the project's applications installs the logger's handlers, on
     # stdout, and an application is free to log while it starts: before the
     # kalku can look at what was installed.

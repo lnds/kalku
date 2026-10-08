@@ -26,6 +26,13 @@ fi
 # access to stdin: stdin is the protocol, and a build that reads even one
 # byte of it leaves the loop at end of input before its first request.
 mix deps.compile >&2 </dev/null
+
+# Mix builds a dependency given by path again whenever a task starts, and
+# says so on stdout before the task has run a line. The task quiets the
+# shell once it is running; this quiets it for what comes before.
+MIX_QUIET=1
+export MIX_QUIET
+
 # `exec` hands the process to the kalku, so a signal reaches it rather
 # than a shell that would outlive it.
 if grep -q kalku_elixir mix.exs 2>/dev/null; then

@@ -102,6 +102,8 @@ jobs:
           otp-version: ${{ matrix.otp }}
       - if: matrix.format
         run: mix format --check-formatted
+      # One fixture has a dependency rebar3 builds.
+      - run: mix local.rebar --force
       - run: mix test
 
   # The Rust kalku measures the 2024 edition, which needs Rust 1.85, so that
