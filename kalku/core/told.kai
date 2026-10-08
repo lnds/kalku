@@ -1,0 +1,37 @@
+#[doc("""
+What a baseline said, kept where one site's question costs one look.
+
+A plan asks the same two things of every site: which tests reach this
+line, and what do they cost. Asked of the lists a baseline arrives in, each
+answer walks all of them, and a suite of thousands with no coverage to
+narrow it paid the square of its size for every site: half an hour of
+silence before the first cast.
+
+The lookups live in a module of their own because importing a map brings
+its `filter` and `contains` with it, over the lists' own.
+""")]
+
+import collections.map
+import kalku.wire.shapes
+
+#[doc("A baseline's coverage and durations, indexed. `reaching` is absent when there was no coverage.")]
+pub type Told = { reaching: Option[Map[String, [String]]], costs: Map[String, Int] }
+
+#[doc("Index what a baseline said: which tests reach each line, and what each test cost.")]
+pub fn told_by(coverage: Option[[CoverageEntry]], durations: [(String, Int)]) : Told = Told {
+  reaching: coverage.map(entries => list.foldl(entries, map.empty(), reached)),
+  costs: map.from(durations)
+}
+
+#[doc("The tests that reach a line, where that was measured: none is an answer, and `None` is not knowing.")]
+pub fn reaching(told: Told, file: String, line: Int) : Option[[String]] =
+  told.reaching.map(by_line => map.get(by_line, place(file, line)).unwrap_or([]))
+
+#[doc("What these tests took in the baseline, in milliseconds; a test nobody timed costs nothing.")]
+pub fn cost_of(told: Told, tests: [String]) : Int =
+  sum(tests | (t => map.get(told.costs, t).unwrap_or(0)))
+
+fn reached(by_line: Map[String, [String]], e: CoverageEntry) : Map[String, [String]] =
+  map.update(by_line, place(e.file, e.line), e.tests, before => before ++ e.tests)
+
+fn place(file: String, line: Int) : String = "#{file}:#{line}"
