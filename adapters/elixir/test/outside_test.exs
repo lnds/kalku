@@ -70,6 +70,8 @@ defmodule Kalku.OutsideTest do
       "user.name=kalku",
       "-c",
       "user.email=kalku@example.com",
+      "-c",
+      "commit.gpgsign=false",
       "commit",
       "-qm",
       "it"
