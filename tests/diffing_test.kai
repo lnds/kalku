@@ -52,7 +52,10 @@ fn commit(dir: String, message: String) : Bool / Process =
   git(dir, ["add", "-A"])
     and git(
       dir,
-      ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", message]
+      [
+        "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q",
+        "-m", message
+      ]
     )
 
 fn fresh(dir: String) : Unit / Process {
