@@ -338,12 +338,19 @@ const LAST_LINES : Int = 12
 fn with_last_words(why: String, said: [String]) : String = if is_empty(said) {
   why
 } else {
-  join([why, "what it said before it went:"] ++ (kept(said) | (l => "  #{l}")), "\n")
+  join([why, "what it said before it went:"] ++ (said | (l => "  #{l}")), "\n")
 }
 
-# The last lines, because a stack trace ends where the reason is.
-fn kept(said: [String]) : [String] {
-  let worth = filter(said, l => not is_empty(trim(l)))
+#[doc("""
+What is worth keeping of a kalku's words once it has written some more.
+
+Only the last lines, because a stack trace ends where the reason is — and
+no more than those are held, because a build that logs through a long wait
+writes a great deal, and a wait that kept all of it paid for every line
+again each time another arrived.
+""")]
+pub fn heard_last(said: [String], chunk: String) : [String] {
+  let worth = said ++ filter(lines(chunk), l => not is_empty(trim(l)))
   if length(worth) <= LAST_LINES {
     worth
   } else {
@@ -365,7 +372,7 @@ fn from_ours(
   }
   Closed -> Err(with_last_words("the kalku closed its pipe before saying `#{kind}`", said))
   Unreadable(why) -> Err(with_last_words(why, said))
-  Wrote(chunk) -> await_with(k, kind, said ++ lines(chunk))
+  Wrote(chunk) -> await_with(k, kind, heard_last(said, chunk))
 }
 
 fn judge(
