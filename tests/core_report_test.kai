@@ -48,7 +48,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
 
 fn plain() : Report =
   report_of(
-    [Survivor { site: compare_site(), tests: ["test/a_test.exs:18"] }],
+    [Survivor { site: compare_site(), tests: ["test/a_test.exs:18"], chosen: true }],
     tally([Cast(Killed), Cast(Survived)]),
     []
   )
@@ -56,7 +56,7 @@ fn plain() : Report =
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
 
 test "a survivor reads as a place, a spell, and the change that made it" {
-  let s = Survivor { site: compare_site(), tests: ["test/a_test.exs:18"] }
+  let s = Survivor { site: compare_site(), tests: ["test/a_test.exs:18"], chosen: true }
   assert location(s) == "lib/a.ex:42  compare  A.f/1"
   assert diff_of(compare_site()) == ["- >=", "+ >"]
 }
@@ -75,19 +75,40 @@ test "the human report leads with survivors and closes with the summary" {
 }
 
 test "a survivor no test covers says so" {
-  let lonely = Survivor { site: arm_site(), tests: [] }
+  let lonely = Survivor { site: arm_site(), tests: [], chosen: true }
   assert has(human(report_of([lonely], tally([Cast(Survived)]), [])), "no test covers it")
 }
 
-# Without per-test coverage a survivor is judged by the whole suite:
-# naming every test buries the diff, and naming the first three points at
-# tests that have nothing to do with the site.
-test "a survivor judged by a whole suite counts the tests it cannot name" {
-  let whole =
-    Survivor { site: arm_site(), tests: enumerate(list.repeat("t", 10)) | (p => "t#{p.fst}") }
-  let text = human(report_of([whole], tally([Cast(Survived)]), []))
+# Past a few, the tests that cover a site are counted: naming every one
+# buries the diff.
+test "a survivor many tests cover counts the tests it does not name" {
+  let many =
+    Survivor {
+      site: arm_site(),
+      tests: enumerate(list.repeat("t", 10)) | (p => "t#{p.fst}"),
+      chosen: true
+    }
+  let text = human(report_of([many], tally([Cast(Survived)]), []))
 
   assert has(text, "covered by 10 tests")
+}
+
+# Without per-test coverage a survivor is judged by the whole suite, and
+# that used to be reported as the tests that cover it: every survivor of a
+# small service "covered by" all of its 105 tests, most of them in files
+# that never touch the module.
+test "a survivor the whole suite judged is not said to be covered by it" {
+  let whole =
+    Survivor {
+      site: arm_site(),
+      tests: enumerate(list.repeat("t", 105)) | (p => "t#{p.fst}"),
+      chosen: false
+    }
+  let text = human(report_of([whole], tally([Cast(Survived)]), []))
+
+  assert has(text, "judged by the whole suite, 105 test(s)")
+  assert has(text, "was not measured")
+  assert not has(text, "covered by")
 }
 
 test "the summary reports apart what never entered the score" {
@@ -240,7 +261,7 @@ test "a partial run says so before it says its score" {
 }
 
 fn survivor_on(file: String, line: Int) : Survivor =
-  Survivor { site: site_of(file, line, Some("A.f/1"), Some(">="), ">"), tests: [] }
+  Survivor { site: site_of(file, line, Some("A.f/1"), Some(">="), ">"), tests: [], chosen: true }
 
 fn change(file: String, from: Int, to: Int) : FileChange =
   FileChange { file: file, ranges: [LineRange { from: from, to: to }] }

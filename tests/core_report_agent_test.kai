@@ -32,7 +32,8 @@ fn survivor(file: String, line: Int, spell: Spell, tests: [String]) : Survivor =
     replacement: ">",
     reload: ModuleOnly
   },
-  tests: tests
+  tests: tests,
+  chosen: true
 }
 
 fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
@@ -104,7 +105,8 @@ test "what the kalku does not know is absent, never null" {
       replacement: "",
       reload: ModuleOnly
     },
-    tests: []
+    tests: [],
+    chosen: true
   }
   let line = first_line(agent(report_of([bare], one()), lines_of))
 
@@ -248,4 +250,17 @@ test "an agent gets the first few covering tests and how many there are in all" 
     == JArr(take(many, COVERING_SHOWN) | (t => JStr(t)))
   assert field(line, "covering_count") == JNum(1200)
   assert length(line) < 2000
+}
+
+# Where coverage was not measured the whole suite judged the wekufe, and its
+# first five tests are no nearer the site than its last: listed as the tests
+# that cover the line, they sent an agent to read files that never touch it.
+test "an agent is not told the whole suite covers the line" {
+  let suite = enumerate(repeat(0, 105)) | (i => "test/t_#{i.fst}_test.exs:3")
+  let judged = Survivor { ...survivor("lib/parser.ex", 2, Compare, suite), chosen: false }
+  let line = first_line(agent(report_of([judged], one()), lines_of))
+
+  assert field(line, "judged_by_whole_suite") == JNum(105)
+  assert not has(line, "covering_tests")
+  assert not has(line, "covering_count")
 }
