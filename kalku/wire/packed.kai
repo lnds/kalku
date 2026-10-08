@@ -1,0 +1,61 @@
+#[doc("""
+Coverage as a kalku writes it when there is a great deal of it.
+
+Written line by line, coverage names every test of every line: a function
+most of a suite calls has each of its lines carry most of the suite, by
+name, and a project's coverage runs to a hundred megabytes that are the
+same few thousand names over and over. Packed, a test is named once and
+referred to by where it stands in that list, and lines the same tests reach
+are listed together.
+
+It unpacks to the entries a `baseline_done` carries inline, so nothing
+downstream knows which way they came.
+
+A module of its own because importing a map brings its `filter` and
+`contains` with it, over the lists' own.
+""")]
+
+import collections.map
+import encoding.json
+import kalku.wire.shapes
+import kalku.wire.envelope
+
+#[doc("Lines of one file that the same tests reach; `tests` are positions in the file's list of tests.")]
+#[derive(Json, Eq, Show)]
+pub type Reached = { file: String, lines: [Int], tests: [Int] }
+
+#[doc("Packed coverage: every test named once, and what reaches what by position.")]
+#[derive(Json, Eq, Show)]
+pub type Packed = { tests: [String], reached: [Reached] }
+
+#[doc("Decode a packed coverage file into the entries it stands for.")]
+pub fn decode_packed(text: String) : Result[[CoverageEntry], ProtocolError] = match json_decode(
+  text
+) {
+  None -> fail(NotJson, "the coverage file is not valid JSON")
+  Some(v) -> match body(packed_of_json(v, "coverage"), p => p) {
+    Err(e) -> Err(e)
+    Ok(p) -> unpacked(p)
+  }
+}
+
+#[doc("The entries packed coverage stands for; a position past the end of the tests is an error.")]
+pub fn unpacked(p: Packed) : Result[[CoverageEntry], ProtocolError] {
+  let names = map.from(enumerate(p.tests))
+  let groups = p.reached | (r => entries_of(r, names, length(p.tests)))
+  match list.find(groups, g => is_err(g)) {
+    Some(Err(e)) -> Err(e)
+    _ -> Ok(list.flat_map(groups, g => g.unwrap_or([])))
+  }
+}
+
+fn entries_of(r: Reached, names: Map[Int, String], known: Int) : Result[
+  [CoverageEntry],
+  ProtocolError
+] =
+  if list.any(r.tests, at => at < 0 or at >= known) {
+    fail(Invalid, "coverage: #{r.file} names a test past the #{known} there are")
+  } else {
+    let tests = r.tests | (at => map.get(names, at).unwrap_or(""))
+    Ok(r.lines | (line => CoverageEntry { file: r.file, line: line, tests: tests }))
+  }

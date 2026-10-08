@@ -9,10 +9,15 @@ defmodule Kalku.Baseline.Calls do
   the test of a boundary is not among the tests of the comparison that
   draws it.
 
-  So a test is also credited with every line of each function it called,
-  whatever clause the call ended in, including none. The runtime counts
-  calls itself, per function and for every process, with nothing to trace
-  them to.
+  So a test is also credited, for each function it called and whatever
+  clause the call ended in, including none, with the lines of that function
+  that counting lines cannot speak for: the head of every clause in it, down
+  to the body the head guards, and every line nothing counts. A line with a
+  count of its own that heads no clause is left to that count, which says
+  more: the test ran it.
+
+  The runtime counts calls itself, per function and for every process, with
+  nothing to trace them to.
 
   Loading a module again forgets its counts and stops the counting — a
   mocking library does that to the modules it replaces. A module found that
@@ -105,19 +110,25 @@ defmodule Kalku.Baseline.Calls do
 
   # ---- where a function is written ---------------------------------
 
-  # Each function with the lines of its clauses. A clause runs from its
-  # head to the last line anything in it is written on, and never into the
-  # definition after it: a quoted expression carries the line it was quoted
-  # on, which can be anywhere.
+  # Each function with the lines a call to it is credited with. A clause
+  # runs from its head to the last line anything in it is written on, and
+  # never into the definition after it: a quoted expression carries the line
+  # it was quoted on, which can be anywhere.
   defp clauses_of(module) do
     with {:ok, forms} <- forms_of(module),
          file when is_binary(file) <- source_of(module, forms) do
       written = written_in(forms)
-      starts = written |> Enum.map(fn {_, first, _} -> first end) |> Enum.sort() |> Enum.uniq()
+
+      starts =
+        written |> Enum.map(fn {_, {first, _, _}} -> first end) |> Enum.sort() |> Enum.uniq()
+
+      counted = counted_in(module)
 
       written
-      |> Enum.group_by(fn {function, _, _} -> function end, fn {_, first, last} ->
-        for line <- first..min(last, before_next(starts, first))//1, do: {file, line}
+      |> Enum.group_by(fn {function, _} -> function end, fn {_, {first, last, heads}} ->
+        for line <- first..min(last, before_next(starts, first))//1,
+            MapSet.member?(heads, line) or not MapSet.member?(counted, line),
+            do: {file, line}
       end)
       |> Enum.map(fn {function, places} ->
         {function, places |> List.flatten() |> Enum.uniq()}
@@ -149,7 +160,15 @@ defmodule Kalku.Baseline.Calls do
           acc
       end)
 
-    for {function, {first, last}} <- written, do: {function, first, last}
+    written
+  end
+
+  # The lines `:cover` keeps a count for.
+  defp counted_in(module) do
+    case :cover.analyse(module, :coverage, :line) do
+      {:ok, entries} -> for {{_, line}, _} <- entries, into: MapSet.new(), do: line
+      _ -> MapSet.new()
+    end
   end
 
   defp spans(clauses, function),
@@ -157,10 +176,35 @@ defmodule Kalku.Baseline.Calls do
 
   defp span({:clause, anno, _, _, _} = clause) do
     case :erl_anno.line(anno) do
-      first when is_integer(first) and first > 0 -> {first, max(first, last_line(clause, first))}
-      _ -> nil
+      first when is_integer(first) and first > 0 ->
+        {first, max(first, last_line(clause, first)), heads_in(clause, MapSet.new())}
+
+      _ ->
+        nil
     end
   end
+
+  # The lines of every head under this one, a function's or an arm's: from
+  # where the clause begins to where its body does. A call that the head
+  # turns away gets that far and no further.
+  defp heads_in({:clause, anno, patterns, guards, body}, seen) do
+    first = line_in(anno)
+    last = max(first, body |> List.first() |> anno_line())
+    seen = Enum.reduce(first..last//1, seen, &MapSet.put(&2, &1))
+    heads_in(body, heads_in(guards, heads_in(patterns, seen)))
+  end
+
+  defp heads_in(node, seen) when is_tuple(node), do: heads_in(Tuple.to_list(node), seen)
+
+  defp heads_in(nodes, seen) when is_list(nodes),
+    do: Enum.reduce(nodes, seen, fn node, seen -> heads_in(node, seen) end)
+
+  defp heads_in(_leaf, seen), do: seen
+
+  defp anno_line(node) when is_tuple(node) and tuple_size(node) >= 2,
+    do: line_in(elem(node, 1))
+
+  defp anno_line(_), do: 0
 
   defp last_line(node, seen) when is_tuple(node) do
     node

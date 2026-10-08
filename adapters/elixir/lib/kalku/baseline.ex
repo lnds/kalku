@@ -12,7 +12,7 @@ defmodule Kalku.Baseline do
   runtime cold for the casts that follow.
   """
 
-  alias Kalku.Baseline.{Calls, Collector, Cover, Recorder}
+  alias Kalku.Baseline.{Calls, Collector, Cover, Packed, Recorder}
 
   @doc """
   Runs the suite and reports what it did.
@@ -293,7 +293,7 @@ defmodule Kalku.Baseline do
       "differences" => differences()
     }
 
-    {:ok, Map.merge(body, coverage_field(coverage(named, root), opts))}
+    {:ok, Map.merge(body, coverage_field(named, root, opts))}
   end
 
   @doc """
@@ -332,19 +332,48 @@ defmodule Kalku.Baseline do
     end)
   end
 
-  # Big coverage goes to a file in the reni rather than through the pipe:
-  # a megabyte of JSON per worker is a cost the protocol lets us decline.
-  defp coverage_field([], _opts), do: %{}
+  # The least a test's name takes on a line: enough to know, without writing
+  # it out, that coverage naming this many will not fit through the pipe.
+  @bytes_a_name 12
 
-  defp coverage_field(entries, opts) do
+  # Small coverage goes through the pipe as it is. The rest goes to a file
+  # in the reni, packed: a megabyte of JSON per worker is a cost the
+  # protocol lets us decline, and written line by line a large project's
+  # coverage is the same few thousand names a hundred megabytes over.
+  defp coverage_field(named, root, opts) do
     limit = Keyword.get(opts, :inline_limit_bytes, 65_536)
-    encoded = Kalku.Json.encode(entries)
+    reached = for {id, t} <- named, do: {id, placed(t.lines, root)}
 
-    if byte_size(encoded) <= limit do
+    case Packed.references(reached) do
+      0 -> %{}
+      n when n * @bytes_a_name > limit -> packed(reached, opts)
+      _ -> inline_or_packed(coverage(named, root), reached, limit, opts)
+    end
+  end
+
+  defp inline_or_packed(entries, reached, limit, opts) do
+    if byte_size(Kalku.Json.encode(entries)) <= limit do
       %{"coverage" => entries}
     else
-      %{"coverage_path" => spill(encoded, Keyword.get(opts, :reni, Mix.Project.build_path()))}
+      packed(reached, opts)
     end
+  end
+
+  defp packed(reached, opts) do
+    encoded = reached |> Packed.pack() |> Kalku.Json.encode()
+    reni = Keyword.get(opts, :reni, Mix.Project.build_path())
+    %{"coverage_packed_path" => spill(encoded, reni)}
+  end
+
+  # A file is named once for all its lines: making a path relative is not
+  # free, and a test reaches thousands of lines of the same few files.
+  defp placed(lines, root) do
+    names =
+      for file <- lines |> Enum.map(&elem(&1, 0)) |> Enum.uniq(),
+          into: %{},
+          do: {file, relative(file, root)}
+
+    for {file, line} <- lines, do: {Map.fetch!(names, file), line}
   end
 
   defp spill(encoded, reni) do

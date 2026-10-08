@@ -19,6 +19,8 @@ import time
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.kalku_msg
+import kalku.wire.envelope
+import kalku.wire.packed
 import kalku.core.verdict
 import kalku.core.skipping
 import kalku.core.stopping
@@ -191,9 +193,10 @@ fn suite_of(reply: KalkuReply) : [String] = match reply {
 # against the whole suite while reporting that suite as the tests that
 # cover it.
 fn coverage_from(reply: KalkuReply) : Result[Option[[CoverageEntry]], String] / File = match reply {
-  BaselineDone(m) -> match (m.coverage, m.coverage_path) {
-    (Some(entries), _) -> Ok(Some(entries))
-    (None, Some(path)) -> spilled_coverage(path)
+  BaselineDone(m) -> match (m.coverage, m.coverage_path, m.coverage_packed_path) {
+    (Some(entries), _, _) -> Ok(Some(entries))
+    (None, Some(path), _) -> spilled_coverage(path, decode_coverage)
+    (None, None, Some(path)) -> spilled_coverage(path, decode_packed)
     _ -> Ok(None)
   }
   _ -> Ok(None)
@@ -202,9 +205,12 @@ fn coverage_from(reply: KalkuReply) : Result[Option[[CoverageEntry]], String] / 
 # A coverage file the kalku named and this side cannot read is a fault
 # worth stopping for: carrying on would measure the whole suite and call
 # it coverage.
-fn spilled_coverage(path: String) : Result[Option[[CoverageEntry]], String] / File =
+fn spilled_coverage(
+  path: String,
+  decoded: (String) -> Result[[CoverageEntry], ProtocolError]
+) : Result[Option[[CoverageEntry]], String] / File =
   if file.exists(path) {
-    match decode_coverage(file.read(path)) {
+    match decoded(file.read(path)) {
       Ok(entries) -> Ok(Some(entries))
       Err(e) -> Err("the coverage file #{path} could not be read: #{e.detail}")
     }
