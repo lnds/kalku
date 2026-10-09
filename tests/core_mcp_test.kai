@@ -43,7 +43,14 @@ test "a tool call carries its tool, its wekufe and its reason" {
   )
 
   assert asked
-    == CallTool(Call { tool: "kalku_cast", root: Some("/p"), wekufe: ["w1", "w2"], reason: "" })
+    == CallTool(Call {
+      tool: "kalku_cast",
+      root: Some("/p"),
+      wekufe: ["w1", "w2"],
+      reason: "",
+      limit: None,
+      since: None
+    })
 }
 
 # A host may send one id as a string where another sends a list, and the
@@ -52,11 +59,25 @@ test "one wekufe, many, or a list of files all read as what was named" {
   assert call(
     "{\"method\":\"tools/call\",\"params\":{\"name\":\"kalku_show\",\"arguments\":{\"wekufe\":\"w1\"}}}"
   )
-    == CallTool(Call { tool: "kalku_show", root: None, wekufe: ["w1"], reason: "" })
+    == CallTool(Call {
+      tool: "kalku_show",
+      root: None,
+      wekufe: ["w1"],
+      reason: "",
+      limit: None,
+      since: None
+    })
   assert call(
     "{\"method\":\"tools/call\",\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"files\":[\"lib/a.ex\"]}}}"
   )
-    == CallTool(Call { tool: "kalku_run", root: None, wekufe: ["lib/a.ex"], reason: "" })
+    == CallTool(Call {
+      tool: "kalku_run",
+      root: None,
+      wekufe: ["lib/a.ex"],
+      reason: "",
+      limit: None,
+      since: None
+    })
 }
 
 # The tools are the CLI's, and there is deliberately no tool that
@@ -80,4 +101,55 @@ test "a tool that could not run is a result the agent sees, not a protocol error
   assert has(refused(Some(2), "never cast: w9"), "never cast: w9")
   assert has(answered(Some(2), "all killed"), "\"isError\":false")
   assert has(protocol_error(Some(3), "no method"), "\"error\"")
+}
+
+# `--since` is the mode an agent wants most: the survivors on the lines it
+# just wrote. A run asked that way need not name a file.
+test "a run can be narrowed to a change and to a number of wekufe" {
+  assert call(
+    "{\"method\":\"tools/call\",\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"since\":\"main\",\"limit\":20}}}"
+  )
+    == CallTool(
+      Call {
+        tool: "kalku_run",
+        root: None,
+        wekufe: [],
+        reason: "",
+        limit: Some(20),
+        since: Some("main")
+      }
+    )
+  assert has(tools(Some(1)), "\"since\"")
+  assert has(tools(Some(1)), "\"limit\"")
+}
+
+# A host that closed the pipe has nobody left to read what a run finds.
+test "a host that leaves while a run is going ends the run" {
+  assert heard_mid_run_of_host(NO_MORE, "") == HostLeft
+}
+
+# Who this is and what it can do never wait for a run to end.
+test "a host is answered mid-run for what does not need the kalku" {
+  assert heard_mid_run_of_host(SAID, "{\"method\":\"tools/list\",\"id\":3}")
+    == ToldMidRun(tools(Some(3)))
+  assert heard_mid_run_of_host(SAID, "{\"method\":\"initialize\",\"id\":1}")
+    == ToldMidRun(greeting(Some(1)))
+  assert heard_mid_run_of_host(SAID, "{\"method\":\"notifications/initialized\"}") == NothingToSay
+}
+
+# One set of kalku measures one thing at a time, and the host is told why.
+test "a second tool is refused while a run is going, with the reason" {
+  match heard_mid_run_of_host(
+    SAID,
+    "{\"method\":\"tools/call\",\"id\":9,\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"files\":[\"a.ex\"]}}}"
+  ) {
+    ToldMidRun(answer) -> {
+      assert has(answer, "\"id\":9")
+      assert has(answer, "\"isError\":true")
+      assert has(answer, "one thing at a time")
+    }
+    other -> {
+      assert other == NothingToSay
+    }
+  }
 }

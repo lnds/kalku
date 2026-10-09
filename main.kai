@@ -34,6 +34,7 @@ import kalku.settling
 import kalku.diffing
 import kalku.core.changed_lines
 import kalku.serving
+import kalku.hosting
 import kalku.orchestrator.server
 import kalku.cli
 
@@ -54,7 +55,7 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     Propose(wekufe, reason) -> proposed(wekufe, reason)
     Answer(wekufe, yes, why) -> answered_by_hand(wekufe, yes, why)
     Serve -> serving_here()
-    Mcp -> tooling()
+    Mcp -> tooling((id, c) => tool_ran(id, c))
     Measure(wanted) -> run_here(wanted)
     Misused(why) -> {
       Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
@@ -715,42 +716,23 @@ fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
 
 # ---- the agent host -----------------------------------------------------
 
-# MCP over stdio is JSON-RPC, one message per line, and a host holds the
-# pipe open for as long as it wants the tools.
-fn tooling() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal =
-  match Stdin.read_line() {
-    None -> 0
-    Some(line) -> {
-      let asked = asked_of(trim_right(line))
-      answer_host(asked.fst, asked.snd)
-      tooling()
-    }
-  }
-
-fn answer_host(
-  id: Option[Int],
-  heard: Heard
-) : Unit / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = match heard {
-  Initialise -> Stdout.print(greeting(id))
-  ListTools -> Stdout.print(tools(id))
-  CallTool(c) -> Stdout.print(tool_ran(id, c))
-  Notice -> ()
-  Garbled(why) -> Stdout.print(protocol_error(id, why))
-}
-
 # The tools are the CLI's, and what they answer is what it prints. A tool
 # that could not run says so as a result: the host shows that to the
 # agent, which is who needs to know.
+# `None` when the host left while the tool ran.
 fn tool_ran(
   id: Option[Int],
   c: Call
-) : String / Stderr + Env + File + Process + Spawn + Clock + Signal = match c.tool {
-  "kalku_run" -> measured_for(id, c)
-  "kalku_cast" -> recast_for(id, c)
-  "kalku_show" -> shown_for(id, c)
-  "kalku_propose_equivalent" -> proposal_for(id, c)
-  other -> refused(id, "no such tool `#{other}`")
-}
+) : Option[String] / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal + Actor[
+  OrchMsg
+] =
+  match c.tool {
+    "kalku_run" -> measured_for(id, c)
+    "kalku_cast" -> recast_for(id, c)
+    "kalku_show" -> Some(shown_for(id, c))
+    "kalku_propose_equivalent" -> Some(proposal_for(id, c))
+    other -> Some(refused(id, "no such tool `#{other}`"))
+  }
 
 # A root the host named, or the one it is standing in.
 fn root_of(c: Call) : String = c.root.unwrap_or(".")
@@ -758,20 +740,71 @@ fn root_of(c: Call) : String = c.root.unwrap_or(".")
 fn measured_for(
   id: Option[Int],
   c: Call
-) : String / Stderr + Env + File + Process + Spawn + Clock + Signal = if is_empty(c.wekufe) {
-  refused(id, "`kalku_run` needs the files to measure")
-} else {
-  match settings_in(root_of(c)) {
-    Err(why) -> refused(id, why)
-    Ok(cfg) -> match declared_equivalents(root_of(c)) {
-      Err(why) -> refused(id, why)
-      Ok(declared) -> as_agent(
-        root_of(c),
-        id,
-        with_mailbox {
-          alone(() => untold(() => measure(asking_at(cfg, root_of(c), c.wekufe, declared))))
+) : Option[String] / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal + Actor[
+  OrchMsg
+] =
+  match asked_by_host(c) {
+    Err(why) -> Some(refused(id, why))
+    Ok(None) -> Some(
+      answered(id, "this change touches no source file, so there is nothing to measure")
+    )
+    Ok(Some(asking)) -> for_host(root_of(c), id, run_for_host(asking))
+  }
+
+# What was cast is remembered whoever is left to hear of it.
+fn for_host(root: String, id: Option[Int], ran: (Found, Bool)) : Option[String] / File + Env {
+  let answer = as_agent(root, id, ran.fst)
+  if ran.snd { None } else { Some(answer) }
+}
+
+# What a host asked to have measured: the CLI's `run`, with its `--since`
+# and its `--limit` and the same defaults, in the project the host named.
+# `None` for a change that touched no source.
+fn asked_by_host(c: Call) : Result[Option[Asking], String] / Stderr + Env + File + Process {
+  let root = root_of(c)
+  let cfg = settings_in(root)!
+  let declared = declared_equivalents(root)!
+  let touched = changes_since(root, c.since)!
+  let files = files_of_host(cfg, c.wekufe, touched)!
+  if is_empty(files) {
+    if is_some(touched) {
+      Ok(None)
+    } else {
+      Err("`kalku_run` needs the files to measure, or a `since` to take them from")
+    }
+  } else {
+    Ok(
+      Some(
+        Asking {
+          ...asking_at(cfg, root, files, declared),
+          limit: c.limit.unwrap_or(if is_some(touched) { 0 } else { DEFAULT_LIMIT }),
+          touched: touched
         }
       )
+    )
+  }
+}
+
+fn changes_since(
+  root: String,
+  since: Option[String]
+) : Result[Option[[FileChange]], String] / Process = match since {
+  None -> Ok(None)
+  Some(ref) -> Ok(Some(diffing.since(root, ref)!))
+}
+
+fn files_of_host(
+  cfg: Config,
+  named: [String],
+  touched: Option[[FileChange]]
+) : Result[[String], String] = if not is_empty(named) {
+  Ok(named)
+} else {
+  match touched {
+    None -> Ok([])
+    Some(changes) -> {
+      let known = language_of(cfg)!
+      Ok(filter(changed_lines.files(changes), f => is_source_of(known, f)))
     }
   }
 }
@@ -779,32 +812,26 @@ fn measured_for(
 fn recast_for(
   id: Option[Int],
   c: Call
-) : String / Stderr + Env + File + Process + Spawn + Clock + Signal = if is_empty(c.wekufe) {
-  refused(id, "`kalku_cast` needs the wekufe to re-cast")
-} else {
-  match settings_in(root_of(c)) {
-    Err(why) -> refused(id, why)
-    Ok(cfg) -> {
-      let all = ledger_in(root_of(c))
-      let unknown = strangers(all, c.wekufe)
-      if not is_empty(unknown) {
-        refused(id, "never cast: #{join(unknown, ", ")}")
-      } else {
-        match declared_equivalents(root_of(c)) {
-          Err(why) -> refused(id, why)
-          Ok(declared) -> as_agent(
-            root_of(c),
-            id,
-            with_mailbox {
-              alone(
-                () => untold(
-                  () => measure(narrowed(cfg, root_of(c), sites_for(all, c.wekufe), declared))
-                )
-              )
-            }
-          )
-        }
-      }
+) : Option[String] / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal + Actor[
+  OrchMsg
+] =
+  match recast_asked(c) {
+    Err(why) -> Some(refused(id, why))
+    Ok(asking) -> for_host(root_of(c), id, run_for_host(asking))
+  }
+
+fn recast_asked(c: Call) : Result[Asking, String] / Stderr + Env + File + Process {
+  let root = root_of(c)
+  if is_empty(c.wekufe) {
+    Err("`kalku_cast` needs the wekufe to re-cast")
+  } else {
+    let cfg = settings_in(root)!
+    let all = ledger_in(root)
+    let unknown = strangers(all, c.wekufe)
+    if not is_empty(unknown) {
+      Err("never cast: #{join(unknown, ", ")}")
+    } else {
+      Ok(narrowed(cfg, root, sites_for(all, c.wekufe), declared_equivalents(root)!))
     }
   }
 }

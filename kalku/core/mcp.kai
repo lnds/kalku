@@ -27,7 +27,14 @@ pub type Heard
 
 #[doc("One tool call: which tool, and the arguments as they arrived.")]
 #[derive(Eq, Show)]
-pub type Call = { tool: String, root: Option[String], wekufe: [String], reason: String }
+pub type Call = {
+  tool: String,
+  root: Option[String],
+  wekufe: [String],
+  reason: String,
+  limit: Option[Int],
+  since: Option[String]
+}
 
 #[doc("The MCP revision this speaks.")]
 pub const PROTOCOL : String = "2024-11-05"
@@ -56,7 +63,9 @@ fn call_of(params: JsonValue) : Call {
     tool: as_string(get(params, "name")).unwrap_or(""),
     root: as_string(get(args, "root")),
     wekufe: wekufe_in(args),
-    reason: as_string(get(args, "reason")).unwrap_or("")
+    reason: as_string(get(args, "reason")).unwrap_or(""),
+    limit: as_int(get(args, "limit")),
+    since: as_string(get(args, "since"))
   }
 }
 
@@ -92,9 +101,26 @@ pub fn tools(id: Option[Int]) : String = replying(id, JObj([("tools", JArr(tool_
 fn tool_list() : [JsonValue] = [
   tool(
     "kalku_run",
-    "Measure files: break each one in small ways and report the defects no test noticed. Slow — minutes — and it runs the project's test suite many times.",
+    "Measure files: break each one in small ways and report the defects no test noticed. Slow — minutes — and it runs the project's test suite many times. Give `since` to measure only the lines a change touched, which is the quick way to check what was just written.",
     JObj([
-      ("files", strings_of("The files to measure, as paths in the project.")),
+      (
+        "files",
+        strings_of(
+          "The files to measure, as paths in the project. May be left out when `since` is given: the files the change touched are measured."
+        )
+      ),
+      (
+        "since",
+        one_string(
+          "A git ref, such as `main` or `HEAD`. Only the lines changed since it are measured, uncommitted work included."
+        )
+      ),
+      (
+        "limit",
+        one_integer(
+          "How many wekufe to cast at most. Defaults to 100, or to all of them when `since` is given; 0 casts all."
+        )
+      ),
       ("root", one_string("The project to measure; defaults to where the host is."))
     ])
   ),
@@ -133,6 +159,9 @@ fn tool(name: String, about: String, properties: JsonValue) : JsonValue = JObj([
 
 fn one_string(about: String) : JsonValue =
   JObj([("type", JStr("string")), ("description", JStr(about))])
+
+fn one_integer(about: String) : JsonValue =
+  JObj([("type", JStr("integer")), ("description", JStr(about))])
 
 fn strings_of(about: String) : JsonValue = JObj([
   ("type", JStr("array")),
@@ -176,4 +205,43 @@ fn rpc_message(id: Option[Int], field: String, body: JsonValue) : String = json_
 fn answering(id: Option[Int]) : JsonValue = match id {
   Some(n) -> JNum(n)
   None -> JNull
+}
+
+#[doc("What reached the server from its host: a line, or the end of them.")]
+pub const SAID : Int = 0
+
+pub const NO_MORE : Int = 1
+
+#[doc("What to do about a host while a run is going.")]
+#[derive(Eq, Show)]
+pub type MidRun
+  = ToldMidRun(String)
+  | HostLeft
+  | NothingToSay
+
+#[doc("""
+What to do about what a host sent while a run was going.
+
+A host that is gone has nobody left to read an answer, so the run ends
+there, as an interrupt would end it. A host that is still there may ask
+who this is and what it can do at any moment, and those answers do not
+wait for a run. Another tool does: a project has one set of kalku, and
+two runs would measure each other.
+""")]
+pub fn heard_mid_run_of_host(what: Int, line: String) : MidRun = if what == NO_MORE {
+  HostLeft
+} else {
+  let asked = asked_of(line)
+  match asked.snd {
+    Initialise -> ToldMidRun(greeting(asked.fst))
+    ListTools -> ToldMidRun(tools(asked.fst))
+    CallTool(_c) -> ToldMidRun(
+      refused(
+        asked.fst,
+        "a run is going, and this server measures one thing at a time; ask again when it has answered"
+      )
+    )
+    Notice -> NothingToSay
+    Garbled(why) -> ToldMidRun(protocol_error(asked.fst, why))
+  }
 }

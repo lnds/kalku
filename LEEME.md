@@ -80,7 +80,15 @@ Las herramientas son `kalku_run`, `kalku_cast`, `kalku_show` y
 suprima, excluya o ignore algo; mira [Para agentes de código](#para-agentes-de-código).
 
 `kalku_run` ejecuta la suite del proyecto muchas veces y toma minutos, así
-que apúntalo a uno o dos archivos y no a todo.
+que apúntalo a uno o dos archivos y no a todo. Acepta el mismo acotamiento
+que la línea de comandos: `since`, una referencia de git, mide solo las
+líneas cambiadas desde ella y no necesita que nombres archivos; `limit`
+fija cuántos wekufe se lanzan como máximo, 100 si no dices otra cosa y
+todos cuando hay `since`.
+
+Si el host cierra el pipe mientras una corrida está en curso, la corrida
+termina: los kalku se despiden y el servidor sale. Un script que maneje
+`kalku mcp` mantiene su extremo abierto hasta leer la respuesta.
 
 ## Medir un proyecto Elixir
 
