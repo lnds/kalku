@@ -391,6 +391,8 @@ A driver never reports a score. Declared equivalents for outcomes without `enclo
 
 No fields either way. After `bye` the kalku exits with status 0. A kalku that does not exit within a grace period is killed.
 
+Input that ends with no `shutdown` on it means the run is gone: it was killed, or the connection that started it was cut. Nobody is left to read an answer, so the kalku ends at once, without finishing the request under way, and ends what it started. Input that ends after a `shutdown` is a driver that wrote all it had to say and closed: every request before it is still answered.
+
 ```json
 {"type":"shutdown","id":7}
 {"type":"bye","id":7}

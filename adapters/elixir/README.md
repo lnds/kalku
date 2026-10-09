@@ -136,7 +136,7 @@ For it to be possible at all, the loop **reads while it works**. Reading happens
 
 Killing the casting process is not enough. ExUnit runs each test in a process it *monitors* rather than links, so a test looping forever outlives the cast that started it and would burn a core for the rest of the run — measured, not assumed. So an abort also stops everything unnamed that appeared while the cast ran. That is coarse on purpose: a wekufe is the reason any of it is there.
 
-Casts are served one at a time, in the order they arrive. A kalku has exactly one runtime, so two casts at once would measure each other; one that arrives early waits rather than being refused. `shutdown` finishes what is under way before saying `bye`, since leaving without it would have the kaikai side report a measured wekufe as crashed.
+Casts are served one at a time, in the order they arrive. A kalku has exactly one runtime, so two casts at once would measure each other; one that arrives early waits rather than being refused. `shutdown` finishes what is under way before saying `bye`, since leaving without it would have the kaikai side report a measured wekufe as crashed. Input that ends with no `shutdown` is the opposite case, a run that was killed: the kalku ends within half a second, in the middle of a suite if it has to, and kills every program it and the tests started.
 
 ## Reloading, and what depends on what
 
