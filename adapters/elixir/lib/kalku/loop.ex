@@ -12,6 +12,9 @@ defmodule Kalku.Loop do
   # How long `shutdown` waits for a cast already under way. Past this the
   # kaikai side's own deadline is the one that matters.
   @settling_ms 30_000
+
+  # How long a loop told its input has ended is given to leave by itself.
+  @leaving_ms 500
   @spells Schema.spells() -- ["foreign"]
 
   defstruct root: nil,
@@ -42,14 +45,31 @@ defmodule Kalku.Loop do
     spawn_link(fn -> read_lines(owner) end)
   end
 
-  defp read_lines(owner) do
+  defp read_lines(owner, leaving \\ false) do
     case Kalku.Channel.read_line() do
       data when is_binary(data) ->
-        send(owner, {:said, String.trim_trailing(data, "\n")})
-        read_lines(owner)
+        line = String.trim_trailing(data, "\n")
+        send(owner, {:said, line})
+        read_lines(owner, leaving or shutdown?(line))
 
       _eof ->
         send(owner, :no_more)
+        leaving or orphaned(owner)
+    end
+  end
+
+  defp shutdown?(line), do: match?({:ok, %{type: "shutdown"}}, Protocol.decode(line, :request))
+
+  # Input that ends with no `shutdown` on it is a run that is gone. A loop
+  # that was waiting leaves by itself; one in the middle of a suite or a
+  # cast would go on to the end of it for nobody.
+  defp orphaned(owner) do
+    watched = Process.monitor(owner)
+
+    receive do
+      {:DOWN, ^watched, _, _, _} -> :ok
+    after
+      @leaving_ms -> Kalku.Orphaned.leave()
     end
   end
 
