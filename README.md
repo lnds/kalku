@@ -79,7 +79,14 @@ The tools are `kalku_run`, `kalku_cast`, `kalku_show` and
 excludes or ignores anything; see [For coding agents](#for-coding-agents).
 
 `kalku_run` runs the project's suite many times over and takes minutes, so
-point it at a file or two rather than at everything.
+point it at a file or two rather than at everything. It takes the same
+narrowing as the command line: `since`, a git ref, measures only the lines
+changed since it, and needs no file named; `limit` caps how many wekufe are
+cast, 100 unless told otherwise and all of them under `since`.
+
+A host that closes the pipe while a run is going ends the run: the kalku
+are banished and the server exits. A script that drives `kalku mcp` keeps
+its end open until it has read the answer.
 
 ## Measure an Elixir project
 

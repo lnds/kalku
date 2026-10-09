@@ -580,7 +580,7 @@ followed by one summary object (counts, score, suppression changes).
 
 | Tool | Does |
 |---|---|
-| `kalku_run(scope)` | run and return survivors in the agent format |
+| `kalku_run(files, since?, limit?)` | run and return survivors in the agent format; `since` narrows to a change, `limit` caps the casts |
 | `kalku_cast(wekufe[])` | re-cast and return outcomes |
 | `kalku_show(wekufe)` | full detail of one |
 | `kalku_propose_equivalent(wekufe, reason)` | write a **proposal** for a person to review; never applied |

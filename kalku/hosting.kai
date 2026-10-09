@@ -1,0 +1,109 @@
+#[doc("""
+Holding the pipe an agent host opened and answering what comes down it.
+
+MCP over stdio is JSON-RPC, one message per line, and a host holds the
+pipe open for as long as it wants the tools. What the messages mean, and
+what each is answered, is decided in `kalku.core.mcp`, where it is tested
+without a pipe. This is the part that cannot be: reading the lines, and
+hearing a host while a run is going.
+
+The lines are read by a fiber of their own and arrive as messages. A loop
+that read one, answered it and read the next would hear nothing for as
+long as a run takes, and a run takes minutes: a host that asked what the
+tools are would wait for them, and one that closed the pipe would be
+measured for all the same, with nobody left to read what was found.
+""")]
+
+import actor
+import kalku.core.mcp
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.attending
+import kalku.orchestrator.measure
+import kalku.orchestrator.telling
+
+#[doc("""
+Answer a host until it closes the pipe; the exit code is the process's.
+
+`tool` is how a tool is performed, which this module does not know. It
+answers `None` when the host left while the tool ran, and the loop ends
+there rather than write to nobody.
+""")]
+pub fn tooling[e](
+  tool: (Option[Int], Call) -> Option[String] / Stdout + Actor[OrchMsg] + e
+) : Int / Stdin + Stdout + Spawn + e = with_mailbox {
+  let me = Actor.self()
+  let _reading = spawn_actor(() => host_lines(me))
+  hosting(tool)
+}
+
+fn host_lines(to: Pid[OrchMsg]) : Unit / Stdin + Actor[OrchMsg] = match Stdin.read_line() {
+  Some(line) -> {
+    Actor.send(to, Aside(SAID, to, trim_right(line)))
+    host_lines(to)
+  }
+  None -> Actor.send(to, Aside(NO_MORE, to, ""))
+}
+
+fn hosting[e](
+  tool: (Option[Int], Call) -> Option[String] / Stdout + Actor[OrchMsg] + e
+) : Int / Stdout + Actor[OrchMsg] + e = match Actor.receive() {
+  Aside(what, _back, line) -> if what == NO_MORE {
+    0
+  } else {
+    let asked = asked_of(line)
+    if answered_host(asked.fst, asked.snd, tool) { hosting(tool) } else { 0 }
+  }
+  # A kalku of a run that is over, saying so late.
+  _ -> hosting(tool)
+}
+
+# Whether the host is still there to be answered again.
+fn answered_host[e](
+  id: Option[Int],
+  heard: Heard,
+  tool: (Option[Int], Call) -> Option[String] / Stdout + Actor[OrchMsg] + e
+) : Bool / Stdout + Actor[OrchMsg] + e = match heard {
+  Initialise -> said_to_host(greeting(id))
+  ListTools -> said_to_host(tools(id))
+  CallTool(c) -> match tool(id, c) {
+    Some(answer) -> said_to_host(answer)
+    None -> false
+  }
+  Notice -> true
+  Garbled(why) -> said_to_host(protocol_error(id, why))
+}
+
+fn said_to_host(line: String) : Bool / Stdout {
+  Stdout.print(line)
+  true
+}
+
+#[doc("""
+A run for a host, which may speak while it is going, or leave.
+
+What it says is answered at once. Its leaving ends the run, as an
+interrupt would, so the kalku are banished and nothing is measured for
+nobody; the second of the pair says that it left.
+""")]
+pub fn run_for_host(
+  asking: Asking
+) : (Found, Bool) / Stdout + Stderr + Process + Spawn + Clock + File + Signal + Actor[OrchMsg] {
+  var gone := false
+  let found = attended(
+    m => if left_mid_run(m) { gone := true } else { () },
+    () => untold(() => measure(asking))
+  )
+  (found, gone)
+}
+
+fn left_mid_run(m: OrchMsg) : Bool / Stdout + Actor[OrchMsg] = match m {
+  Aside(what, _back, line) -> match heard_mid_run_of_host(what, line) {
+    HostLeft -> {
+      Actor.send(Actor.self(), Cancel)
+      true
+    }
+    ToldMidRun(answer) -> said_to_host(answer) and false
+    NothingToSay -> false
+  }
+  _ -> false
+}
