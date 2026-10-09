@@ -1,3 +1,24 @@
+## v0.11.0 (2026-10-09)
+
+### Added
+
+- a run goes on without the tests that fail before anything is cast, and names them (#260)
+- **elixir**: a suite with failing tests is measured for coverage, when some of it passes (#259)
+
+### Fixed
+
+- a survivor the whole suite judged is not reported as covered by it (#253)
+- the refusal of a failing suite says how the run differed, in the kalku's own words (#249)
+- **elixir**: rebar3's own cache goes into the reni, not under the project's dependencies (#252)
+- **elixir**: a path dependency built as the kalku starts does not write on the channel (#251)
+- **elixir**: a site is judged by every test that calls its function (#247)
+- **elixir**: a run of the tests that ExUnit did not finish is answered, not died of (#245)
+
+### Changed
+
+- **elixir**: coverage names each test once, and credits a call only with what lines miss (#258)
+- planning a large suite costs its size, not its size squared for every site (#256)
+
 ## v0.10.0 (2026-10-08)
 
 ### Added
