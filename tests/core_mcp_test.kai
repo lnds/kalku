@@ -49,7 +49,8 @@ test "a tool call carries its tool, its wekufe and its reason" {
       wekufe: ["w1", "w2"],
       reason: "",
       limit: None,
-      since: None
+      since: None,
+      progress: None
     })
 }
 
@@ -65,7 +66,8 @@ test "one wekufe, many, or a list of files all read as what was named" {
       wekufe: ["w1"],
       reason: "",
       limit: None,
-      since: None
+      since: None,
+      progress: None
     })
   assert call(
     "{\"method\":\"tools/call\",\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"files\":[\"lib/a.ex\"]}}}"
@@ -76,7 +78,8 @@ test "one wekufe, many, or a list of files all read as what was named" {
       wekufe: ["lib/a.ex"],
       reason: "",
       limit: None,
-      since: None
+      since: None,
+      progress: None
     })
 }
 
@@ -116,7 +119,8 @@ test "a run can be narrowed to a change and to a number of wekufe" {
         wekufe: [],
         reason: "",
         limit: Some(20),
-        since: Some("main")
+        since: Some("main"),
+        progress: None
       }
     )
   assert has(tools(Some(1)), "\"since\"")
@@ -125,23 +129,25 @@ test "a run can be narrowed to a change and to a number of wekufe" {
 
 # A host that closed the pipe has nobody left to read what a run finds.
 test "a host that leaves while a run is going ends the run" {
-  assert heard_mid_run_of_host(NO_MORE, "") == HostLeft
+  assert heard_mid_run_of_host(NO_MORE, "", Some(2)) == HostLeft
 }
 
 # Who this is and what it can do never wait for a run to end.
 test "a host is answered mid-run for what does not need the kalku" {
-  assert heard_mid_run_of_host(SAID, "{\"method\":\"tools/list\",\"id\":3}")
+  assert heard_mid_run_of_host(SAID, "{\"method\":\"tools/list\",\"id\":3}", Some(2))
     == ToldMidRun(tools(Some(3)))
-  assert heard_mid_run_of_host(SAID, "{\"method\":\"initialize\",\"id\":1}")
+  assert heard_mid_run_of_host(SAID, "{\"method\":\"initialize\",\"id\":1}", Some(2))
     == ToldMidRun(greeting(Some(1)))
-  assert heard_mid_run_of_host(SAID, "{\"method\":\"notifications/initialized\"}") == NothingToSay
+  assert heard_mid_run_of_host(SAID, "{\"method\":\"notifications/initialized\"}", Some(2))
+    == NothingToSay
 }
 
 # One set of kalku measures one thing at a time, and the host is told why.
 test "a second tool is refused while a run is going, with the reason" {
   match heard_mid_run_of_host(
     SAID,
-    "{\"method\":\"tools/call\",\"id\":9,\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"files\":[\"a.ex\"]}}}"
+    "{\"method\":\"tools/call\",\"id\":9,\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"files\":[\"a.ex\"]}}}",
+    Some(2)
   ) {
     ToldMidRun(answer) -> {
       assert has(answer, "\"id\":9")
@@ -152,4 +158,53 @@ test "a second tool is refused while a run is going, with the reason" {
       assert other == NothingToSay
     }
   }
+}
+
+fn called_off(request: Int) : String =
+  "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":#{request},\"reason\":\"gave up\"}}"
+
+# A host gives up on a call without leaving: the run it gave up on ends,
+# and no other does.
+test "a host that calls its call off ends that run, and only that one" {
+  assert call(called_off(7)) == CalledOff(Some(7))
+  assert heard_mid_run_of_host(SAID, called_off(7), Some(7)) == CallIsOff
+  assert heard_mid_run_of_host(SAID, called_off(6), Some(7)) == NothingToSay
+  assert heard_mid_run_of_host(SAID, called_off(7), None) == NothingToSay
+}
+
+fn with_token(token: String) : String =
+  "{\"method\":\"tools/call\",\"id\":2,\"params\":{\"name\":\"kalku_run\",\"arguments\":{\"files\":[\"a.ex\"]},\"_meta\":{\"progressToken\":#{token}}}}"
+
+# A host says it wants to hear of a call by giving it a token, a string or
+# a number, and is answered with the one it gave.
+test "a call says whether its host wants to hear how it is going" {
+  match call(with_token("\"tok-1\"")) {
+    CallTool(c) -> {
+      assert c.progress == Some("\"tok-1\"")
+    }
+    other -> {
+      assert other == Notice
+    }
+  }
+  match call(with_token("41")) {
+    CallTool(c) -> {
+      assert c.progress == Some("41")
+    }
+    other -> {
+      assert other == Notice
+    }
+  }
+}
+
+# A host counts a call that says nothing as dead. The count only rises;
+# how far along the run is goes in the words.
+test "a note of progress carries the host's own token and what the run is doing" {
+  let note = progress_note("\"tok-1\"", 3, "baseline")
+
+  assert has(note, "\"method\":\"notifications/progress\"")
+  assert has(note, "\"progressToken\":\"tok-1\"")
+  assert has(note, "\"progress\":3")
+  assert has(note, "\"message\":\"baseline\"")
+  assert not has(note, "\"id\"")
+  assert has(progress_note("41", 1, "cast"), "\"progressToken\":41")
 }

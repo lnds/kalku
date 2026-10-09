@@ -24,17 +24,43 @@ leave the project as they found it.
 import kalku.orchestrator.kalku_proc
 
 #[doc("""
-Trap the signals that mean *stop* and turn the first of them into
-`Cancel`.
+Run `body` with the signals that mean *stop* turned into `Cancel` for the
+fiber that called.
 
-Blocks until one arrives, so it belongs in a fiber of its own; a run that
-ends first simply leaves it waiting. One signal is enough: a second one
-arriving while the run unwinds would be asking the cleanup to abandon
-itself.
+The traps are set here and released here, around the run they belong to.
+Left to the fiber that waits, they outlived the run: that fiber is still
+waiting when the run has ended, and a signal sent then was caught, turned
+into a message for a mailbox nobody reads, and lost. A server that had
+finished one run could no longer be stopped.
+
+One signal is enough: a second one arriving while the run unwinds would
+be asking the cleanup to abandon itself, so it is caught and not heard.
 """)]
-pub fn as_cancellation(run: Pid[OrchMsg]) : Unit / Signal + Actor[OrchMsg] {
+pub fn interruptible[a, e](
+  body: () -> a / Actor[OrchMsg] + e
+) : a / Signal + Spawn + Actor[OrchMsg] + e {
+  let run = Actor.self()
+  trap()
+  let _waiting = spawn_actor(() => told_to_stop(run, Cancel))
+  let out = body()
+  release()
+  out
+}
+
+#[doc("Catch the signals that mean *stop*, for a caller that waits with `told_to_stop`.")]
+pub fn trap() : Unit / Signal {
   Signal.on(SigInt)
   Signal.on(SigTerm)
+}
+
+#[doc("Give the signals that mean *stop* back to what they do by default.")]
+pub fn release() : Unit / Signal {
+  Signal.off(SigInt)
+  Signal.off(SigTerm)
+}
+
+#[doc("Blocks until a trapped signal arrives, and then sends `what` to `whom`.")]
+pub fn told_to_stop(whom: Pid[OrchMsg], what: OrchMsg) : Unit / Signal + Actor[OrchMsg] {
   let _which = Signal.await()
-  Actor.send(run, Cancel)
+  Actor.send(whom, what)
 }

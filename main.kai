@@ -719,19 +719,16 @@ fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
 # The tools are the CLI's, and what they answer is what it prints. A tool
 # that could not run says so as a result: the host shows that to the
 # agent, which is who needs to know.
-# `None` when the host left while the tool ran.
 fn tool_ran(
   id: Option[Int],
   c: Call
-) : Option[String] / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal + Actor[
-  OrchMsg
-] =
+) : Came / Stdout + Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] =
   match c.tool {
     "kalku_run" -> measured_for(id, c)
     "kalku_cast" -> recast_for(id, c)
-    "kalku_show" -> Some(shown_for(id, c))
-    "kalku_propose_equivalent" -> Some(proposal_for(id, c))
-    other -> Some(refused(id, "no such tool `#{other}`"))
+    "kalku_show" -> Answer(shown_for(id, c))
+    "kalku_propose_equivalent" -> Answer(proposal_for(id, c))
+    other -> Answer(refused(id, "no such tool `#{other}`"))
   }
 
 # A root the host named, or the one it is standing in.
@@ -740,21 +737,23 @@ fn root_of(c: Call) : String = c.root.unwrap_or(".")
 fn measured_for(
   id: Option[Int],
   c: Call
-) : Option[String] / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal + Actor[
-  OrchMsg
-] =
+) : Came / Stdout + Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] =
   match asked_by_host(c) {
-    Err(why) -> Some(refused(id, why))
-    Ok(None) -> Some(
+    Err(why) -> Answer(refused(id, why))
+    Ok(None) -> Answer(
       answered(id, "this change touches no source file, so there is nothing to measure")
     )
-    Ok(Some(asking)) -> for_host(root_of(c), id, run_for_host(asking))
+    Ok(Some(asking)) -> for_host(root_of(c), id, run_for_host(asking, id, c.progress))
   }
 
 # What was cast is remembered whoever is left to hear of it.
-fn for_host(root: String, id: Option[Int], ran: (Found, Bool)) : Option[String] / File + Env {
+fn for_host(root: String, id: Option[Int], ran: (Found, Ending)) : Came / File + Env {
   let answer = as_agent(root, id, ran.fst)
-  if ran.snd { None } else { Some(answer) }
+  match ran.snd {
+    RanToTheEnd -> Answer(answer)
+    WasCalledOff -> NoAnswer
+    HostWasGone -> NoHost
+  }
 }
 
 # What a host asked to have measured: the CLI's `run`, with its `--since`
@@ -812,12 +811,10 @@ fn files_of_host(
 fn recast_for(
   id: Option[Int],
   c: Call
-) : Option[String] / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal + Actor[
-  OrchMsg
-] =
+) : Came / Stdout + Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] =
   match recast_asked(c) {
-    Err(why) -> Some(refused(id, why))
-    Ok(asking) -> for_host(root_of(c), id, run_for_host(asking))
+    Err(why) -> Answer(refused(id, why))
+    Ok(asking) -> for_host(root_of(c), id, run_for_host(asking, id, c.progress))
   }
 
 fn recast_asked(c: Call) : Result[Asking, String] / Stderr + Env + File + Process {

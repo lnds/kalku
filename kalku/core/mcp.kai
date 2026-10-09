@@ -22,10 +22,17 @@ pub type Heard
   = Initialise
   | ListTools
   | CallTool(Call)
+  | CalledOff(Option[Int])
   | Notice
   | Garbled(String)
 
-#[doc("One tool call: which tool, and the arguments as they arrived.")]
+#[doc("""
+One tool call: which tool, and the arguments as they arrived.
+
+`progress` is the token a host gives a call it wants to hear about while
+it runs, kept as the JSON it arrived as: a host may send a string or a
+number, and gets back exactly what it sent.
+""")]
 #[derive(Eq, Show)]
 pub type Call = {
   tool: String,
@@ -33,7 +40,8 @@ pub type Call = {
   wekufe: [String],
   reason: String,
   limit: Option[Int],
-  since: Option[String]
+  since: Option[String],
+  progress: Option[String]
 }
 
 #[doc("The MCP revision this speaks.")]
@@ -49,6 +57,7 @@ fn for_method(method: String, v: JsonValue) : Heard = match method {
   "initialize" -> Initialise
   "tools/list" -> ListTools
   "tools/call" -> CallTool(call_of(get(v, "params")))
+  "notifications/cancelled" -> CalledOff(as_int(get(get(v, "params"), "requestId")))
   "" -> Garbled("no method")
   other -> if starts_with(other, "notifications/") {
     Notice
@@ -65,8 +74,15 @@ fn call_of(params: JsonValue) : Call {
     wekufe: wekufe_in(args),
     reason: as_string(get(args, "reason")).unwrap_or(""),
     limit: as_int(get(args, "limit")),
-    since: as_string(get(args, "since"))
+    since: as_string(get(args, "since")),
+    progress: token_in(get(get(params, "_meta"), "progressToken"))
   }
+}
+
+fn token_in(v: JsonValue) : Option[String] = match v {
+  JStr(_s) -> Some(json_encode(v))
+  JNum(_n) -> Some(json_encode(v))
+  _ -> None
 }
 
 fn wekufe_in(args: JsonValue) : [String] = match get(args, "wekufe") {
@@ -217,18 +233,65 @@ pub const NO_MORE : Int = 1
 pub type MidRun
   = ToldMidRun(String)
   | HostLeft
+  | CallIsOff
   | NothingToSay
+
+#[doc("How a tool that runs came to its end.")]
+#[derive(Eq, Show)]
+pub type Ending
+  = RanToTheEnd
+  | WasCalledOff
+  | HostWasGone
+
+#[doc("""
+What a tool came to: an answer, or nothing to say and somebody to go on
+serving, or nobody.
+
+A call its host called off is owed no answer, and MCP asks that none be
+sent. A host that is gone cannot be sent one.
+""")]
+#[derive(Eq, Show)]
+pub type Came
+  = Answer(String)
+  | NoAnswer
+  | NoHost
+
+#[doc("""
+One note of progress on a call, for the host that asked to hear of it.
+
+A host counts a call that says nothing as dead, and a run says nothing
+for minutes. The count only ever rises, which is all MCP asks of it: how
+far along a run is goes in the words, because a run has stages that are
+not fractions of each other.
+""")]
+pub fn progress_note(token: String, count: Int, words: String) : String = json_encode(
+  JObj([
+    ("jsonrpc", JStr("2.0")),
+    ("method", JStr("notifications/progress")),
+    (
+      "params",
+      JObj([
+        ("progressToken", json_decode(token).unwrap_or(JNull)),
+        ("progress", JNum(count)),
+        ("message", JStr(words))
+      ])
+    )
+  ])
+)
 
 #[doc("""
 What to do about what a host sent while a run was going.
 
 A host that is gone has nobody left to read an answer, so the run ends
-there, as an interrupt would end it. A host that is still there may ask
+there, as an interrupt would end it. So does a run whose own call the
+host called off: `running` is that call's id, and a cancellation of any
+other is not this run's. A host that is still there may ask
 who this is and what it can do at any moment, and those answers do not
 wait for a run. Another tool does: a project has one set of kalku, and
 two runs would measure each other.
 """)]
-pub fn heard_mid_run_of_host(what: Int, line: String) : MidRun = if what == NO_MORE {
+pub fn heard_mid_run_of_host(what: Int, line: String, running: Option[Int]) : MidRun = if what
+  == NO_MORE {
   HostLeft
 } else {
   let asked = asked_of(line)
@@ -241,6 +304,7 @@ pub fn heard_mid_run_of_host(what: Int, line: String) : MidRun = if what == NO_M
         "a run is going, and this server measures one thing at a time; ask again when it has answered"
       )
     )
+    CalledOff(which) -> if is_some(which) and which == running { CallIsOff } else { NothingToSay }
     Notice -> NothingToSay
     Garbled(why) -> ToldMidRun(protocol_error(asked.fst, why))
   }

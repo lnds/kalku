@@ -84,9 +84,15 @@ narrowing as the command line: `since`, a git ref, measures only the lines
 changed since it, and needs no file named; `limit` caps how many wekufe are
 cast, 100 unless told otherwise and all of them under `since`.
 
-A host that closes the pipe while a run is going ends the run: the kalku
-are banished and the server exits. A script that drives `kalku mcp` keeps
-its end open until it has read the answer.
+A host that asks to hear of a call, by giving it a `progressToken`, is told
+how the run is going as it goes: each stage, and how many wekufe are cast.
+A run is silent for minutes otherwise, and a host counts that as dead.
+
+A host that calls a run off (`notifications/cancelled`) ends it and goes on
+being served. One that closes the pipe while a run is going ends the run
+too, and the server with it, and so does SIGTERM; in each case the kalku
+are banished. A script that drives `kalku mcp` keeps its end open until it
+has read the answer.
 
 ## Measure an Elixir project
 

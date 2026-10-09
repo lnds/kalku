@@ -1,0 +1,45 @@
+import actor
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.interrupting
+
+# How many signals are still trapped once `body` has run under a handler
+# that only counts.
+fn left_trapped(body: () -> Int / Signal + Spawn + Actor[OrchMsg]) : (Int, Int) / Spawn {
+  var held := 0
+  let out = with_mailbox {
+    handle {
+      body()
+    } with Signal {
+      on(_sig, resume) -> {
+        held := held + 1
+        resume(())
+      }
+      off(_sig, resume) -> {
+        held := held - 1
+        resume(())
+      }
+      await(resume) -> resume(SigTerm)
+      return(x) -> x
+    }
+  }
+  (out, held)
+}
+
+# A trap left set after its run is a signal nobody acts on: a server that
+# had finished one run could not be stopped with SIGTERM.
+test "a run releases the signals it trapped when it ends" {
+  let ran = left_trapped(() => interruptible(() => 7))
+
+  assert ran.fst == 7
+  assert ran.snd == 0
+}
+
+# The other half: while the run is going, both signals are its own.
+test "a run holds both stop signals while it is going" {
+  let ran = left_trapped(() => {
+    trap()
+    7
+  })
+
+  assert ran.snd == 2
+}

@@ -12,12 +12,19 @@ that read one, answered it and read the next would hear nothing for as
 long as a run takes, and a run takes minutes: a host that asked what the
 tools are would wait for them, and one that closed the pipe would be
 measured for all the same, with nobody left to read what was found.
+
+A signal that means *stop* is heard the same way, for the whole of the
+server's life: it ends the run that is going, if one is, and then the
+server. Trapped by each run for itself it stopped only the run.
 """)]
 
 import actor
 import kalku.core.mcp
 import kalku.orchestrator.kalku_proc
+import kalku.wire.enums
+import kalku.core.costing
 import kalku.orchestrator.attending
+import kalku.orchestrator.interrupting
 import kalku.orchestrator.measure
 import kalku.orchestrator.telling
 
@@ -25,14 +32,16 @@ import kalku.orchestrator.telling
 Answer a host until it closes the pipe; the exit code is the process's.
 
 `tool` is how a tool is performed, which this module does not know. It
-answers `None` when the host left while the tool ran, and the loop ends
-there rather than write to nobody.
+says what the tool came to: an answer, nothing owed, or nobody left, and
+on the last the loop ends rather than write to nobody.
 """)]
 pub fn tooling[e](
-  tool: (Option[Int], Call) -> Option[String] / Stdout + Actor[OrchMsg] + e
-) : Int / Stdin + Stdout + Spawn + e = with_mailbox {
+  tool: (Option[Int], Call) -> Came / Stdout + Actor[OrchMsg] + e
+) : Int / Stdin + Stdout + Spawn + Signal + e = with_mailbox {
   let me = Actor.self()
+  trap()
   let _reading = spawn_actor(() => host_lines(me))
+  let _waiting = spawn_actor(() => told_to_stop(me, Aside(NO_MORE, me, "")))
   hosting(tool)
 }
 
@@ -45,7 +54,7 @@ fn host_lines(to: Pid[OrchMsg]) : Unit / Stdin + Actor[OrchMsg] = match Stdin.re
 }
 
 fn hosting[e](
-  tool: (Option[Int], Call) -> Option[String] / Stdout + Actor[OrchMsg] + e
+  tool: (Option[Int], Call) -> Came / Stdout + Actor[OrchMsg] + e
 ) : Int / Stdout + Actor[OrchMsg] + e = match Actor.receive() {
   Aside(what, _back, line) -> if what == NO_MORE {
     0
@@ -61,14 +70,17 @@ fn hosting[e](
 fn answered_host[e](
   id: Option[Int],
   heard: Heard,
-  tool: (Option[Int], Call) -> Option[String] / Stdout + Actor[OrchMsg] + e
+  tool: (Option[Int], Call) -> Came / Stdout + Actor[OrchMsg] + e
 ) : Bool / Stdout + Actor[OrchMsg] + e = match heard {
   Initialise -> said_to_host(greeting(id))
   ListTools -> said_to_host(tools(id))
   CallTool(c) -> match tool(id, c) {
-    Some(answer) -> said_to_host(answer)
-    None -> false
+    Answer(answer) -> said_to_host(answer)
+    NoAnswer -> true
+    NoHost -> false
   }
+  # A call that is over, called off late.
+  CalledOff(_which) -> true
   Notice -> true
   Garbled(why) -> said_to_host(protocol_error(id, why))
 }
@@ -79,31 +91,85 @@ fn said_to_host(line: String) : Bool / Stdout {
 }
 
 #[doc("""
-A run for a host, which may speak while it is going, or leave.
+A run for a host, which may speak while it is going, call it off, or
+leave.
 
-What it says is answered at once. Its leaving ends the run, as an
+What it says is answered at once, and it is told how the run is going if
+it asked to be. Calling the run off, or leaving, ends the run as an
 interrupt would, so the kalku are banished and nothing is measured for
-nobody; the second of the pair says that it left.
+nobody; the second of the pair says which it was.
 """)]
 pub fn run_for_host(
-  asking: Asking
-) : (Found, Bool) / Stdout + Stderr + Process + Spawn + Clock + File + Signal + Actor[OrchMsg] {
-  var gone := false
+  asking: Asking,
+  id: Option[Int],
+  progress: Option[String]
+) : (Found, Ending) / Stdout + Stderr + Process + Spawn + Clock + File + Actor[OrchMsg] {
+  var ending := RanToTheEnd
   let found = attended(
-    m => if left_mid_run(m) { gone := true } else { () },
-    () => untold(() => measure(asking))
+    m => match stopped_mid_run(m, id) {
+      RanToTheEnd -> ()
+      how -> {
+        ending := how
+      }
+    },
+    () => told_to_host(progress, () => measuring(asking))
   )
-  (found, gone)
+  (found, ending)
 }
 
-fn left_mid_run(m: OrchMsg) : Bool / Stdout + Actor[OrchMsg] = match m {
-  Aside(what, _back, line) -> match heard_mid_run_of_host(what, line) {
+# How a message from the host ends the run, when it does. The cancellation
+# is sent to this fiber, which is the run: it is the run that has kalku to
+# banish.
+fn stopped_mid_run(m: OrchMsg, running: Option[Int]) : Ending / Stdout + Actor[OrchMsg] = match m {
+  Aside(what, _back, line) -> match heard_mid_run_of_host(what, line, running) {
     HostLeft -> {
       Actor.send(Actor.self(), Cancel)
-      true
+      HostWasGone
     }
-    ToldMidRun(answer) -> said_to_host(answer) and false
-    NothingToSay -> false
+    CallIsOff -> {
+      Actor.send(Actor.self(), Cancel)
+      WasCalledOff
+    }
+    ToldMidRun(answer) -> {
+      Stdout.print(answer)
+      RanToTheEnd
+    }
+    NothingToSay -> RanToTheEnd
   }
-  _ -> false
+  _ -> RanToTheEnd
 }
+
+# Every note a run makes, sent to the host as progress on its call. A host
+# that gave no token did not ask, and is told nothing.
+fn told_to_host[a, e](progress: Option[String], body: () -> a / Telling + e) : a / Stdout + e =
+  match progress {
+    None -> untold(body)
+    Some(token) -> {
+      var count := 0
+      handle {
+        body()
+      } with Telling {
+        tell_of(line, resume) -> {
+          count := count + 1
+          Stdout.print(progress_note(token, count, line))
+          resume(())
+        }
+        entered(phase, resume) -> {
+          count := count + 1
+          Stdout.print(progress_note(token, count, phase_name(phase)))
+          resume(())
+        }
+        got_through(done, total, resume) -> {
+          count := count + 1
+          Stdout.print(progress_note(token, count, "#{done} of #{total}"))
+          resume(())
+        }
+        will_cost(_casts, estimate_ms, resume) -> {
+          count := count + 1
+          Stdout.print(progress_note(token, count, what_it_costs(estimate_ms)))
+          resume(())
+        }
+        return(x) -> x
+      }
+    }
+  }

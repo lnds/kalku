@@ -83,14 +83,19 @@ would be a number nobody should believe.
 """)]
 pub fn measure(
   asking: Asking
-) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Signal + Stderr {
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Signal + Stderr =
   # A run arranges not to be orphaned before it summons anything: the
   # kalku it is about to start lead their own process groups, so an
   # interrupt reaches this fiber and nothing else.
-  # The mailbox is named out here: inside the thunk `Actor.self()` is the
-  # new fiber's own, and the cancellation would be sent to itself.
-  let run = Actor.self()
-  let _watching = spawn_actor(() => as_cancellation(run))
+  interruptible(() => measuring(asking))
+
+#[doc("""
+`measure`, for a caller that hears the signals itself: a server, which a
+signal stops altogether and not only the run it happens to be in.
+""")]
+pub fn measuring(
+  asking: Asking
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Stderr {
   match discover(asking) {
     Err(why) -> Found { report: None, failure: Some(why), cast: [] }
     Ok(known) -> casting_them(asking, known)
