@@ -86,8 +86,15 @@ líneas cambiadas desde ella y no necesita que nombres archivos; `limit`
 fija cuántos wekufe se lanzan como máximo, 100 si no dices otra cosa y
 todos cuando hay `since`.
 
-Si el host cierra el pipe mientras una corrida está en curso, la corrida
-termina: los kalku se despiden y el servidor sale. Un script que maneje
+Un host que pide enterarse de una llamada, entregándole un `progressToken`,
+recibe cómo va la corrida mientras avanza: cada etapa y cuántos wekufe se
+han lanzado. Sin eso una corrida calla por minutos, y un host la da por
+muerta.
+
+Un host que cancela una corrida (`notifications/cancelled`) la termina y
+sigue siendo atendido. Si cierra el pipe mientras una corrida está en
+curso, la corrida también termina, y el servidor con ella; lo mismo pasa
+con SIGTERM. En todos los casos los kalku se despiden. Un script que maneje
 `kalku mcp` mantiene su extremo abierto hasta leer la respuesta.
 
 ## Medir un proyecto Elixir
