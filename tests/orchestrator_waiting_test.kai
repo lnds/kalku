@@ -76,6 +76,34 @@ test "a kalku that writes a great deal before its first answer is waited through
   }
 }
 
+# A kalku whose runtime logs to stdout, as JSON: a line that parses and is
+# no message. Its stderr has nothing to do with it.
+fn logging() : PoolSpec = PoolSpec {
+  ...talkative(),
+  args: [
+    "-c",
+    "echo compiling >&2; sleep 0.2; echo '{\"level\":\"info\",\"message\":\"the application started\"}'; sleep 1"
+  ]
+}
+
+# The line that broke the protocol is the one thing that names who wrote
+# it, and it was on stdout: quoting only stderr sends the reader after
+# lines that had no part in it.
+test "a line on stdout that is not a message is quoted, and said to be from stdout" {
+  let answer = with_mailbox { alone(() => untold(() => discover(asking_of(logging())))) }
+
+  match answer {
+    Ok(_) -> {
+      assert false
+    }
+    Err(why) -> {
+      assert is_some(index_of(why, "wrote a line on stdout that is not a protocol message"))
+      assert is_some(index_of(why, "{\"level\":\"info\",\"message\":\"the application started\"}"))
+      assert is_some(index_of(why, "what it wrote on stderr before that:\n  compiling"))
+    }
+  }
+}
+
 # `prepare` can honestly take minutes, and a run that says so once and
 # then goes quiet for ten of them cannot be told from one that has hung.
 # Saying how long it has been waiting turns a hang into a wait.
