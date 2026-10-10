@@ -249,7 +249,19 @@ impl Project for Cargo {
             .args(&target.select)
             .args(["--", "--list"]);
         let out = capture(command, self.stop.as_ref())?;
-        Ok(listing(&String::from_utf8_lossy(&out.stdout)))
+        let all = listing(&String::from_utf8_lossy(&out.stdout));
+
+        // `--list` names a test the project marked `#[ignore]` like any other,
+        // and run alone it answers `ignored`: neither a pass nor a failure.
+        // It is not part of the suite the project runs, so not of this one.
+        let mut command = self.cargo();
+        command
+            .args(["test", "-p", &target.package])
+            .args(&target.select)
+            .args(["--", "--list", "--ignored"]);
+        let out = capture(command, self.stop.as_ref())?;
+        let ignored = listing(&String::from_utf8_lossy(&out.stdout));
+        Ok(all.into_iter().filter(|t| !ignored.contains(t)).collect())
     }
 
     fn run(&mut self, target: &Target, names: &[String]) -> io::Result<Ran> {

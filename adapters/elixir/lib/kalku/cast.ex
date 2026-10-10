@@ -12,7 +12,7 @@ defmodule Kalku.Cast do
   attributed to the next one, and the next one's result would be a lie.
   """
 
-  alias Kalku.Cast.{Beams, Tests}
+  alias Kalku.Cast.{Beams, Entered, Tests}
   alias Kalku.Deps
 
   @doc """
@@ -135,7 +135,7 @@ defmodule Kalku.Cast do
       {:ok, compiled} ->
         originals = originals ++ stood_in_for(compiled, originals)
         recompile(dependents)
-        outcome = measure(root, compiled, originals, tests)
+        outcome = measure(root, compiled, originals, tests, site)
         restore(originals ++ borrowed)
         {:ok, done(wekufe, outcome.outcome, started, Map.to_list(Map.delete(outcome, :outcome)))}
     end
@@ -170,16 +170,26 @@ defmodule Kalku.Cast do
   # A wekufe whose compiled code is the original's cannot be killed by any
   # test, because there is nothing there to notice. That is equivalence
   # proved rather than guessed, which is the only kind a kalku may report.
-  defp measure(root, compiled, originals, tests) do
+  defp measure(root, compiled, originals, tests, site) do
     if identical?(compiled, originals) do
       %{outcome: "equivalent", code_hash: hash_of(compiled)}
     else
       Beams.put(compiled)
+      watched = Entered.watch(compiled, site)
       ran = Tests.run(root, tests)
+      entered = Entered.entered?(watched)
+      Entered.stop(watched)
       Beams.clear()
-      Map.put(ran, :code_hash, hash_of(compiled))
+      ran |> looked_at(entered, site) |> Map.put(:code_hash, hash_of(compiled))
     end
   end
+
+  # A wekufe that no test ran did not survive anything: every test passed
+  # because none of them met it.
+  defp looked_at(%{outcome: "survived"}, false, site),
+    do: %{outcome: "no_coverage", message: Entered.unrun(site)}
+
+  defp looked_at(ran, _entered, _site), do: ran
 
   defp identical?(compiled, originals) do
     md5s(compiled) == md5s(originals) and md5s(compiled) != %{}

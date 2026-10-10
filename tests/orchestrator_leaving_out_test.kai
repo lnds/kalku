@@ -7,7 +7,9 @@ import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.attending
 import kalku.orchestrator.telling
+import kalku.orchestrator.scheduler
 import kalku.orchestrator.measure
+import kalku.core.report
 
 const FAKE : String = "./tests/fake_kalku/fake_kalku"
 
@@ -73,6 +75,41 @@ test "a suite in which nothing passes is still refused, in the kalku's words" {
     Err(why) -> {
       assert is_some(index_of(why, "2 test(s), and none of it passes"))
       assert is_some(index_of(why, "the build is elsewhere"))
+    }
+  }
+}
+
+# Every test passed because none of them met the wekufe: code that runs
+# once, as an application starts, does not run again where a wekufe is
+# cast. A kalku that saw that says so, and it is not a hole anyone found.
+test "a wekufe a kalku saw no test run is not a survivor, and its reason is kept" {
+  match learnt("red_some_pass.ndjson") {
+    Err(why) -> {
+      assert why == "a suite with a test that passes should be measured"
+    }
+    Ok(known) -> {
+      let ready = plan(inputs_for(asking_of("red_some_pass.ndjson"), known), nothing_cached)
+      let unrun = Verdict {
+        wekufe: "s3",
+        outcome: NoCoverage,
+        tests: ["test/a_test.exs:3"],
+        said: Some("no test ran `A.init/1` while the wekufe was in it.")
+      }
+      let r =
+        report_of(ready, Casting { verdicts: [unrun], failure: None, cancelled: false }, known)
+
+      assert r.survivors == []
+      assert r.counts.survived == 0
+      assert r.counts.no_coverage == 3
+      assert (r.troubles | (t => (t.wekufe, t.outcome, t.said)))
+        == [("s3", NoCoverage, Some("no test ran `A.init/1` while the wekufe was in it."))]
+
+      # It was cast and answered for, so the run did not stop short.
+      assert r.planned == 0
+      let text = human(r)
+      assert is_some(index_of(text, "what could not be measured:"))
+      assert is_some(index_of(text, "no test ran `A.init/1` while the wekufe was in it."))
+      assert is_none(index_of(text, "PARTIAL"))
     }
   }
 }
