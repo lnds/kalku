@@ -76,6 +76,7 @@ pub type BaselineDoneMsg = {
   coverage: Option[[CoverageEntry]],
   coverage_path: Option[String],
   coverage_packed_path: Option[String],
+  coverage_withheld: Option[String],
   failures: [Failure],
   differences: Option[[String]]
 }

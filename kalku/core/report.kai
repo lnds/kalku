@@ -9,6 +9,7 @@ where nobody can miss it.
 
 import kalku.wire.enums
 import kalku.wire.shapes
+import kalku.core.verdict
 import kalku.core.score
 import kalku.core.gate
 import kalku.core.hint
@@ -70,7 +71,8 @@ pub type Report = {
   skipped: [Skipped],
   uncovered: [Site],
   blockers: [Blocker],
-  left_out: LeftOut
+  left_out: LeftOut,
+  withheld: Option[String]
 }
 
 #[doc("A wekufe that produced nothing to score, and what the kalku said about it.")]
@@ -85,11 +87,25 @@ pub fn human(r: Report) : String = join(
     ++ skipped_block(r)
     ++ trouble_blocks(r)
     ++ left_out_block(r.left_out, r.left_out.sites | where_of)
+    ++ withheld_block(r.withheld)
     ++ [summary_line(r)]
     ++ suppression_block(r)
     ++ blocker_block(r),
   "\n"
 )
+
+# The kalku's own words, as with every reason only a kalku knows: why it
+# measured which tests reach a line and would not stand behind the answer.
+# Said once, where the score is read, because it is why every survivor
+# above was judged by the whole suite and why the run took what it took.
+fn withheld_block(why: Option[String]) : [String] = match why {
+  None -> []
+  Some(said) -> [
+    "every wekufe was judged by the whole suite: which tests reach a line was measured and not reported.",
+    "  #{said}",
+    ""
+  ]
+}
 
 #[doc("Where a survivor lives, which spell made it, and in which declaration.")]
 pub fn location(s: Survivor) : String = where_of(s.site)
@@ -135,12 +151,7 @@ pub fn summary_line(r: Report) : String {
 # dishonesty this whole tool exists to avoid, and a reader who takes a
 # limited run's score for the file's score has been misled by silence.
 fn partial(r: Report) : [String] {
-  let cast = r.counts.killed
-    + r.counts.survived
-    + r.counts.timeout
-    + r.counts.compile_error
-    + r.counts.crashed
-    + r.counts.nondeterministic
+  let cast = answered(r.counts)
   if r.planned <= 0 or cast >= r.planned {
     []
   } else {

@@ -437,7 +437,7 @@ memory_limit_mb = 8192   # per kalku; 0 for none. Default: a quarter of the mach
 
 [score]
 threshold = 0.80        # global floor; --ci exits 1 below it
-ratchet = true          # the global score may not drop below the stored baseline
+# ratchet = true        # not yet: the global score may not drop below the stored baseline
 
 [elixir]
 partition_env = "MIX_TEST_PARTITION"
@@ -455,6 +455,8 @@ Any change to a key component invalidates it. Keys never use timestamps.
 
 ## Running in CI
 
+This section is the design. Of it, `--since` and the exit codes exist; `--ci`, `--all`, `--shard`, `kalku merge` and the ratchet do not yet, and the README's status table is where to look for what does. Today a pull request is gated with `kalku run --since origin/<base>`, and a score is tracked by naming the files: `kalku run --limit 0 <files>`.
+
 `kalku run --ci` runs the orchestrator in-process for one run: no server, no socket.
 
 ### Two cadences
@@ -468,7 +470,7 @@ A full run on every PR does not scale: a medium Elixir project yields thousands 
 
 ### What blocks a PR
 
-A PR fails when **it introduces a hole**: a wekufe that survives on a line the PR changed, or a site on one that no test reaches at all. Code no test ran is the larger hole — there was nothing even to fail to notice it. Gating PRs on the global score punishes whoever touches a file with old debt, and teams switch such tools off. The global score is guarded separately by `[score] threshold` and, with `ratchet = true`, by a stored baseline it may not drop below.
+A PR fails when **it introduces a hole**: a wekufe that survives on a line the PR changed, or a site on one that no test reaches at all. Code no test ran is the larger hole — there was nothing even to fail to notice it. Gating PRs on the global score punishes whoever touches a file with old debt, and teams switch such tools off. The global score is guarded separately by `[score] threshold` and, with `ratchet = true`, by a stored baseline it may not drop below. The ratchet is designed and not built: no run stores a baseline yet, so a config that sets `ratchet = true` is refused rather than held to nothing.
 
 Changes to suppressions are surfaced, never silent: if a PR adds entries to `.kalku/equivalent` or widens `exclude`/`exclude_calls` in `.kalku.toml`, the report and the GitHub summary list them under their own heading. Hiding a hole must be as visible as leaving one.
 
@@ -559,7 +561,7 @@ One JSON object per survivor, complete enough to act on without opening other fi
 
 `covering_tests` lists the first five tests that cover the line and `covering_count` how many there are. A line that a whole suite reaches is covered by every test in it, and listing a thousand of them per survivor made a run too large to fit in a tool result; the full list is what `kalku show <wekufe>` (and the `kalku_show` tool) answers.
 
-Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field.
+Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score.
 
 followed by one summary object (counts, score, suppression changes).
 

@@ -3,7 +3,7 @@ import kalku.core.gate
 import kalku.core.config
 
 const FULL : String =
-  "[run]\nworkers = 8\nspells = [\"arm\", \"compare\"]\nexclude = [\"lib/my_app_web/telemetry.ex\"]\nexclude_calls = [\"Logger.*\", \":telemetry.execute\"]\ntimeout_floor_ms = 250\n\n[score]\nthreshold = 0.80\nratchet = true\n\n[elixir]\npartition_env = \"MIX_TEST_PARTITION\"\n"
+  "[run]\nworkers = 8\nspells = [\"arm\", \"compare\"]\nexclude = [\"lib/my_app_web/telemetry.ex\"]\nexclude_calls = [\"Logger.*\", \":telemetry.execute\"]\ntimeout_floor_ms = 250\n\n[score]\nthreshold = 0.80\n\n[elixir]\npartition_env = \"MIX_TEST_PARTITION\"\n"
 
 fn config_of(text: String) : Config = match parse(text) {
   Ok(c) -> c
@@ -34,7 +34,6 @@ test "every key is read" {
   assert c.exclude_calls == ["Logger.*", ":telemetry.execute"]
   assert c.timeout_floor_ms == 250
   assert c.policy.threshold == Some(0.8)
-  assert c.ratchet
 }
 
 # The test that proves lnds/kaikai#2056 is fixed: a float used to reject
@@ -110,4 +109,12 @@ test "a memory ceiling is optional, zero means none, and a negative one is refus
     first_problem("[run]\nmemory_limit_mb = -1\n"),
     "run.memory_limit_mb: must not be negative"
   )
+}
+
+# A key that is taken and does nothing is a promise: a project that set it
+# believes its score cannot drop, and it can.
+test "a ratchet is refused while nothing stores a baseline" {
+  assert has(first_problem("[score]\nratchet = true\n"), "score.ratchet: is not implemented yet")
+  assert problems_of("[score]\nratchet = false\n") == []
+  assert problems_of("[score]\nthreshold = 0.8\n") == []
 }

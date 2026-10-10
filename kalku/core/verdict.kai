@@ -59,6 +59,23 @@ pub fn total(c: Counts) : Int =
     + c.equivalent.bytecode
     + c.equivalent.declared
 
+#[doc("""
+How many wekufe were cast and answered for, whatever the answer.
+
+Not the uncovered, which were never cast, nor what the project declared
+equivalent. One a kalku proved equivalent by its code was cast like any
+other: leaving it out makes a run that cast everything look as if it had
+stopped short.
+""")]
+pub fn answered(c: Counts) : Int =
+  c.killed
+    + c.survived
+    + c.timeout
+    + c.compile_error
+    + c.crashed
+    + c.nondeterministic
+    + c.equivalent.bytecode
+
 fn add(c: Counts, v: Verdict) : Counts {
   case c, Cast(Killed) -> Counts { ...c, killed: c.killed + 1 }
   case c, Cast(Survived) -> Counts { ...c, survived: c.survived + 1 }

@@ -271,7 +271,9 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | `--watch` and `--ci` | not yet |
+| `[score] ratchet` — the score may not drop below a stored baseline | not yet: a config that sets it is refused |
 | `merge` — combining sharded reports | not yet |
+| `--all` and `--shard i/n` — the whole project, in parts, for a nightly run | not yet: the core shards a plan, the command line does not ask it to |
 | **`kalku_elixir` on Hex** — the Elixir kalku installs like any dependency | done |
 | **Release binaries** — `brew install`, or a tarball per platform, built and checksummed by CI | done |
 | macOS on Intel, Linux on arm64 (waiting on a kaikai toolchain for them) | not yet |
