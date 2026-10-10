@@ -455,7 +455,7 @@ Any change to a key component invalidates it. Keys never use timestamps.
 
 ## Running in CI
 
-This section is the design. Of it, `--since` and the exit codes exist; `--ci`, `--all`, `--shard`, `kalku merge` and the ratchet do not yet, and the README's status table is where to look for what does. Today a pull request is gated with `kalku run --since origin/<base>`, and a score is tracked by naming the files: `kalku run --limit 0 <files>`.
+This section is the design. Of it, `--since`, `--all`, `--shard` and the exit codes exist; `--ci`, `kalku merge` and the ratchet do not yet, and the README's status table is where to look for what does. Today a pull request is gated with `kalku run --since origin/<base>`, and the global score is `kalku run --all`. A shard reports the score of its part, says so first, and is not held to `score.threshold`: until `kalku merge` exists, the floor is held by a run that is not a shard.
 
 `kalku run --ci` runs the orchestrator in-process for one run: no server, no socket.
 

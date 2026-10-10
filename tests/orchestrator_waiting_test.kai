@@ -36,7 +36,8 @@ fn asking_of(spec: PoolSpec) : Asking = Asking {
   equivalents: [],
   limit: 0,
   timeout_floor_ms: 1000,
-  touched: None
+  touched: None,
+  shard: None
 }
 
 fn after_writing(said: [String], from: Int, upto: Int) : [String] = if from >= upto {
