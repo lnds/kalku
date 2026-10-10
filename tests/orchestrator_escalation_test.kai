@@ -73,10 +73,23 @@ test "a kalku that dies mid-cast loses the kalku, never the wekufe" {
   assert on_death(AwaitingReset, "closed its pipe").outcome == None
 }
 
-test "a line this side cannot read ends that kalku, with the reason quoted" {
-  let r = on_noise(AwaitingCast, "not_json")
+test "a line that is not a message ends that kalku, and is quoted with where it came from" {
+  let r = on_noise(
+    AwaitingCast,
+    "{\"level\":\"info\",\"message\":\"started\"}\n",
+    "type: expected a string, got absent"
+  )
   assert r.outcome == Some(Crashed)
-  assert recycling(r) == Some("wrote a line this side cannot read: not_json")
+  assert recycling(r)
+    == Some(
+      "wrote a line on stdout that is not a protocol message (type: expected a string, got absent): {\"level\":\"info\",\"message\":\"started\"}"
+    )
+}
+
+# A line can be a megabyte of somebody's log, and its start is what names it.
+test "a long line that is not a message is quoted by its start" {
+  let said = noise(repeat("ñ", 500), "not_json")
+  assert ends_with(said, "#{repeat("ñ", 200)}…")
 }
 
 # `progress` says the kalku is alive, not that it is done.
