@@ -220,6 +220,13 @@ def test_a_baseline_carries_its_coverage_inline_or_by_path_and_never_both():
     assert by_path["coverage_path"] == "/reni/0.json" and "coverage" not in by_path
 
 
+def test_a_baseline_says_how_its_run_differed_only_when_it_is_told():
+    assert "differences" not in reply(protocol.baseline_done(3, 1, [], []))
+    said = reply(protocol.baseline_done(3, 1, [], [], None, ["it ran in a copy"]))
+    assert said["differences"] == ["it ran in a copy"]
+    assert list(said)[-2:] == ["failures", "differences"]
+
+
 def test_a_ready_announces_exactly_the_capabilities_it_is_given():
     said = reply(protocol.ready(1, "0", "r", ["cast", "abort", "per_test_coverage"]))
     assert said["capabilities"] == ["cast", "abort", "per_test_coverage"]

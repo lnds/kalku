@@ -240,6 +240,7 @@ final class Gradle {
       }
       build.launcher = Maven.withEngine(build.libraries, fetched);
       build.platform = Maven.PLATFORM;
+      build.engineFetched = true;
     }
 
     // The tests have to run on the JDK this kalku runs on, which is the one it compiles with.

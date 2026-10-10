@@ -76,6 +76,8 @@ final class Maven {
     String platform;
     // Where the launcher of that same version is, when the project does not bring it.
     Path launcher;
+    // True when the tests are JUnit 4's or TestNG's, run by an engine fetched for them.
+    boolean engineFetched;
   }
 
   // Pinned, so what these goals write does not change under the kalku.
@@ -725,6 +727,7 @@ final class Maven {
     }
     build.launcher = withEngine(build.libraries, fetched);
     build.platform = PLATFORM;
+    build.engineFetched = true;
   }
 
   // ---- what reads coverage ----------------------------------------------------

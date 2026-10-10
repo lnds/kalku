@@ -330,8 +330,10 @@ def baseline_done(
     tests: list[dict[str, Any]],
     failures: list[dict[str, Any]],
     coverage: tuple[str, Any] | None = None,
+    differences: list[str] | None = None,
 ) -> str:
-    """`coverage` is `("inline", entries)` or `("path", path)`; or None."""
+    """`coverage` is `("inline", entries)` or `("path", path)`; or None.
+    `differences` is how the run was unlike the project's own, a sentence each."""
     fields: list[tuple[str, Any]] = [
         ("status", "red" if failures else "green"),
         ("duration_ms", duration_ms),
@@ -341,6 +343,8 @@ def baseline_done(
         how, what = coverage
         fields.append(("coverage" if how == "inline" else "coverage_path", what))
     fields.append(("failures", failures))
+    if differences is not None:
+        fields.append(("differences", differences))
     return _line("baseline_done", ident, fields)
 
 

@@ -373,6 +373,21 @@ def test_a_baseline_that_crashed_or_could_not_collect_is_a_failure_not_a_green(h
     )
 
 
+def test_a_baseline_says_how_its_run_was_unlike_the_projects_own(harness):
+    h = harness(worker=2)
+    ready(h)
+    h.scripts["baseline"] = [result(T1, outcome="failed"), {"e": "done", "exit": 1, "warm": []}]
+
+    said = h.one(type="baseline")
+
+    assert said["status"] == "red"
+    copy, imported, once, forked = said["differences"]
+    assert str(h.reni / "work" / "2") in copy and "`.git`" in copy
+    assert "`sys.path`" in imported
+    assert "one process" in once and "`addopts`" in once
+    assert "forked" in forked
+
+
 def test_a_map_too_big_for_a_line_goes_to_a_file_in_the_reni(harness):
     h = harness(inline_limit=10, worker=2)
     ready(h)

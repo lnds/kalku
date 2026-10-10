@@ -382,13 +382,15 @@ final class Protocol {
   }
 
   // At most one of `coverage` and `coveragePath` is given; neither when coverage is withheld.
+  // `differences` is how the run was unlike the build's own, a sentence each.
   static String baselineDone(
       long id,
       long durationMs,
       List<?> tests,
       List<?> failures,
       List<?> coverage,
-      String coveragePath) {
+      String coveragePath,
+      List<String> differences) {
     Map<String, Object> out = message("baseline_done", id);
     out.put("status", failures.isEmpty() ? "green" : "red");
     out.put("duration_ms", durationMs);
@@ -399,6 +401,7 @@ final class Protocol {
       out.put("coverage_path", coveragePath);
     }
     out.put("failures", failures);
+    out.put("differences", differences);
     return Json.encode(out);
   }
 

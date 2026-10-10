@@ -208,6 +208,18 @@ class CastTest {
     assertEquals(Collections.emptyList(), baseline.get("failures"));
   }
 
+  // What the baseline says of its run is so of this one: the copy it names is where the
+  // project was built, without what version control keeps.
+  @Test
+  void theBaselineSaysHowItsRunWasUnlikeTheBuildsOwn() throws Exception {
+    List<?> said = (List<?>) baseline.get("differences");
+    assertEquals(5, said.size(), baseline.toString());
+    Path built = reni.resolve("calc").resolve("work").resolve("0").resolve("project").toRealPath();
+    assertTrue(((String) said.get(0)).contains("kept in the reni, " + built + ":"), said.toString());
+    assertTrue(((String) said.get(1)).contains("not by surefire"), said.toString());
+    assertTrue(((String) said.get(4)).contains("JAVA_HOME"), said.toString());
+  }
+
   // The fixture's nested test only passes with the JVM argument and the system property the
   // project's build gives its tests. It is in the list above; this says why that matters.
   @Test
@@ -698,6 +710,7 @@ class CastTest {
     // gives its tests: Gradle's `jvmArgs` and `systemProperty`, as Maven's `argLine`.
     assertEquals(new java.util.HashSet<>(all), new java.util.HashSet<>(ran));
     assertEquals(reaching(baseline), reaching(done));
+    assertTrue(((List<?>) done.get("differences")).get(1).toString().contains("not by Gradle"));
 
     List<String> casts = new ArrayList<>(Arrays.asList(hello(project), "{\"type\":\"prepare\",\"id\":2}"));
     List<Map<?, ?>> found = new ArrayList<>();
@@ -781,6 +794,9 @@ class CastTest {
     }
     Collections.sort(ran);
     assertEquals(expected, ran);
+    // These tests are JUnit 4's or TestNG's, and the baseline says what ran them.
+    List<?> unlike = (List<?>) done.get("differences");
+    assertTrue(unlike.get(unlike.size() - 1).toString().contains("an engine fetched"), unlike.toString());
     Map<String, List<?>> by = reaching(done);
     List<String> casts = new ArrayList<>(Arrays.asList(hello(project), "{\"type\":\"prepare\",\"id\":2}"));
     List<Map<?, ?>> found = new ArrayList<>();

@@ -358,6 +358,7 @@ impl Service {
             &tests,
             &failures,
             coverage.as_ref(),
+            &project.differences(),
         ))
     }
 
@@ -605,6 +606,8 @@ mod tests {
         // What instrumenting says, and the lines each test reached.
         instrument: Option<io::Result<Build>>,
         reached: HashMap<String, crate::coverage::Lines>,
+        // How it says its run of the suite differs.
+        unlike: Vec<String>,
     }
 
     fn io_error(what: &str) -> io::Error {
@@ -659,6 +662,7 @@ mod tests {
                 unreadable: false,
                 instrument: None,
                 reached: HashMap::new(),
+                unlike: Vec::new(),
             };
             (fake, seen)
         }
@@ -717,6 +721,10 @@ mod tests {
         ) -> io::Result<(Ran, crate::coverage::Lines)> {
             let ran = self.run(target, std::slice::from_ref(&name.to_string()))?;
             Ok((ran, self.reached.get(name).cloned().unwrap_or_default()))
+        }
+
+        fn differences(&self) -> Vec<String> {
+            self.unlike.clone()
         }
 
         fn write(&mut self, file: &str, text: &str) -> io::Result<()> {
@@ -949,6 +957,17 @@ mod tests {
                 ("src/lib.rs::t::two", "src/lib.rs")
             ]
         );
+    }
+
+    #[test]
+    fn a_baseline_says_how_the_project_says_its_run_differed() {
+        let (mut fake, _) = Fake::new();
+        fake.unlike = vec!["it ran in a copy".to_string()];
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["differences"], json!(["it ran in a copy"]));
     }
 
     #[test]

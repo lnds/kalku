@@ -490,6 +490,7 @@ pub fn baseline_done(
     tests: &[Timed],
     failures: &[Failure],
     coverage: Option<&Coverage>,
+    differences: &[String],
 ) -> String {
     let status = if failures.is_empty() { "green" } else { "red" };
     let tests: Vec<Value> = tests
@@ -525,6 +526,11 @@ pub fn baseline_done(
         None => {}
     }
     fields.push(("failures", failures.into()));
+    // A kalku with nothing to say of its run leaves the field out.
+    if !differences.is_empty() {
+        let said: Vec<Value> = differences.iter().map(|d| d.as_str().into()).collect();
+        fields.push(("differences", said.into()));
+    }
     line("baseline_done", id, fields)
 }
 
@@ -956,7 +962,7 @@ mod tests {
             file: "a.rs".into(),
             duration_ms: 4,
         }];
-        let green = reply(&baseline_done(3, 10, &timed, &[], None));
+        let green = reply(&baseline_done(3, 10, &timed, &[], None, &[]));
         assert_eq!(green["type"], "baseline_done");
         assert_eq!(green["status"], "green");
         assert_eq!(green["duration_ms"], 10);
@@ -969,7 +975,7 @@ mod tests {
             test: "a::t".into(),
             message: "boom".into(),
         };
-        let red = reply(&baseline_done(3, 10, &timed, &[failure], None));
+        let red = reply(&baseline_done(3, 10, &timed, &[failure], None, &[]));
         assert_eq!(red["status"], "red");
         assert_eq!(
             red["failures"],
@@ -1008,6 +1014,7 @@ mod tests {
             &[],
             &[],
             Some(&Coverage::Inline(vec![entry])),
+            &[],
         ));
         assert_eq!(
             inline["coverage"],
@@ -1021,12 +1028,24 @@ mod tests {
             &[],
             &[],
             Some(&Coverage::Path("/reni/coverage/0.json".into())),
+            &[],
         ));
         assert_eq!(by_path["coverage_path"], "/reni/coverage/0.json");
         assert!(by_path.get("coverage").is_none());
 
-        let none = reply(&baseline_done(3, 1, &[], &[], None));
+        let none = reply(&baseline_done(3, 1, &[], &[], None, &[]));
         assert!(none.get("coverage").is_none() && none.get("coverage_path").is_none());
+    }
+
+    #[test]
+    fn a_baseline_says_how_its_run_differed_only_when_there_is_something_to_say() {
+        let silent = reply(&baseline_done(3, 1, &[], &[], None, &[]));
+        assert!(silent.get("differences").is_none());
+
+        let said = baseline_done(3, 1, &[], &[], None, &["it ran in a copy".to_string()]);
+        assert_eq!(reply(&said)["differences"], json!(["it ran in a copy"]));
+        // After `failures`, where the table of the protocol lists it.
+        assert!(said.ends_with(r#""failures":[],"differences":["it ran in a copy"]}"#));
     }
 
     #[test]
