@@ -109,9 +109,28 @@ pub fn on_death(awaiting: Awaiting, why: String) : Reaction = match awaiting {
   _ -> carry_on(Recycle(why))
 }
 
-#[doc("A line a kalku wrote that this side cannot read: that kalku is done talking.")]
-pub fn on_noise(awaiting: Awaiting, detail: String) : Reaction =
-  on_death(awaiting, "wrote a line this side cannot read: #{detail}")
+#[doc("How much of a line that is not a message is quoted back, in codepoints.")]
+const QUOTED : Int = 200
+
+#[doc("""
+What to say of a line a kalku wrote on stdout that is not a message.
+
+The line is quoted, because it is the one thing that names who wrote it:
+a test that prints, a logger that formats as JSON. What the kalku said on
+stderr does not, and a reader sent there chases lines that had no part
+in it.
+""")]
+pub fn noise(line: String, detail: String) : String =
+  "wrote a line on stdout that is not a protocol message (#{detail}): #{quoted(line)}"
+
+fn quoted(line: String) : String {
+  let shown = slice(trim(line), 0, QUOTED)
+  if shown == trim(line) { shown } else { "#{shown}…" }
+}
+
+#[doc("A line a kalku wrote that is not a message: that kalku is done talking.")]
+pub fn on_noise(awaiting: Awaiting, line: String, detail: String) : Reaction =
+  on_death(awaiting, noise(line, detail))
 
 #[doc("True when the kalku said it can stop a cast in place.")]
 pub fn can_abort(caps: [Capability]) : Bool = contains(caps, AbortCap)

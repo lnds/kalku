@@ -326,7 +326,7 @@ fn heard_from(run: Run, slot: Slot, what: FromKalku) : Run / Process + Spawn + C
 ] + Ward + Telling {
   case run, slot, Said(line) -> match heard(line) {
     Ok(m) -> said(run, slot, m.body)
-    Err(e) -> react(run, slot, on_noise(awaiting_of(slot), kind_name(e.kind)))
+    Err(e) -> react(run, slot, on_noise(awaiting_of(slot), line, kind_name(e.kind)))
   }
   case run, slot, Wrote(chunk) -> Run { ...run, slots: put(run.slots, noted(slot, chunk)) }
   case run, slot, Closed -> react(run, slot, on_death(awaiting_of(slot), "closed its pipe"))

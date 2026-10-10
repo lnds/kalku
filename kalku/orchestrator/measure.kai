@@ -34,6 +34,7 @@ import kalku.core.changed_lines
 import kalku.core.report
 import kalku.core.remembering
 import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.escalation
 import kalku.orchestrator.attending
 import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
@@ -383,7 +384,7 @@ const LAST_LINES : Int = 12
 fn with_last_words(why: String, said: [String]) : String = if is_empty(said) {
   why
 } else {
-  join([why, "what it said before it went:"] ++ (said | (l => "  #{l}")), "\n")
+  join([why, "what it wrote on stderr before that:"] ++ (said | (l => "  #{l}")), "\n")
 }
 
 #[doc("""
@@ -410,9 +411,7 @@ fn from_ours(
   said: [String]
 ) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling = match what {
   Said(line) -> match heard(line) {
-    Err(e) -> Err(
-      with_last_words("the kalku wrote a line this side cannot read: #{e.detail}", said)
-    )
+    Err(e) -> Err(with_last_words("the kalku #{noise(line, e.detail)}", said))
     Ok(m) -> judge(k, kind, m.body, said)
   }
   Closed -> Err(with_last_words("the kalku closed its pipe before saying `#{kind}`", said))
