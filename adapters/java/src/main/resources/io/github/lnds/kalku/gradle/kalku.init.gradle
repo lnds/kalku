@@ -83,16 +83,23 @@ allprojects { project ->
           lines += kalkuLines('javaHome', [launcher.metadata.installationPath.asFile])
         }
         // Tests written for JUnit 4 or for TestNG run on the JUnit Platform through an engine
-        // the project does not have. Which one, and at which version, the kalku says.
+        // the project does not have, one for each of the two it tests with. Which ones, and at
+        // which version, the kalku says.
         def older = project.gradle.startParameter.projectProperties
         if (platform == null) {
-          def engine = classpath.find { it.name ==~ /junit-4\..*\.jar/ } != null ? older['kalku.vintage']
-              : classpath.find { it.name ==~ /testng-\d.*\.jar/ } != null ? older['kalku.testng'] : null
-          if (engine != null) {
+          def engines = []
+          if (classpath.find { it.name ==~ /junit-4\..*\.jar/ } != null) {
+            engines += older['kalku.vintage']
+          }
+          if (classpath.find { it.name ==~ /testng-\d.*\.jar/ } != null) {
+            engines += older['kalku.testng']
+          }
+          if (!engines.isEmpty()) {
+            def wanted = [project.dependencies.platform(older['kalku.bom']),
+                project.dependencies.create('org.junit.platform:junit-platform-launcher')]
+            wanted += engines.collect { project.dependencies.create(it) }
             lines += kalkuLines('engine', project.configurations.detachedConfiguration(
-                project.dependencies.platform(older['kalku.bom']),
-                project.dependencies.create(engine),
-                project.dependencies.create('org.junit.platform:junit-platform-launcher')).files)
+                wanted as org.gradle.api.artifacts.Dependency[]).files)
           }
         }
         if (platform != null) {

@@ -230,10 +230,10 @@ final class Gradle {
     if (said.containsKey("jar")) {
       jars.put(build, Paths.get(one(said, "jar")));
     }
-    // Tests written for JUnit 4 or for TestNG: Gradle fetched the engine that runs them on the
+    // Tests written for JUnit 4 or for TestNG: Gradle fetched the engines that run them on the
     // JUnit Platform, and the launcher of the same version.
     if (build.platform == null && said.containsKey("engine")) {
-      Maven.engineFor(build.libraries, called);
+      Maven.enginesFor(build.libraries, called);
       List<Path> fetched = new ArrayList<>();
       for (String jar : said.get("engine")) {
         fetched.add(Paths.get(jar));

@@ -594,8 +594,9 @@ final class Maven {
   // ---- JUnit 4 and TestNG ------------------------------------------------------
 
   // The JUnit Platform a project that does not use it is given, with the engine that runs its
-  // own framework on it: JUnit 4 through the vintage engine, TestNG through its own. One
-  // version of all three, because the launcher and the engines have to be of the same one.
+  // own framework on it: JUnit 4 through the vintage engine, TestNG through its own, and both
+  // for a project that tests with both. One version of all three, because the launcher and the
+  // engines have to be of the same one.
   static final String PLATFORM = "1.11.4";
   static final String JUNIT_BOM = "org.junit:junit-bom:5.11.4";
   static final String VINTAGE = "org.junit.vintage:junit-vintage-engine";
@@ -606,12 +607,14 @@ final class Maven {
   private static final Pattern VERSIONED = Pattern.compile("(.+?)-\\d[^/]*\\.jar");
 
   /**
-   * The engine a project's tests need to run on the JUnit Platform when they are not written
-   * for it: its coordinates, or null when the project has neither JUnit 4 nor TestNG.
+   * The engines a project's tests need to run on the JUnit Platform when they are not written
+   * for it: the coordinates of one for each of JUnit 4 and TestNG the project has, so that no
+   * test of it is left out; none when it has neither.
    *
    * @throws Failed when it has a JUnit 4 older than the engine runs
    */
-  static String engineFor(List<Path> libraries, String called) throws Failed {
+  static List<String> enginesFor(List<Path> libraries, String called) throws Failed {
+    List<String> engines = new ArrayList<>();
     for (Path jar : libraries) {
       Matcher junit = JUNIT4.matcher(jar.getFileName().toString());
       if (junit.matches()) {
@@ -622,15 +625,17 @@ final class Maven {
                   + junit.group(1)
                   + "; kalku runs JUnit 4 through the vintage engine, which needs 4.12 or later");
         }
-        return VINTAGE;
+        engines.add(VINTAGE);
+        break;
       }
     }
     for (Path jar : libraries) {
       if (TESTNG.matcher(jar.getFileName().toString()).matches()) {
-        return TESTNG_ENGINE;
+        engines.add(TESTNG_ENGINE);
+        break;
       }
     }
-    return null;
+    return engines;
   }
 
   /**
@@ -665,24 +670,35 @@ final class Maven {
     return build.name.isEmpty() ? "the project" : "the module `" + build.name + "`";
   }
 
-  // A module whose tests are JUnit 4's or TestNG's: Maven fetches the engine that runs them on
-  // the JUnit Platform, and the launcher, into the reni.
+  // A module whose tests are JUnit 4's or TestNG's: Maven fetches the engines that run them on
+  // the JUnit Platform, and the launcher, into the reni. What was fetched for one set of
+  // engines is never taken for another.
   private static void older(Build build, Path lib, Map<String, String> env)
       throws Failed, IOException {
-    String engine = engineFor(build.libraries, called(build));
-    if (engine == null) {
+    List<String> engines = enginesFor(build.libraries, called(build));
+    if (engines.isEmpty()) {
       throw new Failed(
           "none of JUnit 5, JUnit 4 and TestNG is among the test dependencies of "
               + called(build)
               + ", and kalku does not know another way to run its tests");
     }
-    Path dir = lib.resolve("engine-" + engine.split(":")[1]);
+    StringBuilder name = new StringBuilder("engine");
+    StringBuilder named = new StringBuilder();
+    for (String engine : engines) {
+      String[] it = engine.split(":");
+      name.append('-').append(it[1]);
+      named
+          .append("<dependency><groupId>").append(it[0]).append("</groupId><artifactId>")
+          .append(it[1]).append("</artifactId>")
+          .append(it.length > 2 ? "<version>" + it[2] + "</version>" : "")
+          .append("</dependency>");
+    }
+    Path dir = lib.resolve(name.toString());
     Path jars = dir.resolve("jars");
     Path launcher = jars.resolve("junit-platform-launcher-" + PLATFORM + ".jar");
     if (!Files.isRegularFile(launcher)) {
       Files.createDirectories(dir);
       String[] bom = JUNIT_BOM.split(":");
-      String[] it = engine.split(":");
       String pom =
           "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>"
               + "<groupId>kalku</groupId><artifactId>engine</artifactId><version>1</version>"
@@ -690,15 +706,14 @@ final class Maven {
               + "<groupId>" + bom[0] + "</groupId><artifactId>" + bom[1] + "</artifactId>"
               + "<version>" + bom[2] + "</version><type>pom</type><scope>import</scope>"
               + "</dependency></dependencies></dependencyManagement><dependencies>"
-              + "<dependency><groupId>" + it[0] + "</groupId><artifactId>" + it[1] + "</artifactId>"
-              + (it.length > 2 ? "<version>" + it[2] + "</version>" : "")
-              + "</dependency><dependency><groupId>org.junit.platform</groupId>"
+              + named
+              + "<dependency><groupId>org.junit.platform</groupId>"
               + "<artifactId>junit-platform-launcher</artifactId></dependency>"
               + "</dependencies></project>\n";
       Files.write(dir.resolve("pom.xml"), pom.getBytes(StandardCharsets.UTF_8));
       run(dir, build.project, env, DEPENDENCY + ":copy-dependencies", "-DoutputDirectory=" + jars);
       if (!Files.isRegularFile(launcher)) {
-        throw new Failed("Maven did not fetch the engine " + engine);
+        throw new Failed("Maven did not fetch " + String.join(" and ", engines));
       }
     }
     List<Path> fetched;
