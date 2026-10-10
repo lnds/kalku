@@ -9,6 +9,7 @@ where nobody can miss it.
 
 import kalku.wire.enums
 import kalku.wire.shapes
+import kalku.core.verdict
 import kalku.core.score
 import kalku.core.gate
 import kalku.core.hint
@@ -135,12 +136,7 @@ pub fn summary_line(r: Report) : String {
 # dishonesty this whole tool exists to avoid, and a reader who takes a
 # limited run's score for the file's score has been misled by silence.
 fn partial(r: Report) : [String] {
-  let cast = r.counts.killed
-    + r.counts.survived
-    + r.counts.timeout
-    + r.counts.compile_error
-    + r.counts.crashed
-    + r.counts.nondeterministic
+  let cast = answered(r.counts)
   if r.planned <= 0 or cast >= r.planned {
     []
   } else {
