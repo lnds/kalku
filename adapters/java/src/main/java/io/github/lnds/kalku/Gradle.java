@@ -221,6 +221,14 @@ final class Gradle {
     build.compilerFlags.addAll(flags(said.getOrDefault("flag", new ArrayList<>())));
     build.testCompilerFlags.addAll(flags(said.getOrDefault("testFlag", new ArrayList<>())));
     build.jvmFlags.addAll(said.getOrDefault("jvm", new ArrayList<>()));
+    for (String variable : said.getOrDefault("env", new ArrayList<>())) {
+      int is = variable.indexOf('=');
+      build.environment.put(variable.substring(0, is), variable.substring(is + 1));
+    }
+    build.suite =
+        Suite.gradle(
+            said.getOrDefault("include", new ArrayList<>()),
+            said.getOrDefault("exclude", new ArrayList<>()));
     build.platform = said.containsKey("platform") ? one(said, "platform") : null;
     for (String jar : said.getOrDefault("launcher", new ArrayList<>())) {
       if (Paths.get(jar).getFileName().toString().startsWith("junit-platform-launcher-")) {

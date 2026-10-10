@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.platform.engine.DiscoverySelector;
+import org.junit.platform.engine.FilterResult;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.TestSource;
 import org.junit.platform.engine.discovery.ClassNameFilter;
@@ -41,12 +42,12 @@ import org.junit.platform.launcher.core.LauncherFactory;
  * <p>It is asked through a file and answers into another, one JSON object a line. Standard
  * output is the tests' to write on. A test is a method: the invocations of a parameterized
  * test and the tests a factory makes are counted as the method that gives them.
+ *
+ * <p>Asked for no test in particular, it runs the classes it is given: the ones the project's
+ * build takes for tests, which the kalku reads from the build.
  */
 public final class KalkuRunner {
   private KalkuRunner() {}
-
-  // The classes Maven's own runner takes for tests when a project says nothing else.
-  private static final String TEST_CLASSES = "^(.*\\.)?(Test[^.]*|[^.]*Tests?|[^.]*TestCase)$";
 
   public static void main(String[] args) throws IOException {
     leaveWithTheKalku();
@@ -54,6 +55,8 @@ public final class KalkuRunner {
     String mode = asked.get(0);
     Set<Path> roots = new LinkedHashSet<>();
     List<String> tests = new ArrayList<>();
+    Set<String> suite = new LinkedHashSet<>();
+    int reruns = 0;
     Path dumps = null;
     List<Path> classes = new ArrayList<>();
     for (String line : asked.subList(1, asked.size())) {
@@ -61,6 +64,10 @@ public final class KalkuRunner {
         roots.add(Paths.get(line.substring(5)));
       } else if (line.startsWith("test:")) {
         tests.add(line.substring(5));
+      } else if (line.startsWith("class:")) {
+        suite.add(line.substring(6));
+      } else if (line.startsWith("reruns:")) {
+        reruns = Integer.parseInt(line.substring(7));
       } else if (line.startsWith("dumps:")) {
         dumps = Paths.get(line.substring(6));
       } else if (line.startsWith("classes:")) {
@@ -71,7 +78,7 @@ public final class KalkuRunner {
       try {
         Launcher launcher = LauncherFactory.create();
         boolean covering = mode.equals("cover");
-        LauncherDiscoveryRequest request = request(roots, tests, covering);
+        LauncherDiscoveryRequest request = request(roots, tests, suite, covering);
         if (mode.equals("discover")) {
           for (String id : found(launcher.discover(request))) {
             say(out, "{\"e\":\"found\",\"id\":" + quoted(id) + "}");
@@ -83,6 +90,13 @@ public final class KalkuRunner {
             recorder.cover.initialise(classes);
           }
           launcher.execute(request, recorder);
+          // A build that runs a failed test again calls it failed only when it fails every
+          // time. So what failed is run again, by itself and in this same JVM, as many times
+          // as the build would, and what a test did the last time is what it did.
+          for (int i = 0; i < reruns && !recorder.failing.isEmpty(); i++) {
+            launcher.execute(again(recorder.forgetFailures(), covering), recorder);
+            recorder.keepWhatDidNotRun();
+          }
           if (covering) {
             recorder.cover.outside();
             for (String[] taken : recorder.cover.taken) {
@@ -133,16 +147,38 @@ public final class KalkuRunner {
     watch.start();
   }
 
-  private static LauncherDiscoveryRequest request(
-      Set<Path> roots, List<String> tests, boolean covering) {
+  private static LauncherDiscoveryRequestBuilder builder(boolean covering) {
     LauncherDiscoveryRequestBuilder builder = LauncherDiscoveryRequestBuilder.request();
     if (covering) {
       // What a test reached is only known while one test runs at a time.
       builder.configurationParameter("junit.jupiter.execution.parallel.enabled", "false");
     }
+    return builder;
+  }
+
+  // Only these, each by the identifier the platform gave it: one invocation of a
+  // parameterized test, when that is what failed.
+  private static LauncherDiscoveryRequest again(Set<String> failed, boolean covering) {
+    LauncherDiscoveryRequestBuilder builder = builder(covering);
+    for (String id : failed) {
+      builder.selectors(DiscoverySelectors.selectUniqueId(id));
+    }
+    return builder.build();
+  }
+
+  private static LauncherDiscoveryRequest request(
+      Set<Path> roots, List<String> tests, Set<String> suite, boolean covering) {
+    LauncherDiscoveryRequestBuilder builder = builder(covering);
     if (tests.isEmpty()) {
+      // A class nested in a test class is found through it, whatever its own name.
       builder.selectors(DiscoverySelectors.selectClasspathRoots(roots));
-      builder.filters(ClassNameFilter.includeClassNamePatterns(TEST_CLASSES));
+      builder.filters(
+          new ClassNameFilter() {
+            @Override
+            public FilterResult apply(String name) {
+              return FilterResult.includedIf(suite.contains(name));
+            }
+          });
     } else {
       List<DiscoverySelector> selectors = new ArrayList<>();
       for (String id : tests) {
@@ -207,6 +243,10 @@ public final class KalkuRunner {
 
   private static final class Recorder implements TestExecutionListener {
     final Map<String, Result> results = new LinkedHashMap<>();
+    // What failed in the run that is going on or just over: its identifier, and its name.
+    final Map<String, String> failing = new LinkedHashMap<>();
+    // What is being run again and has not ended yet.
+    private final Map<String, String> again = new LinkedHashMap<>();
     private final Map<String, Long> started = new ConcurrentHashMap<>();
     private TestPlan plan;
     Cover cover;
@@ -214,6 +254,30 @@ public final class KalkuRunner {
     @Override
     public void testPlanExecutionStarted(TestPlan testPlan) {
       plan = testPlan;
+    }
+
+    // What failed, taken out of the results so that the next run says what became of it.
+    synchronized Set<String> forgetFailures() {
+      again.clear();
+      again.putAll(failing);
+      for (String name : failing.values()) {
+        results.remove(name);
+      }
+      failing.clear();
+      return new LinkedHashSet<>(again.keySet());
+    }
+
+    // A failure is only taken back by the run that passed. What was to run again and was
+    // never heard of is what it was: failed.
+    synchronized void keepWhatDidNotRun() {
+      for (String name : again.values()) {
+        Result r = results.computeIfAbsent(name, n -> new Result());
+        r.outcome = "failed";
+        if (r.message == null) {
+          r.message = "it failed, and could not be found to be run again";
+        }
+      }
+      again.clear();
     }
 
     @Override
@@ -227,6 +291,7 @@ public final class KalkuRunner {
     @Override
     public synchronized void executionFinished(TestIdentifier id, TestExecutionResult result) {
       boolean failed = result.getStatus() == TestExecutionResult.Status.FAILED;
+      again.remove(id.getUniqueId());
       // A container that fails is a class whose tests never ran: that is a failure of theirs.
       if (!id.isTest() && !failed) {
         return;
@@ -237,6 +302,9 @@ public final class KalkuRunner {
       }
       if (name == null) {
         return;
+      }
+      if (failed) {
+        failing.put(id.getUniqueId(), name);
       }
       Result r = results.computeIfAbsent(name, n -> new Result());
       Long at = started.get(id.getUniqueId());
@@ -257,6 +325,7 @@ public final class KalkuRunner {
     @Override
     public synchronized void executionSkipped(TestIdentifier id, String reason) {
       String name = name(plan, id);
+      again.remove(id.getUniqueId());
       if (name != null && id.isTest()) {
         results.computeIfAbsent(name, n -> new Result()).outcome = "skipped";
       }

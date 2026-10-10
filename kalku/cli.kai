@@ -37,7 +37,8 @@ pub type Wanted = {
   shape: Shape,
   since: Option[String],
   all: Bool,
-  shard: Option[Shard]
+  shard: Option[Shard],
+  store: Bool
 }
 
 #[doc("How a run prints what it found.")]
@@ -111,12 +112,14 @@ pub fn nothing_wanted() : Wanted = Wanted {
   shape: AsHuman,
   since: None,
   all: false,
-  shard: None
+  shard: None,
+  store: false
 }
 
 fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   [] -> whole_or_named(so_far)
   ["--all", ...rest] -> read_wanted(rest, Wanted { ...so_far, all: true })
+  ["--store-baseline", ...rest] -> read_wanted(rest, Wanted { ...so_far, store: true })
   ["--shard"] -> Misused("`--shard` needs a part, as in `--shard 2/4`")
   ["--shard", part, ...rest] -> match shard_named(part) {
     None -> Misused("`--shard` takes a part of a count, as in `2/4`, not `#{part}`")
@@ -153,6 +156,10 @@ fn whole_or_named(w: Wanted) : Command = if w.all and (not is_empty(w.files)) {
   Misused("`--all` measures every source file; name files or say `--all`, not both")
 } else if w.all and is_some(w.since) {
   Misused("`--all` measures the whole project and `--since` a change; say one")
+} else if w.store and ((not w.all) or is_some(w.shard) or w.limit.unwrap_or(0) != 0) {
+  Misused(
+    "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
+  )
 } else {
   Measure(w)
 }
@@ -307,6 +314,8 @@ options:
   --all            measure every source file of the project, all of its wekufe
   --shard <i/n>    cast only part i of n: the same part on every machine, so
                    n jobs cover a project between them
+  --store-baseline store this run's score as the baseline `ratchet = true`
+                   holds later runs of the whole project to
   --format <name>  human (the default), agent, json, or github
   --json           print an info topic as JSON
   --snippet        print only the lines an agent pastes into CLAUDE.md

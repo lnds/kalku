@@ -21,6 +21,7 @@ import kalku.core.answering
 import kalku.core.equivalent_parse as eqfile
 import kalku.core.setting_up
 import kalku.sources
+import kalku.holding
 import kalku.core.info
 import kalku.core.mcp
 import kalku.core.remembering
@@ -144,11 +145,17 @@ fn run_here(
         }
         files -> with_declared(
           ".",
-          declared => measured(
-            asking_for(c, wanted, files, touched, declared),
-            wanted,
-            held_to(c.policy, wanted)
-          )
+          declared => match ratcheted(c, wanted) {
+            Err(why) -> {
+              Stderr.eprint("kalku: could not measure: #{why}")
+              2
+            }
+            Ok(policy) -> measured(
+              asking_for(c, wanted, files, touched, declared),
+              wanted,
+              held_to(policy, wanted)
+            )
+          }
         )
       }
     }
@@ -191,24 +198,6 @@ fn without_dot(path: String) : String = if starts_with(path, "./") {
   path
 }
 
-# A floor is about the whole score, and a shard has the score of the wekufe
-# that fell to it. Held to the floor, a shard that drew the hard part of a
-# project would fail a build the project passes, and one that drew the easy
-# part would pass one it fails.
-fn held_to(policy: Policy, wanted: Wanted) : Policy / Stderr = match wanted.shard {
-  None -> policy
-  Some(s) -> {
-    if is_some(policy.threshold) {
-      Stderr.eprint(
-        "kalku: shard #{s.index} of #{s.count} is not held to `score.threshold`: its score is of a part. Nothing merges shards yet, so the floor is held only by a run that is not one"
-      )
-    } else {
-      ()
-    }
-    no_policy()
-  }
-}
-
 # The language a project says it is written in, which is what tells its sources
 # from its tests and from what a build leaves.
 fn language_of(c: Config) : Result[setting_up.Known, String] = match c.language {
@@ -244,7 +233,9 @@ fn measured(
         # CI than on a laptop.
         let r = judged_by(whole, policy, asking.touched)
         Stdout.print(printed(r, shape))
-        exit_code(r.blockers)
+        let code = exit_code(r.blockers)
+        if wanted.store { keep_baseline(r, code) } else { () }
+        code
       }
     }
   }

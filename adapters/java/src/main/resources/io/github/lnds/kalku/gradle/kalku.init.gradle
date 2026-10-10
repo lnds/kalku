@@ -77,6 +77,19 @@ allprojects { project ->
               && !it.startsWith('-Duser.') && !it.startsWith('-Djava.security.manager')
               && !it.startsWith('-Xmx') && !it.startsWith('-Xms') && it != '-ea'
         })
+        // What the build sets in the environment of its tests: what is there and is not what
+        // Gradle itself was started with.
+        def given = testTask.environment.findAll { name, value -> System.getenv(name) != value.toString() }
+        given.each { name, value ->
+          if (value.toString().contains('\n')) {
+            throw new GradleException("the `test` task of ${project.path} sets ${name} to more " +
+                "than one line, which kalku cannot pass on to the tests")
+          }
+        }
+        lines += kalkuLines('env', given.collect { name, value -> name + '=' + value })
+        // The patterns that say which classes are tests, held against the class files.
+        lines += kalkuLines('include', testTask.includes)
+        lines += kalkuLines('exclude', testTask.excludes)
         lines += kalkuLines('framework', [testTask.testFramework.getClass().simpleName])
         def launcher = testTask.hasProperty('javaLauncher') ? testTask.javaLauncher.getOrNull() : null
         if (launcher != null) {

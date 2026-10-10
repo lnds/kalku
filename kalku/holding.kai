@@ -1,0 +1,85 @@
+#[doc("""
+What a run is held to, beyond what it measured: the project's floors, and
+the baseline its ratchet keeps.
+
+A measurement is the same whoever asks; what it has to meet is not. A shard
+has the score of a part, a change is judged by what it introduced, and only
+a run of the whole project is compared with the score the whole project
+once reached.
+""")]
+
+import fs.file
+import kalku.wire.shapes
+import kalku.core.gate
+import kalku.core.config
+import kalku.core.report
+import kalku.core.ratchet
+import kalku.core.setting_up
+import kalku.cli
+
+# A floor is about the whole score, and a shard has the score of the wekufe
+# that fell to it. Held to the floor, a shard that drew the hard part of a
+# project would fail a build the project passes, and one that drew the easy
+# part would pass one it fails.
+#[doc("The policy a run answers to: none of the floors, for a shard.")]
+pub fn held_to(policy: Policy, wanted: Wanted) : Policy / Stderr = match wanted.shard {
+  None -> policy
+  Some(s) -> {
+    if is_some(policy.threshold) {
+      Stderr.eprint(
+        "kalku: shard #{s.index} of #{s.count} is not held to `score.threshold`: its score is of a part. Nothing merges shards yet, so the floor is held only by a run that is not one"
+      )
+    } else {
+      ()
+    }
+    no_policy()
+  }
+}
+
+# The ratchet holds the score of the whole project, so only a run of the
+# whole project is held to it: the score of some files, of a change or of a
+# shard is of something else. A project that asked for a ratchet and has no
+# baseline is not measured against nothing: that run would pass whatever
+# the score, and go on passing in every checkout that never had the file.
+#[doc("The project's policy with its stored baseline, for a run the ratchet holds; why not, when there is none to hold it to.")]
+pub fn ratcheted(c: Config, wanted: Wanted) : Result[Policy, String] / File = held_by_ratchet(
+  c,
+  wanted,
+  if file.exists(BASELINE_PATH) { Some(file.read(BASELINE_PATH)) } else { None }
+)
+
+#[doc("The same, given what the baseline file holds, or `None` when there is no file.")]
+pub fn held_by_ratchet(c: Config, wanted: Wanted, stored: Option[String]) : Result[Policy, String] =
+  if not c.ratchet {
+    if wanted.store {
+      Err(
+        "`--store-baseline` stores what `ratchet = true` holds the score to, and #{CONFIG_PATH} does not set it"
+      )
+    } else {
+      Ok(c.policy)
+    }
+  } else if wanted.store or (not wanted.all) or is_some(wanted.shard) {
+    Ok(c.policy)
+  } else {
+    match stored {
+      None -> Err(
+        "`ratchet = true` and no baseline is stored. Store one with `kalku run --all --store-baseline` and commit #{BASELINE_PATH}"
+      )
+      Some(text) -> Ok(Policy { ...c.policy, baseline: score_of(ratchet.read(text)!) })
+    }
+  }
+
+# Only a run that ended clean stores: a score a threshold refused, or one
+# of a suite with tests left out, is not one to hold later runs to.
+#[doc("Stores a run's score as the baseline, and says how it moved.")]
+pub fn keep_baseline(r: Report, code: Int) : Unit / Stderr + File = if code != 0 {
+  Stderr.eprint("kalku: baseline not stored: this run did not end clean")
+} else {
+  let was = if file.exists(BASELINE_PATH) {
+    ratchet.read(file.read(BASELINE_PATH)).ok()
+  } else {
+    None
+  }
+  file.write(BASELINE_PATH, written(stored_of(r.counts)))
+  Stderr.eprint("kalku: #{moved(was, stored_of(r.counts))}")
+}

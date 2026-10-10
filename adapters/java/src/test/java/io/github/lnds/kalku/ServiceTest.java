@@ -85,8 +85,10 @@ class ServiceTest {
     assertTrue(said.get(0).contains("`.git`") && said.get(0).contains("`target`"));
     assertTrue(said.get(1).contains(System.getProperty("java.home")));
     assertTrue(said.get(1).contains("not by surefire"));
-    assertTrue(said.get(2).contains("`argLine`") && said.get(2).contains("`rerunFailingTestsCount`"));
-    assertTrue(said.get(3).contains("surefire's `includes`"));
+    assertTrue(said.get(2).contains("`argLine`, `systemPropertyVariables`, `environmentVariables`"));
+    assertTrue(said.get(2).contains("`rerunFailingTestsCount` are read: not `forkCount`"));
+    assertTrue(said.get(3).contains("surefire's `includes` and `excludes` leave in"));
+    assertTrue(said.get(3).contains("`groups` and `excludedGroups` are not read"));
     assertTrue(said.get(4).contains("none of your environment but PATH, JAVA_HOME:"));
     for (String each : said) {
       assertFalse(each.contains("Gradle") || each.contains("`build`"), each);
@@ -101,7 +103,9 @@ class ServiceTest {
     assertTrue(said.get(0).contains("`build`"));
     assertTrue(said.get(1).contains("not by Gradle"));
     assertTrue(said.get(2).contains("`test` task") && said.get(2).contains("`-Xmx`"));
-    assertTrue(said.get(3).contains("filters and tags"));
+    assertTrue(said.get(2).contains("its `environment` are read: not `forkEvery`"));
+    assertTrue(said.get(3).contains("`include` and `exclude` patterns of the `test` task"));
+    assertTrue(said.get(3).contains("its `filter`") && said.get(3).contains("are not read"));
     for (String each : said) {
       assertFalse(each.contains("surefire") || each.contains("`target`"), each);
     }
@@ -113,6 +117,10 @@ class ServiceTest {
 
     assertEquals(6, said.size(), said.toString());
     assertTrue(said.get(5).contains("JUnit 4 or TestNG"));
+    // Surefire runs a failed test again only where it runs the JUnit Platform itself.
+    assertTrue(said.get(5).contains("is not run again, whatever `rerunFailingTestsCount` says"));
+    String underGradle = Service.differences(built(true, true), Arrays.asList("PATH")).get(5);
+    assertFalse(underGradle.contains("rerunFailingTestsCount"), underGradle);
   }
 
   @Test

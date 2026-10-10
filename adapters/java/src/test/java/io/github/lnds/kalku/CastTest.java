@@ -933,6 +933,151 @@ class CastTest {
     assertTrue(((String) said.get("message")).contains("4.12 or later"), said.toString());
   }
 
+  // ---- what a build says of its tests ---------------------------------------------
+
+  private static final Map<Path, List<Map<?, ?>>> SUITES = new LinkedHashMap<>();
+  private static final String BIG = "fx.CalcTest#tenIsBigAndNineIsNot()";
+  private static final String BROKEN = "fx.BrokenTest#isLeftOutByTheBuild()";
+  private static final String CHECK = "fx.LabelCheck#aNumberThatIsNotZeroIsSome()";
+  private static final String ENVIRONMENT = "fx.CalcTest#theBuildsEnvironmentReachesTheTests()";
+  private static final String FLAKY = "fx.FlakyTest#passesTheSecondTime()";
+
+  // `calc` under the build of `suite`, which says which classes are its tests and what they
+  // run with: by Maven, or by Gradle.
+  private static Path suite(boolean gradle) throws IOException {
+    Path project = temp.resolve(gradle ? "gradle-suite" : "with-suite");
+    if (!Files.exists(project)) {
+      testedWith("suite", project.getFileName().toString());
+      if (gradle) {
+        Files.delete(project.resolve("pom.xml"));
+        for (String file : Arrays.asList("build.gradle", "settings.gradle")) {
+          Files.copy(PROJECTS.resolve("gradle").resolve("suite").resolve(file), project.resolve(file));
+        }
+      }
+    }
+    return project;
+  }
+
+  // What the kalku said of it: prepared, its sites, and its baseline. Asked once.
+  private static List<Map<?, ?>> measured(Path project) throws Exception {
+    if (!SUITES.containsKey(project)) {
+      SUITES.put(
+          project,
+          ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(CALC), "{\"type\":\"baseline\",\"id\":4}"));
+    }
+    List<Map<?, ?>> said = SUITES.get(project);
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    assertEquals("baseline_done", said.get(3).get("type"), said.get(3).toString());
+    return said;
+  }
+
+  // The tests a baseline names under `key`: the ones that ran, or the ones that failed.
+  private static List<String> named(Map<?, ?> baseline, String key) {
+    List<String> out = new ArrayList<>();
+    for (Object each : (List<?>) baseline.get(key)) {
+      out.add((String) ((Map<?, ?>) each).get("test"));
+    }
+    Collections.sort(out);
+    return out;
+  }
+
+  private static Map<?, ?> siteIn(List<Map<?, ?>> said, String original, String replacement) {
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      Map<?, ?> site = (Map<?, ?>) each;
+      if (original.equals(site.get("original")) && replacement.equals(site.get("replacement"))) {
+        return site;
+      }
+    }
+    throw new AssertionError("no site turning " + original + " into " + replacement);
+  }
+
+  private static Map<?, ?> castIn(Path project, Map<?, ?> site, List<String> tests) throws Exception {
+    return ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", castOf(site, tests)).get(2);
+  }
+
+  // A class named the way a test is, which the build excludes because it fails. Run, it would
+  // call a suite red that the build calls green.
+  @Test
+  void aClassTheBuildLeavesOutIsNotRun() throws Exception {
+    Map<?, ?> done = measured(suite(false)).get(3);
+    assertFalse(named(done, "tests").contains(BROKEN), done.toString());
+    assertFalse(named(done, "failures").contains(BROKEN), done.toString());
+  }
+
+  // A class the build includes under a name that is no test's by default. Only it looks at
+  // the label of a number that is not zero: left out, the wekufe it notices is a survivor.
+  @Test
+  void aClassTheBuildIncludesIsRunWhateverItIsCalled() throws Exception {
+    Path project = suite(false);
+    List<Map<?, ?>> said = measured(project);
+    assertTrue(named(said.get(3), "tests").contains(CHECK), said.get(3).toString());
+    Map<?, ?> cast = castIn(project, siteIn(said, "\"some\"", "\"\""), Arrays.asList(BIG, CHECK));
+    assertEquals("killed", cast.get("outcome"), cast.toString());
+    assertEquals(CHECK, cast.get("killed_by"));
+  }
+
+  @Test
+  void whatTheBuildSetsInTheEnvironmentReachesTheTests() throws Exception {
+    Map<?, ?> done = measured(suite(false)).get(3);
+    assertTrue(named(done, "tests").contains(ENVIRONMENT), done.toString());
+    assertFalse(named(done, "failures").contains(ENVIRONMENT), done.toString());
+  }
+
+  // The build runs a failed test again, and calls it failed only when it fails every time.
+  // So does the baseline, and so does a cast: a test that passes the second time has passed,
+  // and one that a wekufe makes fail every time has still killed it.
+  @Test
+  void aTestTheBuildRunsAgainHasFailedOnlyWhenItFailsEveryTime() throws Exception {
+    Path project = suite(false);
+    List<Map<?, ?>> said = measured(project);
+    Map<?, ?> done = said.get(3);
+    assertEquals(Arrays.asList(BIG, ENVIRONMENT, FLAKY, CHECK), named(done, "tests"));
+    assertEquals(Collections.emptyList(), named(done, "failures"));
+    assertEquals("green", done.get("status"), done.toString());
+
+    Map<?, ?> unnoticed = castIn(project, siteIn(said, "\"some\"", "\"\""), Arrays.asList(FLAKY));
+    assertEquals("survived", unnoticed.get("outcome"), unnoticed.toString());
+    Map<?, ?> noticed = castIn(project, siteIn(said, ">=", ">"), named(done, "tests"));
+    assertEquals("killed", noticed.get("outcome"), noticed.toString());
+    assertEquals(BIG, noticed.get("killed_by"));
+  }
+
+  // Gradle takes every class for a candidate when a build names none, and holds its patterns
+  // against the class files as they are written.
+  @Test
+  void aGradleBuildsOwnPatternsAndEnvironmentAreItsTests() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
+    Path project = suite(true);
+    List<Map<?, ?>> said = measured(project);
+    Map<?, ?> done = said.get(3);
+    org.junit.jupiter.api.Assertions.assertAll(
+        () -> assertFalse(named(done, "tests").contains(BROKEN), done.toString()),
+        () -> assertTrue(named(done, "tests").contains(CHECK), done.toString()),
+        () -> assertFalse(named(done, "failures").contains(ENVIRONMENT), done.toString()),
+        () -> assertEquals(Arrays.asList(BIG, ENVIRONMENT, CHECK), named(done, "tests")),
+        () -> assertEquals("green", done.get("status"), done.toString()));
+    Map<?, ?> cast = castIn(project, siteIn(said, "\"some\"", "\"\""), Arrays.asList(BIG, CHECK));
+    assertEquals("killed", cast.get("outcome"), cast.toString());
+    assertEquals(CHECK, cast.get("killed_by"));
+  }
+
+  // A pattern kalku does not read is not guessed at: the build is refused, by the pattern.
+  @Test
+  void aPatternItDoesNotReadIsRefusedByName() throws Exception {
+    Path project = testedWith("suite", "with-a-regex");
+    Path pom = project.resolve("pom.xml");
+    String text = new String(Files.readAllBytes(pom), StandardCharsets.UTF_8);
+    assertTrue(text.contains("<include>fx.*Check</include>"));
+    Files.write(
+        pom,
+        text.replace("<include>fx.*Check</include>", "<include>%regex[.*Check.*]</include>")
+            .getBytes(StandardCharsets.UTF_8));
+    Map<?, ?> said = ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}").get(1);
+    assertEquals("prepare_failed", said.get("code"), said.toString());
+    assertTrue(((String) said.get("message")).contains("`%regex[.*Check.*]`"), said.toString());
+    assertTrue(((String) said.get("message")).contains("surefire's `includes`"), said.toString());
+  }
+
   // ---- what is not a verdict ---------------------------------------------------
 
   // A JVM that ends before its tests do did not fail an assertion. `System.exit` is the

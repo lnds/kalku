@@ -38,6 +38,15 @@ JDK, with the kalku's jar behind it.
   project has, from 5.4 to 6, or against the one fetched for a project on
   JUnit 4 or TestNG.
 
+- **The tests are the build's.** The classes that are tests are the ones the
+  build takes: surefire's `includes` and `excludes`, the `include` and
+  `exclude` patterns of Gradle's `test` task, or what each takes when a build
+  names none. A pattern in a form the kalku does not read is refused by name,
+  never guessed at. The variables a build sets in the environment of its tests
+  are set, and a test surefire would run again (`rerunFailingTestsCount`) is
+  run again: it has failed only when it fails every time. What is still not
+  read, the baseline says in `differences`.
+
 - **`abort`** ends the JVM the tests run in and everything it started; the
   kalku stays up for the next cast.
 
@@ -94,8 +103,9 @@ class-version error on a closed pipe tells nobody what to do.
 each wekufe is known: `calc`; `generated`, part of whose code an annotation
 processor writes; `tables`, whose class fills a table when it is first used;
 and `shop`, three modules of which one uses another and one is nothing but
-tests. `junit4` and `testng` are `calc` under tests written for those, and
-`gradle/` holds Gradle builds of the same sources.
+tests. `junit4` and `testng` are `calc` under tests written for those,
+`suite` is `calc` under a build that says which classes are its tests and what
+they run with, and `gradle/` holds Gradle builds of the same sources.
 
 `src/test/fixtures/<spell>/` holds sources written a particular way on purpose,
 each beside the exact sites it must give (`*.sites.ndjson`). After reviewing a
