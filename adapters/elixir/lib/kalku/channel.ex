@@ -25,20 +25,21 @@ defmodule Kalku.Channel do
       Process.group_leader(pid, stderr)
     end
 
-    # The protocol is bytes. A device that takes characters would encode
-    # each byte of a message again on the way out, and refuse on the way in
-    # those it cannot hold.
-    :io.setopts(device, encoding: :latin1)
+    # The protocol is UTF-8, and so is what the device is told to carry:
+    # read and written as bytes instead, each byte of a character is taken
+    # for a character of its own, encoded again on the way out and refused
+    # on the way in.
+    :io.setopts(device, encoding: :unicode)
 
     :persistent_term.put(@device, device)
     :ok
   end
 
   @doc "The next line of the protocol, or what the end of input looks like."
-  def read_line, do: IO.binread(device(), :line)
+  def read_line, do: IO.read(device(), :line)
 
   @doc "Writes one line of the protocol; true when it was written."
-  def write_line(line), do: IO.binwrite(device(), line <> "\n") == :ok
+  def write_line(line), do: IO.write(device(), [line, ?\n]) == :ok
 
   defp device, do: :persistent_term.get(@device, :stdio)
 
