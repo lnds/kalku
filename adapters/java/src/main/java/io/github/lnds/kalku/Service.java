@@ -307,6 +307,15 @@ final class Service {
     Source src;
     try {
       Path root = Paths.get(hello.root);
+      if (project != null && sourcesOf(project.root.resolve(file).normalize()) == null) {
+        return new String[] {
+          "outside_sources",
+          "`"
+              + file
+              + "` is in none of the directories the build compiles as the project's own "
+              + "code, so no cast would measure it"
+        };
+      }
       src = Source.read(root.resolve(file));
     } catch (IOException | InvalidPathException e) {
       return new String[] {"unreadable", "cannot read `" + file + "`: " + e};
@@ -369,7 +378,7 @@ final class Service {
       }
       long modules = 0;
       for (Maven.Build module : built.modules) {
-        modules += Project.sources(Collections.singletonList(module.sources)).size();
+        modules += Project.sources(module.sources).size();
         if (module.platform == null) {
           continue;
         }
@@ -591,7 +600,7 @@ final class Service {
       // The places asked about: the statement each site is in.
       Map<String, Place> places = new LinkedHashMap<>();
       for (Maven.Build module : project.modules) {
-        for (Path file : Project.sources(Collections.singletonList(module.sources))) {
+        for (Path file : Project.sources(module.sources)) {
           String relative = project.root.relativize(file).toString().replace('\\', '/');
           List<Sites.Site> sites;
           try {
@@ -610,7 +619,7 @@ final class Service {
             if (place == null) {
               place = new Place();
               place.module = module;
-              place.source = module.sources.relativize(file).toString().replace('\\', '/');
+              place.source = sourcesOf(file).relativize(file).toString().replace('\\', '/');
               place.from = from;
               place.to = to;
               places.put(key, place);
@@ -755,9 +764,30 @@ final class Service {
 
   // ---- cast ----------------------------------------------------------------
 
-  // The module a file of the project belongs to: the one it is deepest inside.
+  // The directory of sources a file is under, among those the build compiles as the project's
+  // own code; null for a file that is under none of them.
+  private Path sourcesOf(Path file) {
+    Path found = null;
+    for (Maven.Build module : project.modules) {
+      for (Path dir : module.sources) {
+        if (file.startsWith(dir) && (found == null || dir.getNameCount() > found.getNameCount())) {
+          found = dir;
+        }
+      }
+    }
+    return found;
+  }
+
+  // The module a file of the project belongs to: the one that compiles the directory it is
+  // under, which need not be inside the module; otherwise the one it is deepest inside.
   private Maven.Build moduleOf(Path file) {
+    Path sources = sourcesOf(file);
     Maven.Build found = null;
+    for (Maven.Build module : project.modules) {
+      if (module.sources.contains(sources)) {
+        return module;
+      }
+    }
     for (Maven.Build module : project.modules) {
       if (file.startsWith(module.dir)
           && (found == null || module.dir.getNameCount() > found.dir.getNameCount())) {
@@ -944,7 +974,7 @@ final class Service {
       }
     }
     for (Maven.Build each : again) {
-      List<Path> sources = Project.sources(Collections.singletonList(each.sources));
+      List<Path> sources = Project.sources(each.sources);
       // A module can be nothing but tests of another: it has no code of its own to compile.
       if (sources.isEmpty()) {
         continue;

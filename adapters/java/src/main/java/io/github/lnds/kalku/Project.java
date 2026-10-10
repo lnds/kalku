@@ -141,9 +141,12 @@ final class Project {
     return (name.equals("build") || name.equals(".gradle")) && Gradle.builds(dir.getParent());
   }
 
-  /** Every {@code .java} file under these directories, in a stable order. */
+  /**
+   * Every {@code .java} file under these directories, in a stable order, and once: one of the
+   * directories may be inside another.
+   */
   static List<Path> sources(List<Path> roots) throws IOException {
-    List<Path> out = new java.util.ArrayList<>();
+    Set<Path> out = new java.util.LinkedHashSet<>();
     for (Path root : roots) {
       if (Files.isDirectory(root)) {
         try (Stream<Path> all = Files.walk(root)) {
@@ -153,7 +156,7 @@ final class Project {
         }
       }
     }
-    return out;
+    return new java.util.ArrayList<>(out);
   }
 
   /** Empties a directory and leaves it there. */
