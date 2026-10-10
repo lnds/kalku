@@ -3,3 +3,4 @@
 {"type":"cast_done","id":5,"wekufe":"5d02be7741aa","outcome":"compile_error","message":"lib/my_app/parser.ex:61: undefined function skip/0","duration_ms":210,"dirty":false}
 {"type":"cast_done","id":6,"wekufe":"a4d95e11b7c0","outcome":"equivalent","code_hash":"19bc40f2d8a1","duration_ms":4,"dirty":false}
 {"type":"cast_done","id":7,"wekufe":"0e9a4c21d7f3","outcome":"killed","duration_ms":1800,"dirty":true}
+{"type":"cast_done","id":8,"wekufe":"3b7e19c0aa52","outcome":"no_coverage","message":"no test ran `MyApp.Cache.init/1` while the wekufe was in it.","code_hash":"5ac1d07e44b9","duration_ms":61,"dirty":false}
