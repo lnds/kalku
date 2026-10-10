@@ -116,7 +116,7 @@ pub fn explain(b: Blocker) : String {
   case BelowThreshold(got, limit) ->
     "score #{pct(got)} is below the threshold #{pct(limit)}"
   case BelowBaseline(got, was) ->
-    "score #{pct(got)} is below the stored baseline #{pct(was)}"
+    "score #{pct(got)} is below the stored baseline #{pct(was)}. Lowering it is `kalku run --all --store-baseline`, and a decision"
   case CouldNotMeasure(why) -> "could not measure: #{why}"
 }
 

@@ -21,6 +21,7 @@ import kalku.core.score
 import kalku.core.recurring
 import kalku.core.gate
 import kalku.core.report
+import kalku.core.shard
 import kalku.core.blaming
 import kalku.core.hint
 
@@ -144,6 +145,7 @@ fn summary_line(r: Report) : String = json_encode(
       ++ suppression_field(r.suppressions)
       ++ left_out_fields(r.left_out)
       ++ withheld_field(r.withheld)
+      ++ shard_field(r.shard)
       ++ [("exit", JNum(exit_code(r.blockers)))]
   )
 )
@@ -165,6 +167,13 @@ fn left_out_fields(out: LeftOut) : [(String, JsonValue)] = if is_empty(out.tests
 fn withheld_field(why: Option[String]) : [(String, JsonValue)] = match why {
   None -> []
   Some(said) -> [("coverage_withheld", JStr(said))]
+}
+
+# A shard's counts are of a part, and an agent that reads them as the
+# project's has been told something nobody measured.
+fn shard_field(shard: Option[Shard]) : [(String, JsonValue)] = match shard {
+  None -> []
+  Some(s) -> [("shard", JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))]
 }
 
 # A pattern travels only when there is one, and as a fact rather than as

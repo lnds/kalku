@@ -6,6 +6,27 @@ plan, so every machine agrees on which shard owns which wekufe and a rerun
 lands the same way. Shards are disjoint and together cover the plan.
 """)]
 
+import kalku.wire.shapes
+
+#[doc("""
+Reads `i/n`, as `--shard` takes it. `None` for anything that is not two
+numbers with the first among the second.
+""")]
+pub fn shard_named(text: String) : Option[Shard] = match split(text, "/") {
+  [i, n] -> match (to_int(i), to_int(n)) {
+    (Some(index), Some(count)) ->
+      if valid(index, count) { Some(Shard { index: index, count: count }) } else { None }
+    _ -> None
+  }
+  _ -> None
+}
+
+#[doc("True when this run owns the wekufe: all of them, when the run is not a shard.")]
+pub fn in_shard(site_id: String, shard: Option[Shard]) : Bool = match shard {
+  None -> true
+  Some(s) -> owns(site_id, s.index, s.count)
+}
+
 #[doc("The shard a wekufe belongs to, 1-based, of `count` shards.")]
 pub fn shard_of(site_id: String, count: Int) : Int
   requires count >= 1

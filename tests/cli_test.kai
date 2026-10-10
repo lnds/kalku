@@ -1,4 +1,5 @@
 import kalku.cli
+import kalku.wire.shapes
 import kalku.version
 
 test "no arguments shows the help" {
@@ -55,7 +56,10 @@ test "run takes the files to measure, and how much of them" {
         limit: None,
         aloud: false,
         shape: AsHuman,
-        since: None
+        since: None,
+        all: false,
+        shard: None,
+        store: false
       }
     )
   assert cli.parse_args(["run", "--limit", "6", "-v", "lib/a.ex"])
@@ -64,14 +68,26 @@ test "run takes the files to measure, and how much of them" {
       limit: Some(6),
       aloud: true,
       shape: AsHuman,
-      since: None
+      since: None,
+      all: false,
+      shard: None,
+      store: false
     })
 }
 
 # The files a run measures come from the config when none are named.
 test "run with nothing named is still a run" {
   assert cli.parse_args(["run"])
-    == Measure(Wanted { files: [], limit: None, aloud: false, shape: AsHuman, since: None })
+    == Measure(Wanted {
+      files: [],
+      limit: None,
+      aloud: false,
+      shape: AsHuman,
+      since: None,
+      all: false,
+      shard: None,
+      store: false
+    })
 }
 
 test "info takes a topic and how to print it" {
@@ -94,7 +110,10 @@ test "run takes the shape it should print in" {
       limit: None,
       aloud: false,
       shape: AsAgent,
-      since: None
+      since: None,
+      all: false,
+      shard: None,
+      store: false
     })
   assert cli.parse_args(["run", "--format", "github", "lib/a.ex"])
     == Measure(Wanted {
@@ -102,7 +121,10 @@ test "run takes the shape it should print in" {
       limit: None,
       aloud: false,
       shape: AsGithub,
-      since: None
+      since: None,
+      all: false,
+      shard: None,
+      store: false
     })
   assert cli.parse_args(["run", "--format"])
     == Misused("`--format` needs a name: human, agent, json or github")
@@ -115,7 +137,16 @@ test "run takes the shape it should print in" {
 test "cast names wekufe, show names one, and both need a name" {
   assert cli.parse_args(["cast", "w1", "w2"])
     == Recast(
-      Wanted { files: ["w1", "w2"], limit: None, aloud: false, shape: AsHuman, since: None }
+      Wanted {
+        files: ["w1", "w2"],
+        limit: None,
+        aloud: false,
+        shape: AsHuman,
+        since: None,
+        all: false,
+        shard: None,
+        store: false
+      }
     )
   assert cli.parse_args(["cast"]) == Misused("`kalku cast` needs a wekufe to re-cast")
   assert cli.parse_args(["show", "w1"]) == Display("w1", AsHuman)
@@ -144,7 +175,10 @@ test "run takes the ref a change started from" {
         limit: None,
         aloud: false,
         shape: AsHuman,
-        since: Some("origin/main")
+        since: Some("origin/main"),
+        all: false,
+        shard: None,
+        store: false
       }
     )
   assert cli.parse_args(["run", "lib/a.ex", "--since", "main", "--format", "github"])
@@ -154,7 +188,10 @@ test "run takes the ref a change started from" {
         limit: None,
         aloud: false,
         shape: AsGithub,
-        since: Some("main")
+        since: Some("main"),
+        all: false,
+        shard: None,
+        store: false
       }
     )
 }
@@ -190,4 +227,35 @@ test "cast does not take a change" {
       assert false
     }
   }
+}
+
+# The whole project in parts is a nightly run's recipe, and a part that is
+# not one is a typo that would otherwise cast the wrong wekufe.
+test "run takes the whole project, and a part of it" {
+  assert parse_args(["run", "--all", "--shard", "2/4"])
+    == Measure(Wanted { ...nothing_wanted(), all: true, shard: Some(Shard { index: 2, count: 4 }) })
+  assert parse_args(["run", "--shard"]) == Misused("`--shard` needs a part, as in `--shard 2/4`")
+  assert parse_args(["run", "--all", "--shard", "5/4"])
+    == Misused("`--shard` takes a part of a count, as in `2/4`, not `5/4`")
+  assert parse_args(["run", "--all", "--shard", "half"])
+    == Misused("`--shard` takes a part of a count, as in `2/4`, not `half`")
+}
+
+test "the whole project is not also some files, nor a change" {
+  assert parse_args(["run", "--all", "lib/a.ex"])
+    == Misused("`--all` measures every source file; name files or say `--all`, not both")
+  assert parse_args(["run", "--all", "--since", "origin/main"])
+    == Misused("`--all` measures the whole project and `--since` a change; say one")
+}
+
+# A baseline is the score of the whole project, so only a run of the whole
+# project can store one.
+test "a baseline is stored by a run of the whole project and no other" {
+  assert parse_args(["run", "--all", "--store-baseline"])
+    == Measure(Wanted { ...nothing_wanted(), all: true, store: true })
+  let part =
+    "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
+  assert parse_args(["run", "lib/a.ex", "--store-baseline"]) == Misused(part)
+  assert parse_args(["run", "--all", "--shard", "1/2", "--store-baseline"]) == Misused(part)
+  assert parse_args(["run", "--all", "--limit", "10", "--store-baseline"]) == Misused(part)
 }

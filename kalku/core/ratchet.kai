@@ -1,0 +1,70 @@
+#[doc("""
+The ratchet: a score a project has reached, written down, that a later run
+of the whole project may not fall below.
+
+What is written is the two counts a score is made of, not the score: a
+ratio read back from a file is a rounding away from the one it is compared
+with, and a run that changed nothing would then be told it had dropped.
+
+The file is the project's, under its `.kalku`, and versioned with it. A
+run never writes it unasked: a baseline that moved by itself would hold
+nothing, and one that went down unseen is the hole this exists to close.
+""")]
+
+import encoding.json
+import kalku.wire.shapes
+
+#[doc("Where a project's baseline is kept, under the project's own `.kalku`.")]
+pub const BASELINE_PATH : String = ".kalku/baseline.json"
+
+#[doc("What a baseline holds: the wekufe the suite killed, and the ones it did not.")]
+#[derive(Json, Eq, Show)]
+pub type Stored = { killed: Int, survived: Int }
+
+#[doc("The baseline a run's counts would store.")]
+pub fn stored_of(c: Counts) : Stored = Stored { killed: c.killed, survived: c.survived }
+
+#[doc("A baseline as the file holds it.")]
+pub fn written(s: Stored) : String = "#{json_encode(to_json(s))}\n"
+
+#[doc("Reads a baseline file; an error says what was wrong with it.")]
+pub fn read(text: String) : Result[Stored, String] = match json_decode(trim(text)) {
+  None -> Err("#{BASELINE_PATH} is not JSON")
+  Some(v) -> match stored_of_json(v, "") {
+    Ok(s) -> if s.killed < 0 or s.survived < 0 {
+      Err("#{BASELINE_PATH} holds a negative count")
+    } else {
+      Ok(s)
+    }
+    Err(_) -> Err("#{BASELINE_PATH} does not hold `killed` and `survived`")
+  }
+}
+
+#[doc("The score a baseline stands for, or `None` when nothing could have been killed.")]
+pub fn score_of(s: Stored) : Option[Real] {
+  let asked = s.killed + s.survived
+  if asked == 0 { None } else { Some(int_to_real(s.killed) / int_to_real(asked)) }
+}
+
+#[doc("""
+What to say when a baseline is stored over another.
+
+A baseline that goes down is said as loudly as a suppression that is
+added: it is the same thing, a hole made acceptable, and it has to be
+somebody's decision and not a side effect.
+""")]
+pub fn moved(was: Option[Stored], now: Stored) : String = match was {
+  None -> "baseline stored: #{shown(now)}"
+  Some(old) -> if below(now, old) {
+    "the baseline goes DOWN, from #{shown(old)} to #{shown(now)}: the score may now drop to there"
+  } else {
+    "baseline stored: #{shown(now)}, from #{shown(old)}"
+  }
+}
+
+fn below(now: Stored, old: Stored) : Bool = match (score_of(now), score_of(old)) {
+  (Some(n), Some(o)) -> n < o
+  _ -> false
+}
+
+fn shown(s: Stored) : String = "#{s.killed} killed of #{s.killed + s.survived}"

@@ -14,6 +14,7 @@ import kalku.wire.envelope
 import kalku.core.score
 import kalku.core.gate
 import kalku.core.report
+import kalku.core.shard
 
 #[doc("The whole report as one canonical JSON object.")]
 pub fn json(r: Report, exit: Int) : String = encode_value(
@@ -30,6 +31,10 @@ pub fn json(r: Report, exit: Int) : String = encode_value(
       ]
       ++ left_out(r)
       ++ optional("coverage_withheld", r.withheld.map(w => JStr(w)))
+      ++ optional(
+        "shard",
+        r.shard.map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
+      )
   )
 )
 

@@ -27,6 +27,7 @@ import kalku.core.stopping
 import kalku.core.blaming
 import kalku.core.told
 import kalku.core.planner
+import kalku.core.shard
 import kalku.core.equivalent
 import kalku.core.costing
 import kalku.core.gate
@@ -53,7 +54,8 @@ pub type Asking = {
   equivalents: [equivalent.Entry],
   limit: Int,
   timeout_floor_ms: Int,
-  touched: Option[[FileChange]]
+  touched: Option[[FileChange]],
+  shard: Option[Shard]
 }
 
 # `durations` holds pairs, which have no `Eq`, so this record derives
@@ -471,7 +473,7 @@ fn casting_them(
   all_known: Known
 ) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling {
   let known = wanted_only(asking, all_known)
-  let ready = plan(inputs_for(asking, known), _id => None)
+  let ready = part_of(plan(inputs_for(asking, known), _id => None), asking.shard)
   let casts = repeated(limited(ready.to_cast, asking.limit))
   Telling.entered(PhaseCasting)
   Telling.tell_of(
@@ -486,7 +488,11 @@ fn casting_them(
     length(uniq(casts | (c => c.site.site_id)))
   )
   Found {
-    report: if is_some(stopped) { None } else { Some(report_of(ready, casting, known)) },
+    report: if is_some(stopped) {
+      None
+    } else {
+      Some(Report { ...report_of(ready, casting, known), shard: asking.shard })
+    },
     failure: stopped,
     cast: written_down(casting, known)
   }
@@ -541,6 +547,20 @@ pub fn suppressed_by(entries: [equivalent.Entry], sites: [Site]) : [String] =
 pub fn orphans_among(entries: [equivalent.Entry], sites: [Site]) : [equivalent.Entry] =
   match_sites(entries, sites).orphans
 
+#[doc("""
+The part of a plan a shard owns, or all of it for a run that is not one.
+
+Of everything the plan sets aside too: a site no test reaches, or one
+declared equivalent, counted by every shard would be counted as many times
+as there are shards.
+""")]
+pub fn part_of(ready: Plan, shard: Option[Shard]) : Plan = Plan {
+  to_cast: ready.to_cast |? (w => in_shard(w.site.site_id, shard)),
+  no_coverage: ready.no_coverage |? (s => in_shard(s.site_id, shard)),
+  suppressed: ready.suppressed |? (s => in_shard(s.site_id, shard)),
+  cached: ready.cached |? (k => in_shard(k.site.site_id, shard))
+}
+
 fn limited(casts: [Wekufe], limit: Int) : [Wekufe] = if limit <= 0 {
   casts
 } else {
@@ -580,7 +600,8 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
       differences: known.differences,
       sites: ready.no_coverage |? (s => theirs_only(known, s))
     },
-    withheld: known.withheld
+    withheld: known.withheld,
+    shard: None
   }
 }
 

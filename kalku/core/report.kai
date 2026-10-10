@@ -10,6 +10,7 @@ where nobody can miss it.
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.verdict
+import kalku.core.shard
 import kalku.core.score
 import kalku.core.gate
 import kalku.core.hint
@@ -72,7 +73,8 @@ pub type Report = {
   uncovered: [Site],
   blockers: [Blocker],
   left_out: LeftOut,
-  withheld: Option[String]
+  withheld: Option[String],
+  shard: Option[Shard]
 }
 
 #[doc("A wekufe that produced nothing to score, and what the kalku said about it.")]
@@ -133,7 +135,8 @@ pub fn diff_of(site: Site) : [String] {
 pub fn summary_line(r: Report) : String {
   let c = r.counts
   join(
-    partial(r)
+    part(r.shard)
+      ++ partial(r)
       ++ ["score #{score_text(c)}", "#{c.killed} killed", "#{c.survived} survived"]
       ++ aside("timeout", c.timeout)
       ++ aside("no coverage", c.no_coverage)
@@ -144,6 +147,14 @@ pub fn summary_line(r: Report) : String {
       ++ aside("test(s) left out", length(r.left_out.tests)),
     " · "
   )
+}
+
+# A shard's score is of the wekufe that fell to it, and says so first for
+# the reason a limited run does: read without it, it is the score of a
+# project nobody measured.
+fn part(shard: Option[Shard]) : [String] = match shard {
+  None -> []
+  Some(s) -> ["SHARD #{s.index} of #{s.count}"]
 }
 
 # A run that cast part of what it planned reports a score over that part,

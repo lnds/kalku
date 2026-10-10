@@ -437,7 +437,7 @@ memory_limit_mb = 8192   # per kalku; 0 for none. Default: a quarter of the mach
 
 [score]
 threshold = 0.80        # global floor; --ci exits 1 below it
-# ratchet = true        # not yet: the global score may not drop below the stored baseline
+ratchet = true          # the score of the whole project may not drop below the stored baseline
 
 [elixir]
 partition_env = "MIX_TEST_PARTITION"
@@ -455,7 +455,7 @@ Any change to a key component invalidates it. Keys never use timestamps.
 
 ## Running in CI
 
-This section is the design. Of it, `--since` and the exit codes exist; `--ci`, `--all`, `--shard`, `kalku merge` and the ratchet do not yet, and the README's status table is where to look for what does. Today a pull request is gated with `kalku run --since origin/<base>`, and a score is tracked by naming the files: `kalku run --limit 0 <files>`.
+This section is the design. Of it, `--since`, `--all`, `--shard` and the exit codes exist; `--ci` and `kalku merge` do not yet, and the README's status table is where to look for what does. Today a pull request is gated with `kalku run --since origin/<base>`, and the global score is `kalku run --all`. A shard reports the score of its part, says so first, and is not held to `score.threshold`: until `kalku merge` exists, the floor is held by a run that is not a shard.
 
 `kalku run --ci` runs the orchestrator in-process for one run: no server, no socket.
 
@@ -470,9 +470,18 @@ A full run on every PR does not scale: a medium Elixir project yields thousands 
 
 ### What blocks a PR
 
-A PR fails when **it introduces a hole**: a wekufe that survives on a line the PR changed, or a site on one that no test reaches at all. Code no test ran is the larger hole — there was nothing even to fail to notice it. Gating PRs on the global score punishes whoever touches a file with old debt, and teams switch such tools off. The global score is guarded separately by `[score] threshold` and, with `ratchet = true`, by a stored baseline it may not drop below. The ratchet is designed and not built: no run stores a baseline yet, so a config that sets `ratchet = true` is refused rather than held to nothing.
+A PR fails when **it introduces a hole**: a wekufe that survives on a line the PR changed, or a site on one that no test reaches at all. Code no test ran is the larger hole — there was nothing even to fail to notice it. Gating PRs on the global score punishes whoever touches a file with old debt, and teams switch such tools off. The global score is guarded separately by `[score] threshold` and, with `ratchet = true`, by a stored baseline it may not drop below.
 
 Changes to suppressions are surfaced, never silent: if a PR adds entries to `.kalku/equivalent` or widens `exclude`/`exclude_calls` in `.kalku.toml`, the report and the GitHub summary list them under their own heading. Hiding a hole must be as visible as leaving one.
+
+### The ratchet
+
+With `[score] ratchet = true`, a run of the whole project (`kalku run --all`) is held to the baseline in `.kalku/baseline.json`: the two counts a score is made of, `killed` and `survived`, versioned with the project. A score below it blocks with exit 1.
+
+- **A run never writes the baseline unasked.** `kalku run --all --store-baseline` stores the score of that run, and only when the run ended clean. A baseline that moved by itself would hold nothing.
+- **Lowering it is loud.** Storing a baseline below the one that is there says so on stderr, and the file's diff shows it in review, like an entry added to `.kalku/equivalent`.
+- **No baseline is not a pass.** A project that set the ratchet and stored nothing is not measured against nothing: the run ends with exit 2 and the command that stores one. A checkout that never had the file would otherwise pass for ever.
+- **Only the whole project is held to it.** The score of named files, of a change (`--since`) or of a shard is of something else, and is not compared.
 
 ### Exit codes
 
@@ -569,10 +578,10 @@ followed by one summary object (counts, score, suppression changes).
 
 | Spell | Hint template |
 |---|---|
-| `arm` | no test reaches this clause of `<enclosing>`; add a case that takes it |
+| `arm` | no test fails without this clause of `<enclosing>`; assert what only it returns, in a case that takes it |
 | `compare` | no test tells `<a> <op> <b>` apart at the boundary; add a case where they are equal |
 | `connect` | no test has exactly one side of `<op>` true; add one for each side |
-| `negate` | no test takes the other branch of this condition |
+| `negate` | no test tells the two branches of this condition apart; assert what only one of them does |
 | `literal` | no test depends on the exact value `<original>` |
 | `call` | no test observes the effect of `<call>`; assert what it returns or changes |
 

@@ -1,0 +1,31 @@
+import kalku.core.ratchet
+
+test "a baseline is read back as it was written" {
+  let s = Stored { killed: 21, survived: 26 }
+  assert read(written(s)) == Ok(s)
+  assert written(s) == "{\"killed\":21,\"survived\":26}\n"
+}
+
+# The file is a person's to commit and so a person's to break; what is
+# wrong with it is said, never guessed around.
+test "a baseline that cannot be read says what is wrong with it" {
+  assert read("") == Err(".kalku/baseline.json is not JSON")
+  assert read("{\"killed\":3}") == Err(".kalku/baseline.json does not hold `killed` and `survived`")
+  assert read("{\"killed\":-1,\"survived\":2}")
+    == Err(".kalku/baseline.json holds a negative count")
+}
+
+# Counts, not a ratio: the same run stores and reads the same score, to
+# the last bit, so a run that changed nothing is never told it dropped.
+test "the score of a baseline is the score of the counts it holds" {
+  assert score_of(Stored { killed: 1, survived: 2 }) == Some(1.0 / 3.0)
+  assert score_of(Stored { killed: 0, survived: 0 }) == None
+}
+
+test "a baseline that goes down is said loudly, and one that goes up is not" {
+  let low = Stored { killed: 1, survived: 3 }
+  let high = Stored { killed: 3, survived: 1 }
+  assert moved(None, high) == "baseline stored: 3 killed of 4"
+  assert moved(Some(low), high) == "baseline stored: 3 killed of 4, from 1 killed of 4"
+  assert is_some(index_of(moved(Some(high), low), "goes DOWN, from 3 killed of 4 to 1 killed of 4"))
+}

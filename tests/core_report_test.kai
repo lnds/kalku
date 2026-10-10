@@ -46,7 +46,8 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     uncovered: [],
     blockers: blockers,
     left_out: nobody_left_out(),
-    withheld: None
+    withheld: None,
+    shard: None
   }
 
 fn plain() : Report =
@@ -392,6 +393,21 @@ test "a run in which every test judged says nothing about leaving any out" {
 test "a run that left tests out is shown, and does not pass" {
   assert trouble_with(nobody_left_out()) == None
   assert is_some(trouble_with(left([failing("t", "boom")], [])))
+}
+
+# A shard's score is of the wekufe that fell to it. Read without the word,
+# it is the score of a project nobody measured.
+test "a shard says it is one, before its score and in every format" {
+  let r = Report {
+    ...report_of([], tally([Cast(Killed), Cast(Survived)]), []),
+    shard: Some(Shard { index: 2, count: 4 })
+  }
+  let text = human(r)
+
+  assert has(text, "SHARD 2 of 4 · score 50%")
+  assert has(json(r, 0), "\"shard\":{\"index\":2,\"count\":4}")
+  assert not has(human(plain()), "SHARD")
+  assert not has(json(plain(), 0), "\"shard\"")
 }
 
 # Only the kalku knows why it would not stand behind which tests reach a

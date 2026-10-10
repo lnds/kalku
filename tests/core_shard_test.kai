@@ -1,3 +1,4 @@
+import kalku.wire.shapes
 import kalku.core.shard
 
 fn ids() : [String] = [1..200] | (n => "site-#{n}")
@@ -79,4 +80,22 @@ check "a shard of one owns everything" with id: String {
 # tempted to cache it.
 bench "placing 200 wekufe in 4 shards" {
   [1..4] | (i => length(owned_by(i, 4)))
+}
+
+test "a part is read as `i/n`, and nothing else is one" {
+  assert shard_named("2/4") == Some(Shard { index: 2, count: 4 })
+  assert shard_named("1/1") == Some(Shard { index: 1, count: 1 })
+  assert shard_named("0/4") == None
+  assert shard_named("5/4") == None
+  assert shard_named("2") == None
+  assert shard_named("a/b") == None
+  assert shard_named("1/2/3") == None
+}
+
+# A run that is not a shard owns every wekufe; one that is owns what
+# `owns` says, so the parts of a count hold each wekufe once between them.
+test "a run that is not a shard owns everything" {
+  assert in_shard("s1", None)
+  assert in_shard("s1", Some(Shard { index: 1, count: 2 }))
+    != in_shard("s1", Some(Shard { index: 2, count: 2 }))
 }
