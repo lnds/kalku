@@ -83,7 +83,7 @@ fn hello() : KalkuRequest = Hello(HelloMsg {
 })
 
 fn a_cast(wekufe: String) : KalkuRequest =
-  Cast(CastMsg { wekufe: wekufe, site: a_site(), tests: ["test/arm_test.kai"] })
+  Cast(CastMsg { wekufe: wekufe, site: a_site(), tests: ["test/arm_test.kai"], rest: None })
 
 fn a_site() : Site = Site {
   site_id: "s1",

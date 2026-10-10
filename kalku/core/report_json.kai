@@ -31,6 +31,7 @@ pub fn json(r: Report, exit: Int) : String = encode_value(
       ]
       ++ left_out(r)
       ++ optional("coverage_withheld", r.withheld.map(w => JStr(w)))
+      ++ optional("coverage_doubted", r.doubted.map(w => JStr(w)))
       ++ optional(
         "shard",
         r.shard.map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))

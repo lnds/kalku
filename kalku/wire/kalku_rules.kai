@@ -34,6 +34,11 @@ fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
       or given(m.coverage) + given(m.coverage_path) + given(m.coverage_packed_path) == 0,
     "baseline_done: coverage_withheld says no coverage is reported, and one was"
   )!
+  require(
+    is_none(m.coverage_doubted)
+      or given(m.coverage) + given(m.coverage_path) + given(m.coverage_packed_path) == 1,
+    "baseline_done: coverage_doubted is said of a coverage, and none was reported"
+  )!
   require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
 }
 

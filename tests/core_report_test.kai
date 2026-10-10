@@ -47,6 +47,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     blockers: blockers,
     left_out: nobody_left_out(),
     withheld: None,
+    doubted: None,
     shard: None
   }
 
@@ -393,6 +394,27 @@ test "a run in which every test judged says nothing about leaving any out" {
 test "a run that left tests out is shown, and does not pass" {
   assert trouble_with(nobody_left_out()) == None
   assert is_some(trouble_with(left([failing("t", "boom")], [])))
+}
+
+# Told that every test was asked and not why, a reader takes a slow run
+# for a broken one, or goes looking for the cause in the wrong place.
+test "a run whose coverage was doubted says so, in the kalku's words" {
+  let r = Report {
+    ...report_of(
+      [Survivor { site: compare_site(), tests: ["t1", "t2"], chosen: false }],
+      tally([Cast(Survived)]),
+      []
+    ),
+    doubted: Some("The suite reached 1 line(s) that no single test is credited with (a.ex:2).")
+  }
+  let text = human(r)
+
+  assert has(text, "judged by the whole suite, 2 test(s)")
+  assert has(text, "faced every other test before it was called a survivor")
+  assert has(text, "  The suite reached 1 line(s) that no single test is credited with (a.ex:2).")
+  assert has(json(r, 1), "\"coverage_doubted\":\"The suite reached 1 line(s)")
+  assert not has(human(plain()), "faced every other test")
+  assert not has(json(plain(), 1), "coverage_doubted")
 }
 
 # A shard's score is of the wekufe that fell to it. Read without the word,

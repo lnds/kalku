@@ -107,6 +107,8 @@ Coverage travels inline when it fits under `hello.inline_limit_bytes`, and other
 
 A line no test runs has no entry at all: the question is which tests cover a line, and for an uncovered line the honest answer is none, which the kaikai side reads as `no_coverage` rather than as a hole.
 
+Running the suite whole and then each test alone measures the same thing twice, and the two have to agree: every line the suite reached, some test reached. Where they do not — a process that runs on its own clock between two tests, something kept the first time it is asked for, a test that takes another way through the code alone than in company — a line that is credited may be missing a test. The coverage is reported all the same, with `coverage_doubted` saying why and the lines that are nobody's credited to every test. The kaikai side then asks the credited tests first and the rest of the suite before it calls a wekufe a survivor: kills stay fast, and no survivor rests on the word of too few tests.
+
 The kalku declares OTP's `:tools` application, which is where `:cover` lives.
 
 ## Casting

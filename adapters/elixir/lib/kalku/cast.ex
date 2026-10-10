@@ -178,12 +178,29 @@ defmodule Kalku.Cast do
     else
       Beams.put(compiled)
       watched = Entered.watch(compiled, site)
-      ran = root |> Tests.run(tests) |> looked_at(watched, root, tests, site, originals)
+      {first, rest} = tiers(tests)
+
+      ran =
+        root
+        |> Tests.run(first)
+        |> by_the_rest(root, rest)
+        |> looked_at(watched, root, first ++ rest, site, originals)
+
       Entered.stop(watched)
       Beams.clear()
       Map.put(ran, :code_hash, hash_of(compiled))
     end
   end
+
+  # The tests that reach the wekufe, and the others to ask when the kaikai
+  # side was told the first may be missing one.
+  defp tiers({first, rest}), do: {first, rest}
+  defp tiers(tests) when is_list(tests), do: {tests, []}
+
+  # One failing test is a kill whoever else was asked, so the others are
+  # only asked when none of the first noticed.
+  defp by_the_rest(%{outcome: "survived"}, root, [_ | _] = rest), do: Tests.run(root, rest)
+  defp by_the_rest(ran, _root, _rest), do: ran
 
   # A wekufe that no test ran did not survive anything: every test passed
   # because none of them met it. It is tried once more where it does run.
