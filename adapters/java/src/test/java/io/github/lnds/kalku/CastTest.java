@@ -770,6 +770,76 @@ class CastTest {
     }
   }
 
+  // ---- several source directories --------------------------------------------------
+
+  // `roots` keeps its code in two directories the build compiles, and has a third it does
+  // not. A constant in the first is copied into a class of the second, which is the only one
+  // a test looks at: measured by its first directory alone, the wekufe in the constant would
+  // be compiled without the class that uses it, and survive.
+  private static void everyDirectoryIsMeasured(Path project) throws Exception {
+    String limits = "src/main/java/fx/Limits.java";
+    String gate = "src/shared/java/fx/Gate.java";
+    String spare = "src/spare/java/fx/Spare.java";
+    List<Map<?, ?>> said =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(limits, gate, spare), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    assertEquals(2L, said.get(1).get("modules"));
+
+    // A file the build does not compile is not searched, and the reason is said.
+    List<?> skipped = (List<?>) said.get(2).get("skipped");
+    assertEquals(1, skipped.size(), skipped.toString());
+    assertEquals(spare, ((Map<?, ?>) skipped.get(0)).get("file"));
+    assertEquals("outside_sources", ((Map<?, ?>) skipped.get(0)).get("reason"));
+
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+    List<String> every = new ArrayList<>();
+    for (Object test : (List<?>) done.get("tests")) {
+      every.add((String) ((Map<?, ?>) test).get("test"));
+    }
+    // A line of the second directory has the test that reaches it.
+    assertEquals(
+        Arrays.asList("fx.GateTest#opensAtTenAndNotAtNine()"), reaching(done).get(gate + ":8"));
+
+    List<String> casts = new ArrayList<>(Arrays.asList(hello(project), "{\"type\":\"prepare\",\"id\":2}"));
+    List<Map<?, ?>> found = new ArrayList<>();
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      found.add((Map<?, ?>) each);
+      casts.add(castOf((Map<?, ?>) each, every));
+    }
+    List<Map<?, ?>> outcomes = ask(project, casts.toArray(new String[0]));
+    int constants = 0;
+    for (int i = 0; i < found.size(); i++) {
+      Map<?, ?> site = found.get(i);
+      Map<?, ?> cast = outcomes.get(i + 2);
+      assertEquals("cast_done", cast.get("type"), site + " " + cast);
+      // The two constants, one in each directory: whatever either becomes, a test notices.
+      if ("10".equals(site.get("original")) || "1".equals(site.get("original"))) {
+        assertEquals("dependents", site.get("reload"), site.toString());
+        assertEquals("killed", cast.get("outcome"), site + " " + cast);
+        constants++;
+      }
+    }
+    assertTrue(constants >= 2, found.toString());
+    assertTrue(found.stream().anyMatch(s -> limits.equals(s.get("file"))), found.toString());
+    assertTrue(found.stream().anyMatch(s -> gate.equals(s.get("file"))), found.toString());
+  }
+
+  // Maven is told of the second directory by `build-helper-maven-plugin`.
+  @Test
+  void everySourceDirectoryAMavenBuildAddsIsMeasured() throws Exception {
+    Path project = temp.resolve("roots");
+    copy(PROJECTS.resolve("roots"), project);
+    everyDirectoryIsMeasured(project);
+  }
+
+  // Gradle's source set has both.
+  @Test
+  void everySourceDirectoryOfAGradleSourceSetIsMeasured() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
+    everyDirectoryIsMeasured(asGradle("roots"));
+  }
+
   // ---- JUnit 4 and TestNG --------------------------------------------------------
 
   // `calc`'s own sources, with the build and the tests of another fixture in place of its own.

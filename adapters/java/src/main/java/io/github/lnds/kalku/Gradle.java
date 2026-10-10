@@ -207,8 +207,13 @@ final class Gradle {
     String called = build.name.isEmpty() ? "the project" : "the project `" + build.name + "`";
     build.classes = Paths.get(one(said, "classes"));
     build.testClasses = Paths.get(one(said, "testClasses"));
-    // A project can keep its sources in more than one place; the first is what is measured.
-    build.sources = first(said, "sources", build.dir.resolve("src/main/java"));
+    // A project can keep its sources in more than one place, and all of them are its code.
+    for (String sources : said.getOrDefault("sources", new ArrayList<>())) {
+      build.sources.add(Paths.get(sources).toRealPath());
+    }
+    if (build.sources.isEmpty()) {
+      build.sources.add(build.dir.resolve("src/main/java"));
+    }
     build.testSources = first(said, "testSources", build.dir.resolve("src/test/java"));
     for (String entry : said.getOrDefault("classpath", new ArrayList<>())) {
       Path path = Paths.get(entry);

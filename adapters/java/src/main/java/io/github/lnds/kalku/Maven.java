@@ -65,7 +65,8 @@ final class Maven {
     List<Path> libraries = new ArrayList<>();
     Path classes;
     Path testClasses;
-    Path sources;
+    // Every directory the build compiles as the module's own code.
+    List<Path> sources = new ArrayList<>();
     Path testSources;
     // What the build tells `javac`, so a wekufe is compiled the way the project is.
     List<String> compilerFlags = new ArrayList<>();
@@ -346,10 +347,33 @@ final class Maven {
     Element b = child(project, "build");
     build.classes = Paths.get(text(b, "outputDirectory"));
     build.testClasses = Paths.get(text(b, "testOutputDirectory"));
-    build.sources = Paths.get(text(b, "sourceDirectory"));
+    build.sources.add(Paths.get(text(b, "sourceDirectory")));
+    added(build, plugin(b, "build-helper-maven-plugin"));
     build.testSources = Paths.get(text(b, "testSourceDirectory"));
     compiler(build, project, plugin(b, "maven-compiler-plugin"));
     surefire(build, child(project, "properties"), plugin(b, "maven-surefire-plugin"));
+  }
+
+  // The directories a build adds to its sources with `build-helper`'s `add-source`, which is
+  // how a Maven build states more than one. A directory another plugin adds while it runs,
+  // for code it generates, is not stated anywhere and is not known here.
+  private static void added(Build build, Element plugin) {
+    for (Element execution : children(child(plugin, "executions"))) {
+      boolean adds = false;
+      for (Element goal : children(child(execution, "goals"))) {
+        adds |= "add-source".equals(text(goal));
+      }
+      if (!adds || "none".equals(text(execution, "phase"))) {
+        continue;
+      }
+      for (Element source : children(child(child(execution, "configuration"), "sources"))) {
+        // A directory is stated from the module's own, unless it is stated whole.
+        Path dir = build.dir.resolve(text(source)).normalize();
+        if (!build.sources.contains(dir)) {
+          build.sources.add(dir);
+        }
+      }
+    }
   }
 
   /**
