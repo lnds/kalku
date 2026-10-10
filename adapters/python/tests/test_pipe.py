@@ -90,6 +90,56 @@ def test_a_baseline_lists_every_test_and_says_which_reached_which_line(kalku, ma
     assert all(not f.startswith("tests") for f, _ in by_line)
 
 
+# The tests of this project pass only where each difference the kalku states is so.
+UNLIKE = {
+    "gate.py": "LIMIT = 9\n",
+    ".git/HEAD": "ref: refs/heads/main\n",
+    "build/left.txt": "by a build\n",
+    ".venv/pyvenv.cfg": "home = /nowhere\n",
+    "tests/test_where.py": """
+        import os
+        import sys
+
+        import gate
+
+
+        def test_it_runs_in_a_copy_without_what_the_copy_leaves_out():
+            assert os.path.exists("gate.py")
+            for left_out in (".git", "build", ".venv"):
+                assert not os.path.exists(left_out)
+
+
+        def test_the_project_is_imported_from_the_copy():
+            here = os.path.realpath(os.getcwd())
+            assert os.path.dirname(os.path.realpath(gate.__file__)) == here
+            assert here in [os.path.realpath(p) for p in sys.path]
+
+
+        def test_the_plugins_said_to_be_off_are_off(pytestconfig):
+            assert not pytestconfig.pluginmanager.hasplugin("cacheprovider")
+            assert pytestconfig.pluginmanager.is_blocked("xdist")
+            assert pytestconfig.pluginmanager.is_blocked("randomly")
+
+
+        def test_the_process_is_the_kalkus_own_forked():
+            assert "kalku_python.service" in sys.modules
+    """,
+}
+
+
+def test_what_a_baseline_says_of_its_run_is_what_a_test_finds(kalku, make_project):
+    k, root = prepared(kalku, make_project, UNLIKE)
+    assert k.ask({"type": "prepare"})["type"] == "prepared"
+
+    done = k.ask({"type": "baseline"})
+
+    assert done["failures"] == []
+    assert len(done["tests"]) == 4
+    assert len(done["differences"]) == 4
+    copy = done["differences"][0]
+    assert str(k.reni / "work" / "0") in copy and str(root) not in copy
+
+
 def test_a_red_suite_is_reported_red_with_the_message_of_the_failure(kalku, make_project):
     files = {**GATE, "tests/test_gate.py": GATE["tests/test_gate.py"].replace("gate(0)", "gate(5)")}
     k, _ = prepared(kalku, make_project, files)

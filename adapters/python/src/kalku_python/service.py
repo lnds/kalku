@@ -305,6 +305,7 @@ class Service:
             tests,
             failures,
             self._spoken(entries),
+            differences(work),
         )
 
     def _attributed(self, work: Path, tests: list[dict], per_test: dict) -> dict:
@@ -489,6 +490,23 @@ def _problem(events: list[dict]) -> str | None:
         if e.get("e") == "collect_error":
             return f"{e['id'] or 'collection'}: {e['message']}"
     return None
+
+
+def differences(work: Path) -> list[str]:
+    """How this run of the suite is unlike `pytest` in the project.
+
+    What a test can tell, and nothing else: a suite that is green in the
+    project and red here is red for one of these."""
+    return [
+        f"it ran in a copy of the project kept in the reni, {work}, and what the copy leaves "
+        "out is not there: `.git`, a virtual environment (`.venv`, `venv`, `env`), anything "
+        "named `build`, `dist` or `node_modules`, and the caches of tools",
+        "the project's packages are imported from that copy, which is put on `sys.path` "
+        "ahead of where they are installed",
+        "pytest ran once, in one process: `-n`, `--dist` and `--cov` are dropped from "
+        "`addopts`, and the plugins `xdist`, `cov`, `randomly` and `cacheprovider` are off",
+        "the tests ran in a process forked from the kalku's, which had already imported pytest",
+    ]
 
 
 def _ms(started: float) -> int:

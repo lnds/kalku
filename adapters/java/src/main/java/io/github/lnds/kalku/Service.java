@@ -11,6 +11,7 @@ import java.nio.file.Paths;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -474,7 +475,65 @@ final class Service {
       spilled = file.toString();
       reached = null;
     }
-    return Protocol.baselineDone(request.id, ms(started), ranTests, failures, reached, spilled);
+    return Protocol.baselineDone(
+        request.id, ms(started), ranTests, failures, reached, spilled,
+        differences(project, environment().keySet()));
+  }
+
+  /**
+   * How this run of the suite is unlike {@code mvn test} or {@code gradle test} in the project.
+   *
+   * <p>What a test can tell, and nothing else: a suite that is green under the build and red
+   * here is red for one of these.
+   *
+   * @param passedOn the names of the environment variables the tests' JVM is given
+   */
+  static List<String> differences(Maven.Reactor project, Collection<String> passedOn) {
+    boolean gradle = project.gradle;
+    List<String> out = new ArrayList<>();
+    out.add(
+        "it ran in a copy of the project kept in the reni, "
+            + project.root
+            + ": `.git` and symbolic links are not copied, and of what a build leaves in "
+            + (gradle ? "`build`" : "`target`")
+            + " only the classes and resources the tests run with are built again");
+    out.add(
+        "each module's tests ran in one JVM, "
+            + Paths.get(System.getProperty("java.home"), "bin", "java")
+            + ", started by the kalku and not by "
+            + (gradle ? "Gradle" : "surefire")
+            + ": on the class path, the kalku's runner first on it, and never on the module "
+            + "path");
+    out.add(
+        gradle
+            ? "of what the build says of its tests only the JVM arguments and system "
+                + "properties of the `test` task are read, without `-Xmx` and `-Xms`: not its "
+                + "`environment`, nor `forkEvery`, nor a plugin that runs a failed test again"
+            : "of what the build says of its tests only surefire's `argLine` and "
+                + "`systemPropertyVariables` are read: not `environmentVariables`, nor "
+                + "`forkCount` and `reuseForks`, nor `rerunFailingTestsCount`, so a test that "
+                + "fails is not run again");
+    out.add(
+        "the tests are the classes named `Test*`, `*Test`, `*Tests` or `*TestCase`: "
+            + (gradle
+                ? "the filters and tags of the `test` task"
+                : "surefire's `includes`, `excludes` and `groups`")
+            + " are not read, so a class the build leaves out runs and one named otherwise "
+            + "does not");
+    out.add(
+        "the tests see none of your environment but "
+            + String.join(", ", passedOn)
+            + ": any other variable set for them in your shell is not there");
+    for (Maven.Build module : project.modules) {
+      if (module.engineFetched) {
+        out.add(
+            "tests written for JUnit 4 or TestNG ran on the JUnit Platform, through an engine "
+                + "fetched for them, and not through the runner the build has for them: a "
+                + "TestNG suite file is not read");
+        break;
+      }
+    }
+    return out;
   }
 
   // The source a test is written in: `a.B$C#m()` is in `a/B.java` under the module's test

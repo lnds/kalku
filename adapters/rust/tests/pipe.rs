@@ -16,7 +16,13 @@ struct Kalku {
 
 impl Kalku {
     fn summon() -> Kalku {
+        Kalku::summon_with(&[])
+    }
+
+    // With these variables in its environment, beside the ones it was started in.
+    fn summon_with(env: &[(&str, &str)]) -> Kalku {
         let mut child = Command::new(env!("CARGO_BIN_EXE_kalku-rust"))
+            .envs(env.iter().copied())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -577,6 +583,50 @@ fn an_abort_stops_a_running_cast_and_the_kalku_casts_again() {
         fs::read_to_string(project.0.join("src/lib.rs")).unwrap(),
         SLOW
     );
+    k.leave();
+}
+
+// These tests pass only where each thing the kalku says of its run is so.
+const UNLIKE: &str = "#[cfg(test)]\nmod tests {\n    use std::path::Path;\n\
+    #[test]\n    fn the_copy_leaves_out_what_git_keeps() {\n\
+        let here = Path::new(env!(\"CARGO_MANIFEST_DIR\"));\n\
+        assert!(here.join(\"src/lib.rs\").exists());\n\
+        assert!(!here.join(\".git\").exists());\n    }\n\
+    #[test]\n    fn the_build_is_elsewhere() {\n\
+        let here = Path::new(env!(\"CARGO_MANIFEST_DIR\"));\n\
+        let build = std::env::var(\"CARGO_TARGET_DIR\").unwrap();\n\
+        assert!(std::env::current_exe().unwrap().starts_with(&build));\n\
+        assert!(!here.join(\"target\").exists());\n    }\n\
+    #[test]\n    fn a_variable_of_the_shell_is_not_there() {\n\
+        assert!(std::env::var(\"KALKU_TEST_OF_THE_SHELL\").is_err());\n    }\n}\n";
+
+// What a baseline says of its run is what the project's own tests find: the
+// copy without `.git`, the build in the reni, the environment cut down.
+#[test]
+fn what_a_baseline_says_of_its_run_is_what_a_test_finds() {
+    let project = Project::new("unlike", "2024", &[("src/lib.rs", UNLIKE)]);
+    fs::create_dir_all(project.0.join(".git")).unwrap();
+    fs::write(project.0.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    let mut k = Kalku::summon_with(&[("KALKU_TEST_OF_THE_SHELL", "1")]);
+    k.hello(&project.0);
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+
+    let baseline = k.ask(json!({"type": "baseline", "id": 3}));
+
+    assert_eq!(baseline["failures"], json!([]), "{baseline}");
+    assert_eq!(baseline["tests"].as_array().unwrap().len(), 3);
+    let said: Vec<&str> = baseline["differences"]
+        .as_array()
+        .expect("how the run differed")
+        .iter()
+        .map(|d| d.as_str().unwrap())
+        .collect();
+    assert_eq!(said.len(), 5, "{said:?}");
+    let reni = project.0.join(".reni");
+    assert!(said[0].contains(&format!("{}:", reni.join("work/0").display())));
+    assert!(said[1].contains(&reni.join("target").display().to_string()));
+    assert!(!said[4].contains("KALKU_TEST_OF_THE_SHELL"));
     k.leave();
 }
 

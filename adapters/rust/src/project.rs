@@ -80,6 +80,11 @@ pub trait Project {
     fn run_covered(&mut self, _target: &Target, _name: &str) -> io::Result<(Ran, Lines)> {
         Err(io::ErrorKind::Unsupported.into())
     }
+    /// How a run of the suite here is unlike the project's own test command,
+    /// a sentence each: what a test can tell, and nothing else.
+    fn differences(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 pub struct Cargo {
@@ -324,6 +329,43 @@ impl Project for Cargo {
         };
         let lines = self.lines_of(&tools, &profiles)?;
         Ok((ran, lines))
+    }
+
+    // Unlike `cargo test` at the root of the project. A suite that is green
+    // there and red here is red for one of these.
+    fn differences(&self) -> Vec<String> {
+        let build = match self.tools {
+            Some(_) => self
+                .reni
+                .join("target")
+                .join(format!("{}-cov", self.worker)),
+            None => self.target_dir.clone(),
+        };
+        let passed_on: Vec<&str> = self.env.iter().map(|(k, _)| k.as_str()).collect();
+        vec![
+            format!(
+                "it ran in a copy of the project kept in the reni, {}: what the copy leaves \
+                 out is not there, `.git` and whatever is named `target`",
+                self.work.display()
+            ),
+            format!(
+                "the build is in {} (CARGO_TARGET_DIR), not in `target`: a test that looks \
+                 in `target` for what a build leaves does not find it",
+                build.display()
+            ),
+            "each test ran alone, in a run of its test executable for it and no other \
+             (`-- --exact`), one after another: what the tests of an executable share when \
+             they run together is not shared"
+                .to_string(),
+            "in a workspace the tests of every package ran (`--workspace`), where `cargo \
+             test` at the root takes the root package or the default members"
+                .to_string(),
+            format!(
+                "the tests see none of your environment but {}: any other variable set for \
+                 them in your shell is not there",
+                passed_on.join(", ")
+            ),
+        ]
     }
 }
 
@@ -773,6 +815,38 @@ mod tests {
             passed_on(|k| (k == "RUSTUP_TOOLCHAIN").then(|| "1.85".to_string())),
             [("RUSTUP_TOOLCHAIN".to_string(), "1.85".to_string())]
         );
+    }
+
+    #[test]
+    fn it_says_where_it_ran_where_it_built_and_what_of_the_environment_it_kept() {
+        let mut cargo = Cargo::new(
+            PathBuf::from("/root"),
+            PathBuf::from("/reni"),
+            3,
+            vec![("EXTRA".to_string(), "1".to_string())],
+        );
+        cargo.env.retain(|(k, _)| k == "EXTRA");
+
+        let said = cargo.differences();
+
+        assert_eq!(said.len(), 5);
+        assert!(said[0].contains("a copy of the project kept in the reni, /reni/work/3:"));
+        assert!(said[0].contains("`.git`") && said[0].contains("`target`"));
+        assert!(said[1].starts_with("the build is in /reni/target/3 (CARGO_TARGET_DIR)"));
+        assert!(said[2].starts_with("each test ran alone"));
+        assert!(said[3].contains("`--workspace`"));
+        assert!(said[4].contains("none of your environment but EXTRA:"));
+    }
+
+    #[test]
+    fn the_build_it_names_is_the_instrumented_one_when_that_is_what_ran() {
+        let mut cargo = Cargo::new(PathBuf::from("/root"), PathBuf::from("/reni"), 3, vec![]);
+        cargo.tools = Some(Tools {
+            profdata: PathBuf::from("llvm-profdata"),
+            cov: PathBuf::from("llvm-cov"),
+        });
+
+        assert!(cargo.differences()[1].starts_with("the build is in /reni/target/3-cov "));
     }
 
     #[test]

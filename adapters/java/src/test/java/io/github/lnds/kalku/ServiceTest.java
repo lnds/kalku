@@ -66,6 +66,55 @@ class ServiceTest {
     return Json.encode(o);
   }
 
+  private static Maven.Reactor built(boolean gradle, boolean engineFetched) {
+    Maven.Reactor project = new Maven.Reactor();
+    project.root = java.nio.file.Paths.get("/reni/work/0/project");
+    project.gradle = gradle;
+    Maven.Build module = new Maven.Build();
+    module.engineFetched = engineFetched;
+    project.modules.add(module);
+    return project;
+  }
+
+  @Test
+  void aRunUnderMavenSaysHowItIsUnlikeMavensOwn() {
+    List<String> said = Service.differences(built(false, false), Arrays.asList("PATH", "JAVA_HOME"));
+
+    assertEquals(5, said.size(), said.toString());
+    assertTrue(said.get(0).contains("a copy of the project kept in the reni, /reni/work/0/project:"));
+    assertTrue(said.get(0).contains("`.git`") && said.get(0).contains("`target`"));
+    assertTrue(said.get(1).contains(System.getProperty("java.home")));
+    assertTrue(said.get(1).contains("not by surefire"));
+    assertTrue(said.get(2).contains("`argLine`") && said.get(2).contains("`rerunFailingTestsCount`"));
+    assertTrue(said.get(3).contains("surefire's `includes`"));
+    assertTrue(said.get(4).contains("none of your environment but PATH, JAVA_HOME:"));
+    for (String each : said) {
+      assertFalse(each.contains("Gradle") || each.contains("`build`"), each);
+    }
+  }
+
+  @Test
+  void aRunUnderGradleNamesGradlesSettingsAndNotMavens() {
+    List<String> said = Service.differences(built(true, false), Arrays.asList("PATH"));
+
+    assertEquals(5, said.size(), said.toString());
+    assertTrue(said.get(0).contains("`build`"));
+    assertTrue(said.get(1).contains("not by Gradle"));
+    assertTrue(said.get(2).contains("`test` task") && said.get(2).contains("`-Xmx`"));
+    assertTrue(said.get(3).contains("filters and tags"));
+    for (String each : said) {
+      assertFalse(each.contains("surefire") || each.contains("`target`"), each);
+    }
+  }
+
+  @Test
+  void anEngineFetchedForOlderTestsIsSaidOnlyWhereOneWas() {
+    List<String> said = Service.differences(built(false, true), Arrays.asList("PATH"));
+
+    assertEquals(6, said.size(), said.toString());
+    assertTrue(said.get(5).contains("JUnit 4 or TestNG"));
+  }
+
   @Test
   void itAnnouncesWhatItIsAndOnlyWhatItCanDo() throws Exception {
     Map<?, ?> ready = ask(hello(1)).get(0);
