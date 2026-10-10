@@ -330,7 +330,7 @@ cold ──prepare──► preparing ──ok──► baseline ──green─�
 | `killed` | a covering test failed | detected |
 | `survived` | every covering test passed | undetected |
 | `timeout` | exceeded its timeout | reported apart |
-| `no_coverage` | no test executes the site: by the baseline's coverage, or seen by the kalku while the wekufe was cast. Code that runs once, as an application starts, is among it where the runtime is warm: it does not run again for a wekufe | reported apart |
+| `no_coverage` | no test executes the site: by the baseline's coverage, or seen by the kalku while the wekufe was cast. Code that runs once and not again in a warm runtime is among it where the kalku has no way to run it again | reported apart |
 | `compile_error` | the wekufe does not compile | excluded |
 | `crashed` | the cast produced no verdict: the kalku died, it could not run the tests it was given, or the wekufe held more memory than the ceiling (the message says how much) | reported apart |
 | `equivalent` | proven by identical bytecode, or declared with a written reason | excluded |

@@ -11,7 +11,10 @@ defmodule Started.Counter do
   def sign(n), do: if(n > 0, do: :positive, else: :negative)
 
   @impl true
-  def init(n), do: {:ok, n}
+  def init(n) do
+    Process.put(:label, "counter")
+    {:ok, n}
+  end
 
   @impl true
   def handle_call(:value, _from, n), do: {:reply, n, n}

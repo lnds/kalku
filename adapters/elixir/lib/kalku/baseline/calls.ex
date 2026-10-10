@@ -110,6 +110,29 @@ defmodule Kalku.Baseline.Calls do
 
   # ---- where a function is written ---------------------------------
 
+  @doc """
+  Every line these functions of the module are written on, as `{file,
+  line}`: all of each clause, not only what counting lines cannot speak
+  for.
+  """
+  def written(module, functions) do
+    with {:ok, forms} <- forms_of(module),
+         file when is_binary(file) <- source_of(module, forms) do
+      written = written_in(forms)
+
+      starts =
+        written |> Enum.map(fn {_, {first, _, _}} -> first end) |> Enum.sort() |> Enum.uniq()
+
+      for {function, {first, last, _heads}} <- written,
+          function in functions,
+          line <- first..min(last, before_next(starts, first))//1,
+          uniq: true,
+          do: {file, line}
+    else
+      _ -> []
+    end
+  end
+
   # Each function with the lines a call to it is credited with. A clause
   # runs from its head to the last line anything in it is written on, and
   # never into the definition after it: a quoted expression carries the line
