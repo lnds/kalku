@@ -1,3 +1,20 @@
+## v0.13.0 (2026-10-10)
+
+### Added
+
+- **protocol**: a kalku that withholds per-test coverage says why, and the report carries it (#271)
+
+### Fixed
+
+- the Python, Rust and Java kalku say how their run of the suite differs (#280)
+- **rust**: a test the project marks `#[ignore]` is not reported as failing (#279)
+- **elixir**: a wekufe no test ran is not reported as a survivor (#277)
+- **java**: a project with both JUnit 4 and TestNG has the tests of both run (#276)
+- **config**: `ratchet = true` is refused while nothing stores a baseline (#272)
+- a wekufe proved equivalent by its code no longer makes a run read as partial (#275)
+- a line a kalku writes that is not a message is quoted, and said to be from stdout (#270)
+- **elixir**: text that is not ASCII crosses the protocol as it is written (#268)
+
 ## v0.12.0 (2026-10-09)
 
 ### Added
