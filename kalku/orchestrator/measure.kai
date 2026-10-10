@@ -626,14 +626,7 @@ pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Rep
 
 # A run that cast fewer wekufe than it planned measured part of the thing
 # a floor is about.
-fn was_partial(r: Report) : Bool = r.planned > 0 and cast_of(r) < r.planned
-
-fn cast_of(r: Report) : Int = r.counts.killed
-  + r.counts.survived
-  + r.counts.timeout
-  + r.counts.compile_error
-  + r.counts.crashed
-  + r.counts.nondeterministic
+fn was_partial(r: Report) : Bool = r.planned > 0 and answered(r.counts) < r.planned
 
 # An outcome outside the score is carried with whatever the kalku said
 # about it: a `compile_error` a reader cannot explain is the one result
