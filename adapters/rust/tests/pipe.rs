@@ -264,6 +264,35 @@ fn site(k: &mut Kalku, spell: &str, original: &str) -> Value {
         .clone()
 }
 
+// A test the project marks `#[ignore]` is one it asked not to be run. Run
+// alone it reports neither a pass nor a failure, and taking that for a
+// failure calls a green suite red.
+#[test]
+fn a_test_the_project_ignores_is_not_part_of_the_suite() {
+    let ignoring = TESTED.replace(
+        "#[test]\n    fn zero_is_outside()",
+        "#[test]\n    #[ignore = \"needs a database\"]\n    fn zero_is_outside()",
+    );
+    assert_ne!(ignoring, TESTED);
+    let project = Project::new("ignores", "2024", &[("src/lib.rs", ignoring.as_str())]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+
+    let baseline = k.ask(json!({"type": "baseline", "id": 3}));
+    assert_eq!(baseline["status"], "green", "{baseline}");
+    assert_eq!(baseline["failures"], json!([]));
+    let tests: Vec<&str> = baseline["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["test"].as_str().unwrap())
+        .collect();
+    assert_eq!(tests, ["src/lib.rs::tests::one_is_inside"]);
+    k.leave();
+}
+
 // The whole loop on a real project: prepare in the reni, a baseline with a
 // duration per test, a wekufe that a test kills, one that survives, one
 // that does not compile, and the user's tree never touched.
