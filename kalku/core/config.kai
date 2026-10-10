@@ -98,6 +98,7 @@ fn of_toml(root: TomlValue) : Result[Config, [ConfigProblem]] {
       ++ check_threshold(config)
       ++ check_floor(config)
       ++ check_memory(config)
+      ++ check_ratchet(config)
   if is_empty(problems) { Ok(config) } else { Err(problems) }
 }
 
@@ -139,6 +140,21 @@ fn check_threshold(c: Config) : [ConfigProblem] = match c.policy.threshold {
       []
     }
   None -> []
+}
+
+# A ratchet holds the score to a baseline some earlier run stored, and no
+# run stores one. Taking the key and holding the score to nothing would let
+# it drop while the project believes it cannot, so the key is refused until
+# there is something behind it.
+fn check_ratchet(c: Config) : [ConfigProblem] = if c.ratchet {
+  [
+    ConfigProblem {
+      key: "score.ratchet",
+      message: "is not implemented yet: no run stores a baseline, so the score would be held to nothing. Remove it; `score.threshold` is the floor a run is held to"
+    }
+  ]
+} else {
+  []
 }
 
 fn not_negative(key: String, n: Int, note: String) : [ConfigProblem] =
