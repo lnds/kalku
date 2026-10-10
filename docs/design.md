@@ -569,10 +569,10 @@ followed by one summary object (counts, score, suppression changes).
 
 | Spell | Hint template |
 |---|---|
-| `arm` | no test reaches this clause of `<enclosing>`; add a case that takes it |
+| `arm` | no test fails without this clause of `<enclosing>`; assert what only it returns, in a case that takes it |
 | `compare` | no test tells `<a> <op> <b>` apart at the boundary; add a case where they are equal |
 | `connect` | no test has exactly one side of `<op>` true; add one for each side |
-| `negate` | no test takes the other branch of this condition |
+| `negate` | no test tells the two branches of this condition apart; assert what only one of them does |
 | `literal` | no test depends on the exact value `<original>` |
 | `call` | no test observes the effect of `<call>`; assert what it returns or changes |
 

@@ -21,16 +21,24 @@ Only survivors get one: a wekufe that was killed has nothing to act on,
 and one that could not compile is the spell's problem, not the suite's.
 """)]
 pub fn hint_for(site: Site) : String = match site.spell {
-  Arm -> "No test reaches this clause#{of_enclosing(site)}. Add a case that takes it."
+  Arm -> arm_hint(site)
   Compare -> compare_hint(site)
   Connect -> connect_hint(site)
-  Negate -> "No test takes the other branch of this condition#{of_enclosing(site)}."
+  Negate ->
+    "No test tells the two branches of this condition apart#{of_enclosing(site)}. Assert what only one of them does."
   Literal -> literal_hint(site)
   Call -> call_hint(site)
   Await -> await_hint(site)
   Supervise -> supervise_hint(site)
   Foreign -> foreign_hint(site)
 }
+
+# A survivor is a wekufe tests ran and did not notice, so "no test reaches
+# this clause" is not what one says: a test that takes the clause and
+# passes on what the next one answers survives just the same. The sentence
+# holds for both, and asks for what closes either.
+fn arm_hint(site: Site) : String =
+  "No test fails without this clause#{of_enclosing(site)}. Assert what only it returns, in a case that takes it."
 
 # The boundary is the whole point of a comparison: the two spellings
 # agree everywhere except where the sides are equal.
