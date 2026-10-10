@@ -4,6 +4,7 @@ owns the I/O and the exit code.
 """)]
 
 import kalku.version
+import kalku.core.shard
 
 #[doc("What the command line asks for.")]
 #[derive(Eq, Show)]
@@ -34,7 +35,9 @@ pub type Wanted = {
   limit: Option[Int],
   aloud: Bool,
   shape: Shape,
-  since: Option[String]
+  since: Option[String],
+  all: Bool,
+  shard: Option[Shard]
 }
 
 #[doc("How a run prints what it found.")]
@@ -97,11 +100,28 @@ fn read_setup(args: [String], so_far: Setup) : Command = match args {
 
 fn measuring(args: [String]) : Command = read_wanted(
   args,
-  Wanted { files: [], limit: None, aloud: false, shape: AsHuman, since: None }
+  nothing_wanted()
 )
 
+#[doc("A run nobody has said anything about yet.")]
+pub fn nothing_wanted() : Wanted = Wanted {
+  files: [],
+  limit: None,
+  aloud: false,
+  shape: AsHuman,
+  since: None,
+  all: false,
+  shard: None
+}
+
 fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
-  [] -> Measure(so_far)
+  [] -> whole_or_named(so_far)
+  ["--all", ...rest] -> read_wanted(rest, Wanted { ...so_far, all: true })
+  ["--shard"] -> Misused("`--shard` needs a part, as in `--shard 2/4`")
+  ["--shard", part, ...rest] -> match shard_named(part) {
+    None -> Misused("`--shard` takes a part of a count, as in `2/4`, not `#{part}`")
+    Some(shard) -> read_wanted(rest, Wanted { ...so_far, shard: Some(shard) })
+  }
   ["--limit"] -> Misused("`--limit` needs a number")
   ["--limit", n, ...rest] -> match to_int(n) {
     None -> Misused("`--limit` takes a number, not `#{n}`")
@@ -127,13 +147,23 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   }
 }
 
+# `--all` is the whole project, and files beside it would be a second
+# answer to the same question. A change has its own files too.
+fn whole_or_named(w: Wanted) : Command = if w.all and (not is_empty(w.files)) {
+  Misused("`--all` measures every source file; name files or say `--all`, not both")
+} else if w.all and is_some(w.since) {
+  Misused("`--all` measures the whole project and `--since` a change; say one")
+} else {
+  Measure(w)
+}
+
 # ---- the agent loop -----------------------------------------------------
 
 # `cast` names wekufe where `run` names files; everything else about them
 # is the same, so they are read into the same shape.
 fn recasting(args: [String]) : Command = match read_wanted(
   args,
-  Wanted { files: [], limit: None, aloud: false, shape: AsHuman, since: None }
+  nothing_wanted()
 ) {
   Measure(w) -> if is_some(w.since) {
     Misused("`kalku cast` names wekufe; `--since` is for `kalku run`")
@@ -274,6 +304,9 @@ options:
                    (a run with --since casts the whole change unless told otherwise)
   --since <ref>    measure only the lines changed since that ref, and block
                    when a wekufe survives on one of them
+  --all            measure every source file of the project, all of its wekufe
+  --shard <i/n>    cast only part i of n: the same part on every machine, so
+                   n jobs cover a project between them
   --format <name>  human (the default), agent, json, or github
   --json           print an info topic as JSON
   --snippet        print only the lines an agent pastes into CLAUDE.md

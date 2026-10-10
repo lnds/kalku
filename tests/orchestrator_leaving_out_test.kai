@@ -1,7 +1,7 @@
 import actor
 import kalku.wire.enums
 import kalku.wire.shapes
-import kalku.core.planner.{plan}
+import kalku.core.planner.{plan, Plan}
 import kalku.core.told
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
@@ -34,7 +34,8 @@ fn asking_of(script: String) : Asking = Asking {
   equivalents: [],
   limit: 0,
   timeout_floor_ms: 1000,
-  touched: None
+  touched: None,
+  shard: None
 }
 
 fn learnt(script: String) : Result[measure.Known, String] / Process + Spawn + Clock + File =
@@ -110,6 +111,26 @@ test "a wekufe a kalku saw no test run is not a survivor, and its reason is kept
       assert is_some(index_of(text, "what could not be measured:"))
       assert is_some(index_of(text, "no test ran `A.init/1` while the wekufe was in it."))
       assert is_none(index_of(text, "PARTIAL"))
+    }
+  }
+}
+
+fn sites_in(p: Plan) : [String] =
+  sort((p.to_cast | (c => c.site.site_id)) ++ (p.no_coverage | (.site_id)))
+
+# The shards of a run are added up afterwards, so each site is in one of
+# them and only one: the cast ones, and the ones the plan set aside.
+test "the parts of a plan hold every site once between them" {
+  match learnt("red_some_pass.ndjson") {
+    Err(why) -> {
+      assert why == "a suite with a test that passes should be measured"
+    }
+    Ok(known) -> {
+      let ready = plan(inputs_for(asking_of("red_some_pass.ndjson"), known), nothing_cached)
+      let one = part_of(ready, Some(Shard { index: 1, count: 2 }))
+      let two = part_of(ready, Some(Shard { index: 2, count: 2 }))
+      assert sort(sites_in(one) ++ sites_in(two)) == ["s3", "s7", "s9"]
+      assert sites_in(part_of(ready, None)) == ["s3", "s7", "s9"]
     }
   }
 }

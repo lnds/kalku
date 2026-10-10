@@ -136,13 +136,19 @@ fn run_here(
           }
         } else {
           {
-            Stderr.eprint("kalku: name the files to measure, as in `kalku run lib/thing.ex`")
+            Stderr.eprint(
+              "kalku: name the files to measure, as in `kalku run lib/thing.ex`, or say `--all`"
+            )
             2
           }
         }
         files -> with_declared(
           ".",
-          declared => measured(asking_for(c, wanted, files, touched, declared), wanted, c.policy)
+          declared => measured(
+            asking_for(c, wanted, files, touched, declared),
+            wanted,
+            held_to(c.policy, wanted)
+          )
         )
       }
     }
@@ -160,8 +166,14 @@ fn changes_asked(wanted: Wanted) : Result[Option[[FileChange]], String] / Proces
 
 # The files a run is about: the ones named, or — when a change was asked
 # about and none were named — the source files that change touched.
-fn files_for(wanted: Wanted, touched: Option[[FileChange]], known: setting_up.Known) : [String] =
-  if not is_empty(wanted.files) {
+fn files_for(
+  wanted: Wanted,
+  touched: Option[[FileChange]],
+  known: setting_up.Known
+) : [String] / File =
+  if wanted.all {
+    every_source(".", known) | (f => without_dot(f))
+  } else if not is_empty(wanted.files) {
     wanted.files
   } else {
     match touched {
@@ -170,6 +182,32 @@ fn files_for(wanted: Wanted, touched: Option[[FileChange]], known: setting_up.Kn
       None -> []
     }
   }
+
+# A walk from `.` names every file `./lib/a.ex`; a run names it as a person
+# would, and as every report then shows it.
+fn without_dot(path: String) : String = if starts_with(path, "./") {
+  byte_slice(path, 2, length(path) - 2).unwrap_or(path)
+} else {
+  path
+}
+
+# A floor is about the whole score, and a shard has the score of the wekufe
+# that fell to it. Held to the floor, a shard that drew the hard part of a
+# project would fail a build the project passes, and one that drew the easy
+# part would pass one it fails.
+fn held_to(policy: Policy, wanted: Wanted) : Policy / Stderr = match wanted.shard {
+  None -> policy
+  Some(s) -> {
+    if is_some(policy.threshold) {
+      Stderr.eprint(
+        "kalku: shard #{s.index} of #{s.count} is not held to `score.threshold`: its score is of a part. Nothing merges shards yet, so the floor is held only by a run that is not one"
+      )
+    } else {
+      ()
+    }
+    no_policy()
+  }
+}
 
 # The language a project says it is written in, which is what tells its sources
 # from its tests and from what a build leaves.
@@ -310,8 +348,9 @@ fn asking_for(
   # A change is already bounded by the diff, and a gate that answered for a
   # slice of one would pass a pull request over lines nobody looked at, so
   # a run asked about a change casts all of it unless told otherwise.
-  wanted.limit.unwrap_or(if is_some(touched) { 0 } else { DEFAULT_LIMIT }),
-  touched: touched
+  wanted.limit.unwrap_or(if is_some(touched) or wanted.all { 0 } else { DEFAULT_LIMIT }),
+  touched: touched,
+  shard: wanted.shard
 }
 
 # What every run is asked, whoever asks it: the project's spells and
@@ -347,7 +386,8 @@ fn asking_of(
   equivalents: declared,
   limit: 0,
   timeout_floor_ms: c.timeout_floor_ms,
-  touched: None
+  touched: None,
+  shard: None
 }
 
 #[doc("Where a project writes down what it has decided cannot be told apart.")]
