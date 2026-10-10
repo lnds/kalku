@@ -72,6 +72,12 @@ final class Maven {
     List<String> testCompilerFlags = new ArrayList<>();
     // What the build tells the JVM its tests run in.
     List<String> jvmFlags = new ArrayList<>();
+    // The variables the build sets in the environment of its tests.
+    Map<String, String> environment = new java.util.LinkedHashMap<>();
+    // Which of the compiled classes the build takes for tests.
+    Suite suite;
+    // How many times more the build runs a test that failed, before it calls it failed.
+    int reruns;
     // The JUnit Platform the project's engines were written for.
     String platform;
     // Where the launcher of that same version is, when the project does not bring it.
@@ -343,7 +349,7 @@ final class Maven {
     build.sources = Paths.get(text(b, "sourceDirectory"));
     build.testSources = Paths.get(text(b, "testSourceDirectory"));
     compiler(build, project, plugin(b, "maven-compiler-plugin"));
-    surefire(build, plugin(b, "maven-surefire-plugin"));
+    surefire(build, child(project, "properties"), plugin(b, "maven-surefire-plugin"));
   }
 
   /**
@@ -551,7 +557,7 @@ final class Maven {
     return null;
   }
 
-  private static void surefire(Build build, Element plugin) {
+  private static void surefire(Build build, Element properties, Element plugin) throws Failed {
     Element set = configuration(plugin, "default-test");
     String argLine = text(set, "argLine");
     if (argLine != null) {
@@ -565,6 +571,50 @@ final class Maven {
     for (Element property : children(child(set, "systemPropertyVariables"))) {
       build.jvmFlags.add("-D" + property.getTagName() + "=" + text(property));
     }
+    for (Element variable : children(child(set, "environmentVariables"))) {
+      build.environment.put(variable.getTagName(), text(variable));
+    }
+    // Settings that put another list in the place of `includes` and `excludes`.
+    for (String other : new String[] {"test", "includesFile", "excludesFile"}) {
+      String stated = text(set, other);
+      if (stated != null && !stated.isEmpty()) {
+        throw new Failed(
+            "surefire's `"
+                + other
+                + "` is set in "
+                + called(build)
+                + ", and kalku does not read it: it would have to guess which classes are "
+                + "that build's tests. `includes` and `excludes` are read");
+      }
+    }
+    build.suite =
+        Suite.surefire(
+            listed(set, "includes", properties, "surefire.includes"),
+            listed(set, "excludes", properties, "surefire.excludes"),
+            called(build));
+    String reruns =
+        setting(set, "rerunFailingTestsCount", properties, "surefire.rerunFailingTestsCount");
+    if (reruns != null) {
+      try {
+        build.reruns = Math.max(0, Integer.parseInt(reruns));
+      } catch (NumberFormatException e) {
+        throw new Failed(
+            "surefire's `rerunFailingTestsCount` in " + called(build) + " is not a number: " + reruns);
+      }
+    }
+  }
+
+  // A list a plugin is given entry by entry, or the property it is taken from otherwise.
+  private static List<String> listed(Element set, String name, Element properties, String property) {
+    List<String> out = new ArrayList<>();
+    for (Element entry : children(child(set, name))) {
+      out.add(text(entry));
+    }
+    String otherwise = text(properties, property);
+    if (out.isEmpty() && otherwise != null) {
+      out.add(otherwise);
+    }
+    return out;
   }
 
   // ---- the launcher ----------------------------------------------------------
