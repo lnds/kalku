@@ -1,3 +1,14 @@
+## v0.12.0 (2026-10-09)
+
+### Added
+
+- **mcp**: kalku_run takes since and limit, and a host that leaves ends the run (#264)
+
+### Fixed
+
+- **mcp**: a long run is heard, a call that is called off stops, and the server ends on SIGTERM (#265)
+- **elixir**: a kalku whose run is gone ends, and ends what it started (#263)
+
 ## v0.11.0 (2026-10-09)
 
 ### Added
