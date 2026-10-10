@@ -25,6 +25,11 @@ defmodule Kalku.Channel do
       Process.group_leader(pid, stderr)
     end
 
+    # The protocol is bytes. A device that takes characters would encode
+    # each byte of a message again on the way out, and refuse on the way in
+    # those it cannot hold.
+    :io.setopts(device, encoding: :latin1)
+
     :persistent_term.put(@device, device)
     :ok
   end
