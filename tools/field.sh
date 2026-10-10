@@ -8,7 +8,7 @@
 # into this tree, or written there by `tools/field/generate.exs`. Its own
 # suite is run first, plainly. Then kalku measures the files the list
 # names, in a project it was never set up in, and the project's tree is
-# checked for anything written into it.
+# checked for anything in it that is not as its own suite left it.
 #
 # A test that fails before anything is cast judges nothing, so kalku goes
 # on without it and has to say so: a run that left tests out and did not
@@ -62,6 +62,15 @@ fetched() {
 
 seconds() { date +%s; }
 
+# Every file of a project with a sum of what it holds, in an order two
+# listings can be compared in. By what a file holds and not by when it was
+# written: a project's own tests write files too, the same ones under
+# `mix test` as under kalku, and writing a file again is not changing it.
+held() {
+  (cd "$1" && find . -path ./.git -prune -o -type f -exec cksum {} + |
+    awk '{ sum = $1 "-" $2; $1 = ""; $2 = ""; sub(/^ +/, ""); print sum "\t" $0 }' | LC_ALL=C sort)
+}
+
 printf '%-9s %-40s %8s %8s  %s\n' project "its own suite" plain kalku "what kalku said"
 
 grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' | while read -r name url sha files; do
@@ -90,9 +99,7 @@ grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' | while read -r name
 
   # A reni from an earlier try would hide what a first run costs.
   rm -rf "${TMPDIR:-/tmp}/kalku/$name"
-  stamp="$logs/before"
-  : >"$stamp"
-  sleep 1
+  held "$dir" >"$logs/before"
 
   from=$(seconds)
   # shellcheck disable=SC2086
@@ -103,9 +110,10 @@ grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' | while read -r name
   fi
   kalku_s=$(( $(seconds) - from ))
 
-  # Anything in the project newer than the moment before the run is
-  # something the run wrote there, ignored by git or not.
-  (cd "$dir" && find . -path ./.git -prune -o -type f -newer "$stamp" -print) >"$logs/written"
+  # A file that is not what the project's own suite left is something the
+  # run wrote there, ignored by git or not.
+  held "$dir" >"$logs/after"
+  comm -13 "$logs/before" "$logs/after" | cut -f2- >"$logs/written"
   written=$(wc -l <"$logs/written" | tr -d ' ')
 
   score=$(grep -E '^(PARTIAL: .* · )?score ' "$logs/kalku.out" | tail -1 || true)
