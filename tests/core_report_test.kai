@@ -262,6 +262,16 @@ test "a partial run says so before it says its score" {
   assert index_of(part, "PARTIAL") < index_of(part, "score")
 }
 
+# A wekufe whose code is the original's was cast and answered for. A run
+# that cast everything is not one that stopped short because of it.
+test "a wekufe proved equivalent was cast, and does not make a run partial" {
+  let counts = tally([Cast(Killed), Cast(Survived), Cast(Equivalent)])
+
+  assert not has(human(Report { ...report_of([], counts, []), planned: 3 }), "PARTIAL")
+  assert has(human(Report { ...report_of([], counts, []), planned: 4 }), "PARTIAL: 3 of 4")
+  assert answered(tally([Cast(Killed), Cast(NoCoverage), EquivalentBy(Declared)])) == 1
+}
+
 fn survivor_on(file: String, line: Int) : Survivor =
   Survivor { site: site_of(file, line, Some("A.f/1"), Some(">="), ">"), tests: [], chosen: true }
 
