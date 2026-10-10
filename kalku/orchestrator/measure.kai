@@ -67,7 +67,8 @@ pub type Known = {
   skipped: [Skipped],
   left_out: [Failure],
   differences: [String],
-  only_theirs: [String]
+  only_theirs: [String],
+  withheld: Option[String]
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -195,7 +196,8 @@ fn interview(
     skipped: found.skipped,
     left_out: failing,
     differences: differences_of(baseline),
-    only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([])
+    only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([]),
+    withheld: withheld_of(baseline)
   })
 }
 
@@ -258,6 +260,11 @@ fn failures_of(reply: KalkuReply) : [Failure] = match reply {
 fn differences_of(reply: KalkuReply) : [String] = match reply {
   BaselineDone(m) -> m.differences.unwrap_or([])
   _ -> []
+}
+
+fn withheld_of(reply: KalkuReply) : Option[String] = match reply {
+  BaselineDone(m) -> m.coverage_withheld
+  _ -> None
 }
 
 fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
@@ -456,16 +463,7 @@ fn reply_kind(r: KalkuReply) : String {
 fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) {
   known
 } else {
-  Known {
-    sites: filter(known.sites, s => contains(asking.only, s.site_id)),
-    tests: known.tests,
-    coverage: known.coverage,
-    durations: known.durations,
-    skipped: known.skipped,
-    left_out: known.left_out,
-    differences: known.differences,
-    only_theirs: known.only_theirs
-  }
+  Known { ...known, sites: filter(known.sites, s => contains(asking.only, s.site_id)) }
 }
 
 fn casting_them(
@@ -579,7 +577,8 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
       tests: known.left_out,
       differences: known.differences,
       sites: ready.no_coverage |? (s => theirs_only(known, s))
-    }
+    },
+    withheld: known.withheld
   }
 }
 

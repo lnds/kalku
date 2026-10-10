@@ -561,7 +561,7 @@ One JSON object per survivor, complete enough to act on without opening other fi
 
 `covering_tests` lists the first five tests that cover the line and `covering_count` how many there are. A line that a whole suite reaches is covered by every test in it, and listing a thousand of them per survivor made a run too large to fit in a tool result; the full list is what `kalku show <wekufe>` (and the `kalku_show` tool) answers.
 
-Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field.
+Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score.
 
 followed by one summary object (counts, score, suppression changes).
 

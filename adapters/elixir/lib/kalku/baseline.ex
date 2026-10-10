@@ -28,9 +28,10 @@ defmodule Kalku.Baseline do
     with {:ok, files} <- test_files(root),
          :ok <- start_exunit(measuring),
          {:ok, modules} <- load(root, files),
-         {:ok, measured} <- through(modules, measuring) do
+         {:ok, {measured, withheld}} <- through(modules, measuring) do
       Kalku.Runtime.mark(Mix.Project.config()[:app])
-      report(measured, System.monotonic_time(:millisecond) - started, root, opts)
+      elapsed = System.monotonic_time(:millisecond) - started
+      report(measured, withheld, elapsed, root, opts)
     end
   end
 
@@ -57,7 +58,9 @@ defmodule Kalku.Baseline do
     whole = if measuring, do: MapSet.new(Cover.covered()), else: MapSet.new()
     tests = Collector.taken()
 
-    if measuring and judged_by_some?(tests), do: attributed(tests, modules, whole), else: tests
+    if measuring and judged_by_some?(tests),
+      do: attributed(tests, modules, whole),
+      else: {tests, nil}
   end
 
   @doc """
@@ -134,18 +137,20 @@ defmodule Kalku.Baseline do
 
   @doc """
   Keeps the per-test attribution only when it adds up to what the suite as a
-  whole reached; otherwise withholds all of it, and says why on stderr.
+  whole reached; otherwise withholds all of it. Returns the tests and, when
+  it withheld, why: the reader of a report in which every wekufe faced the
+  whole suite is owed the reason, and only the kalku has it.
   """
-
   def reconcile(measured, whole) do
     attributed = for t <- measured, l <- t.lines, into: MapSet.new(), do: l
     lost = MapSet.difference(whole, attributed)
 
     if MapSet.size(lost) == 0 do
-      measured
+      {measured, nil}
     else
-      IO.puts(:stderr, unattributable(lost))
-      for t <- measured, do: %{t | lines: []}
+      why = unattributable(lost)
+      IO.puts(:stderr, "kalku: per-test coverage is not reportable for this run. " <> why)
+      {for(t <- measured, do: %{t | lines: []}), why}
     end
   end
 
@@ -157,12 +162,13 @@ defmodule Kalku.Baseline do
       |> Enum.take(4)
       |> Enum.join(", ")
 
-    "kalku: per-test coverage is not reportable for this run. " <>
-      "The suite reached #{MapSet.size(lost)} line(s) that no single test is " <>
-      "credited with (#{where}), so the attribution is incomplete — a module " <>
-      "replaced while the suite ran, as a mocking library does, is the usual " <>
-      "cause. Every wekufe will be cast against the whole suite instead, so " <>
-      "this run is slower and every survivor is real."
+    "The suite reached #{MapSet.size(lost)} line(s) that no single test is credited with " <>
+      "(#{where}), so which tests reach a line cannot be stood behind. What does " <>
+      "this: a module replaced while the suite ran, as a mocking library does; " <>
+      "something set up the first time it is asked for, and not again; a process of " <>
+      "the project's own that runs on its own clock, between two tests. " <>
+      "Every wekufe is cast against the whole suite instead: slower, and every " <>
+      "survivor is real."
   end
 
   @doc """
@@ -281,7 +287,7 @@ defmodule Kalku.Baseline do
   # A test is named by where it is written, relative to the project: an
   # absolute path would name this machine, and every kalku in the pool
   # would call the same test something different.
-  defp report(tests, duration_ms, root, opts) do
+  defp report(tests, withheld, duration_ms, root, opts) do
     named = for t <- tests, do: {test_id(t.file, t.line, root), t}
 
     failures = for {id, t} <- named, t.failure != nil, do: %{"test" => id, "message" => t.failure}
@@ -298,7 +304,8 @@ defmodule Kalku.Baseline do
       "differences" => differences()
     }
 
-    {:ok, Map.merge(body, coverage_field(named, root, opts))}
+    {:ok,
+     body |> Map.merge(coverage_field(named, root, opts)) |> Map.merge(withheld_field(withheld))}
   end
 
   @doc """
@@ -336,6 +343,9 @@ defmodule Kalku.Baseline do
       %{"file" => file, "line" => line, "tests" => Enum.sort(Enum.uniq(ids))}
     end)
   end
+
+  defp withheld_field(nil), do: %{}
+  defp withheld_field(why), do: %{"coverage_withheld" => why}
 
   # The least a test's name takes on a line: enough to know, without writing
   # it out, that coverage naming this many will not fit through the pipe.

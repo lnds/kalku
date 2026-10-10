@@ -85,11 +85,25 @@ defmodule Kalku.BaselineTest do
       whole = MapSet.new([{"lib/a.ex", 1}, {"lib/a.ex", 2}])
       credited = fn lines -> %{id: "t", lines: lines} end
 
-      assert [%{lines: [{"lib/a.ex", 1}, {"lib/a.ex", 2}]}] =
+      assert {[%{lines: [{"lib/a.ex", 1}, {"lib/a.ex", 2}]}], nil} =
                Kalku.Baseline.reconcile([credited.([{"lib/a.ex", 1}, {"lib/a.ex", 2}])], whole)
 
-      assert [%{lines: []}] =
+      # And why is said, naming the line, for the report to carry.
+      assert {[%{lines: []}], why} =
                Kalku.Baseline.reconcile([credited.([{"lib/a.ex", 1}])], whole)
+
+      assert why =~ "1 line(s) that no single test is credited with (a.ex:2)"
+    end
+
+    # Only the kalku knows why, and a reader who is told "the whole suite"
+    # and not why goes looking for a mock that is not there.
+    test "a suite whose attribution is withheld says why in its answer", %{reni: reni} do
+      done = reply(run(reni, "lazy", ["baseline"]), "baseline_done")
+
+      assert done["status"] == "green"
+      assert done["coverage_withheld"] =~ "no single test is credited with (lazy.ex:"
+      refute Map.has_key?(done, "coverage")
+      refute Map.has_key?(done, "coverage_packed_path")
     end
 
     # Withholding it for every project would give away the speed the whole
