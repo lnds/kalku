@@ -277,9 +277,9 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 | `cast_done` | Type | Meaning |
 |---|---|---|
 | `wekufe` | string | |
-| `outcome` | `killed` \| `survived` \| `compile_error` \| `equivalent` | |
+| `outcome` | `killed` \| `survived` \| `compile_error` \| `equivalent` \| `no_coverage` | |
 | `killed_by`? | test id | the failing test, when known |
-| `message`? | string | compiler diagnostic for `compile_error` |
+| `message`? | string | compiler diagnostic for `compile_error`; what did not run, for `no_coverage` |
 | `code_hash`? | string | hash of the compiled wekufe, whenever it compiled and the kalku has `code_hash` |
 | `duration_ms` | int | |
 | `dirty` | bool | the runtime may not be back to its original state |
@@ -287,6 +287,8 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 `timeout`, `crashed` and `nondeterministic` never appear here: the kaikai side decides them from outside — a missing response, a dead process (one ended for holding more memory than `run.memory_limit_mb` included), or a wekufe whose repeated casts did not agree with each other. A native kalku does not enforce its own timeout, and does not know that it has been asked to cast the same wekufe twice. Any other outcome is `invalid`.
 
 `equivalent` means the wekufe compiled to the same code as the original, so no test ran: identical compiled code is the only mechanical evidence of equivalence, and a kalku never reports equivalence on any other ground. Should another kind of evidence appear, it arrives as a new optional field.
+
+`no_coverage` is for a kalku that watched its own cast and saw that no test ran the code the wekufe is in. The plan sends a wekufe with the tests that reach it, so this is rare where coverage chose them; it is what happens where the whole suite judges, to a wekufe no test reaches and to one in code that runs once — as an application starts, or the first time something is asked for — in a runtime that had already started when the wekufe was loaded. Every test passes then, and none of them met the wekufe: `survived` would report a hole nobody looked for. A kalku says `no_coverage` only on that evidence, never because it suspects it, and says what did not run in `message`. The kaikai side reports the wekufe with what could not be measured, outside the score.
 
 `dirty: true` makes the kaikai side send `reset` before the next cast, and recycle the kalku only if that fails.
 

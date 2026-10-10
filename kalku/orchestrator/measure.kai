@@ -560,8 +560,10 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     counts: tally(verdicts ++ uncovered ++ declared),
     planned: 
     # What the plan held before `--limit` cut it, so a run that measured
-    # part of a file cannot report the part's score as the file's.
-    length(ready.to_cast),
+    # part of a file cannot report the part's score as the file's. Less the
+    # wekufe a kalku found no test ran: they were cast, and are counted with
+    # the sites no test reaches, which no plan holds.
+    length(ready.to_cast) - length(filter(casting.verdicts, v => v.outcome == NoCoverage)),
     survivors: survivors_of(casting, known),
     on_changed_lines: 0,
     suppressions: SuppressionChanges {
