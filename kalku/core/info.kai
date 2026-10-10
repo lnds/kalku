@@ -157,7 +157,7 @@ fn means(o: Outcome) : String {
   case Killed -> "a test noticed the defect"
   case Survived -> "every test that reaches the line ran, and none noticed"
   case Timeout -> "the wekufe ran past its deadline; an endless loop is not a failing assertion"
-  case NoCoverage -> "no test reaches the line at all"
+  case NoCoverage -> "no test runs the code the wekufe is in, so nothing judged it"
   case CompileError -> "the wekufe does not compile, so it says nothing about the suite"
   case Crashed ->
     "the cast produced no verdict: the kalku died, could not run its tests, or the wekufe took more memory than its ceiling"

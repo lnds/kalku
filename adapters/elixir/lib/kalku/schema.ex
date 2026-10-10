@@ -10,7 +10,7 @@ defmodule Kalku.Schema do
   @enums %{
     spell: @spells,
     outcome: @outcomes,
-    cast_outcome: ~w(killed survived compile_error equivalent),
+    cast_outcome: ~w(killed survived compile_error equivalent no_coverage),
     reload: ~w(module dependents),
     baseline_status: ~w(green red)
   }
