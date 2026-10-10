@@ -111,10 +111,8 @@ test "a memory ceiling is optional, zero means none, and a negative one is refus
   )
 }
 
-# A key that is taken and does nothing is a promise: a project that set it
-# believes its score cannot drop, and it can.
-test "a ratchet is refused while nothing stores a baseline" {
-  assert has(first_problem("[score]\nratchet = true\n"), "score.ratchet: is not implemented yet")
-  assert problems_of("[score]\nratchet = false\n") == []
-  assert problems_of("[score]\nthreshold = 0.8\n") == []
+test "a ratchet is asked for with a key, and is off without it" {
+  assert config_of("[score]\nratchet = true\n").ratchet
+  assert not config_of("[score]\nthreshold = 0.8\n").ratchet
+  assert problems_of("[score]\nratchet = true\n") == []
 }
