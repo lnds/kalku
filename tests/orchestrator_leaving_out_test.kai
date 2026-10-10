@@ -134,3 +134,25 @@ test "the parts of a plan hold every site once between them" {
     }
   }
 }
+
+# A kill by the tests that reach a wekufe is a kill whatever else is true.
+# A survivor is one only when nobody was left to ask, so where the kalku
+# doubts its coverage every wekufe carries the rest of the suite with it.
+test "where coverage is doubted, each wekufe takes the rest of the suite to face" {
+  match learnt("red_some_pass.ndjson") {
+    Err(why) -> {
+      assert why == "a suite with a test that passes should be measured"
+    }
+    Ok(known) -> {
+      let ready = plan(inputs_for(asking_of("red_some_pass.ndjson"), known), nothing_cached)
+      let more = measure.Known { ...known, tests: known.tests ++ ["test/b_test.exs:2"] }
+
+      assert (doubting(ready, more).to_cast | (.rest)) == [[]]
+
+      let doubted = doubting(ready, measure.Known { ...more, doubted: Some("a line is nobody's") })
+      assert (doubted.to_cast | (c => (c.tests, c.rest)))
+        == [(["test/a_test.exs:3"], ["test/b_test.exs:2"])]
+      assert all(zip(doubted.to_cast, ready.to_cast), p => p.fst.timeout_ms >= p.snd.timeout_ms)
+    }
+  }
+}

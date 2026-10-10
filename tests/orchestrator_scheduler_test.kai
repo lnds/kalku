@@ -59,6 +59,7 @@ fn casts(n: Int, timeout_ms: Int) : [Wekufe] =
     | (i => Wekufe {
       site: site_named("w#{i.fst}"),
       tests: ["test/a_test.kai"],
+      rest: [],
       timeout_ms: timeout_ms,
       casts: 1
     })

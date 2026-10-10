@@ -18,6 +18,7 @@ fn at(line: Int) : Site = Site {
 fn cast_of(line: Int, tests: [String]) : Wekufe = Wekufe {
   site: at(line),
   tests: tests,
+  rest: [],
   timeout_ms: 60000,
   casts: 1
 }

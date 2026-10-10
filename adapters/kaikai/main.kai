@@ -135,6 +135,7 @@ fn report_of(r: Ran) : KalkuReply = match r.mishap {
     coverage_path: None,
     coverage_packed_path: None,
     coverage_withheld: None,
+    coverage_doubted: None,
     failures: failures_of(r),
     differences: Some([IN_A_COPY])
   })

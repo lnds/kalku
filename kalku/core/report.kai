@@ -74,6 +74,7 @@ pub type Report = {
   blockers: [Blocker],
   left_out: LeftOut,
   withheld: Option[String],
+  doubted: Option[String],
   shard: Option[Shard]
 }
 
@@ -90,6 +91,7 @@ pub fn human(r: Report) : String = join(
     ++ trouble_blocks(r)
     ++ left_out_block(r.left_out, r.left_out.sites | where_of)
     ++ withheld_block(r.withheld)
+    ++ doubted_block(r.doubted)
     ++ [summary_line(r)]
     ++ suppression_block(r)
     ++ blocker_block(r),
@@ -104,6 +106,17 @@ fn withheld_block(why: Option[String]) : [String] = match why {
   None -> []
   Some(said) -> [
     "every wekufe was judged by the whole suite: which tests reach a line was measured and not reported.",
+    "  #{said}",
+    ""
+  ]
+}
+
+# Coverage was reported and the kalku does not stand behind all of it. A
+# kill needs no more than one test; a survivor here faced every one.
+fn doubted_block(why: Option[String]) : [String] = match why {
+  None -> []
+  Some(said) -> [
+    "a wekufe the tests that reach it did not kill faced every other test before it was called a survivor: which tests reach a line may be missing some.",
     "  #{said}",
     ""
   ]

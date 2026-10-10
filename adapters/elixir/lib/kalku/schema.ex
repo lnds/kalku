@@ -63,7 +63,12 @@ defmodule Kalku.Schema do
       spells: {:list, {:enum, :spell}},
       exclude_calls: {:list, :string}
     ],
-    "cast" => [wekufe: :string, site: {:shape, :site}, tests: {:list, :string}],
+    "cast" => [
+      wekufe: :string,
+      site: {:shape, :site},
+      tests: {:list, :string},
+      rest: {:opt, {:list, :string}}
+    ],
     "abort" => [cast: :int],
     "reset" => [],
     "reload" => [files: {:list, :string}],
@@ -89,6 +94,7 @@ defmodule Kalku.Schema do
       coverage_path: {:opt, :string},
       coverage_packed_path: {:opt, :string},
       coverage_withheld: {:opt, :string},
+      coverage_doubted: {:opt, :string},
       failures: {:list, {:shape, :failure}},
       differences: {:opt, {:list, :string}}
     ],
