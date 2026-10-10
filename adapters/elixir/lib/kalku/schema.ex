@@ -88,6 +88,7 @@ defmodule Kalku.Schema do
       coverage: {:opt, {:list, {:shape, :coverage}}},
       coverage_path: {:opt, :string},
       coverage_packed_path: {:opt, :string},
+      coverage_withheld: {:opt, :string},
       failures: {:list, {:shape, :failure}},
       differences: {:opt, {:list, :string}}
     ],

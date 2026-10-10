@@ -51,7 +51,8 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   skipped: [],
   uncovered: [],
   blockers: [],
-  left_out: nobody_left_out()
+  left_out: nobody_left_out(),
+  withheld: None
 }
 
 fn one() : Counts = tally([Cast(Killed), Cast(Survived)])
@@ -285,4 +286,14 @@ test "an agent is told which tests a run went on without" {
   assert field(summary, "left_out") == JArr([JStr("test/ssl_test.exs:120")])
   assert field(summary, "differences") == JArr([JStr("the build is elsewhere")])
   assert not has(last_line(agent(report_of([], one()), lines_of)), "left_out")
+}
+
+# "The whole suite" with no reason leaves an agent looking for the test to
+# extend among all of them, and for the cause nowhere.
+test "an agent is told why no survivor names the tests that reach it" {
+  let r = Report { ...report_of([], one()), withheld: Some("a line no test is credited with") }
+  let summary = last_line(agent(r, lines_of))
+
+  assert field(summary, "coverage_withheld") == JStr("a line no test is credited with")
+  assert not has(last_line(agent(report_of([], one()), lines_of)), "coverage_withheld")
 }
