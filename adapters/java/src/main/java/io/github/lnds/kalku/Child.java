@@ -191,7 +191,8 @@ final class Child {
    * Starts the tests in a JVM of their own.
    *
    * @param mode {@code discover} to list the tests, {@code run} to run them
-   * @param tests the tests to run; none means every test of the project
+   * @param tests the tests to run; none means every test of the classes the build takes for
+   *     tests
    * @param before class directories that come before the project's own, as a cast's do
    */
   static Running start(
@@ -334,6 +335,16 @@ final class Child {
     for (String test : tests) {
       asked.add("test:" + test);
     }
+    // With no test chosen, the suite is the classes the build takes for tests.
+    if (tests.isEmpty()) {
+      for (String name : build.suite.classes(build.testClasses)) {
+        asked.add("class:" + name);
+      }
+    }
+    // Surefire runs a failed test again only where it runs the JUnit Platform itself.
+    if (build.reruns > 0 && !build.engineFetched) {
+      asked.add("reruns:" + build.reruns);
+    }
     if (counting != null) {
       asked.addAll(counting.subList(1, counting.size()));
     }
@@ -375,6 +386,7 @@ final class Child {
             .directory(build.dir.toFile());
     builder.environment().clear();
     builder.environment().putAll(env);
+    builder.environment().putAll(build.environment);
     // What the tests print is theirs, and is kept beside the run for whoever needs it.
     builder.redirectErrorStream(true).redirectOutput(log.toFile());
 

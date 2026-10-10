@@ -506,20 +506,24 @@ final class Service {
             + "path");
     out.add(
         gradle
-            ? "of what the build says of its tests only the JVM arguments and system "
-                + "properties of the `test` task are read, without `-Xmx` and `-Xms`: not its "
-                + "`environment`, nor `forkEvery`, nor a plugin that runs a failed test again"
-            : "of what the build says of its tests only surefire's `argLine` and "
-                + "`systemPropertyVariables` are read: not `environmentVariables`, nor "
-                + "`forkCount` and `reuseForks`, nor `rerunFailingTestsCount`, so a test that "
-                + "fails is not run again");
+            ? "of what the build says of its tests, the JVM arguments of the `test` task "
+                + "(without `-Xmx` and `-Xms`), its system properties and its `environment` "
+                + "are read: not `forkEvery`, nor a plugin that runs a failed test again, so a "
+                + "test that fails is not run again"
+            : "of what the build says of its tests, surefire's `argLine`, "
+                + "`systemPropertyVariables`, `environmentVariables` and "
+                + "`rerunFailingTestsCount` are read: not `forkCount` and `reuseForks`, nor "
+                + "`excludedEnvironmentVariables`");
     out.add(
-        "the tests are the classes named `Test*`, `*Test`, `*Tests` or `*TestCase`: "
-            + (gradle
-                ? "the filters and tags of the `test` task"
-                : "surefire's `includes`, `excludes` and `groups`")
-            + " are not read, so a class the build leaves out runs and one named otherwise "
-            + "does not");
+        gradle
+            ? "the tests are the classes the `include` and `exclude` patterns of the `test` "
+                + "task leave in, every class when it has none: its `filter`, a pattern "
+                + "written as a closure, and the tags and engines of `useJUnitPlatform` are "
+                + "not read, so a test the build leaves out by one of those runs"
+            : "the tests are the classes surefire's `includes` and `excludes` leave in, the "
+                + "ones named `Test*`, `*Test`, `*Tests` or `*TestCase` when it has none: "
+                + "`groups` and `excludedGroups` are not read, so a test the build leaves out "
+                + "by its group runs");
     out.add(
         "the tests see none of your environment but "
             + String.join(", ", passedOn)
@@ -529,7 +533,11 @@ final class Service {
         out.add(
             "tests written for JUnit 4 or TestNG ran on the JUnit Platform, through an engine "
                 + "fetched for them, and not through the runner the build has for them: a "
-                + "TestNG suite file is not read");
+                + "TestNG suite file is not read"
+                + (gradle
+                    ? ""
+                    : ", and one of them that fails is not run again, whatever "
+                        + "`rerunFailingTestsCount` says"));
         break;
       }
     }
