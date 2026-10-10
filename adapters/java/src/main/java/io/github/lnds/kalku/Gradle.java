@@ -214,7 +214,12 @@ final class Gradle {
     if (build.sources.isEmpty()) {
       build.sources.add(build.dir.resolve("src/main/java"));
     }
-    build.testSources = first(said, "testSources", build.dir.resolve("src/test/java"));
+    for (String sources : said.getOrDefault("testSources", new ArrayList<>())) {
+      build.testSources.add(Paths.get(sources).toRealPath());
+    }
+    if (build.testSources.isEmpty()) {
+      build.testSources.add(build.dir.resolve("src/test/java"));
+    }
     for (String entry : said.getOrDefault("classpath", new ArrayList<>())) {
       Path path = Paths.get(entry);
       // Its own classes go first on every class path a cast makes; the rest is kept as it is,
@@ -270,7 +275,7 @@ final class Gradle {
                 + "); set JAVA_HOME or KALKU_JAVA to that JDK");
       }
     }
-    boolean hasTests = !Project.sources(java.util.Collections.singletonList(build.testSources)).isEmpty();
+    boolean hasTests = !Project.sources(build.testSources).isEmpty();
     if (hasTests && (build.platform == null || build.launcher == null)) {
       throw new Maven.Failed(
           "none of JUnit 5, JUnit 4 and TestNG is among the test dependencies of "
@@ -300,11 +305,6 @@ final class Gradle {
       throw new Maven.Failed("Gradle did not say `" + key + "` for one of its projects");
     }
     return values.get(0);
-  }
-
-  private static Path first(Map<String, List<String>> said, String key, Path otherwise) {
-    List<String> values = said.get(key);
-    return values == null || values.isEmpty() ? otherwise : Paths.get(values.get(0));
   }
 
   // What a build asks of its warnings is not asked of a wekufe, as with Maven.
