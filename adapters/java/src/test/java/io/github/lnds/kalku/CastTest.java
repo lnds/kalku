@@ -857,6 +857,52 @@ class CastTest {
     assertEquals(9, killed);
   }
 
+  // What the baseline of this project ran, and the outcome of the wekufe that empties the
+  // label of zero, cast against all of it. The project tests with JUnit 4 and with TestNG, and
+  // only its TestNG test looks at a label.
+  private static void bothJudge(Path project) throws Exception {
+    List<Map<?, ?>> said =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(CALC), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+    List<String> ran = new ArrayList<>();
+    for (Object test : (List<?>) done.get("tests")) {
+      ran.add((String) ((Map<?, ?>) test).get("test"));
+    }
+    Collections.sort(ran);
+    assertEquals(Arrays.asList("fx.AddsTest#adds()", "fx.LabelTest#zeroHasItsOwnLabel()"), ran);
+    Map<?, ?> label = null;
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      Map<?, ?> site = (Map<?, ?>) each;
+      if ("\"zero\"".equals(site.get("original")) && "\"\"".equals(site.get("replacement"))) {
+        label = site;
+      }
+    }
+    assertNotNull(label, said.get(2).toString());
+    Map<?, ?> cast =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", castOf(label, ran)).get(2);
+    assertEquals("killed", cast.get("outcome"), cast.toString());
+    assertEquals("fx.LabelTest#zeroHasItsOwnLabel()", cast.get("killed_by"));
+  }
+
+  // A project with both frameworks gets both engines, so the tests of each judge a wekufe.
+  @Test
+  void aProjectWithJUnit4AndTestNGHasTheTestsOfBothRun() throws Exception {
+    bothJudge(testedWith("both", "with-both"));
+  }
+
+  @Test
+  void aGradleBuildWithJUnit4AndTestNGHasTheTestsOfBothRun() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
+    Path project = testedWith("both", "gradle-both");
+    Files.delete(project.resolve("pom.xml"));
+    for (String file : Arrays.asList("build.gradle", "settings.gradle")) {
+      Files.copy(PROJECTS.resolve("gradle").resolve("both").resolve(file), project.resolve(file));
+    }
+    bothJudge(project);
+  }
+
   // The engine that runs JUnit 4 needs 4.12. An older one is said, with its number.
   @Test
   void aJUnit4TooOldForItsEngineIsRefusedByItsVersion() throws Exception {

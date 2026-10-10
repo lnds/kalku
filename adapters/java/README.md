@@ -58,7 +58,7 @@ JDK, with the kalku's jar behind it.
 
 - **JUnit 4 and TestNG**: a project that tests with either, and has nothing of
   the JUnit Platform, gets the engine that runs its framework on it fetched
-  into the reni. JUnit 4.12 or later.
+  into the reni; one that tests with both gets both. JUnit 4.12 or later.
 
 ## Requirements
 
