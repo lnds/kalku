@@ -1,3 +1,18 @@
+## v0.14.0 (2026-10-10)
+
+### Added
+
+- **protocol**: coverage a kalku doubts still chooses the tests, and the rest judge a survivor (#289)
+- the ratchet holds a run of the whole project to a stored baseline (#286)
+- `kalku run --all` measures the whole project, and `--shard i/n` a part of it (#285)
+
+### Fixed
+
+- **java**: every source directory a build declares is measured (#290)
+- **elixir**: code that runs as the application starts is measured (#288)
+- **java**: the tests a build includes and excludes are the tests that run (#287)
+- the hint of an `arm` or `negate` survivor no longer says no test reached it (#284)
+
 ## v0.13.0 (2026-10-10)
 
 ### Added
