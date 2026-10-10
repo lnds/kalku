@@ -211,10 +211,11 @@ Run the full suite, with per-test coverage when capable. `baseline` has no field
 | `coverage_path`? | string | the same entries, as one JSON array, in a file |
 | `coverage_packed_path`? | string | the same coverage, packed, in a file |
 | `coverage_withheld`? | string | why a kalku that measures per-test coverage reports none for this run, in its own words |
+| `coverage_doubted`? | string | why the coverage reported may be missing a test, in the kalku's own words |
 | `failures` | [{`test`, `message`}] | empty when green |
 | `differences`? | [string] | how this run of the suite was unlike the project's own test command, one sentence each |
 
-Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); none of them beside `coverage_withheld`; `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run.
+Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); none of them beside `coverage_withheld`, and one of them beside `coverage_doubted`; `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run.
 
 A packed file is one JSON object: `tests`, every test id once, and `reached`, a list of {`file`, `lines`, `tests`} where `lines` are the lines of that file the same tests reach and `tests` are positions in the list of ids, from 0. It stands for one entry per line. Written line by line, a function most of a suite calls names most of the suite on each of its lines, and a project's coverage is the same few thousand ids a hundred megabytes over.
 
@@ -226,6 +227,8 @@ A packed file is one JSON object: `tests`, every test id once, and `reached`, a 
 A position past the end of `tests` is `invalid`.
 
 `coverage_withheld` is for a kalku that measured which tests reach a line and will not stand behind the answer: the lines the suite reached and the lines its tests are credited with do not add up. Reporting that coverage would cast a wekufe against too few tests, so none is reported, every wekufe faces the whole suite, and the sentence says why. The kaikai side quotes it in every report, beside the survivors it explains: without it a reader is told the whole suite judged and not why.
+
+`coverage_doubted` is for a kalku that reports its coverage and does not stand behind all of it: what the suite reached and what its tests are credited with do not add up, so a line that is credited may be missing a test. A test that fails is a kill whoever else was asked, so the coverage is still worth having. The kaikai side sends each `cast` with the tests credited with the line in `tests` and every other test in `rest`, and calls a wekufe a survivor only when neither noticed; it quotes the sentence in every report.
 
 `differences` is what a test could tell: a copy of the project in place of the tree, a build kept somewhere else, a suite run serially. Only the kalku knows which of these is so, and the kaikai side quotes the sentences as they are when it refuses a red suite — a test that fails for one of them fails under the kalku and not in the project.
 
@@ -273,6 +276,7 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 | `wekufe` | string | id; equals the site's `site_id` |
 | `site` | Site | |
 | `tests` | [test id] | tests to run |
+| `rest`? | [test id] | more tests, to run only when none of `tests` fails |
 
 | `cast_done` | Type | Meaning |
 |---|---|---|
@@ -289,6 +293,8 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 `equivalent` means the wekufe compiled to the same code as the original, so no test ran: identical compiled code is the only mechanical evidence of equivalence, and a kalku never reports equivalence on any other ground. Should another kind of evidence appear, it arrives as a new optional field.
 
 `no_coverage` is for a kalku that watched its own cast and saw that no test ran the code the wekufe is in. The plan sends a wekufe with the tests that reach it, so this is rare where coverage chose them; it is what happens where the whole suite judges, to a wekufe no test reaches and to one in code that runs once — as an application starts, or the first time something is asked for — in a runtime that had already started when the wekufe was loaded. Every test passes then, and none of them met the wekufe: `survived` would report a hole nobody looked for. A kalku says `no_coverage` only on that evidence, never because it suspects it, and says what did not run in `message`. The kaikai side reports the wekufe with what could not be measured, outside the score.
+
+`rest` is sent only to a kalku whose baseline said `coverage_doubted`. The outcome is of both lists: `killed` when a test of either fails, `survived` when every test of both ran and none did.
 
 `dirty: true` makes the kaikai side send `reset` before the next cast, and recycle the kalku only if that fails.
 

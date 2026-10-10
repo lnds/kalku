@@ -70,7 +70,8 @@ pub type Known = {
   left_out: [Failure],
   differences: [String],
   only_theirs: [String],
-  withheld: Option[String]
+  withheld: Option[String],
+  doubted: Option[String]
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -199,7 +200,8 @@ fn interview(
     left_out: failing,
     differences: differences_of(baseline),
     only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([]),
-    withheld: withheld_of(baseline)
+    withheld: withheld_of(baseline),
+    doubted: doubted_of(baseline)
   })
 }
 
@@ -266,6 +268,11 @@ fn differences_of(reply: KalkuReply) : [String] = match reply {
 
 fn withheld_of(reply: KalkuReply) : Option[String] = match reply {
   BaselineDone(m) -> m.coverage_withheld
+  _ -> None
+}
+
+fn doubted_of(reply: KalkuReply) : Option[String] = match reply {
+  BaselineDone(m) -> m.coverage_doubted
   _ -> None
 }
 
@@ -473,7 +480,7 @@ fn casting_them(
   all_known: Known
 ) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling {
   let known = wanted_only(asking, all_known)
-  let ready = part_of(plan(inputs_for(asking, known), _id => None), asking.shard)
+  let ready = doubting(part_of(plan(inputs_for(asking, known), _id => None), asking.shard), known)
   let casts = repeated(limited(ready.to_cast, asking.limit))
   Telling.entered(PhaseCasting)
   Telling.tell_of(
@@ -548,6 +555,33 @@ pub fn orphans_among(entries: [equivalent.Entry], sites: [Site]) : [equivalent.E
   match_sites(entries, sites).orphans
 
 #[doc("""
+A plan whose coverage the kalku doubts: each wekufe keeps the tests that
+reach it, and takes every other test to face if those do not kill it.
+
+A kill by the tests that reach a wekufe is a kill whatever else is true.
+A survivor is only one when nothing that was not asked could have noticed,
+and with coverage that may be missing a test, that means asking the rest.
+The deadline is the whole suite's, since the whole suite may run.
+""")]
+pub fn doubting(ready: Plan, known: Known) : Plan = match known.doubted {
+  None -> ready
+  Some(_) -> Plan {
+    ...ready,
+    to_cast: ready.to_cast
+      | (w => Wekufe {
+        ...w,
+        rest: filter(known.tests, t => not contains(w.tests, t)),
+        timeout_ms: longer(w.timeout_ms, whole_budget(known))
+      })
+  }
+}
+
+fn longer(a: Int, b: Int) : Int = if a > b { a } else { b }
+
+fn whole_budget(known: Known) : Int =
+  TIMEOUT_FACTOR * DEPENDENTS_FACTOR * sum(known.durations | (d => d.snd))
+
+#[doc("""
 The part of a plan a shard owns, or all of it for a run that is not one.
 
 Of everything the plan sets aside too: a site no test reaches, or one
@@ -601,6 +635,7 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
       sites: ready.no_coverage |? (s => theirs_only(known, s))
     },
     withheld: known.withheld,
+    doubted: known.doubted,
     shard: None
   }
 }
@@ -689,7 +724,7 @@ fn site_named(known: Known, wekufe: String, tests: [String]) : [Survivor] = matc
     Survivor {
       site: s,
       tests: if is_empty(tests) { known.tests } else { tests },
-      chosen: is_some(known.coverage)
+      chosen: is_some(known.coverage) and is_none(known.doubted)
     }
   ]
   None -> []

@@ -107,6 +107,8 @@ Coverage travels inline when it fits under `hello.inline_limit_bytes`, and other
 
 A line no test runs has no entry at all: the question is which tests cover a line, and for an uncovered line the honest answer is none, which the kaikai side reads as `no_coverage` rather than as a hole.
 
+Running the suite whole and then each test alone measures the same thing twice, and the two have to agree: every line the suite reached, some test reached. Where they do not — a process that runs on its own clock between two tests, something kept the first time it is asked for, a test that takes another way through the code alone than in company — a line that is credited may be missing a test. The coverage is reported all the same, with `coverage_doubted` saying why and the lines that are nobody's credited to every test. The kaikai side then asks the credited tests first and the rest of the suite before it calls a wekufe a survivor: kills stay fast, and no survivor rests on the word of too few tests.
+
 The kalku declares OTP's `:tools` application, which is where `:cover` lives.
 
 ## Casting
@@ -123,10 +125,24 @@ While its tests run, the wekufe's compiled modules are also written to a directo
 | `killed` | a selected test failed, and `killed_by` names it |
 | `survived` | every selected test ran and none noticed |
 | `compile_error` | the wekufe does not compile, with the first line of why |
+| `no_coverage` | every test passed and none of them ran the function the wekufe is in, even with the application started on it; `message` says what did not run |
 
 Equivalence is **proved rather than guessed**: the wekufe's modules and the original's are compared by their BEAM MD5s, which is the runtime's own answer to "is this the same code". A kalku never reports an equivalence it cannot demonstrate.
 
 Only the tests in `cast.tests` run, selected by file and line the way `mix test path:line` does, stopping at the first failure. Those are the tests the baseline's coverage says reach the changed line; running the rest would cost time and could not change the answer.
+
+### Code that runs as the application starts
+
+A wekufe is cast in a runtime that started before it was loaded. What an application runs as it starts — a `start_link/1`, an `init/1`, a child spec — has run by then and does not run again, so the tests pass without meeting the wekufe.
+
+Two things are done about it.
+
+- **The baseline knows what ran at start.** Calls into the project's modules are counted while its applications start, and every test is credited with the lines of the functions that were called, where no test reaches them by itself: each test stands on what they built. A site there is cast, against the whole suite, and not listed as code nothing reaches.
+- **A cast that nothing ran is tried where it runs.** The calls into the wekufe's function are counted while its tests run. When there were none, the application is stopped and started with the wekufe loaded and the tests run again; it is started once more with the original before the cast ends. A test that fails then kills the wekufe, as it would under `mix test`, and an application that does not start is a kill too.
+
+Starting an application again loses what `test/test_helper.exs` set up after the first start, and tests fail for that alone. So a test that fails after the restart is believed only when the same tests pass after a restart with the original code. Where they do not, the wekufe is answered `no_coverage`, saying which test fails without any wekufe: not a survivor, and not a kill.
+
+Code that runs once without an application behind it — something kept the first time it is asked for — is not started again by anything, and a wekufe there is `no_coverage` with that said.
 
 ## Aborting
 

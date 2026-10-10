@@ -136,7 +136,10 @@ defmodule Kalku.Loop do
 
   defp start_cast(state, {id, body}) do
     %{"wekufe" => wekufe, "site" => site} = body
-    casting = Cast.start(self(), id, state.root, wekufe, site, body["tests"] || [])
+
+    casting =
+      Cast.start(self(), id, state.root, wekufe, site, {body["tests"] || [], body["rest"] || []})
+
     %{state | casting: casting}
   end
 

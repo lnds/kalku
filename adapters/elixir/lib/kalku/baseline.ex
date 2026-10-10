@@ -12,7 +12,7 @@ defmodule Kalku.Baseline do
   runtime cold for the casts that follow.
   """
 
-  alias Kalku.Baseline.{Calls, Collector, Cover, Packed, Recorder}
+  alias Kalku.Baseline.{Started, Calls, Collector, Cover, Packed, Recorder}
 
   @doc """
   Runs the suite and reports what it did.
@@ -28,10 +28,10 @@ defmodule Kalku.Baseline do
     with {:ok, files} <- test_files(root),
          :ok <- start_exunit(measuring),
          {:ok, modules} <- load(root, files),
-         {:ok, {measured, withheld}} <- through(modules, measuring) do
+         {:ok, {measured, doubt}} <- through(modules, measuring) do
       Kalku.Runtime.mark(Mix.Project.config()[:app])
       elapsed = System.monotonic_time(:millisecond) - started
-      report(measured, withheld, elapsed, root, opts)
+      report(measured, doubt, elapsed, root, opts)
     end
   end
 
@@ -116,30 +116,35 @@ defmodule Kalku.Baseline do
   # went missing. Which tests judge is for the kaikai side to say.
   defp judged_by_some?(tests), do: Enum.any?(tests, &(&1.failure == nil))
 
-  # Coverage this kalku cannot stand behind is not reported at all.
+  # Coverage this kalku cannot stand behind is said to be doubted.
   #
   # Running the suite whole and then each test alone measures the same
   # thing twice, so the two have to agree: every line the suite reached,
   # some test reached. A line the suite executed that no single test is
-  # credited with is attribution that went missing — which is what happens
-  # when a mocking library replaces one of the project's own modules and
-  # `:cover` loses what it instrumented.
+  # credited with says they do not: a test took another way through the
+  # code alone than it took in company, or something ran that no test
+  # started, and then a line that is credited may be missing a test too.
   #
-  # kalku cannot tell a lost line from a line no test truly reaches, and
-  # must not guess: reporting the attribution anyway judges each wekufe
-  # against too few tests, and a wekufe no test was aimed at survives. A
-  # survivor that is not a hole is the one thing a run must never produce.
-  #
-  # So the whole attribution is withheld and every wekufe faces the whole
-  # suite: slower, and true. The protocol already has this — a kalku
-  # without `per_test_coverage` works exactly this way.
-  defp attributed(tests, modules, whole), do: reconcile(measure_each(tests, modules), whole)
+  # kalku cannot tell which, and must not guess: a wekufe judged against too
+  # few tests survives, and a survivor that is not a hole is the one thing a
+  # run must never produce. But a test that fails is a kill whoever else
+  # was asked. So the attribution is reported, with the doubt: the kaikai
+  # side casts each wekufe against the tests credited with its line and,
+  # where none of them notices, against every other test before it calls
+  # the wekufe a survivor. The lines no test is credited with go to all of
+  # them.
+  defp attributed(tests, modules, whole) do
+    {measured, doubt} = reconcile(measure_each(tests, modules), whole)
+    {Started.credit(measured), doubt}
+  end
 
   @doc """
-  Keeps the per-test attribution only when it adds up to what the suite as a
-  whole reached; otherwise withholds all of it. Returns the tests and, when
-  it withheld, why: the reader of a report in which every wekufe faced the
-  whole suite is owed the reason, and only the kalku has it.
+  Checks the per-test attribution against what the suite as a whole
+  reached. Where it adds up, the tests as they were measured. Where it does
+  not, every test is credited with the lines that are nobody's, and the
+  doubt is returned: the reader of a run that asked every test before
+  calling a wekufe a survivor is owed the reason, and only the kalku has
+  it.
   """
   def reconcile(measured, whole) do
     attributed = for t <- measured, l <- t.lines, into: MapSet.new(), do: l
@@ -149,8 +154,9 @@ defmodule Kalku.Baseline do
       {measured, nil}
     else
       why = unattributable(lost)
-      IO.puts(:stderr, "kalku: per-test coverage is not reportable for this run. " <> why)
-      {for(t <- measured, do: %{t | lines: []}), why}
+      IO.puts(:stderr, "kalku: per-test coverage is doubted for this run. " <> why)
+      nobodys = Enum.sort(lost)
+      {for(t <- measured, do: %{t | lines: t.lines ++ nobodys}), why}
     end
   end
 
@@ -163,12 +169,11 @@ defmodule Kalku.Baseline do
       |> Enum.join(", ")
 
     "The suite reached #{MapSet.size(lost)} line(s) that no single test is credited with " <>
-      "(#{where}), so which tests reach a line cannot be stood behind. What does " <>
+      "(#{where}), so a line that is credited may be missing a test. What does " <>
       "this: a module replaced while the suite ran, as a mocking library does; " <>
       "something set up the first time it is asked for, and not again; a process of " <>
-      "the project's own that runs on its own clock, between two tests. " <>
-      "Every wekufe is cast against the whole suite instead: slower, and every " <>
-      "survivor is real."
+      "the project's own that runs on its own clock, between two tests; a test that " <>
+      "takes another way through the code alone than after the tests before it."
   end
 
   @doc """
@@ -287,7 +292,7 @@ defmodule Kalku.Baseline do
   # A test is named by where it is written, relative to the project: an
   # absolute path would name this machine, and every kalku in the pool
   # would call the same test something different.
-  defp report(tests, withheld, duration_ms, root, opts) do
+  defp report(tests, doubt, duration_ms, root, opts) do
     named = for t <- tests, do: {test_id(t.file, t.line, root), t}
 
     failures = for {id, t} <- named, t.failure != nil, do: %{"test" => id, "message" => t.failure}
@@ -304,8 +309,7 @@ defmodule Kalku.Baseline do
       "differences" => differences()
     }
 
-    {:ok,
-     body |> Map.merge(coverage_field(named, root, opts)) |> Map.merge(withheld_field(withheld))}
+    {:ok, body |> Map.merge(coverage_field(named, root, opts)) |> Map.merge(doubted_field(doubt))}
   end
 
   @doc """
@@ -344,8 +348,8 @@ defmodule Kalku.Baseline do
     end)
   end
 
-  defp withheld_field(nil), do: %{}
-  defp withheld_field(why), do: %{"coverage_withheld" => why}
+  defp doubted_field(nil), do: %{}
+  defp doubted_field(why), do: %{"coverage_doubted" => why}
 
   # The least a test's name takes on a line: enough to know, without writing
   # it out, that coverage naming this many will not fit through the pipe.

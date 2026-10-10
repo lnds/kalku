@@ -24,7 +24,7 @@ pub type SitesMsg = { files: [String], spells: [Spell], exclude_calls: [String] 
 
 #[doc("`cast`: cast one wekufe and run these tests.")]
 #[derive(Json, Eq, Show)]
-pub type CastMsg = { wekufe: String, site: Site, tests: [String] }
+pub type CastMsg = { wekufe: String, site: Site, tests: [String], rest: Option[[String]] }
 
 #[doc("`abort`: stop the running cast with this request id.")]
 #[derive(Json, Eq, Show)]
@@ -77,6 +77,7 @@ pub type BaselineDoneMsg = {
   coverage_path: Option[String],
   coverage_packed_path: Option[String],
   coverage_withheld: Option[String],
+  coverage_doubted: Option[String],
   failures: [Failure],
   differences: Option[[String]]
 }

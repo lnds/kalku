@@ -79,31 +79,46 @@ defmodule Kalku.BaselineTest do
     end
 
     # The net under it: where the lines the suite reached are not all
-    # credited to some test, the attribution is withheld, because a wekufe
-    # judged against too few tests is a survivor that is not a hole.
-    test "attribution that does not add up to the suite is withheld" do
+    # credited to some test, a credited line may be missing a test too. The
+    # attribution is kept, the lines that are nobody's go to every test, and
+    # the doubt is said, so that no wekufe is called a survivor on the word
+    # of too few tests.
+    test "attribution that does not add up to the suite is kept, and doubted" do
       whole = MapSet.new([{"lib/a.ex", 1}, {"lib/a.ex", 2}])
-      credited = fn lines -> %{id: "t", lines: lines} end
+      credited = fn id, lines -> %{id: id, lines: lines} end
 
       assert {[%{lines: [{"lib/a.ex", 1}, {"lib/a.ex", 2}]}], nil} =
-               Kalku.Baseline.reconcile([credited.([{"lib/a.ex", 1}, {"lib/a.ex", 2}])], whole)
+               Kalku.Baseline.reconcile(
+                 [credited.("t", [{"lib/a.ex", 1}, {"lib/a.ex", 2}])],
+                 whole
+               )
 
-      # And why is said, naming the line, for the report to carry.
-      assert {[%{lines: []}], why} =
-               Kalku.Baseline.reconcile([credited.([{"lib/a.ex", 1}])], whole)
+      assert {[one, other], why} =
+               Kalku.Baseline.reconcile(
+                 [credited.("t", [{"lib/a.ex", 1}]), credited.("u", [])],
+                 whole
+               )
 
+      assert one.lines == [{"lib/a.ex", 1}, {"lib/a.ex", 2}]
+      assert other.lines == [{"lib/a.ex", 2}]
       assert why =~ "1 line(s) that no single test is credited with (a.ex:2)"
     end
 
-    # Only the kalku knows why, and a reader who is told "the whole suite"
-    # and not why goes looking for a mock that is not there.
-    test "a suite whose attribution is withheld says why in its answer", %{reni: reni} do
+    # Only the kalku knows why, and a reader who is told every test was
+    # asked and not why goes looking for a mock that is not there.
+    test "a suite whose attribution is doubted says why, and still reports it", %{reni: reni} do
       done = reply(run(reni, "lazy", ["baseline"]), "baseline_done")
 
       assert done["status"] == "green"
-      assert done["coverage_withheld"] =~ "no single test is credited with (lazy.ex:"
-      refute Map.has_key?(done, "coverage")
-      refute Map.has_key?(done, "coverage_packed_path")
+      assert done["coverage_doubted"] =~ "no single test is credited with (lazy.ex:"
+
+      by_line =
+        for %{"line" => line, "tests" => tests} <- done["coverage"], into: %{}, do: {line, tests}
+
+      # `price/1` is reached by the one test that calls it, and the line
+      # nobody is credited with by both.
+      assert by_line[11] == ["test/lazy_test.exs:4"]
+      assert by_line[14] == ["test/lazy_test.exs:4", "test/lazy_test.exs:8"]
     end
 
     # Withholding it for every project would give away the speed the whole

@@ -67,6 +67,35 @@ defmodule Kalku.CastTest do
       assert by_wekufe["after-all"]["outcome"] == "killed"
     end
 
+    # Where the kalku doubted its coverage, the tests credited with a line
+    # may be missing one. They are asked first, and the others only when
+    # none of them notices: one failing test is a kill whoever else was
+    # asked, and a survivor is one only when nobody was left to ask.
+    test "the rest of the suite is asked when the first tests do not notice", %{reni: reni} do
+      elsewhere = ["test/same_line_test.exs:5"]
+
+      lines =
+        summon(reni, "green", [
+          request("prepare", 2),
+          request("baseline", 3),
+          cast("alone", 4, @seed, "1", elsewhere),
+          with_rest(cast("with-the-rest", 5, @seed, "1", elsewhere), @covering),
+          with_rest(cast("first-is-enough", 6, @seed, "1", @covering), elsewhere)
+        ])
+
+      by_wekufe =
+        for line <- lines,
+            {:ok, d} <- [Kalku.Json.decode(line)],
+            d["wekufe"],
+            into: %{},
+            do: {d["wekufe"], d}
+
+      assert by_wekufe["alone"]["outcome"] == "survived"
+      assert by_wekufe["with-the-rest"]["outcome"] == "killed"
+      assert by_wekufe["with-the-rest"]["killed_by"] == "test/green_test.exs:9"
+      assert by_wekufe["first-is-enough"]["killed_by"] == "test/green_test.exs:9"
+    end
+
     # The kaikai side asks one kalku for the baseline and hands every
     # worker the answer, so a kalku in a pool is asked to cast without ever
     # having been asked for a baseline. It still has to be able to kill.
@@ -342,6 +371,10 @@ defmodule Kalku.CastTest do
       "site" => site(from, to, replacement),
       "tests" => tests
     })
+  end
+
+  defp with_rest(cast, rest) do
+    cast |> Kalku.Json.decode!() |> Map.put("rest", rest) |> Kalku.Json.encode()
   end
 
   defp site(from, to, replacement) do

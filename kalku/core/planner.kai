@@ -19,9 +19,15 @@ import kalku.core.told
 #[derive(Eq, Show)]
 pub type Reach = Everything | Touched([FileChange]) | Listed([String])
 
-#[doc("One wekufe to cast: the site, the tests that would notice, and its timeout.")]
+#[doc("""
+One wekufe to cast: the site, the tests that would notice, and its timeout.
+
+`rest` is every other test, for a run whose coverage the kalku doubts: a
+wekufe its own tests do not kill faces those before it is called a
+survivor.
+""")]
 #[derive(Eq, Show)]
-pub type Wekufe = { site: Site, tests: [String], timeout_ms: Int, casts: Int }
+pub type Wekufe = { site: Site, tests: [String], rest: [String], timeout_ms: Int, casts: Int }
 
 #[doc("A site whose outcome is already known, and the outcome.")]
 #[derive(Eq, Show)]
@@ -144,6 +150,7 @@ fn castable(site: Site, inputs: Inputs, said: Said) : [Wekufe] {
       Wekufe {
         site: site,
         tests: tests,
+        rest: [],
         timeout_ms: budget_for(site, tests, inputs, said),
         casts: agreements_for(site.spell)
       }

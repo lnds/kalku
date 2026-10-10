@@ -12,7 +12,7 @@ defmodule Kalku.Cast do
   attributed to the next one, and the next one's result would be a lie.
   """
 
-  alias Kalku.Cast.{Beams, Entered, Tests}
+  alias Kalku.Cast.{Beams, Entered, Started, Tests}
   alias Kalku.Deps
 
   @doc """
@@ -54,7 +54,8 @@ defmodule Kalku.Cast do
     Beams.clear()
     # What the cast compiled is loaded under its file by now, whatever stood
     # there when it started.
-    restore(originals ++ originals_of(file)) == :ok
+    restored = restore(originals ++ originals_of(file)) == :ok
+    Started.settle() and restored
   rescue
     _ -> false
   end
@@ -137,7 +138,8 @@ defmodule Kalku.Cast do
         recompile(dependents)
         outcome = measure(root, compiled, originals, tests, site)
         restore(originals ++ borrowed)
-        {:ok, done(wekufe, outcome.outcome, started, Map.to_list(Map.delete(outcome, :outcome)))}
+        extra = [unsettled: not Started.settle()] ++ Map.to_list(Map.delete(outcome, :outcome))
+        {:ok, done(wekufe, outcome.outcome, started, extra)}
     end
   end
 
@@ -176,20 +178,40 @@ defmodule Kalku.Cast do
     else
       Beams.put(compiled)
       watched = Entered.watch(compiled, site)
-      ran = Tests.run(root, tests)
-      entered = Entered.entered?(watched)
+      {first, rest} = tiers(tests)
+
+      ran =
+        root
+        |> Tests.run(first)
+        |> by_the_rest(root, rest)
+        |> looked_at(watched, root, first ++ rest, site, originals)
+
       Entered.stop(watched)
       Beams.clear()
-      ran |> looked_at(entered, site) |> Map.put(:code_hash, hash_of(compiled))
+      Map.put(ran, :code_hash, hash_of(compiled))
     end
   end
 
-  # A wekufe that no test ran did not survive anything: every test passed
-  # because none of them met it.
-  defp looked_at(%{outcome: "survived"}, false, site),
-    do: %{outcome: "no_coverage", message: Entered.unrun(site)}
+  # The tests that reach the wekufe, and the others to ask when the kaikai
+  # side was told the first may be missing one.
+  defp tiers({first, rest}), do: {first, rest}
+  defp tiers(tests) when is_list(tests), do: {tests, []}
 
-  defp looked_at(ran, _entered, _site), do: ran
+  # One failing test is a kill whoever else was asked, so the others are
+  # only asked when none of the first noticed.
+  defp by_the_rest(%{outcome: "survived"}, root, [_ | _] = rest), do: Tests.run(root, rest)
+  defp by_the_rest(ran, _root, _rest), do: ran
+
+  # A wekufe that no test ran did not survive anything: every test passed
+  # because none of them met it. It is tried once more where it does run.
+  defp looked_at(%{outcome: "survived"} = ran, watched, root, tests, site, originals) do
+    case Entered.entered?(watched) do
+      false -> Started.judge(root, tests, watched, site, fn -> restore(originals) end)
+      _ -> ran
+    end
+  end
+
+  defp looked_at(ran, _watched, _root, _tests, _site, _originals), do: ran
 
   defp identical?(compiled, originals) do
     md5s(compiled) == md5s(originals) and md5s(compiled) != %{}
@@ -299,7 +321,7 @@ defmodule Kalku.Cast do
       "wekufe" => wekufe,
       "outcome" => outcome,
       "duration_ms" => System.monotonic_time(:millisecond) - started,
-      "dirty" => Kalku.Runtime.dirty?(Mix.Project.config()[:app])
+      "dirty" => extra[:unsettled] == true or Kalku.Runtime.dirty?(Mix.Project.config()[:app])
     }
     |> put_optional("killed_by", extra[:killed_by])
     |> put_optional("message", extra[:message])

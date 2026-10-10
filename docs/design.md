@@ -330,7 +330,7 @@ cold ──prepare──► preparing ──ok──► baseline ──green─�
 | `killed` | a covering test failed | detected |
 | `survived` | every covering test passed | undetected |
 | `timeout` | exceeded its timeout | reported apart |
-| `no_coverage` | no test executes the site: by the baseline's coverage, or seen by the kalku while the wekufe was cast. Code that runs once, as an application starts, is among it where the runtime is warm: it does not run again for a wekufe | reported apart |
+| `no_coverage` | no test executes the site: by the baseline's coverage, or seen by the kalku while the wekufe was cast. Code that runs once and not again in a warm runtime is among it where the kalku has no way to run it again | reported apart |
 | `compile_error` | the wekufe does not compile | excluded |
 | `crashed` | the cast produced no verdict: the kalku died, it could not run the tests it was given, or the wekufe held more memory than the ceiling (the message says how much) | reported apart |
 | `equivalent` | proven by identical bytecode, or declared with a written reason | excluded |
@@ -570,7 +570,7 @@ One JSON object per survivor, complete enough to act on without opening other fi
 
 `covering_tests` lists the first five tests that cover the line and `covering_count` how many there are. A line that a whole suite reaches is covered by every test in it, and listing a thousand of them per survivor made a run too large to fit in a tool result; the full list is what `kalku show <wekufe>` (and the `kalku_show` tool) answers.
 
-Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score.
+Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score. A kalku that reports coverage it doubts has each wekufe cast against the tests credited with its line and then, when none notices, against every other test: its survivors are judged by the whole suite too, and the summary carries why in `coverage_doubted`.
 
 followed by one summary object (counts, score, suppression changes).
 

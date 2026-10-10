@@ -63,13 +63,6 @@ defmodule Kalku.Cast.Entered do
     :ok
   end
 
-  @doc "What to say of a wekufe no test ran."
-  def unrun(site) do
-    "no test ran `#{site["enclosing"]}` while the wekufe was in it. Either no test reaches " <>
-      "it, or it is code that runs once, as the application starts or the first time it is " <>
-      "asked for, and a wekufe is cast in a runtime where that has already happened."
-  end
-
   # `Mod.Sub.name/arity`, as a site names the declaration it is in. A site
   # in the body of a module names the module alone.
   defp named(enclosing) when is_binary(enclosing) do
