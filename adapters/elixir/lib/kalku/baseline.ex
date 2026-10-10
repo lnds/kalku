@@ -12,7 +12,7 @@ defmodule Kalku.Baseline do
   runtime cold for the casts that follow.
   """
 
-  alias Kalku.Baseline.{Calls, Collector, Cover, Packed, Recorder}
+  alias Kalku.Baseline.{Started, Calls, Collector, Cover, Packed, Recorder}
 
   @doc """
   Runs the suite and reports what it did.
@@ -133,7 +133,12 @@ defmodule Kalku.Baseline do
   # So the whole attribution is withheld and every wekufe faces the whole
   # suite: slower, and true. The protocol already has this — a kalku
   # without `per_test_coverage` works exactly this way.
-  defp attributed(tests, modules, whole), do: reconcile(measure_each(tests, modules), whole)
+  defp attributed(tests, modules, whole) do
+    case reconcile(measure_each(tests, modules), whole) do
+      {measured, nil} -> {Started.credit(measured), nil}
+      withheld -> withheld
+    end
+  end
 
   @doc """
   Keeps the per-test attribution only when it adds up to what the suite as a

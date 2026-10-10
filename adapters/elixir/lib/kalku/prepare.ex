@@ -165,7 +165,9 @@ defmodule Kalku.Prepare do
   defp start_apps do
     Mix.Task.rerun("app.config", [])
     Kalku.Log.start_on_stderr()
+    Kalku.Baseline.Started.watch(Mix.Project.config()[:app])
     Mix.Task.rerun("app.start", [])
+    Kalku.Baseline.Started.seen()
     Kalku.Log.to_stderr()
     :ok
   rescue

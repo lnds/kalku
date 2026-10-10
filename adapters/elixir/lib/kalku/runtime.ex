@@ -86,10 +86,21 @@ defmodule Kalku.Runtime do
     end
   end
 
-  defp restart(app) do
+  @doc """
+  Stops the application and starts it again. `:ok`, or why it did not
+  start.
+  """
+
+  def restart(app) do
     safely(fn -> Application.stop(app) end)
-    safely(fn -> Application.ensure_all_started(app) end)
+    started = safely(fn -> Application.ensure_all_started(app) end)
     Kalku.Log.to_stderr()
+
+    case started do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, Kalku.Baseline.first_lines(inspect(reason))}
+      _ -> {:error, "it could not be started"}
+    end
   end
 
   # A table another process owns cannot be deleted from here, and an
