@@ -274,7 +274,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
 | `--watch` y `--ci` | todavía no |
-| `[score] ratchet` — el score no puede bajar de una línea base guardada | todavía no: un config que lo declara es rechazado |
+| **`[score] ratchet`** — el score del proyecto completo no puede bajar de la línea base guardada con `--store-baseline` | listo |
 | `merge` — combinar reportes de shards | todavía no |
 | **`--all` y `--shard i/n`** — el proyecto completo, por partes, para una corrida nocturna | listo: un shard dice que lo es y no se le exige el umbral |
 | **`kalku_elixir` en Hex** — el kalku de Elixir se instala como cualquier dependencia | hecho |

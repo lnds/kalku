@@ -1,0 +1,67 @@
+import kalku.wire.shapes
+import kalku.core.gate
+import kalku.core.config
+import kalku.cli
+import kalku.holding
+
+fn with_ratchet() : Config = Config {
+  ...defaults(),
+  policy: Policy { threshold: Some(0.5), baseline: None },
+  ratchet: true
+}
+
+fn whole() : Wanted = Wanted { ...nothing_wanted(), all: true }
+
+const STORED : String = "{\"killed\":3,\"survived\":1}\n"
+
+test "a run of the whole project is held to the stored baseline" {
+  assert held_by_ratchet(with_ratchet(), whole(), Some(STORED))
+    == Ok(Policy { threshold: Some(0.5), baseline: Some(0.75) })
+}
+
+# The score of some files, of a change or of a shard is of something else,
+# and comparing it with the whole project's would block or pass by accident.
+test "what is not the whole project is not held to the baseline" {
+  let c = with_ratchet()
+  let named = Wanted { ...nothing_wanted(), files: ["lib/a.ex"] }
+  let change = Wanted { ...nothing_wanted(), since: Some("origin/main") }
+  let part = Wanted { ...whole(), shard: Some(Shard { index: 1, count: 2 }) }
+
+  assert held_by_ratchet(c, named, Some(STORED)) == Ok(c.policy)
+  assert held_by_ratchet(c, change, None) == Ok(c.policy)
+  assert held_by_ratchet(c, part, Some(STORED)) == Ok(c.policy)
+}
+
+# A project that asked for a ratchet and stored nothing would pass whatever
+# its score, in every checkout that never had the file.
+test "a ratchet with no baseline is not a pass" {
+  match held_by_ratchet(with_ratchet(), whole(), None) {
+    Ok(_) -> {
+      assert false
+    }
+    Err(why) -> {
+      assert is_some(index_of(why, "no baseline is stored"))
+      assert is_some(index_of(why, "kalku run --all --store-baseline"))
+    }
+  }
+  assert held_by_ratchet(with_ratchet(), whole(), Some("not json"))
+    == Err(".kalku/baseline.json is not JSON")
+}
+
+test "the run that stores a baseline is not held to the one it replaces" {
+  let storing = Wanted { ...whole(), store: true }
+  assert held_by_ratchet(with_ratchet(), storing, Some(STORED)) == Ok(with_ratchet().policy)
+  assert held_by_ratchet(with_ratchet(), storing, None) == Ok(with_ratchet().policy)
+}
+
+test "storing a baseline nothing holds the score to is refused" {
+  match held_by_ratchet(defaults(), Wanted { ...whole(), store: true }, None) {
+    Ok(_) -> {
+      assert false
+    }
+    Err(why) -> {
+      assert is_some(index_of(why, "does not set it"))
+    }
+  }
+  assert held_by_ratchet(defaults(), whole(), None) == Ok(defaults().policy)
+}

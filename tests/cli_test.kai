@@ -58,7 +58,8 @@ test "run takes the files to measure, and how much of them" {
         shape: AsHuman,
         since: None,
         all: false,
-        shard: None
+        shard: None,
+        store: false
       }
     )
   assert cli.parse_args(["run", "--limit", "6", "-v", "lib/a.ex"])
@@ -69,7 +70,8 @@ test "run takes the files to measure, and how much of them" {
       shape: AsHuman,
       since: None,
       all: false,
-      shard: None
+      shard: None,
+      store: false
     })
 }
 
@@ -83,7 +85,8 @@ test "run with nothing named is still a run" {
       shape: AsHuman,
       since: None,
       all: false,
-      shard: None
+      shard: None,
+      store: false
     })
 }
 
@@ -109,7 +112,8 @@ test "run takes the shape it should print in" {
       shape: AsAgent,
       since: None,
       all: false,
-      shard: None
+      shard: None,
+      store: false
     })
   assert cli.parse_args(["run", "--format", "github", "lib/a.ex"])
     == Measure(Wanted {
@@ -119,7 +123,8 @@ test "run takes the shape it should print in" {
       shape: AsGithub,
       since: None,
       all: false,
-      shard: None
+      shard: None,
+      store: false
     })
   assert cli.parse_args(["run", "--format"])
     == Misused("`--format` needs a name: human, agent, json or github")
@@ -139,7 +144,8 @@ test "cast names wekufe, show names one, and both need a name" {
         shape: AsHuman,
         since: None,
         all: false,
-        shard: None
+        shard: None,
+        store: false
       }
     )
   assert cli.parse_args(["cast"]) == Misused("`kalku cast` needs a wekufe to re-cast")
@@ -171,7 +177,8 @@ test "run takes the ref a change started from" {
         shape: AsHuman,
         since: Some("origin/main"),
         all: false,
-        shard: None
+        shard: None,
+        store: false
       }
     )
   assert cli.parse_args(["run", "lib/a.ex", "--since", "main", "--format", "github"])
@@ -183,7 +190,8 @@ test "run takes the ref a change started from" {
         shape: AsGithub,
         since: Some("main"),
         all: false,
-        shard: None
+        shard: None,
+        store: false
       }
     )
 }
@@ -238,4 +246,16 @@ test "the whole project is not also some files, nor a change" {
     == Misused("`--all` measures every source file; name files or say `--all`, not both")
   assert parse_args(["run", "--all", "--since", "origin/main"])
     == Misused("`--all` measures the whole project and `--since` a change; say one")
+}
+
+# A baseline is the score of the whole project, so only a run of the whole
+# project can store one.
+test "a baseline is stored by a run of the whole project and no other" {
+  assert parse_args(["run", "--all", "--store-baseline"])
+    == Measure(Wanted { ...nothing_wanted(), all: true, store: true })
+  let part =
+    "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
+  assert parse_args(["run", "lib/a.ex", "--store-baseline"]) == Misused(part)
+  assert parse_args(["run", "--all", "--shard", "1/2", "--store-baseline"]) == Misused(part)
+  assert parse_args(["run", "--all", "--limit", "10", "--store-baseline"]) == Misused(part)
 }
