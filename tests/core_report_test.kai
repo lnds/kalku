@@ -45,7 +45,8 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     skipped: [],
     uncovered: [],
     blockers: blockers,
-    left_out: nobody_left_out()
+    left_out: nobody_left_out(),
+    withheld: None
   }
 
 fn plain() : Report =
@@ -262,6 +263,16 @@ test "a partial run says so before it says its score" {
   assert index_of(part, "PARTIAL") < index_of(part, "score")
 }
 
+# A wekufe whose code is the original's was cast and answered for. A run
+# that cast everything is not one that stopped short because of it.
+test "a wekufe proved equivalent was cast, and does not make a run partial" {
+  let counts = tally([Cast(Killed), Cast(Survived), Cast(Equivalent)])
+
+  assert not has(human(Report { ...report_of([], counts, []), planned: 3 }), "PARTIAL")
+  assert has(human(Report { ...report_of([], counts, []), planned: 4 }), "PARTIAL: 3 of 4")
+  assert answered(tally([Cast(Killed), Cast(NoCoverage), EquivalentBy(Declared)])) == 1
+}
+
 fn survivor_on(file: String, line: Int) : Survivor =
   Survivor { site: site_of(file, line, Some("A.f/1"), Some(">="), ">"), tests: [], chosen: true }
 
@@ -381,4 +392,30 @@ test "a run in which every test judged says nothing about leaving any out" {
 test "a run that left tests out is shown, and does not pass" {
   assert trouble_with(nobody_left_out()) == None
   assert is_some(trouble_with(left([failing("t", "boom")], [])))
+}
+
+# Only the kalku knows why it would not stand behind which tests reach a
+# line. Told "the whole suite" and not why, a reader looks for the cause in
+# the wrong place, or takes a slow run for a broken one.
+test "a run whose coverage was withheld says why, in the kalku's words" {
+  let r = Report {
+    ...report_of(
+      [Survivor { site: compare_site(), tests: ["t1", "t2"], chosen: false }],
+      tally([Cast(Survived)]),
+      []
+    ),
+    withheld: Some("The suite reached 1 line(s) that no single test is credited with (a.ex:2).")
+  }
+  let text = human(r)
+
+  assert has(text, "judged by the whole suite, 2 test(s)")
+  assert has(
+    text,
+    "every wekufe was judged by the whole suite: which tests reach a line was measured and not reported."
+  )
+  assert has(text, "  The suite reached 1 line(s) that no single test is credited with (a.ex:2).")
+  assert not has(human(report_of([], tally([Cast(Killed)]), [])), "was measured and not reported")
+
+  assert has(json(r, 1), "\"coverage_withheld\":\"The suite reached 1 line(s)")
+  assert not has(json(plain(), 1), "coverage_withheld")
 }

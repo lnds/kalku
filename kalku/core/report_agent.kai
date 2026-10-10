@@ -143,6 +143,7 @@ fn summary_line(r: Report) : String = json_encode(
       ++ repeated_field(r)
       ++ suppression_field(r.suppressions)
       ++ left_out_fields(r.left_out)
+      ++ withheld_field(r.withheld)
       ++ [("exit", JNum(exit_code(r.blockers)))]
   )
 )
@@ -156,6 +157,14 @@ fn left_out_fields(out: LeftOut) : [(String, JsonValue)] = if is_empty(out.tests
   [("left_out", JArr(out.tests | (f => JStr(f.test_id))))]
     ++ strings("differences", out.differences)
     ++ strings("reached_only_by_left_out", out.sites | (s => s.site_id))
+}
+
+# Why no survivor names the tests that reach it, when the kalku measured
+# that and would not report it: an agent told only "the whole suite" will
+# look for the test to extend and find every test.
+fn withheld_field(why: Option[String]) : [(String, JsonValue)] = match why {
+  None -> []
+  Some(said) -> [("coverage_withheld", JStr(said))]
 }
 
 # A pattern travels only when there is one, and as a fact rather than as

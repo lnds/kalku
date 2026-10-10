@@ -19,3 +19,4 @@
 {"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage\":[],\"coverage_path\":\"/c\",\"failures\":[]}"}
 {"expect":"invalid","line":"{\"type\":\"delegated\",\"id\":4,\"tool\":\"t\",\"tool_version\":\"1\",\"duration_ms\":1}"}
 {"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage_path\":\"/c\",\"coverage_packed_path\":\"/p\",\"failures\":[]}"}
+{"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage\":[],\"coverage_withheld\":\"a line no test is credited with\",\"failures\":[]}"}

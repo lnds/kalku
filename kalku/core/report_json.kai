@@ -29,6 +29,7 @@ pub fn json(r: Report, exit: Int) : String = encode_value(
         ("exit", JNum(exit))
       ]
       ++ left_out(r)
+      ++ optional("coverage_withheld", r.withheld.map(w => JStr(w)))
   )
 )
 

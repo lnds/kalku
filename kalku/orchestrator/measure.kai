@@ -34,6 +34,7 @@ import kalku.core.changed_lines
 import kalku.core.report
 import kalku.core.remembering
 import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.escalation
 import kalku.orchestrator.attending
 import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
@@ -66,7 +67,8 @@ pub type Known = {
   skipped: [Skipped],
   left_out: [Failure],
   differences: [String],
-  only_theirs: [String]
+  only_theirs: [String],
+  withheld: Option[String]
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -194,7 +196,8 @@ fn interview(
     skipped: found.skipped,
     left_out: failing,
     differences: differences_of(baseline),
-    only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([])
+    only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([]),
+    withheld: withheld_of(baseline)
   })
 }
 
@@ -257,6 +260,11 @@ fn failures_of(reply: KalkuReply) : [Failure] = match reply {
 fn differences_of(reply: KalkuReply) : [String] = match reply {
   BaselineDone(m) -> m.differences.unwrap_or([])
   _ -> []
+}
+
+fn withheld_of(reply: KalkuReply) : Option[String] = match reply {
+  BaselineDone(m) -> m.coverage_withheld
+  _ -> None
 }
 
 fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
@@ -383,7 +391,7 @@ const LAST_LINES : Int = 12
 fn with_last_words(why: String, said: [String]) : String = if is_empty(said) {
   why
 } else {
-  join([why, "what it said before it went:"] ++ (said | (l => "  #{l}")), "\n")
+  join([why, "what it wrote on stderr before that:"] ++ (said | (l => "  #{l}")), "\n")
 }
 
 #[doc("""
@@ -410,9 +418,7 @@ fn from_ours(
   said: [String]
 ) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling = match what {
   Said(line) -> match heard(line) {
-    Err(e) -> Err(
-      with_last_words("the kalku wrote a line this side cannot read: #{e.detail}", said)
-    )
+    Err(e) -> Err(with_last_words("the kalku #{noise(line, e.detail)}", said))
     Ok(m) -> judge(k, kind, m.body, said)
   }
   Closed -> Err(with_last_words("the kalku closed its pipe before saying `#{kind}`", said))
@@ -457,16 +463,7 @@ fn reply_kind(r: KalkuReply) : String {
 fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) {
   known
 } else {
-  Known {
-    sites: filter(known.sites, s => contains(asking.only, s.site_id)),
-    tests: known.tests,
-    coverage: known.coverage,
-    durations: known.durations,
-    skipped: known.skipped,
-    left_out: known.left_out,
-    differences: known.differences,
-    only_theirs: known.only_theirs
-  }
+  Known { ...known, sites: filter(known.sites, s => contains(asking.only, s.site_id)) }
 }
 
 fn casting_them(
@@ -580,7 +577,8 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
       tests: known.left_out,
       differences: known.differences,
       sites: ready.no_coverage |? (s => theirs_only(known, s))
-    }
+    },
+    withheld: known.withheld
   }
 }
 
@@ -628,14 +626,7 @@ pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Rep
 
 # A run that cast fewer wekufe than it planned measured part of the thing
 # a floor is about.
-fn was_partial(r: Report) : Bool = r.planned > 0 and cast_of(r) < r.planned
-
-fn cast_of(r: Report) : Int = r.counts.killed
-  + r.counts.survived
-  + r.counts.timeout
-  + r.counts.compile_error
-  + r.counts.crashed
-  + r.counts.nondeterministic
+fn was_partial(r: Report) : Bool = r.planned > 0 and answered(r.counts) < r.planned
 
 # An outcome outside the score is carried with whatever the kalku said
 # about it: a `compile_error` a reader cannot explain is the one result

@@ -210,10 +210,11 @@ Run the full suite, with per-test coverage when capable. `baseline` has no field
 | `coverage`? | [{`file`, `line`, `tests`}] | inline coverage |
 | `coverage_path`? | string | the same entries, as one JSON array, in a file |
 | `coverage_packed_path`? | string | the same coverage, packed, in a file |
+| `coverage_withheld`? | string | why a kalku that measures per-test coverage reports none for this run, in its own words |
 | `failures` | [{`test`, `message`}] | empty when green |
 | `differences`? | [string] | how this run of the suite was unlike the project's own test command, one sentence each |
 
-Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run.
+Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); none of them beside `coverage_withheld`; `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run.
 
 A packed file is one JSON object: `tests`, every test id once, and `reached`, a list of {`file`, `lines`, `tests`} where `lines` are the lines of that file the same tests reach and `tests` are positions in the list of ids, from 0. It stands for one entry per line. Written line by line, a function most of a suite calls names most of the suite on each of its lines, and a project's coverage is the same few thousand ids a hundred megabytes over.
 
@@ -223,6 +224,8 @@ A packed file is one JSON object: `tests`, every test id once, and `reached`, a 
 ```
 
 A position past the end of `tests` is `invalid`.
+
+`coverage_withheld` is for a kalku that measured which tests reach a line and will not stand behind the answer: the lines the suite reached and the lines its tests are credited with do not add up. Reporting that coverage would cast a wekufe against too few tests, so none is reported, every wekufe faces the whole suite, and the sentence says why. The kaikai side quotes it in every report, beside the survivors it explains: without it a reader is told the whole suite judged and not why.
 
 `differences` is what a test could tell: a copy of the project in place of the tree, a build kept somewhere else, a suite run serially. Only the kalku knows which of these is so, and the kaikai side quotes the sentences as they are when it refuses a red suite — a test that fails for one of them fails under the kalku and not in the project.
 
