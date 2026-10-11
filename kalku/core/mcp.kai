@@ -14,6 +14,7 @@ disappear is a tool this project will not ship.
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.version
 
 #[doc("What a host asked for.")]

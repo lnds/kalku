@@ -22,6 +22,7 @@ leave the project as they found it.
 """)]
 
 import kalku.orchestrator.kalku_proc
+import actor
 
 #[doc("""
 Run `body` with the signals that mean *stop* turned into `Cancel` for the

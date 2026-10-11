@@ -18,6 +18,7 @@ import kalku.wire.version
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.escalation
 import kalku.orchestrator.ward
+import kalku.wire.shapes
 
 # `tests` travels with the job because the verdict has to say what judged
 # it, and the plan that chose them is out of reach once the cast is out.

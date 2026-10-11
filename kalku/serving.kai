@@ -91,7 +91,7 @@ fn last_slash(path: String) : Option[Int] = match index_of(path, "/") {
 # Accept, hand the connection to a fiber, accept again. Nothing here
 # waits on what a client asked for, which is the whole point of it.
 fn accepting(
-  l: Listener,
+  l: sock.Listener,
   session: Pid[OrchMsg],
   mine: Int,
   next: Int
@@ -105,7 +105,7 @@ fn accepting(
 
 # The uid the kernel recorded when this connection was made, which is the
 # only thing about a peer that a peer cannot lie about.
-fn its_owner(c: Conn, mine: Int) : Bool / NetUnix = match NetUnix.peer_uid(c) {
+fn its_owner(c: sock.Conn, mine: Int) : Bool / NetUnix = match NetUnix.peer_uid(c) {
   Ok(uid) -> uid == mine
   Err(_) -> false
 }
@@ -121,7 +121,7 @@ fn as_byte(n: Int) : [Byte] = match int_to_byte(n) {
   Err(_) -> []
 }
 
-fn tell(c: Conn, id: Int, e: ServerEvent) : Unit / NetUnix {
+fn tell(c: sock.Conn, id: Int, e: ServerEvent) : Unit / NetUnix {
   let _ = NetUnix.send(c, bytes(said(id, e)) | byte_to_int)
   ()
 }
@@ -139,7 +139,7 @@ what makes a second question possible while the first is still being
 worked on somewhere else.
 """)]
 fn conversing(
-  c: Conn,
+  c: sock.Conn,
   id: Int,
   session: Pid[OrchMsg],
   mine: Int
@@ -165,7 +165,7 @@ fn conversing(
 }
 
 fn hearing(
-  c: Conn,
+  c: sock.Conn,
   id: Int,
   session: Pid[OrchMsg],
   f: Framer
@@ -183,7 +183,7 @@ fn hearing(
 }
 
 fn asked_about(
-  c: Conn,
+  c: sock.Conn,
   id: Int,
   session: Pid[OrchMsg],
   fr: Frame
@@ -208,7 +208,7 @@ fn asked_about(
 # Everything the session sends until it says the answer is over. A line
 # from anywhere else is not possible here: this mailbox belongs to one
 # connection, and only the session was given its address.
-fn until_answered(c: Conn) : Unit / NetUnix + Actor[OrchMsg] = match Actor.receive() {
+fn until_answered(c: sock.Conn) : Unit / NetUnix + Actor[OrchMsg] = match Actor.receive() {
   Aside(_who, _back, line) -> {
     say_to(c, line)
     if ends_the_answer(line) { () } else { until_answered(c) }
@@ -216,7 +216,7 @@ fn until_answered(c: Conn) : Unit / NetUnix + Actor[OrchMsg] = match Actor.recei
   _ -> ()
 }
 
-fn say_to(c: Conn, line: String) : Unit / NetUnix {
+fn say_to(c: sock.Conn, line: String) : Unit / NetUnix {
   let _ = NetUnix.send(c, bytes(line) | byte_to_int)
   ()
 }

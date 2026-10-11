@@ -12,6 +12,7 @@ would agree with a broken codec instead of catching it.
 """)]
 
 import encoding.json
+import encoding.json_bind
 
 #[doc("One scripted step: the request it expects, and what the fake does about it.")]
 pub type Step = {

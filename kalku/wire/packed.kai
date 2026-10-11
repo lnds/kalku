@@ -17,6 +17,7 @@ A module of its own because importing a map brings its `filter` and
 
 import collections.map
 import encoding.json
+import encoding.json_bind
 import kalku.wire.shapes
 import kalku.wire.envelope
 

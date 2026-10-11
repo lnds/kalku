@@ -38,6 +38,10 @@ import kalku.serving
 import kalku.hosting
 import kalku.orchestrator.server
 import kalku.cli
+import kalku.core.gate
+import kalku.wire.client_msg
+import kalku.wire.shapes
+import kalku.orchestrator.ward
 
 fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix + Signal {
   match cli.parse_args(args.argv()) {
@@ -577,7 +581,7 @@ fn append_proposal(r: Remembered, reason: String) : Unit / File {
 # files rather than a rewrite: the semantic key, then the reason.
 fn proposal_of(r: Remembered, reason: String) : String = join(
   [
-    "# #{where_of(r.site)}",
+    "# #{report.where_of(r.site)}",
     "#{r.site.file} #{r.site.enclosing.unwrap_or("?")} #{r.site.ordinal.unwrap_or(1)} #{spell_name(r.site.spell)}: #{trim(reason)}",
     ""
   ],

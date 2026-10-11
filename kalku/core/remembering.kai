@@ -13,6 +13,7 @@ trusting the clock for.
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.wire.enums
 import kalku.wire.shapes
 

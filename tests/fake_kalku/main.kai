@@ -16,6 +16,7 @@ instead of a hung one.
 import os.args
 import os.process as proc
 import encoding.json
+import encoding.json_bind
 import time
 import fake_kalku.script
 

@@ -13,6 +13,7 @@ the same content.
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.hint

@@ -4,6 +4,7 @@ rules a well-formed message must still satisfy (`invalid` errors).
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.envelope
