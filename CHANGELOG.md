@@ -1,3 +1,9 @@
+## v0.14.1 (2026-10-10)
+
+### Fixed
+
+- **java**: every test source directory a build declares is run (#293)
+
 ## v0.14.0 (2026-10-10)
 
 ### Added
