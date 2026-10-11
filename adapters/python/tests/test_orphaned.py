@@ -22,7 +22,8 @@ STALL = """
     def stall():
         flag = Path(os.environ["KALKU_SLOW_FLAG"])
         if flag.exists():
-            child = subprocess.Popen(["sleep", "600"])
+            apart = bool(os.environ.get("KALKU_SLOW_APART"))
+            child = subprocess.Popen(["sleep", "600"], start_new_session=apart)
             said = Path(flag.read_text())
             said.with_suffix(".tmp").write_text(f"{os.getpid()} {child.pid}")
             said.with_suffix(".tmp").rename(said)
@@ -135,6 +136,20 @@ def test_a_baseline_under_way_ends_with_the_run(stalled):
 
     ends_with_what_it_started(k, wait())
     assert b"baseline_done" not in k.proc.stdout.read()
+
+
+# A program that takes a session of its own is in no process group the
+# kalku made, and is still something the kalku started.
+def test_a_program_in_a_session_of_its_own_ends_with_the_run(stalled, monkeypatch):
+    monkeypatch.setenv("KALKU_SLOW_APART", "1")
+    start, stall, wait = stalled
+    k = start(SLOW_TO_RUN)
+    assert k.ask({"type": "prepare"})["type"] == "prepared"
+    stall()
+
+    k.send({"type": "baseline"})
+
+    ends_with_what_it_started(k, wait())
 
 
 def test_a_cast_under_way_ends_with_the_run(stalled):

@@ -25,6 +25,7 @@ import json
 import os
 import shlex
 import signal
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -70,6 +71,33 @@ class Spec:
 # ---- the parent's side ------------------------------------------------------
 
 
+def descendants(pid: int) -> list[int]:
+    """Every process this one started, and what those started.
+
+    By who started whom, which a program cannot change: one that takes a
+    process group or a session of its own is out of reach of a signal to the
+    group, and would outlive the run that started it.
+    """
+    try:
+        listed = subprocess.run(
+            ["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    children: dict[int, list[int]] = {}
+    for line in listed.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
+            children.setdefault(int(fields[1]), []).append(int(fields[0]))
+    found: list[int] = []
+    pending = [pid]
+    while pending:
+        for child in children.get(pending.pop(), []):
+            found.append(child)
+            pending.append(child)
+    return found
+
+
 class Run:
     """A child and the pipe it reports on."""
 
@@ -93,9 +121,15 @@ class Run:
         return out
 
     def kill(self) -> None:
-        """The child and everything it started."""
+        """The child and everything it started, whatever group or session it is in."""
+        # Listed before anything is ended: a program whose parent is gone is
+        # nobody's child, and is then not found.
+        started = descendants(self.pid)
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(self.pid, signal.SIGKILL)
+        for pid in started:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
 
     def finish(self) -> int | None:
         """Close the pipe and reap the child; its exit status, or None when a signal ended it."""
