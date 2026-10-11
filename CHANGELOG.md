@@ -1,3 +1,10 @@
+## v0.14.2 (2026-10-10)
+
+### Fixed
+
+- **rust**: the kalku ends with its run, and ends what it started (#298)
+- the Java and Python kalku end with their run, and end what they started (#296)
+
 ## v0.14.1 (2026-10-10)
 
 ### Fixed
