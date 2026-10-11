@@ -16,7 +16,7 @@ Before writing a kaikai snippet, run `kai info syntax` and the relevant topic (`
 
 ## Reuse the stdlib before writing helpers
 
-`os/process` (summoning kalku), `fs`, `encoding/json`, `net/tcp` + `net/http` (server), actors with supervision (the kalku pool), fibers (parallelism). If something is missing or broken in the stdlib, open an issue on kaikai with a repro instead of working around it silently here.
+`os/process` (summoning kalku), `fs`, `encoding/json`, `net/unix` (server), actors with supervision (the kalku pool), fibers (parallelism). If something is missing or broken in the stdlib, open an issue on kaikai with a repro instead of working around it silently here.
 
 ## The four guarantees
 
@@ -50,12 +50,13 @@ must not change the lines framed out of it). `check` v1 generates only
 domain type is expressed by deriving the value from an `Int` — and a
 property over a protocol message usually belongs in a fixture instead.
 
-The ones this repo has, as the pattern to follow: sharding places every
-wekufe exactly once and nowhere twice, framing is independent of how the
-stream was chunked, and a score is a share between 0 and 1 that nothing
-outside killed-and-survived can move. `make check` runs them one file at
-a time, because `kai check` in package mode does not find a `check` under
-`tests/`.
+Some of the ones this repo has, as the pattern to follow: sharding places
+every wekufe exactly once and nowhere twice, framing is independent of how
+the stream was chunked, a score is a share between 0 and 1 that nothing
+outside killed-and-survived can move, and adding a kalku never adds work.
+`make properties` runs them one file at a time, because `kai check` in
+package mode does not find a `check` under `tests/`; `make ci` reaches it
+through `test-kaikai`.
 
 ### Contracts are for our own invariants, never for a user's input
 

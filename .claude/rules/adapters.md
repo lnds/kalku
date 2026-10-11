@@ -9,7 +9,7 @@ A kalku knows one language's dark arts and nothing about scheduling, caching, or
 
 A kalku is either **native** (`cast`: kalku owns the loop) or a **driver** (`delegate`: an existing framework owns it). The rules below are for native kalku; a driver only runs its framework, normalises each status per the table in `docs/design.md`, keeps the original in `tool_status`, and never forwards the framework's score.
 
-The kaikai kalku is native but thin: it drives `kaic2 --mutate-list-json` / `--mutate-apply` and `kai test`. What it is missing belongs in kaikai as an issue, not as a workaround here.
+The kaikai kalku is native but thin: `kai mutate --list --json` finds the sites and `kai test --json` judges them. What it is missing belongs in kaikai as an issue, not as a workaround here.
 
 ## Responsibilities — and only these
 
@@ -39,7 +39,7 @@ The test that protects this drives a real kalku over a real pipe and asserts tha
 - Never propose sites inside test files, string contents, comments, or docs.
 - Do not propose sites whose wekufe are equivalent by construction (text that only reaches logs or docs, `if` with identical branches, calls matched by `exclude_calls`). Each such rule has a fixture.
 - Every site carries its semantic key (`enclosing`, `ordinal`) so declared equivalents survive edits.
-- Spells use the shared names (`arm`, `compare`, `connect`, `negate`, `literal`, `call`). A language-specific spell gets a new shared name through the protocol, not an ad-hoc string.
+- Spells use the shared names (`arm`, `compare`, `connect`, `negate`, `literal`, `call`, `await`, `supervise`); `foreign` is a driver's alone. A language-specific spell gets a new shared name through the protocol, not an ad-hoc string.
 
 ## Count the tests, not the framework's summary
 
@@ -65,6 +65,6 @@ finds the failing test among the results it collected.
 
 ## Quality
 
-- Follow the target language's idioms and its standard formatter/linter (Elixir: `mix format`, Credo).
+- Follow the target language's idioms and its standard formatter/linter (Elixir: `mix format`; Rust: `cargo fmt`, clippy with warnings denied; Python: ruff; Java: `-Xlint:all`). The kalku's `make test-<lang>` target is where they are enforced.
 - Keep the kalku small. If it grows logic the kaikai side could own, move it there.
 - Each spell has fixtures: a source sample and the exact sites it must produce.
