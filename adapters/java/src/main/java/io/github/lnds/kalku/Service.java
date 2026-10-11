@@ -64,9 +64,18 @@ final class Service {
   private final Map<String, Compiler.Result> unchanged = new HashMap<>();
 
   Service(InputStream in, OutputStream out, String adapter) {
+    this(in, out, adapter, () -> {});
+  }
+
+  /**
+   * @param orphaned what to do when the input ends with no `shutdown` on it: the run is gone,
+   *     and whatever request is under way is under way for nobody
+   */
+  Service(InputStream in, OutputStream out, String adapter, Runnable orphaned) {
     this.in = in;
     this.out = out;
     this.adapter = adapter;
+    this.orphaned = orphaned;
   }
 
   // The lines of the channel, read by a thread of their own so that one can arrive while a
@@ -77,6 +86,13 @@ final class Service {
   // Lines that arrived while a cast was running and were not its `abort`: served after it.
   private final Deque<Object> waiting = new ArrayDeque<>();
   private boolean ended;
+  private final Runnable orphaned;
+  // A `shutdown` has been read: the end of the input after it is a driver that wrote all it
+  // had to say and closed, and every request before it is still answered.
+  private volatile boolean leaving;
+  // The input ended with no `shutdown` on it. Nothing is said from then on: what a request
+  // comes to once its programs are ended is not an answer to it.
+  private volatile boolean orphan;
 
   /** Serves until `shutdown` or the end of input. */
   void serve() throws IOException {
@@ -86,12 +102,19 @@ final class Service {
               try {
                 String line;
                 while ((line = Framing.readLine(in, Protocol.MAX_LINE)) != null) {
+                  if (isShutdown(line)) {
+                    leaving = true;
+                  }
                   arriving.add(line);
                 }
               } catch (IOException e) {
                 // A channel that cannot be read has ended.
               }
               arriving.add(END);
+              if (!leaving) {
+                orphan = true;
+                orphaned.run();
+              }
             },
             "kalku-channel");
     reader.setDaemon(true);
@@ -115,13 +138,18 @@ final class Service {
 
   // Whether `abort` has been asked of this cast, in what has arrived so far or arrives within
   // `millis`. Anything else that arrived is kept for after the cast; the end of the input
-  // ends the cast too, since nobody is left to hear its outcome.
+  // ends the cast too, since nobody is left to hear its outcome, unless a `shutdown` came
+  // before it.
   private Protocol.Request aborting(long cast, long millis) {
     try {
       Object line = millis > 0 ? arriving.poll(millis, TimeUnit.MILLISECONDS) : arriving.poll();
       while (line != null) {
         if (line == END) {
-          ended = true;
+          if (leaving) {
+            waiting.add(END);
+          } else {
+            ended = true;
+          }
           return null;
         }
         Protocol.Request asked = abortOf((String) line, cast);
@@ -138,6 +166,17 @@ final class Service {
     return null;
   }
 
+  private static boolean isShutdown(String line) {
+    if (line == Framing.TOO_LONG) {
+      return false;
+    }
+    try {
+      return Protocol.decode(line).type.equals("shutdown");
+    } catch (Protocol.DecodeError e) {
+      return false;
+    }
+  }
+
   private static Protocol.Request abortOf(String line, long cast) {
     if (line == Framing.TOO_LONG) {
       return null;
@@ -151,6 +190,9 @@ final class Service {
   }
 
   private void say(String reply) throws IOException {
+    if (orphan) {
+      return;
+    }
     out.write((reply + "\n").getBytes(StandardCharsets.UTF_8));
     out.flush();
   }
