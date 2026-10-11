@@ -83,7 +83,8 @@ JDK, with the kalku's jar behind it.
 
 It is tested on Java 11, 17, 21 and 25, and the sites it finds in a file are
 the same on each of them. A fixture that uses newer syntax is read from the
-release that brought it.
+release that brought it. Gradle builds are tested with Gradle 8 on Java 11 and
+with Gradle 9 on the others.
 
 ## Running it
 
@@ -105,7 +106,8 @@ processor writes; `tables`, whose class fills a table when it is first used;
 and `shop`, three modules of which one uses another and one is nothing but
 tests. `junit4` and `testng` are `calc` under tests written for those,
 `suite` is `calc` under a build that says which classes are its tests and what
-they run with, and `gradle/` holds Gradle builds of the same sources.
+they run with, `roots` and `checks` keep their code and their tests in two
+directories each, and `gradle/` holds Gradle builds of the same sources.
 
 `src/test/fixtures/<spell>/` holds sources written a particular way on purpose,
 each beside the exact sites it must give (`*.sites.ndjson`). After reviewing a

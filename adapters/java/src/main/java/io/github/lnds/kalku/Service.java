@@ -553,12 +553,19 @@ final class Service {
     return out;
   }
 
-  // The source a test is written in: `a.B$C#m()` is in `a/B.java` under the module's test
-  // sources.
+  // The source a test is written in: `a.B$C#m()` is in `a/B.java` under the one of the
+  // module's test directories that has it.
   private String fileOf(Maven.Build module, String test) {
     String type = test.contains("#") ? test.substring(0, test.indexOf('#')) : test;
     String outer = type.contains("$") ? type.substring(0, type.indexOf('$')) : type;
-    Path file = module.testSources.resolve(outer.replace('.', '/') + ".java");
+    String named = outer.replace('.', '/') + ".java";
+    Path file = module.testSources.get(0).resolve(named);
+    for (Path dir : module.testSources) {
+      if (Files.isRegularFile(dir.resolve(named))) {
+        file = dir.resolve(named);
+        break;
+      }
+    }
     return project.root.relativize(file).toString().replace('\\', '/');
   }
 
@@ -995,7 +1002,7 @@ final class Service {
       out.classes.add(0, classes);
     }
     for (Maven.Build each : again) {
-      List<Path> sources = Project.sources(Collections.singletonList(each.testSources));
+      List<Path> sources = Project.sources(each.testSources);
       if (sources.isEmpty()) {
         continue;
       }

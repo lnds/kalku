@@ -177,6 +177,19 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
+      # The runner's Gradle needs Java 17, and a test of a Gradle build is passed over where
+      # Gradle does not run. On Java 11 one that does is fetched, held to its checksum, and
+      # named to the kalku.
+      - name: A Gradle that runs on Java 11
+        if: matrix.java == '11'
+        env:
+          GRADLE: gradle-8.14.3
+          SHA256: bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/$GRADLE.zip" "https://services.gradle.org/distributions/$GRADLE-bin.zip"
+          echo "$SHA256  $RUNNER_TEMP/$GRADLE.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/$GRADLE.zip" -d "$RUNNER_TEMP"
+          echo "KALKU_GRADLE=$RUNNER_TEMP/$GRADLE/bin/gradle" >> "$GITHUB_ENV"
       - run: mvn -B -q verify
       # What a release ships is one file, the summoning script with the jar behind it. It has
       # to start on every JDK the kalku runs on.

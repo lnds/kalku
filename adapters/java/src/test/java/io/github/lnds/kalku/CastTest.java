@@ -653,15 +653,28 @@ class CastTest {
 
   // ---- Gradle ------------------------------------------------------------------
 
-  // Whether the `gradle` on this machine runs on the JDK these tests run on. No one version of
-  // Gradle runs on every JDK the kalku does: 9 needs Java 17, and 8 does not know Java 25.
+  // Whether the Gradle the kalku would start runs on the JDK these tests run on: the one
+  // `KALKU_GRADLE` names, or the `gradle` on this machine. No one version of Gradle runs on
+  // every JDK the kalku does: 9 needs Java 17, and 8 does not know Java 25. A Gradle that was
+  // named and does not run is a failure: whoever named it meant these tests to run.
   private static boolean gradleRuns() {
+    boolean runs = gradleAnswers();
+    String chosen = System.getenv("KALKU_GRADLE");
+    if (!runs && chosen != null && !chosen.isEmpty()) {
+      throw new IllegalStateException("KALKU_GRADLE, " + chosen + ", does not run on this JDK");
+    }
+    return runs;
+  }
+
+  private static boolean gradleAnswers() {
     try {
       // A build, however empty: asked only for its version, Gradle answers on any JDK.
       Path empty = Files.createDirectories(temp.resolve("gradle-probe"));
       Files.write(empty.resolve("settings.gradle"), new byte[0]);
+      String chosen = System.getenv("KALKU_GRADLE");
+      String gradle = chosen == null || chosen.isEmpty() ? "gradle" : chosen;
       ProcessBuilder builder =
-          new ProcessBuilder("gradle", "--no-daemon", "-q", "help").directory(empty.toFile());
+          new ProcessBuilder(gradle, "--no-daemon", "-q", "help").directory(empty.toFile());
       builder.environment().put("JAVA_HOME", System.getProperty("java.home"));
       builder.redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD);
       return builder.start().waitFor() == 0;
@@ -838,6 +851,71 @@ class CastTest {
   void everySourceDirectoryOfAGradleSourceSetIsMeasured() throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
     everyDirectoryIsMeasured(asGradle("roots"));
+  }
+
+  // ---- several test directories ----------------------------------------------------
+
+  // `checks` keeps its tests in two directories the build compiles. The tests of the second
+  // are the only ones that notice a wekufe, and one of them reads a constant, whose value is
+  // copied into it: with the first directory alone compiled again for that wekufe, the test
+  // would keep the old value, and the wekufe would survive.
+  private static void everyTestDirectoryIsRun(Path project) throws Exception {
+    String quota = "src/main/java/fx/Quota.java";
+    List<Map<?, ?>> said =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(quota), "{\"type\":\"baseline\",\"id\":4}");
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+
+    // Each test is said to be in the file it is written in, whichever directory that is.
+    Map<String, Object> files = new java.util.TreeMap<>();
+    for (Object test : (List<?>) done.get("tests")) {
+      files.put((String) ((Map<?, ?>) test).get("test"), ((Map<?, ?>) test).get("file"));
+    }
+    Map<String, Object> written = new java.util.TreeMap<>();
+    written.put("fx.NameTest#isCalledQuota()", "src/test/java/fx/NameTest.java");
+    written.put("fx.QuotaTest#spentAtThreeAndNotAtTwo()", "src/checks/java/fx/QuotaTest.java");
+    written.put("fx.QuotaTest#theCapIsTen()", "src/checks/java/fx/QuotaTest.java");
+    assertEquals(written, files);
+    assertEquals(
+        Arrays.asList("fx.QuotaTest#spentAtThreeAndNotAtTwo()"), reaching(done).get(quota + ":9"));
+
+    List<String> every = new ArrayList<>(files.keySet());
+    List<String> casts = new ArrayList<>(Arrays.asList(hello(project), "{\"type\":\"prepare\",\"id\":2}"));
+    List<Map<?, ?>> found = new ArrayList<>();
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      found.add((Map<?, ?>) each);
+      casts.add(castOf((Map<?, ?>) each, every));
+    }
+    List<Map<?, ?>> outcomes = ask(project, casts.toArray(new String[0]));
+    int constants = 0;
+    for (int i = 0; i < found.size(); i++) {
+      Map<?, ?> site = found.get(i);
+      Map<?, ?> cast = outcomes.get(i + 2);
+      assertEquals("killed", cast.get("outcome"), site + " " + cast);
+      if ("10".equals(site.get("original"))) {
+        assertEquals("dependents", site.get("reload"), site.toString());
+        assertEquals("fx.QuotaTest#theCapIsTen()", cast.get("killed_by"), site + " " + cast);
+        constants++;
+      }
+    }
+    assertTrue(constants >= 1, found.toString());
+    assertTrue(found.size() > constants, found.toString());
+  }
+
+  // Maven is told of the second directory by `build-helper-maven-plugin`.
+  @Test
+  void everyTestDirectoryAMavenBuildAddsIsRun() throws Exception {
+    Path project = temp.resolve("checks");
+    copy(PROJECTS.resolve("checks"), project);
+    everyTestDirectoryIsRun(project);
+  }
+
+  // Gradle's source set has both.
+  @Test
+  void everyTestDirectoryOfAGradleSourceSetIsRun() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(gradleRuns(), "no Gradle that runs on this JDK");
+    everyTestDirectoryIsRun(asGradle("checks"));
   }
 
   // ---- JUnit 4 and TestNG --------------------------------------------------------

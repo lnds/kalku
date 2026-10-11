@@ -67,7 +67,8 @@ final class Maven {
     Path testClasses;
     // Every directory the build compiles as the module's own code.
     List<Path> sources = new ArrayList<>();
-    Path testSources;
+    // Every directory the build compiles as the module's tests.
+    List<Path> testSources = new ArrayList<>();
     // What the build tells `javac`, so a wekufe is compiled the way the project is.
     List<String> compilerFlags = new ArrayList<>();
     List<String> testCompilerFlags = new ArrayList<>();
@@ -166,7 +167,7 @@ final class Maven {
       }
       readPom(build, resolved);
       // A module with no tests of its own needs nothing to run them with.
-      boolean tests = !Project.sources(Collections.singletonList(build.testSources)).isEmpty();
+      boolean tests = !Project.sources(build.testSources).isEmpty();
       if (build.platform == null && tests) {
         older(build, lib, env);
       }
@@ -347,30 +348,33 @@ final class Maven {
     Element b = child(project, "build");
     build.classes = Paths.get(text(b, "outputDirectory"));
     build.testClasses = Paths.get(text(b, "testOutputDirectory"));
+    Element helper = plugin(b, "build-helper-maven-plugin");
     build.sources.add(Paths.get(text(b, "sourceDirectory")));
-    added(build, plugin(b, "build-helper-maven-plugin"));
-    build.testSources = Paths.get(text(b, "testSourceDirectory"));
+    added(build.dir, build.sources, helper, "add-source");
+    build.testSources.add(Paths.get(text(b, "testSourceDirectory")));
+    added(build.dir, build.testSources, helper, "add-test-source");
     compiler(build, project, plugin(b, "maven-compiler-plugin"));
     surefire(build, child(project, "properties"), plugin(b, "maven-surefire-plugin"));
   }
 
-  // The directories a build adds to its sources with `build-helper`'s `add-source`, which is
-  // how a Maven build states more than one. A directory another plugin adds while it runs,
-  // for code it generates, is not stated anywhere and is not known here.
-  private static void added(Build build, Element plugin) {
+  // The directories a build adds to its sources with `build-helper`'s `add-source`, and to its
+  // tests with `add-test-source`, which is how a Maven build states more than one. A directory
+  // another plugin adds while it runs, for code it generates, is not stated anywhere and is
+  // not known here.
+  private static void added(Path module, List<Path> dirs, Element plugin, String adding) {
     for (Element execution : children(child(plugin, "executions"))) {
       boolean adds = false;
       for (Element goal : children(child(execution, "goals"))) {
-        adds |= "add-source".equals(text(goal));
+        adds |= adding.equals(text(goal));
       }
       if (!adds || "none".equals(text(execution, "phase"))) {
         continue;
       }
       for (Element source : children(child(child(execution, "configuration"), "sources"))) {
         // A directory is stated from the module's own, unless it is stated whole.
-        Path dir = build.dir.resolve(text(source)).normalize();
-        if (!build.sources.contains(dir)) {
-          build.sources.add(dir);
+        Path dir = module.resolve(text(source)).normalize();
+        if (!dirs.contains(dir)) {
+          dirs.add(dir);
         }
       }
     }
