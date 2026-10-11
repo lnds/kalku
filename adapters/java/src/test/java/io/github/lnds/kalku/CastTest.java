@@ -658,7 +658,11 @@ class CastTest {
   // every JDK the kalku does: 9 needs Java 17, and 8 does not know Java 25. A Gradle that was
   // named and does not run is a failure: whoever named it meant these tests to run.
   private static boolean gradleRuns() {
-    boolean runs = gradleAnswers();
+    return gradleRuns(temp);
+  }
+
+  static boolean gradleRuns(Path temp) {
+    boolean runs = gradleAnswers(temp);
     String chosen = System.getenv("KALKU_GRADLE");
     if (!runs && chosen != null && !chosen.isEmpty()) {
       throw new IllegalStateException("KALKU_GRADLE, " + chosen + ", does not run on this JDK");
@@ -666,7 +670,7 @@ class CastTest {
     return runs;
   }
 
-  private static boolean gradleAnswers() {
+  private static boolean gradleAnswers(Path temp) {
     try {
       // A build, however empty: asked only for its version, Gradle answers on any JDK.
       Path empty = Files.createDirectories(temp.resolve("gradle-probe"));

@@ -82,6 +82,9 @@ class Service:
         self._queue: list[Any] = []
         self._aborted: set[int] = set()
         self._eof = False
+        # A `shutdown` has been read: the end of input after it is a driver
+        # that closed, not a run that is gone.
+        self._leaving = False
 
     # ---- reading ------------------------------------------------------------
 
@@ -101,6 +104,8 @@ class Service:
                     _, request = protocol.decode(line)
                     if isinstance(request, Abort):
                         self._aborted.add(request.cast)
+                    if isinstance(request, Shutdown):
+                        self._leaving = True
         # A line that never ends is not held: it is dropped as it grows.
         if len(self._buffer) > protocol.MAX_LINE:
             self._buffer = b""
@@ -461,10 +466,13 @@ class Service:
                 if cast is not None and cast in self._aborted:
                     stopped = True
                     break
-                if self._eof:
+                # Input that ended with no `shutdown` on it is a run that is
+                # gone, and what it asked for is stopped with it.
+                if self._eof and not self._leaving:
                     stopped = True
                     break
-                ready, _, _ = select.select([run.fd, self.stdin_fd], [], [])
+                watched = [run.fd] if self._eof else [run.fd, self.stdin_fd]
+                ready, _, _ = select.select(watched, [], [])
                 if run.fd in ready:
                     got = run.read()
                     if got is None:
