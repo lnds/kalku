@@ -5,6 +5,7 @@ owns the I/O and the exit code.
 
 import kalku.version
 import kalku.core.shard
+import kalku.wire.shapes
 
 #[doc("What the command line asks for.")]
 #[derive(Eq, Show)]

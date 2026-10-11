@@ -4,6 +4,7 @@ and the kalku's replies. Payload fields are in canonical wire order.
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.wire.enums
 import kalku.wire.shapes
 

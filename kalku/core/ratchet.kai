@@ -12,6 +12,7 @@ nothing, and one that went down unseen is the hole this exists to close.
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.wire.shapes
 
 #[doc("Where a project's baseline is kept, under the project's own `.kalku`.")]

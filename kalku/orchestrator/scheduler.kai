@@ -27,6 +27,7 @@ import kalku.orchestrator.escalation
 import kalku.orchestrator.weighing
 import kalku.orchestrator.ward
 import kalku.orchestrator.telling
+import kalku.wire.envelope
 
 #[doc("What one wekufe came to.")]
 #[derive(Eq, Show)]

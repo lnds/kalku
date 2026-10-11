@@ -4,6 +4,7 @@ canonical wire order; `Option` fields are omitted from the wire when absent.
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.wire.enums
 
 #[doc("A place in a source file: 1-based line and column, 0-based byte offset.")]

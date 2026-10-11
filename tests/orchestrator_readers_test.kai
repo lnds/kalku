@@ -1,6 +1,5 @@
 import actor
 import time
-import os.process as proc
 import kalku.orchestrator.kalku_proc
 
 # A kalku's readers run for as long as it lives, one turn for each chunk it

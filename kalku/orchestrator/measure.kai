@@ -41,6 +41,7 @@ import kalku.orchestrator.pool
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
 import kalku.orchestrator.interrupting
+import kalku.wire.kalku_codec
 
 #[doc("What to measure, and with what.")]
 #[derive(Eq, Show)]

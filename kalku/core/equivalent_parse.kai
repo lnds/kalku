@@ -10,6 +10,7 @@ the first one found.
 """)]
 
 import encoding.json
+import encoding.json_bind
 import kalku.wire.enums
 import kalku.core.equivalent
 

@@ -1,4 +1,5 @@
 import encoding.json
+import encoding.json_bind
 import kalku.core.mcp
 
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))

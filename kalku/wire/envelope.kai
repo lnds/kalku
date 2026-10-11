@@ -4,6 +4,7 @@ kinds, and the canonical encoding (envelope first, absent fields omitted).
 """)]
 
 import encoding.json
+import encoding.json_bind
 
 #[doc("Why a line was not accepted, per *Protocol errors* in docs/protocol.md.")]
 #[derive(Eq, Show)]

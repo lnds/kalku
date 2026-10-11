@@ -19,6 +19,8 @@ import kalku.wire.client_msg
 import kalku.wire.client_codec
 import kalku.wire.framing
 import kalku.core.session
+import kalku.orchestrator.pool
+import kalku.wire.envelope
 
 #[doc("What a server is doing: which socket it holds, and which projects it knows.")]
 pub type Serving = { path: String, sessions: [Project] }
