@@ -15,7 +15,7 @@ Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 | Piece | Role | Written in |
 |---|---|---|
 | **kaikai side** | plans which wekufe to cast, schedules them across kalku, caches, selects tests by coverage, enforces timeouts, scores, reports. Runs as a CLI or as a long-lived server — the same code either way. | kaikai |
-| **kalku** | a worker bound to one language. **Native** (Elixir, kaikai): finds sites with the language's own tooling, casts a wekufe into a warm runtime, runs the selected tests. **Driver**: runs an existing framework and normalises its statuses. | the target language |
+| **kalku** | a worker bound to one language. **Native** (Elixir, kaikai, Rust, Python, Java): finds sites with the language's own tooling, casts a wekufe into a warm runtime, runs the selected tests. **Driver**: runs an existing framework and normalises its statuses. | the target language |
 | **reni** | a project's isolated workspace (build artefacts, caches). Wekufe never touch the user's tree. | — |
 | **protocol** | versioned NDJSON between the kaikai side and each kalku, transport-agnostic. | `docs/protocol.md` |
 
@@ -24,15 +24,16 @@ Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 ```
 main.kai            entry point
 kalku/              the kaikai side; `kalku/<dir>/<file>.kai` imports as `kalku.<dir>.<file>`
+  *.kai             the edges: CLI, serving, hosting, and what else performs effects
   wire/             protocol types, codec, framing (`protocol` is a kaikai keyword)
   core/             pure logic
   orchestrator/     kalku pool, scheduler, server
 tests/              kaikai tests, one `*_test.kai` per module
 adapters/<lang>/    one kalku per language
-tools/              repo scripts (km-gate.sh)
+tools/              repo scripts: the km gate, self-mutation, field runs, the brew formula
 ```
 
-`make ci` is CI's kaikai-side job and `make test-elixir` its Elixir job; `make check` runs both. The kaikai version is pinned in `.kaikai-version`; `cz bump` keeps `VERSION`, `kai.toml`, and `kalku/version.kai` in sync.
+`make ci` is everything CI runs on the kaikai side, and each kalku has its own target and CI job: `make test-elixir`, `test-rust`, `test-python`, `test-java`. `make check` runs them all. The kaikai version is pinned in `.kaikai-version`; `cz bump` keeps every version file in sync — `VERSION`, `kai.toml`, `kalku/version.kai`, and each kalku's manifest, as listed in `.cz.toml`.
 
 ## Vocabulary
 
