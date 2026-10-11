@@ -150,16 +150,15 @@ impl Cargo {
             return Ok(Lines::new());
         }
         let merged = profiles.join("merged.profdata");
-        let status = Command::new(&tools.profdata)
+        let mut merge = Command::new(&tools.profdata);
+        merge
             .args(["merge", "-sparse"])
             .args(&raw)
             .arg("-o")
             .arg(&merged)
             .stdin(Stdio::null())
-            .stderr(Stdio::inherit())
-            .stdout(Stdio::null())
-            .status()?;
-        if !status.success() {
+            .stderr(Stdio::inherit());
+        if !capture(merge, self.stop.as_ref())?.status.success() {
             return Err(io::Error::other(
                 "llvm-profdata could not merge the profiles",
             ));
@@ -174,10 +173,8 @@ impl Cargo {
             }
             export.arg(object);
         }
-        let out = export
-            .stdin(Stdio::null())
-            .stderr(Stdio::inherit())
-            .output()?;
+        export.stdin(Stdio::null()).stderr(Stdio::inherit());
+        let out = capture(export, self.stop.as_ref())?;
         if !out.status.success() {
             return Err(io::Error::other("llvm-cov could not read the profile"));
         }

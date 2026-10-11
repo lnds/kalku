@@ -27,17 +27,15 @@ use std::io::{self, BufRead, Write};
 use std::sync::mpsc;
 use std::thread;
 
-/// What the thread that reads requests heard.
-enum Heard {
-    Line(Line),
-    End,
-    Broke(io::Error),
-}
-
-/// Answer requests from `input` on `output` until `shutdown` or end of input.
+/// Answer requests from `input` on `output` until `shutdown`.
 ///
 /// Requests are read on a thread of their own, so that an `abort` is heard
 /// while a cast is still running; everything else is served in order, here.
+///
+/// That thread also hears the input end. After a `shutdown` it is a driver
+/// that said all it had to say, and every request before it is answered.
+/// With none it is a run that is gone, and the process ends there, with
+/// what it started.
 pub fn serve(
     input: impl BufRead + Send + 'static,
     mut output: impl Write,
@@ -48,32 +46,30 @@ pub fn serve(
     thread::spawn(move || {
         let mut input = input;
         loop {
-            let next = match read_line(&mut input, MAX_LINE) {
-                Ok(Some(line)) => {
-                    if let Line::Text(text) = &line {
-                        if text.contains("\"abort\"") {
-                            if let Ok((_, Request::Abort { cast })) = protocol::decode(text) {
-                                cancel.ask(cast);
-                            }
-                        }
-                    }
-                    Heard::Line(line)
+            let line = match read_line(&mut input, MAX_LINE) {
+                Ok(Some(line)) => line,
+                Ok(None) => cancel::leave(0),
+                Err(e) => {
+                    eprintln!("kalku-rust: {e}");
+                    cancel::leave(1)
                 }
-                Ok(None) => Heard::End,
-                Err(e) => Heard::Broke(e),
             };
-            let last = !matches!(next, Heard::Line(_));
-            if heard.send(next).is_err() || last {
+            let asked = match &line {
+                Line::Text(text) if text.contains("\"abort\"") || text.contains("\"shutdown\"") => {
+                    protocol::decode(text).ok().map(|(_, request)| request)
+                }
+                _ => None,
+            };
+            if let Some(Request::Abort { cast }) = asked {
+                cancel.ask(cast);
+            }
+            let last = matches!(asked, Some(Request::Shutdown));
+            if heard.send(line).is_err() || last {
                 break;
             }
         }
     });
-    for next in requests {
-        let line = match next {
-            Heard::Line(line) => line,
-            Heard::End => break,
-            Heard::Broke(e) => return Err(e),
-        };
+    for line in requests {
         let step = match line {
             Line::TooLong => Step::Reply(service.refuse(&DecodeError {
                 kind: ErrorKind::LineTooLong,
