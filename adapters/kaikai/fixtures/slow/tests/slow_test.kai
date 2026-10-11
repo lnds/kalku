@@ -1,0 +1,13 @@
+import os.process as proc
+import fs.file
+import slow
+
+# It starts a program, says which where the one measuring can read it, and
+# waits a minute for it: a suite under way, with a process of its own.
+test "starts a program and waits for it" {
+  let child = proc.start("/bin/sleep", ["60"])
+  file.write("child.pid", "#{child.pid}")
+  let _ = proc.wait(child)
+
+  assert above(4, 3)
+}
