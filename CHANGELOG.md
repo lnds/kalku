@@ -1,3 +1,9 @@
+## v0.14.3 (2026-10-10)
+
+### Fixed
+
+- **python**: a program a test starts in a session of its own ends with the run (#300)
+
 ## v0.14.2 (2026-10-10)
 
 ### Fixed
