@@ -15,7 +15,7 @@ runs:
     - name: Install km
       shell: bash
       run: |
-        curl -fsSL https://github.com/lnds/kimun/releases/download/v0.26.0/km-x86_64-unknown-linux-gnu.tar.gz \
+        curl -fsSL https://github.com/lnds/kimun/releases/download/v0.34.1/km-x86_64-unknown-linux-gnu.tar.gz \
           | tar -xz -C /usr/local/bin km
 
     # What a compiler already worked out about unchanged code. Keyed on
