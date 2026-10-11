@@ -191,10 +191,39 @@ fn quoted(word: String) : String = "'#{replace(word, "'", "'\\''")}'"
 
 fn run(argv: [String]) : Result[Came, String] / Process = match argv {
   [] -> Err("nothing to run")
-  [cmd, ...args] -> match proc.start_piped(cmd, args) {
+  [cmd, ...args] -> in_a_group(cmd, args)
+}
+
+# The command under way, which leads a process group of its own.
+effect Group {
+  leader() : Result[Child, String]
+}
+
+const SIGKILL : Int = 9
+
+# The group is ended when the command is left, however it is left. A
+# request that is cancelled under way leaves it in the middle, and what a
+# suite started is a grandchild that a signal to the command alone would
+# not reach.
+fn in_a_group(cmd: String, args: [String]) : Result[Came, String] / Process = handle {
+  match Group.leader() {
     Err(e) -> Err(e)
     Ok(child) -> drain(child, "")
   }
+} with Group {
+  initially {
+    proc.start_in_group(cmd, args, true, true, false)
+  }
+  finally {
+    match state {
+      Ok(child) -> {
+        let _ = proc.kill_group(child, SIGKILL)
+      }
+      Err(_) -> ()
+    }
+  }
+  leader(resume) -> resume(state)
+  return(x) -> x
 }
 
 # How the process ended is kept, not discarded: a runtime that a wekufe

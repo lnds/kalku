@@ -1,6 +1,7 @@
 import os.process as proc
 import fs.file
 import encoding.json
+import time
 
 # The kalku is driven as the kaikai side drives it: a real binary, a real
 # pipe, a real package to measure. Nothing smaller proves it works.
@@ -148,4 +149,109 @@ test "a wekufe that stops the run is not a wekufe that survived" {
   ])
 
   assert outcome_of(said, "trapping") == "crashed"
+}
+
+# ---- a run that is gone -------------------------------------------------
+
+const SLOW : String = "fixtures/slow"
+
+fn slow_reni() : String = "#{reni()}/slow"
+
+fn slow_hello() : String = replace(replace(hello(), reni(), slow_reni()), TINY, SLOW)
+
+# A run that is killed asks nothing of its kalku: the input just ends, with
+# no `shutdown` on it, in the middle of a suite that has a minute left to
+# run. What is told is what is still there two seconds later.
+fn orphaned(requests: [String]) : [String] / Process + File + Clock {
+  let _ = heard("/bin/rm", ["-rf", slow_reni()])
+  match proc.start_piped(KALKU, []) {
+    Err(e) -> ["cannot start the kalku: #{e}"]
+    Ok(kalku) -> {
+      let _ = proc.write_stdin(kalku, join(requests, "\n") ++ "\n")
+      let left = match started("#{slow_reni()}/work/0/child.pid", 600) {
+        None -> ["the suite never started its program"]
+        Some(program) -> {
+          let _ = proc.close_stdin(kalku)
+          sleep(seconds(2))
+          still_there("#{kalku.pid}", "the kalku") ++ still_there(program, "what its suite started")
+        }
+      }
+      let _ = proc.kill(kalku, 9)
+      let _ = proc.wait(kalku)
+      left
+    }
+  }
+}
+
+# The program the slow suite started, once it has said which.
+fn started(pidfile: String, tries: Int) : Option[String] / File + Clock {
+  let said = if file.exists(pidfile) { trim(file.read(pidfile)) } else { "" }
+  if not is_empty(said) {
+    Some(said)
+  } else if tries == 0 {
+    None
+  } else {
+    sleep(millis(100))
+    started(pidfile, tries - 1)
+  }
+}
+
+# Named if it is still running, and killed, so that a failure leaves
+# nothing behind. A process that ended and was not reaped yet is a zombie:
+# it has a line in `ps`, but it is not running.
+fn still_there(pid: String, name: String) : [String] / Process {
+  let state = trim(heard("/bin/ps", ["-o", "stat=", "-p", pid]))
+  if is_empty(state) or starts_with(state, "Z") {
+    []
+  } else {
+    let _ = heard("/bin/kill", ["-9", pid])
+    [name]
+  }
+}
+
+fn heard(cmd: String, args: [String]) : String / Process = match proc.pipe_from(cmd, args) {
+  Err(_) -> ""
+  Ok(child) -> {
+    let out = drain(child, "")
+    let _ = proc.wait(child)
+    out
+  }
+}
+
+test "a kalku whose run is gone ends in the middle of a baseline, with what it started" {
+  let left =
+    orphaned([slow_hello(), "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":3}"])
+
+  assert left == []
+}
+
+# Between requests there is nothing to cancel, and the kalku ends all the same.
+test "a kalku whose run is gone ends with nothing under way too" {
+  let left = match proc.start_piped(KALKU, []) {
+    Err(e) -> ["cannot start the kalku: #{e}"]
+    Ok(kalku) -> {
+      let _ = proc.write_stdin(kalku, hello() ++ "\n")
+      let _ = proc.read_stdout(kalku)
+      let _ = proc.close_stdin(kalku)
+      sleep(seconds(1))
+      let there = still_there("#{kalku.pid}", "the kalku")
+      let _ = proc.wait(kalku)
+      there
+    }
+  }
+
+  assert left == []
+}
+
+# `above/2` in the slow package shifts `>=` to `>` at byte 156.
+test "a kalku whose run is gone ends in the middle of a cast, and the package is as it was" {
+  let before = file.read("#{SLOW}/slow.kai")
+  let left = orphaned([
+    slow_hello(),
+    "{\"type\":\"prepare\",\"id\":2}",
+    replace(cast(3, "slow", 156, 158, ">"), "tiny.kai", "slow.kai")
+  ])
+
+  assert left == []
+  assert file.read("#{SLOW}/slow.kai") == before
 }

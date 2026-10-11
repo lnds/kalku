@@ -1,0 +1,4 @@
+#[doc("A package whose suite takes longer than anybody waits.")]
+
+#[doc("Whether n is at or above the floor.")]
+pub fn above(n: Int, floor: Int) : Bool = n >= floor

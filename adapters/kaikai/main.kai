@@ -12,6 +12,8 @@ shared runtime to dirty. A capability is claimed only once it is true.
 """)]
 
 import fs.file
+import actor
+import spawn
 import kalku.wire.enums
 import kalku.wire.envelope
 import kalku.wire.shapes
@@ -22,12 +24,55 @@ import kaikai_kalku.work
 
 type Serving = { root: String, reni: String, worker: Int, work: Option[Work] }
 
-fn main() : Int / Stdin + Stdout + Stderr + File + Process + Env {
-  serve(Serving { root: ".", reni: "", worker: 0, work: None })
+# Requests are read here and served on a fiber of its own, so that the input
+# ending is heard while a request is under way. After a `shutdown` it is a
+# driver that said all it had to say, and every request before it is
+# answered. With none it is a run that is gone: nobody is left to read an
+# answer, so the request under way is cancelled, which ends what it started.
+fn main() : Int / Stdin + Stdout + Stderr + File + Process + Env + Spawn = with_mailbox {
+  nursery { n ->
+    let here = Actor.self()
+    let serving = n.spawn(
+      () => with_mailbox {
+        Actor.send(here, Actor.self())
+        serve(Serving { root: ".", reni: "", worker: 0, work: None })
+      }
+    )
+    let server = Actor.receive()
+    if told_to_leave(server) {
+      n.await(serving)
+    } else {
+      n.cancel(serving)
+      Actor.send(server, None)
+      0
+    }
+  }
 }
 
-fn serve(state: Serving) : Int / Stdin + Stdout + Stderr + File + Process {
-  match Stdin.read_line() {
+# Pass each line on until the input ends, and say whether a `shutdown` was
+# what ended it.
+fn told_to_leave(
+  server: Pid[Option[String]]
+) : Bool / Stdin + Actor[Pid[Option[String]]] = match Stdin.read_line() {
+  None -> false
+  Some(line) -> {
+    Actor.send(server, Some(line))
+    if is_shutdown(line) { true } else { told_to_leave(server) }
+  }
+}
+
+fn is_shutdown(line: String) : Bool = match decode_request(trim_right(line)) {
+  Ok(m) -> match m.body {
+    Shutdown -> true
+    _ -> false
+  }
+  Err(_) -> false
+}
+
+# The mailbox holds the lines of the input in order, and `None` where it
+# ended with no `shutdown` on it.
+fn serve(state: Serving) : Int / Actor[Option[String]] + Stdout + Stderr + File + Process =
+  match Actor.receive() {
     None -> 0
     Some(line) -> match decode_request(trim_right(line)) {
       Err(e) -> {
@@ -37,13 +82,12 @@ fn serve(state: Serving) : Int / Stdin + Stdout + Stderr + File + Process {
       Ok(m) -> answer(m.id, m.body, state)
     }
   }
-}
 
 fn answer(
   id: Int,
   request: KalkuRequest,
   state: Serving
-) : Int / Stdin + Stdout + Stderr + File + Process = match request {
+) : Int / Actor[Option[String]] + Stdout + Stderr + File + Process = match request {
   Hello(m) -> {
     say(encode_reply(id, greeting(m)))
     serve(Serving { root: m.root, reni: m.reni, worker: m.worker, work: None })
@@ -96,7 +140,10 @@ fn mutate_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call]
 
 # ---- prepare -------------------------------------------------------------
 
-fn prepared(id: Int, state: Serving) : Int / Stdin + Stdout + Stderr + File + Process {
+fn prepared(
+  id: Int,
+  state: Serving
+) : Int / Actor[Option[String]] + Stdout + Stderr + File + Process {
   let started = 0
   match work.prepare(state.root, state.reni, state.worker) {
     Err(why) -> {
