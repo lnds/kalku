@@ -53,7 +53,8 @@ property over a protocol message usually belongs in a fixture instead.
 Some of the ones this repo has, as the pattern to follow: sharding places
 every wekufe exactly once and nowhere twice, framing is independent of how
 the stream was chunked, a score is a share between 0 and 1 that nothing
-outside killed-and-survived can move, and adding a kalku never adds work.
+outside killed-and-survived can move, and an estimate never grows when
+a kalku is added.
 `make properties` runs them one file at a time, because `kai check` in
 package mode does not find a `check` under `tests/`; `make ci` reaches it
 through `test-kaikai`.

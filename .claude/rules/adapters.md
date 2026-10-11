@@ -65,6 +65,6 @@ finds the failing test among the results it collected.
 
 ## Quality
 
-- Follow the target language's idioms and its standard formatter/linter (Elixir: `mix format`; Rust: `cargo fmt`, clippy with warnings denied; Python: ruff; Java: `-Xlint:all`). The kalku's `make test-<lang>` target is where they are enforced.
+- Follow the target language's idioms and its standard formatter/linter (Elixir: `mix format`; Rust: `cargo fmt`, clippy with warnings denied; Python: ruff; Java: `-Xlint:all`). The kalku's CI job is where they are enforced.
 - Keep the kalku small. If it grows logic the kaikai side could own, move it there.
 - Each spell has fixtures: a source sample and the exact sites it must produce.
