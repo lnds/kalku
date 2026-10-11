@@ -4,10 +4,14 @@
 //! cast is running. The kalku is busy with that cast, so the line is read by
 //! another thread, which raises this flag; the cast looks at it between the
 //! moments it waits on cargo, and stops what it started.
+//!
+//! The same thread hears the input end with no `shutdown` on it, which is a
+//! run that is gone: then every command under way is killed and the kalku
+//! ends, whatever request it was serving.
 
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 use std::{io, io::Read};
@@ -60,7 +64,12 @@ const POLL: Duration = Duration::from_millis(15);
 pub fn capture(mut command: Command, stop: Option<&Stop>) -> io::Result<Captured> {
     use std::os::unix::process::CommandExt;
     command.stdout(Stdio::piped()).process_group(0);
-    let mut child = command.spawn()?;
+    let mut child = {
+        let mut groups = started();
+        let child = command.spawn()?;
+        groups.push(child.id() as libc::pid_t);
+        child
+    };
     let mut pipe = child.stdout.take().expect("stdout was piped");
     let reader = thread::spawn(move || {
         let mut bytes = Vec::new();
@@ -68,20 +77,48 @@ pub fn capture(mut command: Command, stop: Option<&Stop>) -> io::Result<Captured
         bytes
     });
     let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break Some(status);
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => {}
+            Err(e) => break Err(e),
         }
         if stop.is_some_and(|s| s()) {
             kill_group(&mut child);
-            break None;
+            break Err(io::Error::new(io::ErrorKind::Interrupted, "aborted"));
         }
         thread::sleep(POLL);
     };
+    let group = child.id() as libc::pid_t;
+    started().retain(|g| *g != group);
     let stdout = reader.join().unwrap_or_default();
-    match status {
-        Some(status) => Ok(Captured { stdout, status }),
-        None => Err(io::Error::new(io::ErrorKind::Interrupted, "aborted")),
+    Ok(Captured {
+        stdout,
+        status: status?,
+    })
+}
+
+// The process groups of the commands under way.
+static STARTED: Mutex<Vec<libc::pid_t>> = Mutex::new(Vec::new());
+
+fn started() -> MutexGuard<'static, Vec<libc::pid_t>> {
+    STARTED.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// End every command under way, with everything it started, and then this
+/// process. It is for when the run that summoned the kalku is gone: nobody
+/// is left to read an answer, so nothing is finished first.
+pub fn leave(code: i32) -> ! {
+    // Held to the end, so that no command starts after the ones under way
+    // were killed.
+    let groups = started();
+    for group in groups.iter() {
+        // SAFETY: `killpg` takes a process group id and a signal and touches
+        // nothing of ours; each group is one a command was started in.
+        unsafe {
+            libc::killpg(*group, libc::SIGKILL);
+        }
     }
+    std::process::exit(code)
 }
 
 fn kill_group(child: &mut Child) {

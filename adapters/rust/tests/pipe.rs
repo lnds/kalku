@@ -586,6 +586,193 @@ fn an_abort_stops_a_running_cast_and_the_kalku_casts_again() {
     k.leave();
 }
 
+// The id a process wrote of itself, once it has.
+#[cfg(unix)]
+fn said(pidfile: &std::path::Path) -> i32 {
+    let started = std::time::Instant::now();
+    loop {
+        if let Some(pid) = fs::read_to_string(pidfile)
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+        {
+            return pid;
+        }
+        assert!(started.elapsed().as_secs() < 120, "nothing was started");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+#[cfg(unix)]
+fn parent(pid: i32) -> i32 {
+    let out = Command::new("ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
+}
+
+// The run that summoned the kalku is killed: the input ends with no
+// `shutdown` on it. What is still there two seconds later is named, and
+// killed, so that a failure leaves nothing running.
+#[cfg(unix)]
+fn orphan(k: Kalku, started: &[i32]) -> Vec<String> {
+    let Kalku {
+        mut child, stdin, ..
+    } = k;
+    drop(stdin);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let late = || std::time::Instant::now() > deadline;
+    let pause = || std::thread::sleep(std::time::Duration::from_millis(20));
+    let mut left = Vec::new();
+    while child.try_wait().unwrap().is_none() {
+        if late() {
+            left.push("the kalku".to_string());
+            child.kill().unwrap();
+            child.wait().unwrap();
+            break;
+        }
+        pause();
+    }
+    for &pid in started {
+        while alive(pid) && !late() {
+            pause();
+        }
+        if alive(pid) {
+            left.push(format!("process {pid}"));
+            // SAFETY: a signal to a process this test saw the kalku start.
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
+        }
+    }
+    left
+}
+
+// From here on the slow test sleeps, and says where it is.
+#[cfg(unix)]
+fn slow_from_now(project: &Project) -> PathBuf {
+    let pidfile = project.0.join("slow.pid");
+    fs::write(
+        project.0.join(".reni/work/0/flag"),
+        pidfile.to_str().unwrap(),
+    )
+    .unwrap();
+    pidfile
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kalku_whose_run_is_gone_ends_in_the_middle_of_a_baseline_with_what_it_started() {
+    let project = Project::new("orphan_baseline", "2024", &[("src/lib.rs", SLOW)]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+    k.ask(json!({"type": "prepare", "id": 2}));
+    let pidfile = slow_from_now(&project);
+
+    k.send(json!({"type": "baseline", "id": 3}));
+    let test = said(&pidfile);
+    let cargo = parent(test);
+
+    assert_eq!(orphan(k, &[test, cargo]), Vec::<String>::new());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kalku_whose_run_is_gone_ends_in_the_middle_of_a_cast_and_the_next_run_starts_clean() {
+    let project = Project::new("orphan_cast", "2024", &[("src/lib.rs", SLOW)]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+    k.ask(json!({"type": "prepare", "id": 2}));
+    k.ask(json!({"type": "baseline", "id": 3}));
+    let mut weaker = site(&mut k, "compare", ">=");
+    weaker["replacement"] = "==".into();
+    let pidfile = slow_from_now(&project);
+
+    k.send(
+        json!({"type": "cast", "id": 10, "wekufe": "w", "site": weaker,
+        "tests": ["src/lib.rs::tests::slow"]}),
+    );
+    let test = said(&pidfile);
+    let cargo = parent(test);
+
+    assert_eq!(orphan(k, &[test, cargo]), Vec::<String>::new());
+    assert_eq!(
+        fs::read_to_string(project.0.join("src/lib.rs")).unwrap(),
+        SLOW
+    );
+
+    // The wekufe is still in the reni's copy, and the next run's `prepare`
+    // is what takes it out.
+    let copy = project.0.join(".reni/work/0/src/lib.rs");
+    assert_ne!(fs::read_to_string(&copy).unwrap(), SLOW);
+    let mut next = Kalku::summon();
+    next.hello(&project.0);
+    let prepared = next.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+    assert_eq!(fs::read_to_string(&copy).unwrap(), SLOW);
+    next.leave();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kalku_whose_run_is_gone_ends_in_the_middle_of_a_prepare_with_the_build_it_started() {
+    let project = Project::new("orphan_prepare", "2024", &[("src/lib.rs", LIB)]);
+    let pidfile = project.0.join("build.pid");
+    // A build script that says where it is and takes a minute.
+    fs::write(
+        project.0.join("build.rs"),
+        format!(
+            "fn main() {{\n    std::fs::write({:?}, std::process::id().to_string()).unwrap();\n    \
+             std::thread::sleep(std::time::Duration::from_secs(60));\n}}\n",
+            pidfile.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+
+    k.send(json!({"type": "prepare", "id": 2}));
+    let script = said(&pidfile);
+    let cargo = parent(script);
+
+    assert_eq!(orphan(k, &[script, cargo]), Vec::<String>::new());
+}
+
+// Input that ends after `shutdown` is a driver that wrote all it had to say
+// and closed: every request before it is still answered.
+#[test]
+fn input_that_ends_after_a_shutdown_has_every_request_answered() {
+    let project = Project::new("closes", "2024", &[("src/lib.rs", TESTED)]);
+    let mut k = Kalku::summon();
+    let root = &project.0;
+    let asked = [
+        json!({"type": "hello", "id": 1, "protocol": 1, "root": root,
+            "reni": root.join(".reni"), "worker": 0, "inline_limit_bytes": 65536, "env": {}}),
+        json!({"type": "prepare", "id": 2}),
+        json!({"type": "baseline", "id": 3}),
+        json!({"type": "shutdown", "id": 4}),
+    ];
+    for request in &asked {
+        writeln!(k.stdin, "{request}").unwrap();
+    }
+    let Kalku {
+        mut child,
+        stdin,
+        stdout,
+    } = k;
+    drop(stdin);
+
+    let said: Vec<Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
+        .collect();
+
+    let types: Vec<&str> = said.iter().map(|v| v["type"].as_str().unwrap()).collect();
+    assert_eq!(types, ["ready", "prepared", "baseline_done", "bye"]);
+    assert_eq!(said[2]["status"], "green", "{}", said[2]);
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+}
+
 // These tests pass only where each thing the kalku says of its run is so.
 const UNLIKE: &str = "#[cfg(test)]\nmod tests {\n    use std::path::Path;\n\
     #[test]\n    fn the_copy_leaves_out_what_git_keeps() {\n\
