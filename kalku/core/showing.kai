@@ -21,11 +21,17 @@ import kalku.core.remembering
 
 #[doc("Everything known about one wekufe, as a person reads it.")]
 pub fn as_text(r: Remembered, before: [Outcome]) : String = join(
-  [where_of(r.site), ""]
-    ++ (diff_of(r.site) | (line => "  #{line}"))
-    ++ ["", "  outcome   #{outcome_name(r.outcome)}", "  judged by #{judges(r.tests)}"]
-    ++ story(before)
-    ++ ["", "  #{hint_for(r.site)}"],
+  [
+    where_of(r.site),
+    "",
+    ...diff_of(r.site) | (line => "  #{line}"),
+    "",
+    "  outcome   #{outcome_name(r.outcome)}",
+    "  judged by #{judges(r.tests)}",
+    ...story(before),
+    "",
+    "  #{hint_for(r.site)}"
+  ],
   "\n"
 )
 

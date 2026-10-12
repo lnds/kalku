@@ -34,13 +34,13 @@ pub fn page(name: String) : Option[Topic] = find(topics(), t => t.name == name)
 
 #[doc("The pages there are, one per line, for `kalku info` with nothing named.")]
 pub fn listing() : String = join(
-  ["topics:"] ++ (topics() | (t => "  #{padded(t.name)}  #{t.summary}")),
+  ["topics:", ...topics() | (t => "  #{padded(t.name)}  #{t.summary}")],
   "\n"
 )
 
 #[doc("A page as a person reads it.")]
 pub fn as_text(t: Topic) : String =
-  join([t.summary, ""] ++ flat_map(t.entries, entry_lines), "\n")
+  join([t.summary, "", ...flat_map(t.entries, entry_lines)], "\n")
 
 #[doc("A page as a program reads it: one object, with its entries.")]
 pub fn as_json(t: Topic) : String = json_encode(
@@ -70,18 +70,20 @@ pub fn snippet() : String = join(
   "\n"
 )
 
-fn entry_lines(e: Entry) : [String] = ["  #{padded(e.term)}  #{e.meaning}"]
-  ++ (match e.detail {
-    Some(d) -> ["  #{blanks()}  #{d}", ""]
-    None -> [""]
-  })
+fn entry_lines(e: Entry) : [String] = match e.detail {
+  Some(d) -> ["  #{padded(e.term)}  #{e.meaning}", "  #{blanks()}  #{d}", ""]
+  None -> ["  #{padded(e.term)}  #{e.meaning}", ""]
+}
 
 fn entry_json(e: Entry) : JsonValue = JObj(
-  [("term", JStr(e.term)), ("meaning", JStr(e.meaning))]
-    ++ (match e.detail {
+  [
+    ("term", JStr(e.term)),
+    ("meaning", JStr(e.meaning)),
+    ...match e.detail {
       Some(d) -> [("detail", JStr(d))]
       None -> []
-    })
+    }
+  ]
 )
 
 #[doc("How wide a term is printed, so the meanings line up.")]

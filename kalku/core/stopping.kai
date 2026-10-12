@@ -13,11 +13,10 @@ how far it got and what the pool said. `None` when it got through its plan,
 whatever the pool said on the way out, since nothing was left unmeasured.
 """)]
 pub fn stopped_short(failure: Option[String], cast: Int, planned: Int) : Option[String] =
-  match failure {
-    Some(why) -> if cast < planned {
+  failure.and_then(
+    why => if cast < planned {
       Some("the run stopped after #{cast} of #{planned} wekufe: #{why}")
     } else {
       None
     }
-    None -> None
-  }
+  )

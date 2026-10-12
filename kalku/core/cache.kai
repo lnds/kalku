@@ -42,9 +42,14 @@ key on every machine and in every run.
 """)]
 pub fn key_of(i: Inputs) : String = digest(
   join(
-    [i.adapter, spell_name(i.site.spell), where_of(i.site), i.source]
-      ++ sorted_hashes(i.tests)
-      ++ sorted_hashes(i.loaded),
+    [
+      i.adapter,
+      spell_name(i.site.spell),
+      where_of(i.site),
+      i.source,
+      ...sorted_hashes(i.tests),
+      ...sorted_hashes(i.loaded)
+    ],
     "\u{1f}"
   )
 )

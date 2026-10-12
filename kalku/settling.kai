@@ -145,10 +145,10 @@ fn intent(root: String, plan: Plan, wanted: Option[String]) : String = join(
     "",
     "It will write:",
     "  #{root}/#{CONFIG_PATH}     how a run is set up",
-    "  #{root}/#{SUMMONER_PATH}   how this project's kalku is summoned"
-  ]
-    ++ also_the_build_file(plan, wanted)
-    ++ [""],
+    "  #{root}/#{SUMMONER_PATH}   how this project's kalku is summoned",
+    ...also_the_build_file(plan, wanted),
+    ""
+  ],
   "\n"
 )
 
@@ -233,14 +233,13 @@ fn make_runnable(path: String) : Unit / Process {
 
 # The line this project still needs, if it needs one: a language whose
 # kalku is a dependency, and a build file that does not name it yet.
-fn dependency_wanted(root: String, plan: Plan) : Option[String] / File = match plan.dependency {
-  None -> None
-  Some(line) -> if depends_already(plan.known, build_file_of(root, plan.known)) {
+fn dependency_wanted(root: String, plan: Plan) : Option[String] / File = plan.dependency.and_then(
+  line => if depends_already(plan.known, build_file_of(root, plan.known)) {
     None
   } else {
     Some(line)
   }
-}
+)
 
 fn declare_dependency(
   root: String,

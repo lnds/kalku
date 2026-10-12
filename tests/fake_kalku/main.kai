@@ -112,7 +112,7 @@ fn with_id(reply: JsonValue, id: Int) : JsonValue = match reply {
 fn keep_type_first(fields: [(String, JsonValue)], id: Int) : [(String, JsonValue)] {
   let rest = filter(fields, f => f.fst != "id" and f.fst != "type")
   let kind = filter(fields, f => f.fst == "type")
-  kind ++ [("id", JNum(id))] ++ rest
+  [...kind, ("id", JNum(id)), ...rest]
 }
 
 fn die(message: String) : Int / Stderr + Process {

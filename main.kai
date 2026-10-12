@@ -259,7 +259,7 @@ fn printed(r: Report, shape: Shape) : String / File {
 # files are read here and looked up purely, because the format reads
 # nothing itself — which is what makes it testable without a filesystem.
 fn sources_of(r: Report) : [(String, [String])] / File =
-  uniq(r.survivors | (s => s.site.file)) | (path => (path, read_lines(path)))
+  uniq(r.survivors | (.site.file)) | (path => (path, read_lines(path)))
 
 fn read_lines(path: String) : [String] / File =
   if file.exists(path) { lines(file.read(path)) } else { [] }
@@ -411,7 +411,7 @@ fn declared_equivalents(root: String) : Result[[equivalent.Entry], String] / Fil
     match eqfile.parse(file.read(path)) {
       Ok(entries) -> Ok(entries)
       Err(problems) -> Err(
-        join(["#{path}:"] ++ (problems | (p => "  line #{p.at}: #{p.message}")), "\n")
+        join(["#{path}:", ...problems | (p => "  line #{p.at}: #{p.message}")], "\n")
       )
     }
   } else {
@@ -727,17 +727,6 @@ fn settings_in(root: String) : Result[Config, String] / Stderr + File + Env + Pr
   } else {
     unsettled(root)
   }
-}
-
-fn found_events(found: Found) : [ServerEvent] = match found.report {
-  None -> [
-    ErrorEv(ErrorMsg {
-      code: "not_measured",
-      message: found.failure.unwrap_or("nothing measured"),
-      fatal: false
-    })
-  ]
-  Some(r) -> [report_event(r)]
 }
 
 fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {

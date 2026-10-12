@@ -76,7 +76,7 @@ write a test for the second, so the reason travels here too.
 """)]
 pub fn trouble_line(t: Trouble) : String = json_encode(
   JObj(
-    [("wekufe", JStr(t.wekufe)), ("outcome", JStr(outcome_name(t.outcome)))] ++ said_field(t.said)
+    [("wekufe", JStr(t.wekufe)), ("outcome", JStr(outcome_name(t.outcome))), ...said_field(t.said)]
   )
 )
 
@@ -107,14 +107,14 @@ pub fn survivor_line(s: Survivor, source: (String) -> [String]) : String = json_
       ("wekufe", JStr(s.site.site_id)),
       ("file", JStr(s.site.file)),
       ("line", JNum(s.site.span.start.line)),
-      ("spell", JStr(spell_name(s.site.spell)))
+      ("spell", JStr(spell_name(s.site.spell))),
+      ...optional("enclosing", s.site.enclosing),
+      ...optional("original", s.site.original),
+      ("replacement", JStr(s.site.replacement)),
+      ...strings("context", context(s.site, source)),
+      ...judged_by(s),
+      ("hint", JStr(hint_for(s.site)))
     ]
-      ++ optional("enclosing", s.site.enclosing)
-      ++ optional("original", s.site.original)
-      ++ [("replacement", JStr(s.site.replacement))]
-      ++ strings("context", context(s.site, source))
-      ++ judged_by(s)
-      ++ [("hint", JStr(hint_for(s.site)))]
   )
 )
 
@@ -139,16 +139,16 @@ fn summary_line(r: Report) : String = json_encode(
     [
       ("summary", JBool(true)),
       ("counts", counts_of(r.counts)),
-      ("survivors_on_changed_lines", JNum(r.on_changed_lines))
+      ("survivors_on_changed_lines", JNum(r.on_changed_lines)),
+      ...score_field(r.counts),
+      ...repeated_field(r),
+      ...suppression_field(r.suppressions),
+      ...left_out_fields(r.left_out),
+      ...withheld_field(r.withheld),
+      ...doubted_field(r.doubted),
+      ...shard_field(r.shard),
+      ("exit", JNum(exit_code(r.blockers)))
     ]
-      ++ score_field(r.counts)
-      ++ repeated_field(r)
-      ++ suppression_field(r.suppressions)
-      ++ left_out_fields(r.left_out)
-      ++ withheld_field(r.withheld)
-      ++ doubted_field(r.doubted)
-      ++ shard_field(r.shard)
-      ++ [("exit", JNum(exit_code(r.blockers)))]
   )
 )
 
@@ -158,9 +158,11 @@ fn summary_line(r: Report) : String = json_encode(
 fn left_out_fields(out: LeftOut) : [(String, JsonValue)] = if is_empty(out.tests) {
   []
 } else {
-  [("left_out", JArr(out.tests | (f => JStr(f.test_id))))]
-    ++ strings("differences", out.differences)
-    ++ strings("reached_only_by_left_out", out.sites | (s => s.site_id))
+  [
+    ("left_out", JArr(out.tests | (f => JStr(f.test_id)))),
+    ...strings("differences", out.differences),
+    ...strings("reached_only_by_left_out", out.sites | (.site_id))
+  ]
 }
 
 # Why no survivor names the tests that reach it, when the kalku measured
@@ -229,9 +231,11 @@ fn suppression_field(s: SuppressionChanges) : [(String, JsonValue)] =
       (
         "suppression_changes",
         JObj(
-          [("equivalent_added", JNum(s.equivalent_added))]
-            ++ strings("exclude_added", s.exclude_added)
-            ++ strings("exclude_calls_added", s.exclude_calls_added)
+          [
+            ("equivalent_added", JNum(s.equivalent_added)),
+            ...strings("exclude_added", s.exclude_added),
+            ...strings("exclude_calls_added", s.exclude_calls_added)
+          ]
         )
       )
     ]
