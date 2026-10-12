@@ -68,7 +68,7 @@ fn since_ref(root: String, ref: String) : Result[[FileChange], String] / Process
 # The prefixes are named because a user's own configuration can change
 # them (`diff.noprefix`, `diff.mnemonicPrefix`), and the parser reads `b/`.
 fn git(root: String, args: [String], what: String) : Result[String, String] / Process =
-  match proc.pipe_errs("git", ["-C", root] ++ args) {
+  match proc.pipe_errs("git", ["-C", root, ...args]) {
     Err(e) -> Err("cannot run git: #{e}")
     Ok(child) -> {
       let out = drain(child, "")

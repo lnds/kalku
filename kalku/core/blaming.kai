@@ -73,17 +73,17 @@ pub fn left_out_block(out: LeftOut, sites: [String]) : [String] = if is_empty(ou
 } else {
   [
     "left out, failing before anything was cast (#{length(out.tests)} test(s)). They judged nothing, and the score is of the tests that pass:",
-    "#{named(out.tests)}#{unlike_yours(out.differences)}"
+    "#{named(out.tests)}#{unlike_yours(out.differences)}",
+    ...only_theirs(sites),
+    ""
   ]
-    ++ only_theirs(sites)
-    ++ [""]
 }
 
 # Not "no test reaches these": a test does, and it is failing.
 fn only_theirs(sites: [String]) : [String] = if is_empty(sites) {
   []
 } else {
-  ["reached only by tests that were left out, so not judged:"] ++ (sites | (s => "  #{s}"))
+  ["reached only by tests that were left out, so not judged:", ...sites | (s => "  #{s}")]
 }
 
 #[doc("""

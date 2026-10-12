@@ -248,12 +248,12 @@ fn interview(
       Known {
         sites: found.sites,
         tests: suite,
-        coverage: narrowed.map(n => n.coverage),
+        coverage: narrowed.map(.coverage),
         durations: durations_of(baseline),
         skipped: found.skipped,
         left_out: failing,
         differences: differences_of(baseline),
-        only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([]),
+        only_theirs: narrowed.map(.only_theirs).unwrap_or([]),
         withheld: withheld_of(baseline),
         doubted: doubted_of(baseline)
       }
@@ -456,7 +456,7 @@ const LAST_LINES : Int = 12
 fn with_last_words(why: String, said: [String]) : String = if is_empty(said) {
   why
 } else {
-  join([why, "what it wrote on stderr before that:"] ++ (said | (l => "  #{l}")), "\n")
+  join([why, "what it wrote on stderr before that:", ...said | (l => "  #{l}")], "\n")
 }
 
 #[doc("""
@@ -554,7 +554,7 @@ fn casting_them(
   let stopped = stopped_short(
     casting.failure,
     length(uniq(casting.verdicts | (.wekufe))),
-    length(uniq(casts | (c => c.site.site_id)))
+    length(uniq(casts | (.site.site_id)))
   )
   Found {
     report: if is_some(stopped) {
@@ -641,7 +641,7 @@ pub fn doubting(ready: Plan, known: Known) : Plan = match known.doubted {
 fn longer(a: Int, b: Int) : Int = if a > b { a } else { b }
 
 fn whole_budget(known: Known) : Int =
-  TIMEOUT_FACTOR * DEPENDENTS_FACTOR * sum(known.durations | (d => d.snd))
+  TIMEOUT_FACTOR * DEPENDENTS_FACTOR * sum(known.durations | (.snd))
 
 #[doc("""
 The part of a plan a shard owns, or all of it for a run that is not one.
@@ -790,16 +790,6 @@ fn site_named(known: Known, wekufe: String, tests: [String]) : [Survivor] = matc
     }
   ]
   None -> []
-}
-
-# What judged a wekufe is what the verdict says judged it: the plan chose
-# the tests, the scheduler sent them, and the verdict carries them back.
-fn judged_for(casting: Casting, wekufe: String, known: Known) : [String] = match find(
-  casting.verdicts,
-  v => v.wekufe == wekufe
-) {
-  Some(v) -> v.tests
-  None -> known.tests
 }
 
 # A wekufe whose outcome depends on how things were scheduled is cast

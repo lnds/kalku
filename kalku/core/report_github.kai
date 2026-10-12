@@ -17,11 +17,16 @@ pub fn annotations(r: Report) : String = join(r.survivors | annotation, "\n")
 #[doc("The markdown for `$GITHUB_STEP_SUMMARY`.")]
 pub fn step_summary(r: Report) : String =
   join(
-    ["## kalku", "", summary_line(r), ""]
-      ++ survivor_table(r)
-      ++ left_out(r)
-      ++ suppressions(r)
-      ++ blocked(r),
+    [
+      "## kalku",
+      "",
+      summary_line(r),
+      "",
+      ...survivor_table(r),
+      ...left_out(r),
+      ...suppressions(r),
+      ...blocked(r)
+    ],
     "\n"
   )
 
@@ -30,10 +35,10 @@ fn left_out(r: Report) : [String] = if is_empty(r.left_out.tests) {
 } else {
   [
     "**Left out, failing before anything was cast (#{length(r.left_out.tests)}):** they judged nothing, and the score is of the tests that pass.",
+    "",
+    ...r.left_out.tests | (f => "- `#{f.test_id}`"),
     ""
   ]
-    ++ (r.left_out.tests | (f => "- `#{f.test_id}`"))
-    ++ [""]
 }
 
 fn annotation(s: Survivor) : String {
@@ -46,22 +51,22 @@ fn survivor_table(r: Report) : [String] =
   if is_empty(r.survivors) {
     ["No survivors.", ""]
   } else {
-    ["| Survivor | Spell | Change |", "|---|---|---|"] ++ (r.survivors | row) ++ [""]
+    ["| Survivor | Spell | Change |", "|---|---|---|", ...r.survivors | row, ""]
   }
 
 fn row(s: Survivor) : String =
   "| `#{s.site.file}:#{s.site.span.start.line}` | #{spell_name(s.site.spell)} | `#{join(diff_of(s.site), " ")}` |"
 
 fn suppressions(r: Report) : [String] {
-  let added = r.suppressions.equivalent_added
-  let wider = r.suppressions.exclude_added ++ r.suppressions.exclude_calls_added
-  if added == 0 and is_empty(wider) {
+  let added = suppressions_added(
+    r,
+    n => "- #{n} declared equivalent",
+    p => "- wider exclusion: `#{p}`"
+  )
+  if is_empty(added) {
     []
   } else {
-    ["### Suppressions added in this change", ""]
-      ++ (if added > 0 { ["- #{added} declared equivalent"] } else { [] })
-      ++ (wider | (p => "- wider exclusion: `#{p}`"))
-      ++ [""]
+    ["### Suppressions added in this change", "", ...added, ""]
   }
 }
 
@@ -69,5 +74,5 @@ fn blocked(r: Report) : [String] =
   if is_empty(r.blockers) {
     []
   } else {
-    ["### Blocked", ""] ++ (r.blockers | (b => "- #{explain(b)}"))
+    ["### Blocked", "", ...r.blockers | (b => "- #{explain(b)}")]
   }

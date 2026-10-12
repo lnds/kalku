@@ -120,7 +120,7 @@ fn copy_worth_having(root: String, copy: String) : Result[Came, String] / Proces
   if is_empty(entries) {
     Err("#{root} holds nothing to copy")
   } else {
-    run(["/bin/cp", "-R"] ++ (entries | (e => "#{root}/#{e}")) ++ [copy])
+    run(["/bin/cp", "-R", ...(entries | (e => "#{root}/#{e}")), copy])
   }
 }
 
@@ -152,7 +152,7 @@ pub fn test_only(w: Work, ids: [String]) : Ran / Process = if is_empty(ids) {
   test_all(w)
 } else {
   read_run(
-    run_in(w, ["kai", "test", "--json"] ++ flat_map(ids, id => ["--only", id]) ++ ["."]),
+    run_in(w, ["kai", "test", "--json", ...flat_map(ids, id => ["--only", id]), "."]),
     length(ids)
   )
 }
@@ -276,10 +276,8 @@ fn tallied(judged: [Judged]) : Ran = Ran {
   tests: judged | (.timing)
 }
 
-fn first_failed(judged: [Judged]) : Option[String] = match find(judged, j => j.failed) {
-  Some(j) -> Some(j.timing.test_id)
-  None -> None
-}
+fn first_failed(judged: [Judged]) : Option[String] =
+  find(judged, j => j.failed).map(.timing.test_id)
 
 # One test as kaikai reported it: the id `--only` selects it with, and
 # whether it held.

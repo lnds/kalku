@@ -46,7 +46,7 @@ pub fn unpacked(p: Packed) : Result[[CoverageEntry], ProtocolError] {
   let groups = p.reached | (r => entries_of(r, names, length(p.tests)))
   match list.find(groups, g => is_err(g)) {
     Some(Err(e)) -> Err(e)
-    _ -> Ok(list.flat_map(groups, g => g.unwrap_or([])))
+    _ -> Ok(list.flat_map(groups, .unwrap_or([])))
   }
 }
 

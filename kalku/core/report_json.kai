@@ -20,23 +20,23 @@ import kalku.core.shard
 #[doc("The whole report as one canonical JSON object.")]
 pub fn json(r: Report, exit: Int) : String = encode_value(
   JObj(
-    optional("score", score(r.counts).map(s => JReal(s)))
-      ++ [
-        ("counts", to_json(r.counts)),
-        ("survivors", JArr(r.survivors | survivor)),
-        ("skipped", JArr(r.skipped | skipped_file)),
-        ("survivors_on_changed_lines", JNum(r.on_changed_lines)),
-        ("suppression_changes", to_json(r.suppressions)),
-        ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
-        ("exit", JNum(exit))
-      ]
-      ++ left_out(r)
-      ++ optional("coverage_withheld", r.withheld.map(w => JStr(w)))
-      ++ optional("coverage_doubted", r.doubted.map(w => JStr(w)))
-      ++ optional(
+    [
+      ...optional("score", score(r.counts).map(s => JReal(s))),
+      ("counts", to_json(r.counts)),
+      ("survivors", JArr(r.survivors | survivor)),
+      ("skipped", JArr(r.skipped | skipped_file)),
+      ("survivors_on_changed_lines", JNum(r.on_changed_lines)),
+      ("suppression_changes", to_json(r.suppressions)),
+      ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
+      ("exit", JNum(exit)),
+      ...left_out(r),
+      ...optional("coverage_withheld", r.withheld.map(w => JStr(w))),
+      ...optional("coverage_doubted", r.doubted.map(w => JStr(w))),
+      ...optional(
         "shard",
         r.shard.map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
       )
+    ]
   )
 )
 
@@ -62,18 +62,17 @@ fn skipped_file(s: Skipped) : JsonValue = JObj(
 )
 
 fn survivor(s: Survivor) : JsonValue = JObj(
-  [("wekufe", JStr(s.site.site_id)), ("file", JStr(s.site.file))]
-    ++ optional("enclosing", s.site.enclosing.map(e => JStr(e)))
-    ++ [
-      ("line", JNum(s.site.span.start.line)),
-      ("spell", JStr(spell_name(s.site.spell)))
-    ]
-    ++ optional("original", s.site.original.map(o => JStr(o)))
-    ++ [
-      ("replacement", JStr(s.site.replacement)),
-      ("covering_tests", JArr(if s.chosen { s.tests | (t => JStr(t)) } else { [] }))
-    ]
-    ++ (if s.chosen { [] } else { [("judged_by_whole_suite", JNum(length(s.tests)))] })
+  [
+    ("wekufe", JStr(s.site.site_id)),
+    ("file", JStr(s.site.file)),
+    ...optional("enclosing", s.site.enclosing.map(e => JStr(e))),
+    ("line", JNum(s.site.span.start.line)),
+    ("spell", JStr(spell_name(s.site.spell))),
+    ...optional("original", s.site.original.map(o => JStr(o))),
+    ("replacement", JStr(s.site.replacement)),
+    ("covering_tests", JArr(if s.chosen { s.tests | (t => JStr(t)) } else { [] })),
+    ...if s.chosen { [] } else { [("judged_by_whole_suite", JNum(length(s.tests)))] }
+  ]
 )
 
 fn optional(key: String, value: Option[JsonValue]) : [(String, JsonValue)] = match value {

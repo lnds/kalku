@@ -84,17 +84,19 @@ pub type Trouble = { wekufe: String, at: Option[Site], outcome: Outcome, said: O
 
 #[doc("The whole report as a person reads it: survivors, then the summary, then what was suppressed.")]
 pub fn human(r: Report) : String = join(
-  survivor_blocks(r)
-    ++ pattern_block(r)
-    ++ uncovered_block(r)
-    ++ skipped_block(r)
-    ++ trouble_blocks(r)
-    ++ left_out_block(r.left_out, r.left_out.sites | where_of)
-    ++ withheld_block(r.withheld)
-    ++ doubted_block(r.doubted)
-    ++ [summary_line(r)]
-    ++ suppression_block(r)
-    ++ blocker_block(r),
+  [
+    ...survivor_blocks(r),
+    ...pattern_block(r),
+    ...uncovered_block(r),
+    ...skipped_block(r),
+    ...trouble_blocks(r),
+    ...left_out_block(r.left_out, r.left_out.sites | where_of),
+    ...withheld_block(r.withheld),
+    ...doubted_block(r.doubted),
+    summary_line(r),
+    ...suppression_block(r),
+    ...blocker_block(r)
+  ],
   "\n"
 )
 
@@ -148,16 +150,20 @@ pub fn diff_of(site: Site) : [String] {
 pub fn summary_line(r: Report) : String {
   let c = r.counts
   join(
-    part(r.shard)
-      ++ partial(r)
-      ++ ["score #{score_text(c)}", "#{c.killed} killed", "#{c.survived} survived"]
-      ++ aside("timeout", c.timeout)
-      ++ aside("no coverage", c.no_coverage)
-      ++ aside("compile error", c.compile_error)
-      ++ aside("crashed", c.crashed)
-      ++ aside("nondeterministic", c.nondeterministic)
-      ++ equivalents(c.equivalent)
-      ++ aside("test(s) left out", length(r.left_out.tests)),
+    [
+      ...part(r.shard),
+      ...partial(r),
+      "score #{score_text(c)}",
+      "#{c.killed} killed",
+      "#{c.survived} survived",
+      ...aside("timeout", c.timeout),
+      ...aside("no coverage", c.no_coverage),
+      ...aside("compile error", c.compile_error),
+      ...aside("crashed", c.crashed),
+      ...aside("nondeterministic", c.nondeterministic),
+      ...equivalents(c.equivalent),
+      ...aside("test(s) left out", length(r.left_out.tests))
+    ],
     " · "
   )
 }
@@ -192,9 +198,13 @@ fn survivor_blocks(r: Report) : [String] =
 # reader acts on one hole at a time, and the sentence belongs where the
 # hole is.
 fn block(s: Survivor) : [String] =
-  [location(s)]
-    ++ (diff_of(s.site) | (line => "  #{line}"))
-    ++ [covered_by(s), "  #{hint_for(s.site)}", ""]
+  [
+    location(s),
+    ...diff_of(s.site) | (line => "  #{line}"),
+    covered_by(s),
+    "  #{hint_for(s.site)}",
+    ""
+  ]
 
 fn covered_by(s: Survivor) : String = if is_empty(s.tests) {
   "  no test covers it"
@@ -232,13 +242,13 @@ fn pattern_block(r: Report) : [String] = flat_map(
 fn skipped_block(r: Report) : [String] = if is_empty(r.skipped) {
   []
 } else {
-  ["files that were not searched:"] ++ (r.skipped | (s => "  #{skipped_line(s)}")) ++ [""]
+  ["files that were not searched:", ...r.skipped | (s => "  #{skipped_line(s)}"), ""]
 }
 
 fn uncovered_block(r: Report) : [String] = if is_empty(r.uncovered) {
   []
 } else {
-  ["no test reaches these:"] ++ (r.uncovered | (s => "  #{where_of(s)}")) ++ [""]
+  ["no test reaches these:", ...r.uncovered | (s => "  #{where_of(s)}"), ""]
 }
 
 # An outcome that never enters the score still has to be actionable: a
@@ -247,11 +257,11 @@ fn uncovered_block(r: Report) : [String] = if is_empty(r.uncovered) {
 fn trouble_blocks(r: Report) : [String] = if is_empty(r.troubles) {
   []
 } else {
-  ["what could not be measured:"] ++ flat_map(r.troubles, trouble_lines) ++ [""]
+  ["what could not be measured:", ...flat_map(r.troubles, trouble_lines), ""]
 }
 
 fn trouble_lines(t: Trouble) : [String] =
-  ["  #{named_at(t)}  #{outcome_name(t.outcome)}"] ++ (said_by(t) | (line => "    #{line}"))
+  ["  #{named_at(t)}  #{outcome_name(t.outcome)}", ...said_by(t) | (line => "    #{line}")]
 
 # A wekufe id is a hash; where it was cast is a file and a line, and only
 # one of those is something a reader can open.
@@ -269,19 +279,33 @@ fn said_by(t: Trouble) : [String] = match t.said {
 
 # Suppressions a change adds are as loud as the holes it leaves.
 fn suppression_block(r: Report) : [String] {
+  let added = suppressions_added(
+    r,
+    n => "  #{n} declared equivalent",
+    p => "  wider exclusion: #{p}"
+  )
+  if is_empty(added) { [] } else { ["", "Suppressions added in this change:", ...added] }
+}
+
+#[doc("""
+What a change added to the suppressions, one line each, or nothing when
+it added none.
+
+The equivalents are one line that counts them; every wider exclusion is
+a line of its own.
+""")]
+pub fn suppressions_added(
+  r: Report,
+  equivalents: (Int) -> String,
+  exclusion: (String) -> String
+) : [String] {
   let added = r.suppressions.equivalent_added
   let wider = r.suppressions.exclude_added ++ r.suppressions.exclude_calls_added
-  if added == 0 and is_empty(wider) {
-    []
-  } else {
-    ["", "Suppressions added in this change:"]
-      ++ (if added > 0 { ["  #{added} declared equivalent"] } else { [] })
-      ++ (wider | (p => "  wider exclusion: #{p}"))
-  }
+  [...if added > 0 { [equivalents(added)] } else { [] }, ...wider | exclusion]
 }
 
 fn blocker_block(r: Report) : [String] =
-  if is_empty(r.blockers) { [] } else { [""] ++ (r.blockers | (b => "blocked: #{explain(b)}")) }
+  if is_empty(r.blockers) { [] } else { ["", ...r.blockers | (b => "blocked: #{explain(b)}")] }
 
 fn aside(name: String, n: Int) : [String] = if n == 0 { [] } else { ["#{n} #{name}"] }
 

@@ -73,13 +73,10 @@ pub const SUMMON_CONTRACT : Int = 1
 pub fn contract_line(n: Int) : String = "# kalku-summon-contract: #{n}"
 
 #[doc("Which contract a summoning claims, or `None` when it claims none.")]
-pub fn contract_of(script: String) : Option[Int] = match find(
+pub fn contract_of(script: String) : Option[Int] = find(
   lines(script),
   l => starts_with(trim(l), "# kalku-summon-contract:")
-) {
-  None -> None
-  Some(l) -> to_int(trim(slice(trim(l), 25, length(trim(l)))))
-}
+).and_then(l => to_int(trim(slice(trim(l), 25, length(trim(l))))))
 
 #[doc("True when a summoning is one this kalku knows how to use.")]
 pub fn summon_is_current(script: String) : Bool =

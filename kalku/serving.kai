@@ -80,13 +80,12 @@ fn holding(path: String) : String = match last_slash(path) {
   None -> "."
 }
 
-fn last_slash(path: String) : Option[Int] = match index_of(path, "/") {
-  None -> None
-  Some(i) -> match last_slash(slice(path, i + 1, length(path))) {
-    None -> Some(i)
-    Some(rest) -> Some(i + 1 + rest)
+fn last_slash(path: String) : Option[Int] = index_of(path, "/").map(
+  i => match last_slash(slice(path, i + 1, length(path))) {
+    None -> i
+    Some(rest) -> i + 1 + rest
   }
-}
+)
 
 # Accept, hand the connection to a fiber, accept again. Nothing here
 # waits on what a client asked for, which is the whole point of it.
@@ -119,11 +118,6 @@ fn as_text(data: [Int]) : String = from_bytes(flat_map(data, as_byte))
 fn as_byte(n: Int) : [Byte] = match int_to_byte(n) {
   Ok(b) -> [b]
   Err(_) -> []
-}
-
-fn tell(c: sock.Conn, id: Int, e: ServerEvent) : Unit / NetUnix {
-  let _ = NetUnix.send(c, bytes(said(id, e)) | byte_to_int)
-  ()
 }
 
 # ---- one client ---------------------------------------------------------
