@@ -121,7 +121,7 @@ Half-open `[start, end)`.
 |---|---|
 | Spell | `arm` `compare` `connect` `negate` `literal` `call` `await` `supervise` `foreign` (drivers only) |
 | Outcome | `killed` `survived` `timeout` `no_coverage` `compile_error` `crashed` `nondeterministic` `equivalent` |
-| Capability | `cast` `delegate` `per_test_coverage` `hot_load` `recompile_dependents` `abort` `reset` `code_hash` — unknown values ignored |
+| Capability | `cast` `delegate` `per_test_coverage` `hot_load` `recompile_dependents` `abort` `reset` `code_hash` `cast_after_baseline` — unknown values ignored |
 | Format | `human` `json` `github` `agent` |
 | Phase | `prepare` `baseline` `plan` `cast` `report` |
 | Session state | `cold` `preparing` `baseline` `ready` `running` `failed` `closed` |
@@ -181,6 +181,7 @@ First message after summoning.
 | `abort` | a running cast can be stopped in place | a timeout kills the process |
 | `reset` | global state can be reset in place | a dirty kalku is recycled |
 | `code_hash` | `cast_done` carries `code_hash` and may prove `equivalent` | no trivial compiler equivalence |
+| `cast_after_baseline` | the kalku that answered `baseline` can go on to `cast`, and judges a wekufe as a kalku that was only prepared would | it is banished once it has answered `sites`, and another is summoned and prepared in its place |
 
 Rule: `ready` announces **exactly one** of `cast` or `delegate`; otherwise `invalid`.
 

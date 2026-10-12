@@ -10,7 +10,8 @@ what survived.
 
 Discovery talks to one kalku, because `prepare` and `baseline` are asked
 once per project. Casting then hands the plan to a pool, which is where
-the parallelism belongs.
+the parallelism belongs, and the kalku that read the project is the first
+of it: it is warm, and a run has nothing more expensive to throw away.
 """)]
 
 import actor
@@ -38,6 +39,7 @@ import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.escalation
 import kalku.orchestrator.attending
 import kalku.orchestrator.pool
+import kalku.orchestrator.ward
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
 import kalku.orchestrator.interrupting
@@ -101,23 +103,50 @@ signal stops altogether and not only the run it happens to be in.
 """)]
 pub fn measuring(
   asking: Asking
-) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Stderr {
-  match discover(asking) {
-    Err(why) -> Found { report: None, failure: Some(why), cast: [] }
-    Ok(known) -> casting_them(asking, known)
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Stderr =
+  warded(
+    () => match met(asking, discovery_life()) {
+      Err(why) -> not_found(why)
+      Ok(k) -> {
+        # Watched before it is asked anything: whatever ends this run, the
+        # kalku that read the project ends with it.
+        Ward.watch(k)
+        match interview(k, asking) {
+          Err(why) -> not_found(why)
+          Ok(read) -> casting_them(asking, read.snd, kept(k, read.fst))
+        }
+      }
+    }
+  )
+
+fn not_found(why: String) : Found = Found { report: None, failure: Some(why), cast: [] }
+
+# The kalku that read the project stays as the pool's first worker only
+# where it says a wekufe cast after its baseline is judged as one cast in a
+# kalku that was only prepared. A kalku that does not say so is ended here,
+# and the pool summons its own: slower, and the only honest reading of "this
+# kalku cannot say".
+fn kept(k: Kalku, caps: [Capability]) : Option[Slot] / Process + Telling + Clock + Ward =
+  if contains(caps, CastAfterBaseline) {
+    Some(warm_slot(k, caps))
+  } else {
+    Ward.release(k)
+    kill_now(k)
+    None
   }
-}
 
 #[doc("""
-The identity of the kalku that reads the project before the pool exists.
+The identity of the kalku that reads the project: worker 0, before the pool
+has summoned anybody.
 
-It is nobody's worker. A pool slot is worker 0 on its first summons, and the
-last words of the kalku that discovered the project arrive after it is gone,
-addressed to its life: with the same life they were taken for the death of
-that slot's kalku, which was recycled before it cast anything and cost a run
-one of the replacements it is allowed.
+Worker 0 because that is how it is greeted, and where it is kept for casting
+it is that slot's kalku. Not a summons of the pool's, because where it is not
+kept its last words arrive after it is gone, addressed to its life: with the
+life of the pool's first summons they were taken for the death of that
+slot's kalku, which was recycled before it cast anything and cost a run one
+of the replacements it is allowed.
 """)]
-pub fn discovery_life() : Life = Life { worker: 0 - 1, summons: 0 }
+pub fn discovery_life() : Life = Life { worker: 0, summons: 0 }
 
 #[doc("""
 What can be broken in this project, asked of one kalku.
@@ -129,29 +158,49 @@ already failing, ends the run here.
 pub fn discover(
   asking: Asking
 ) : Result[Known, String] / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling {
-  let life = discovery_life()
-  match summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args }) {
+  match met(asking, discovery_life()) {
     Err(e) -> Err(e)
     Ok(k) -> {
-      let me = Actor.self()
-      let _reader = spawn_actor(() => read_loop(k, me))
-      # And its stderr, in its own fiber: a kalku that dies on the way to
-      # `ready` says why there, and a child filling one pipe while the
-      # parent drains the other deadlocks.
-      let _errs = spawn_actor(() => read_errs_loop(k, me))
       let answer = interview(k, asking)
       kill_now(k)
-      answer
+      match answer {
+        Err(e) -> Err(e)
+        Ok(read) -> Ok(read.snd)
+      }
     }
   }
+}
+
+# A kalku summoned to read the project, with both its streams read into
+# this mailbox.
+fn met(asking: Asking, life: Life) : Result[Kalku, String] / Process + Spawn + Actor[OrchMsg] {
+  let k = summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args })!
+  let me = Actor.self()
+  let _reader = spawn_actor(() => read_loop(k, me))
+  # And its stderr, in its own fiber: a kalku that dies on the way to
+  # `ready` says why there, and a child filling one pipe while the
+  # parent drains the other deadlocks.
+  let _errs = spawn_actor(() => read_errs_loop(k, me))
+  Ok(k)
+}
+
+# A kalku whose protocol this side cannot speak is refused before it is
+# asked anything: nothing it answered could be believed, and it may be the
+# one that goes on to cast.
+fn able(reply: KalkuReply) : Result[[Capability], String] = match reply {
+  Ready(m) -> match ready_refused(m) {
+    Some(why) -> Err("the kalku #{why}")
+    None -> Ok(m.capabilities)
+  }
+  _ -> Ok([])
 }
 
 fn interview(
   k: Kalku,
   asking: Asking
-) : Result[Known, String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
+) : Result[([Capability], Known), String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   greet(k, asking)!
-  await_kind(k, "ready")!
+  let caps = able(await_kind(k, "ready")!)!
   Telling.entered(PhasePreparing)
   Telling.tell_of("preparing #{asking.spec.root}; this builds the project and can take minutes")
   tell(k, 2, Prepare)!
@@ -191,19 +240,25 @@ fn interview(
       "no wekufe answers to #{join(names, ", ")} any more: a wekufe is named by the text it was cast in, and its file has changed since. Run `kalku run <file>` again to get new names"
     )
   })!
-  let narrowed = (coverage_from(baseline)!).map(entries => without(entries, failing | (.test_id)))
-  Ok(Known {
-    sites: found.sites,
-    tests: suite,
-    coverage: narrowed.map(n => n.coverage),
-    durations: durations_of(baseline),
-    skipped: found.skipped,
-    left_out: failing,
-    differences: differences_of(baseline),
-    only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([]),
-    withheld: withheld_of(baseline),
-    doubted: doubted_of(baseline)
-  })
+  let narrowed =
+    (coverage_from(baseline)!).map(entries => told.without(entries, failing | (.test_id)))
+  Ok(
+    (
+      caps,
+      Known {
+        sites: found.sites,
+        tests: suite,
+        coverage: narrowed.map(n => n.coverage),
+        durations: durations_of(baseline),
+        skipped: found.skipped,
+        left_out: failing,
+        differences: differences_of(baseline),
+        only_theirs: narrowed.map(n => n.only_theirs).unwrap_or([]),
+        withheld: withheld_of(baseline),
+        doubted: doubted_of(baseline)
+      }
+    )
+  )
 }
 
 # The suite as the kalku enumerated it. Which of those tests judge a
@@ -478,8 +533,9 @@ fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) 
 
 fn casting_them(
   asking: Asking,
-  all_known: Known
-) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling {
+  all_known: Known,
+  warm: Option[Slot]
+) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
   let known = wanted_only(asking, all_known)
   let ready = doubting(part_of(plan(inputs_for(asking, known), _id => None), asking.shard), known)
   let casts = repeated(limited(ready.to_cast, asking.limit))
@@ -488,7 +544,12 @@ fn casting_them(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
   )
   Telling.will_cost(length(casts), estimate_ms(casts, known.durations, asking.spec.workers))
-  let casting = agreed(cast_all(asking.spec, casts))
+  let casting = agreed(
+    match warm {
+      Some(first) -> cast_beside(asking.spec, first, casts)
+      None -> cast_all(asking.spec, casts)
+    }
+  )
   Telling.entered(PhaseReporting)
   let stopped = stopped_short(
     casting.failure,

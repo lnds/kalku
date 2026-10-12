@@ -60,5 +60,13 @@ fn no_step() : Step = Step {
   garbage: false,
   stderr: None,
   spawn: None,
-  repeat: 0
+  repeat: 0,
+  optional: false
+}
+
+test "a step is expected unless it says it is optional" {
+  let asked = head(steps_of("{\"expect\":\"baseline\"}\n")).unwrap_or(no_step())
+  let may = head(steps_of("{\"expect\":\"baseline\",\"optional\":true}\n")).unwrap_or(no_step())
+  assert not asked.optional
+  assert may.optional
 }

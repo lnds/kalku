@@ -25,7 +25,8 @@ pub type Step = {
   garbage: Bool,
   stderr: Option[String],
   spawn: Option[String],
-  repeat: Int
+  repeat: Int,
+  optional: Bool
 }
 
 #[doc("Read a script; `Err` names the line that is not a JSON object.")]
@@ -73,7 +74,8 @@ fn read_step(v: JsonValue) : Step = Step {
   garbage: as_bool(get(v, "garbage")).unwrap_or(false),
   stderr: as_string(get(v, "stderr")),
   spawn: as_string(get(v, "spawn")),
-  repeat: as_int(get(v, "repeat")).unwrap_or(1)
+  repeat: as_int(get(v, "repeat")).unwrap_or(1),
+  optional: as_bool(get(v, "optional")).unwrap_or(false)
 }
 
 fn value_at(v: JsonValue, key: String) : Option[JsonValue] = match get(v, key) {

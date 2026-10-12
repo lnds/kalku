@@ -37,7 +37,7 @@ defmodule Kalku.Sites do
       |> Walker.candidates(src, spells, exclude)
       |> Enum.map(&resolve(&1, src))
       |> Enum.uniq_by(&{&1.from_byte, &1.to_byte, &1.spell, &1.replacement})
-      |> Enum.split_with(&splices?(&1, src))
+      |> split_by_splicing(src)
 
     sites =
       kept
@@ -53,6 +53,23 @@ defmodule Kalku.Sites do
     to = Source.byte(src, c.to)
 
     Map.merge(c, %{from_byte: from, to_byte: to, original: binary_part(src.text, from, to - from)})
+  end
+
+  # Every candidate costs a parse of the whole file with it spliced in, and
+  # a large file has a thousand of them: they are parsed side by side, and
+  # kept in the order they were found.
+  defp split_by_splicing(cands, %Source{text: text}) do
+    # Only the text goes to each of them: it is shared, and the index of
+    # its lines would be copied a thousand times.
+    src = %Source{text: text}
+
+    cands
+    |> Task.async_stream(&{&1, splices?(&1, src)}, ordered: true, timeout: :infinity)
+    |> Enum.reduce({[], []}, fn
+      {:ok, {c, true}}, {kept, dropped} -> {[c | kept], dropped}
+      {:ok, {c, false}}, {kept, dropped} -> {kept, [c | dropped]}
+    end)
+    |> then(fn {kept, dropped} -> {Enum.reverse(kept), Enum.reverse(dropped)} end)
   end
 
   defp splices?(c, src),
