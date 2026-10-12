@@ -357,7 +357,7 @@ handshake refuses a mismatch by naming which half to move.
 kaikai kalku and reports what its suite did not notice:
 
 ```
-kalku/core/shard.kai:30  literal  shard.wrap32/1
+src/kalku/core/shard.kai:30  literal  shard.wrap32/1
   - 4294967296
   + 0
   covered by 189 tests

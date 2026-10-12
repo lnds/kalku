@@ -365,7 +365,7 @@ rechaza una discrepancia diciendo cuál mitad hay que mover.
 kalku de kaikai y reporta lo que su suite no notó:
 
 ```
-kalku/core/shard.kai:30  literal  shard.wrap32/1
+src/kalku/core/shard.kai:30  literal  shard.wrap32/1
   - 4294967296
   + 0
   covered by 189 tests

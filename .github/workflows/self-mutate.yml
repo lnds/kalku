@@ -18,7 +18,7 @@ on:
     inputs:
       module:
         description: 'Module to measure'
-        default: 'kalku/core/shard.kai'
+        default: 'src/kalku/core/shard.kai'
       limit:
         description: 'How many wekufe to cast (0 for all of them)'
         default: '6'
@@ -54,7 +54,7 @@ jobs:
       # to start rather than fill a disk with copies.
       - name: Measure kalku with kalku
         env:
-          SELF_MODULE: ${{ inputs.module || 'kalku/core/shard.kai' }}
+          SELF_MODULE: ${{ inputs.module || 'src/kalku/core/shard.kai' }}
           SELF_LIMIT: ${{ inputs.limit || '6' }}
           SELF_RENI: ${{ runner.temp }}/kalku-self/reni
           # One worker on a two-core runner: two of them would compete for
@@ -68,7 +68,7 @@ jobs:
           {
             echo '### kalku measured by kalku'
             echo
-            echo "module \`${{ inputs.module || 'kalku/core/shard.kai' }}\`, limit ${{ inputs.limit || '6' }}"
+            echo "module \`${{ inputs.module || 'src/kalku/core/shard.kai' }}\`, limit ${{ inputs.limit || '6' }}"
             echo
             echo '```'
             cat self-mutate.txt 2>/dev/null || echo 'the run produced no report'

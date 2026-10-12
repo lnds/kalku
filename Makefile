@@ -21,7 +21,7 @@ endif
 PLATFORM := $(OS)-$(ARCH)
 TARBALL  := $(DIST)/kalku-v$(VERSION)-$(PLATFORM).tar.gz
 
-KAI_SRC := main.kai $(shell find kalku -name '*.kai') $(wildcard tests/*.kai)
+KAI_SRC := $(shell find src -name '*.kai') $(wildcard tests/*.kai)
 
 # The kaikai kalku: the one kalku measures itself with, built as its own
 # package because it is a separate binary a user summons.
@@ -84,7 +84,7 @@ properties:
 bench:
 	@for f in $(wildcard tests/*_test.kai); do $(KAI) bench $$f; done
 
-$(KKALKU): $(KKALKU_SRC) $(shell find kalku -name '*.kai')
+$(KKALKU): $(KKALKU_SRC) $(shell find src -name '*.kai')
 	@mkdir -p $(dir $@)
 	$(KAI) build ./adapters/kaikai -o $@
 
@@ -160,7 +160,7 @@ check: ci test-elixir test-rust test-python test-java
 # `.kalku-release`, never by the binary built here. One module at a time,
 # because a kaikai cast rebuilds the package and runs the whole suite —
 # honest and slow. Advisory: it reports and never fails a build.
-SELF_MODULE  ?= kalku/core/shard.kai
+SELF_MODULE  ?= src/kalku/core/shard.kai
 SELF_LIMIT   ?= 6
 # Two kalku build and test in their own copies at once, which is worth it
 # on a developer's machine and not on a two-core runner.
