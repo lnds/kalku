@@ -1,0 +1,92 @@
+import actor
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.report
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.attending
+import kalku.orchestrator.telling
+import kalku.orchestrator.measure
+
+const FAKE : String = "./tests/fake_kalku/fake_kalku"
+
+fn asking_of(script: String) : Asking = Asking {
+  spec: PoolSpec {
+    command: FAKE,
+    args: ["tests/fixtures/scripts/#{script}"],
+    workers: 1,
+    root: ".",
+    reni: ".kalku",
+    inline_limit_bytes: 65536,
+    env: StrMap { entries: [] },
+    greeting_ms: 5000,
+    summons_allowed: 1,
+    memory_mb: 0
+  },
+  files: ["lib/a.ex"],
+  only: [],
+  spells: [],
+  exclude_calls: [],
+  exclude: [],
+  equivalents: [],
+  limit: 0,
+  timeout_floor_ms: 5000,
+  touched: None,
+  shard: None
+}
+
+fn measured(script: String) : Found / Process + Spawn + Clock + File + Stderr =
+  measured_with(asking_of(script))
+
+fn measured_with(asking: Asking) : Found / Process + Spawn + Clock + File + Stderr =
+  with_mailbox { alone(() => untold(() => measuring(asking))) }
+
+# The kalku of this script casts only after it has run the suite, and is
+# greeted once: a second kalku, summoned to cast what the first could, would
+# be handed a wekufe where the script expects `baseline` and die of it. So a
+# run that ends with both wekufe judged cast them with the kalku that read
+# the project, which had built it and held its suite already.
+test "the kalku that read the project is the one that casts, with one worker" {
+  let found = measured("reads_then_casts.ndjson")
+
+  assert found.failure == None
+  assert (found.cast | (c => (c.wekufe, c.outcome))) == [("s3", Killed), ("s7", Killed)]
+  match found.report {
+    None -> {
+      assert false
+    }
+    Some(r) -> {
+      assert r.counts.killed == 2
+    }
+  }
+}
+
+# It may be the one that goes on to cast, so what a pool asks of every
+# kalku it greets is asked of this one before anything else.
+test "a kalku that reads the project in a protocol this side cannot speak is refused" {
+  let found = measured("protocol_mismatch.ndjson")
+
+  assert found.report == None
+  assert is_some(index_of(found.failure.unwrap_or(""), "the kalku speaks protocol 99"))
+}
+
+# The same kalku, saying nothing of what a cast after its baseline is worth.
+# It is not handed a wekufe: another is summoned to cast, and that one dies
+# of this script, which is how the test knows there was another.
+test "a kalku that does not say it can cast after its baseline is not kept" {
+  let found = measured("reads_and_leaves.ndjson")
+
+  assert found.report == None
+  assert is_some(index_of(found.failure.unwrap_or(""), "expected `baseline`, got `cast`"))
+}
+
+# With more workers than one, the kalku that read the project keeps the
+# first slot and the rest are summoned beside it: greeted, prepared, and
+# never asked for a baseline.
+test "the kalku that read the project casts beside the ones summoned after it" {
+  let one = asking_of("reads_or_casts.ndjson")
+  let found = measured_with(Asking { ...one, spec: PoolSpec { ...one.spec, workers: 2 } })
+
+  assert found.failure == None
+  assert (found.cast | (c => (c.wekufe, c.outcome))) == [("s3", Killed), ("s7", Killed)]
+}

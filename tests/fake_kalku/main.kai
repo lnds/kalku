@@ -8,6 +8,10 @@ reproducible tests rather than accidents of timing.
 A step may start a command of its own before it replies (`spawn`), which is how
 a test gives a kalku a child that does something the kalku would not.
 
+A step may be `optional`: a request that is not the one it expects passes it
+by. That is how one script serves a kalku that is asked for a baseline and
+another that never is.
+
 A request the script did not expect is the fake's own failure: it says so
 on stderr and exits 3, so an orchestrator bug surfaces as a failed test
 instead of a hung one.
@@ -56,6 +60,8 @@ fn dispatch(
       act(s, req.snd)
       serve(spend(s) ++ rest, deaf or s.ignore_abort)
     }
+  } else if s.optional {
+    dispatch(rest, deaf, req)
   } else {
     die("expected `#{s.expect}`, got `#{req.fst}`")
   }

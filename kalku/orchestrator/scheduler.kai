@@ -62,7 +62,27 @@ pub fn cast_all(
   spec: PoolSpec,
   casts: [Wekufe]
 ) : Casting / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling =
-  warded(() => run_plan(with_ceiling(spec), casts))
+  warded(() => {
+    let held = with_ceiling(spec)
+    run_plan(held, fill(held), casts)
+  })
+
+#[doc("""
+Cast a plan with a pool whose first kalku is already warm.
+
+A kalku that has built the project and run its suite is the most expensive
+thing a run holds, and summoning another to do what it can do costs the
+build again before the first wekufe is cast. The ward is the caller's: the
+warm kalku was watched before it was handed over.
+""")]
+pub fn cast_beside(
+  spec: PoolSpec,
+  warm: Slot,
+  casts: [Wekufe]
+) : Casting / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
+  let held = with_ceiling(spec)
+  run_plan(held, fill_around(held, warm), casts)
+}
 
 #[doc("""
 Summon a pool and keep it, for a caller that will cast more than once.
@@ -109,9 +129,9 @@ pub fn cast_over(
 
 fn run_plan(
   spec: PoolSpec,
+  slots: [Slot],
   casts: [Wekufe]
 ) : Casting / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
-  let slots = fill(spec)
   let done = turn(Run {
     spec: spec,
     slots: slots,

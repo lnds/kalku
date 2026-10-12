@@ -35,7 +35,8 @@ defmodule Kalku.LoopTest do
                "hot_load",
                "abort",
                "reset",
-               "recompile_dependents"
+               "recompile_dependents",
+               "cast_after_baseline"
              ]
 
     assert msg.body["spells"] == ~w(arm compare connect negate literal call await supervise)

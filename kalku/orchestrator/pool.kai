@@ -64,6 +64,31 @@ pub fn fill(spec: PoolSpec) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] 
   counting(spec.workers) | (w => summon_slot(spec, w, 1))
 
 #[doc("""
+The slot of a kalku that is already warm: summoned, greeted and prepared
+by whoever hands it over, and living the life its slot is read by.
+""")]
+pub fn warm_slot(k: Kalku, caps: [Capability]) : Slot = Slot {
+  worker: k.life.worker,
+  kalku: Some(k),
+  caps: caps,
+  doing: Idle,
+  summons: k.life.summons,
+  wrote: ""
+}
+
+#[doc("""
+Fill the pool around a kalku that is already warm, which keeps its slot.
+
+The rest are summoned as in any pool, and the warm one takes a cast while
+they are still being greeted.
+""")]
+pub fn fill_around(
+  spec: PoolSpec,
+  warm: Slot
+) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
+  counting(spec.workers) | (w => if w == warm.worker { warm } else { summon_slot(spec, w, 1) })
+
+#[doc("""
 Summon a replacement for a slot, unless it has used up its summons.
 
 A slot that is out of budget is `Lost` with the reason, which is what

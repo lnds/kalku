@@ -241,6 +241,8 @@ One kalku runs the full suite once with per-test coverage. The baseline yields:
 
 The baseline is cached by the hashes of all source and test files; an unchanged project reuses it.
 
+The kalku that ran the baseline is the pool's first worker where it announces `cast_after_baseline`: it has built the project and holds its suite, and summoning another to cast in its place pays for the build again before the first wekufe. A kalku announces it only when a wekufe cast after its baseline is judged as it would be in a kalku that was only prepared; one that does not is banished once it has reported the sites.
+
 ### 6. Plan
 
 A kalku reports the sites in the files within scope (`--since <ref>` narrows to changed lines). The planner then:
