@@ -1,3 +1,9 @@
+## v0.14.4 (2026-10-12)
+
+### Changed
+
+- the kalku that read the project is the first to cast it (#308)
+
 ## v0.14.3 (2026-10-10)
 
 ### Fixed
