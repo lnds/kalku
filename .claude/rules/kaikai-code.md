@@ -177,7 +177,7 @@ Each of these cost a debugging session; none is in `kai info`.
 
 - **Constructor names collide across modules**, and the collision is a
   *runtime* panic (`ambiguous constructor 'Gone'`), not a compile error.
-  Check `kalku/wire/enums.kai` before naming a constructor: `Gone`,
+  Check `src/kalku/wire/enums.kai` before naming a constructor: `Gone`,
   `Casting`, `Phase` and friends are taken.
 - **`#[derive(Eq, Show)]` fails on a record holding a type without those
   impls** — `Instant`, `JsonValue`. Drop the derive or keep the field out.

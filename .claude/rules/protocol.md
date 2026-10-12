@@ -2,7 +2,7 @@
 paths:
   - "docs/protocol.md"
   - "docs/protocol/**"
-  - "kalku/wire/**"
+  - "src/kalku/wire/**"
   - "adapters/*/lib/**/protocol*"
   - "adapters/*/src/**/protocol*"
   - "adapters/*/src/**/Protocol*"

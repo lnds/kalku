@@ -10,7 +10,7 @@
 # configuration, so the working tree is never touched.
 set -eu
 
-module=${1:-kalku/core/shard.kai}
+module=${1:-src/kalku/core/shard.kai}
 limit=${2:-6}
 workers=${3:-2}
 

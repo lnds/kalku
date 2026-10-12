@@ -22,12 +22,13 @@ Full design in `docs/design.md`; wire format in `docs/protocol.md`.
 ## Layout
 
 ```
-main.kai            entry point
-kalku/              the kaikai side; `kalku/<dir>/<file>.kai` imports as `kalku.<dir>.<file>`
-  *.kai             the edges: CLI, serving, hosting, and what else performs effects
-  wire/             protocol types, codec, framing (`protocol` is a kaikai keyword)
-  core/             pure logic
-  orchestrator/     kalku pool, scheduler, server
+src/
+  main.kai          entry point
+  kalku/            the kaikai side; `src/kalku/<dir>/<file>.kai` imports as `kalku.<dir>.<file>`
+    *.kai           the edges: CLI, serving, hosting, and what else performs effects
+    wire/           protocol types, codec, framing (`protocol` is a kaikai keyword)
+    core/           pure logic
+    orchestrator/   kalku pool, scheduler, server
 tests/              kaikai tests, one `*_test.kai` per module
 adapters/<lang>/    one kalku per language
 tools/              repo scripts: the km gate, self-mutation, field runs, the brew formula
