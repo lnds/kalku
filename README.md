@@ -9,10 +9,10 @@
 **Mutation testing for humans, CI, and coding agents.** Native where a language has none, and one honest gate over the tools that already exist.
 
 <p align="center">
-  <a href="docs/video/kalku-explained.mp4"><img src="docs/img/video-en.jpg" alt="Play the video: the kalku mascot beside the words 'Your tests pass. But do they test anything?'" width="720"></a>
+  <a href="docs/video/kalku-explained.mp4"><img src="docs/img/video-en.jpg" alt="Play the video: Kalku, the sorcerer condor, beside the words 'Your tests pass. All green. But do they actually test anything?'" width="720"></a>
 </p>
 
-**New to mutation testing? [Watch kalku explained in four minutes](docs/video/kalku-explained.mp4)** — what a wekufe is, why 100% coverage is not the same as good tests, and two worked examples, one of them a business rule. Also [in Spanish](LEEME.md).
+**New to mutation testing? [Watch kalku explained in three minutes](docs/video/kalku-explained.mp4)** — Kalku, the sorcerer condor, tells what a wekufe is, why 100% coverage is not the same as good tests, and how to close the gap a survivor leaves. Also [in Spanish](LEEME.md).
 
 kalku checks how good a test suite really is by breaking the code on purpose, one small defect at a time, and seeing whether any test notices. A defect that no test catches is a hole in the suite, and kalku reports it with a file, a line, and a diff.
 
