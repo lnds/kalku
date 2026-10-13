@@ -120,7 +120,7 @@ fn copy_worth_having(root: String, copy: String) : Result[Came, String] / Proces
   if is_empty(entries) {
     Err("#{root} holds nothing to copy")
   } else {
-    run(["/bin/cp", "-R", ...(entries | (e => "#{root}/#{e}")), copy])
+    run(["/bin/cp", "-R", ...entries | (e => "#{root}/#{e}"), copy])
   }
 }
 
@@ -192,11 +192,32 @@ fn quoted(word: String) : String = "'#{replace(word, "'", "'\\''")}'"
 
 fn run(argv: [String]) : Result[Came, String] / Process = match argv {
   [] -> Err("nothing to run")
-  [cmd, ...args] -> match proc.start_piped(cmd, args) {
-    Err(e) -> Err(e)
-    Ok(child) -> drain(child, "")
-  }
+  [cmd, ...args] -> in_a_group(cmd, args)
 }
+
+# A command under way leads a process group of its own. The effect has
+# nothing to ask: it is there for what its handler does on the way out.
+effect Group {
+}
+
+const SIGKILL : Int = 9
+
+# The group is ended when the command is left, however it is left. A
+# request that is cancelled under way leaves it in the middle, and what a
+# suite started is a grandchild that a signal to the command alone would
+# not reach.
+fn in_a_group(cmd: String, args: [String]) : Result[Came, String] / Process =
+  match proc.start_in_group(cmd, args, true, true, false) {
+    Err(e) -> Err(e)
+    Ok(child) -> handle {
+      drain(child, "")
+    } with Group {
+      finally {
+        let _ = proc.kill_group(child, SIGKILL)
+      }
+      return(x) -> x
+    }
+  }
 
 # How the process ended is kept, not discarded: a runtime that a wekufe
 # took down writes nothing about it, and the exit status is all there is
