@@ -1,3 +1,9 @@
+## v0.14.6 (2026-10-13)
+
+### Changed
+
+- what stood in for a kaikai gap that is closed goes away (#323)
+
 ## v0.14.5 (2026-10-13)
 
 ### Fixed
