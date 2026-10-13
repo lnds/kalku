@@ -1,3 +1,13 @@
+## v0.14.5 (2026-10-13)
+
+### Fixed
+
+- **kaikai**: the kaikai kalku ends with its run, and ends what it started (#320)
+
+### Changed
+
+- the kaikai side is written the way the linter asks (#314)
+
 ## v0.14.4 (2026-10-12)
 
 ### Changed
