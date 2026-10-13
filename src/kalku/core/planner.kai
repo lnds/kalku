@@ -52,16 +52,6 @@ pub type Inputs = {
   timeout_floor_ms: Int
 }
 
-#[doc("""
-Which tests the plan chose for each wekufe, by its site id.
-
-Asked of the planner rather than read off a `Cast` elsewhere: a module
-that also knows the protocol has a `Cast` of its own, and taking a field
-off the wrong one is a panic rather than a type error (lnds/kaikai#2200).
-""")]
-pub fn tests_by_wekufe(p: Plan) : [(String, [String])] =
-  p.to_cast | (c => (c.site.site_id, c.tests))
-
 #[doc("A site whose module others depend on at compile time pays for their rebuild too.")]
 pub const DEPENDENTS_FACTOR : Int = 2
 

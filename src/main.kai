@@ -636,9 +636,9 @@ fn run_for(
 
 fn asked_temp() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
 
-# kaikai's stdlib cannot say what uid this process runs as
-# (lnds/kaikai#2232), so it is asked of the system. Read once, at the
-# start: it is what every later connection is checked against.
+# kaikai's stdlib cannot say what uid this process runs as, so it is
+# asked of the system. Read once, at the start: it is what every later
+# connection is checked against.
 fn my_uid() : Int / Process = match proc.start_piped("/usr/bin/id", ["-u"]) {
   Err(_) -> 0 - 1
   Ok(child) -> {

@@ -158,3 +158,15 @@ test "a project nobody set up is measured with the settings init would write" {
   gone(dir)
   gone(reni_here(dir))
 }
+
+# A project named `.` or nothing is the directory one is standing in, and
+# a trailing slash is not part of a name: none of them is a reni of its own.
+test "the reni of `.` is the reni of where one is standing" {
+  let here = Env.get("PWD").unwrap_or("/somewhere/project")
+
+  assert reni_here(".") == reni_here(here)
+  assert reni_here("") == reni_here(here)
+  assert reni_here("/a/b/proj/") == reni_here("/a/b/proj")
+  assert reni_here("/a/b/proj") == reni_here("proj")
+  assert reni_here("/a/b/proj") != reni_here("/a/b/other")
+}
