@@ -216,6 +216,13 @@ fn agents_topic() : Topic = Topic {
       detail: Some("suppressions a change adds are reported under their own heading")
     },
     Entry {
+      term: ".kalku/equivalent",
+      meaning: "one entry a line: `<file>  <enclosing>  <spell>  \"<original>\"  #<n>   # <reason>`",
+      detail: Some(
+        "written by `kalku accept`; `<file>:<line>:<spell>  # <reason>` when the kalku names no enclosing declaration"
+      )
+    },
+    Entry {
       term: "reviewed",
       meaning: "proposals go where someone reads them before they count",
       detail: Some(
