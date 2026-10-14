@@ -421,12 +421,17 @@ exec kalku-java "$@"
 # A kalku runs inside the project's own runtime, so the project has to
 # depend on it. One line, from the package registry: a project that
 # depends on a checkout of this repository depends on wherever that
-# checkout happened to be.
+# checkout happened to be. The requirement starts at the minor of the binary
+# that writes it: the two halves are released together, and an older kalku
+# than this binary is one it was never run against.
 fn dependency_for(known: Known) : Option[String] = if known.language == "elixir" {
-  Some("{:kalku_elixir, \"~> 0.1\", only: :test, runtime: false}")
+  Some("{:kalku_elixir, \"~> #{minor_of(VERSION)}\", only: :test, runtime: false}")
 } else {
   None
 }
+
+#[doc("The first two parts of a version: `0.14` of `0.14.6`.")]
+pub fn minor_of(version: String) : String = join(take(split(version, "."), 2), ".")
 
 #[doc("True when this project already depends on the kalku it needs.")]
 pub fn depends_already(known: Known, build_file: String) : Bool =
