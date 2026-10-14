@@ -419,7 +419,10 @@ fn waiting_for(
     }
     Some(Cancel) -> Err("the run was cancelled")
     Some(Wire(life, what)) -> if life == k.life {
-      from_ours(k, kind, what, said)
+      match from_ours(kind, what, said) {
+        Over(answer) -> answer
+        Longer(heard) -> waiting_for(k, kind, heard, PATIENCE_MS)
+      }
     } else {
       # Another kalku of this project's own pool, greeting a mailbox this
       # run shares with it. Its own business, and never anybody else's.
@@ -476,33 +479,30 @@ pub fn heard_last(said: [String], chunk: String) : [String] {
   }
 }
 
-fn from_ours(
-  k: Kalku,
-  kind: String,
-  what: FromKalku,
-  said: [String]
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling = match what {
+# What one thing the kalku sent means for a wait: the end of it, or more
+# waiting with what it has said so far.
+type Turn = Over(Result[KalkuReply, String]) | Longer([String])
+
+# Decided here and waited for in `waiting_for` itself: a wait takes a turn
+# for every chunk a kalku writes, and only a call to itself runs in
+# constant stack however many turns there are.
+fn from_ours(kind: String, what: FromKalku, said: [String]) : Turn = match what {
   Said(line) -> match heard(line) {
-    Err(e) -> Err(with_last_words("the kalku #{noise(line, e.detail)}", said))
-    Ok(m) -> judge(k, kind, m.body, said)
+    Err(e) -> Over(Err(with_last_words("the kalku #{noise(line, e.detail)}", said)))
+    Ok(m) -> judge(kind, m.body, said)
   }
-  Closed -> Err(with_last_words("the kalku closed its pipe before saying `#{kind}`", said))
-  Unreadable(why) -> Err(with_last_words(why, said))
-  Wrote(chunk) -> await_with(k, kind, heard_last(said, chunk))
+  Closed -> Over(Err(with_last_words("the kalku closed its pipe before saying `#{kind}`", said)))
+  Unreadable(why) -> Over(Err(with_last_words(why, said)))
+  Wrote(chunk) -> Longer(heard_last(said, chunk))
 }
 
-fn judge(
-  k: Kalku,
-  kind: String,
-  body: KalkuReply,
-  said: [String]
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling = match body {
-  KalkuError(e) -> Err("#{e.code}: #{e.message}")
-  Progress(_) -> await_with(k, kind, said)
+fn judge(kind: String, body: KalkuReply, said: [String]) : Turn = match body {
+  KalkuError(e) -> Over(Err("#{e.code}: #{e.message}"))
+  Progress(_) -> Longer(said)
   answered -> if reply_kind(answered) == kind {
-    Ok(answered)
+    Over(Ok(answered))
   } else {
-    Err("expected `#{kind}`, the kalku said `#{reply_kind(answered)}`")
+    Over(Err("expected `#{kind}`, the kalku said `#{reply_kind(answered)}`"))
   }
 }
 

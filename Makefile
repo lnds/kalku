@@ -61,10 +61,15 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 
 test: test-kaikai test-elixir test-rust test-python test-java
 
+# Under the stack limit a shell gives, not the one make runs with: GNU Make
+# 3.81 raises it to 64 MB for its children, and a loop that keeps a frame
+# per turn passes there and overflows for whoever runs kalku from a terminal.
+SHELL_STACK := ulimit -s 8192 &&
+
 test-kaikai: $(FAKE) $(KKALKU) properties
-	$(KAI) test
-	$(KAI) test ./tests/fake_kalku
-	cd adapters/kaikai && $(KAI) test .
+	$(SHELL_STACK) $(KAI) test
+	$(SHELL_STACK) $(KAI) test ./tests/fake_kalku
+	cd adapters/kaikai && $(SHELL_STACK) $(KAI) test .
 
 # Properties, one file at a time: `kai check` in package mode does not
 # find a `check` under `tests/`, and a property nobody runs is a comment.
