@@ -551,29 +551,16 @@ fn casting_them(
     }
   )
   Telling.entered(PhaseReporting)
-  let stopped = stopped_short(
-    casting.failure,
-    length(uniq(casting.verdicts | (.wekufe))),
-    length(uniq(casts | (.site.site_id)))
-  )
+  let whole = report_after(ready, casts, casting, known)
   Found {
     report: 
-    # A run that stopped short reports what it cast, and that it stopped:
-    # the wekufe it measured were measured. One that cast nothing has
-    # nothing to report but why.
-    if is_some(stopped) and is_empty(casting.verdicts) {
+    # One that cast nothing has nothing to report but why it stopped.
+    if is_some(whole.stopped) and is_empty(casting.verdicts) {
       None
     } else {
-      Some(
-        Report {
-          ...report_of(ready, casting, known),
-          shard: asking.shard,
-          stopped: stopped,
-          blockers: stopped.map(why => [CouldNotMeasure(why)]).unwrap_or([])
-        }
-      )
+      Some(Report { ...whole, shard: asking.shard })
     },
-    failure: stopped,
+    failure: whole.stopped,
     cast: written_down(casting, known)
   }
 }
@@ -672,6 +659,27 @@ fn limited(casts: [Wekufe], limit: Int) : [Wekufe] = if limit <= 0 {
   casts
 } else {
   enumerate(casts) |? (c => c.fst < limit) | (.snd)
+}
+
+#[doc("""
+The report of a casting, which says so when the casting stopped before
+the end of what it was given.
+
+A run that stopped short reports what it cast: the wekufe it measured were
+measured. But a report of them alone reads as a finished run, so why it
+stopped travels in the report, and blocks it.
+""")]
+pub fn report_after(ready: Plan, casts: [Wekufe], casting: Casting, known: Known) : Report {
+  let stopped = stopped_short(
+    casting.failure,
+    length(uniq(casting.verdicts | (.wekufe))),
+    length(uniq(casts | (.site.site_id)))
+  )
+  Report {
+    ...report_of(ready, casting, known),
+    stopped: stopped,
+    blockers: stopped.map(why => [CouldNotMeasure(why)]).unwrap_or([])
+  }
 }
 
 # A wekufe with no verdict was never answered for, which is a crash as
