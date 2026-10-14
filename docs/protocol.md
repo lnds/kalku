@@ -282,14 +282,16 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 | `cast_done` | Type | Meaning |
 |---|---|---|
 | `wekufe` | string | |
-| `outcome` | `killed` \| `survived` \| `compile_error` \| `equivalent` \| `no_coverage` | |
+| `outcome` | `killed` \| `survived` \| `compile_error` \| `equivalent` \| `no_coverage` \| `crashed` | |
 | `killed_by`? | test id | the failing test, when known |
-| `message`? | string | compiler diagnostic for `compile_error`; what did not run, for `no_coverage` |
+| `message`? | string | compiler diagnostic for `compile_error`; what did not run, for `no_coverage`; what ended the run of the tests, for `crashed`, which requires it |
 | `code_hash`? | string | hash of the compiled wekufe, whenever it compiled and the kalku has `code_hash` |
 | `duration_ms` | int | |
 | `dirty` | bool | the runtime may not be back to its original state |
 
-`timeout`, `crashed` and `nondeterministic` never appear here: the kaikai side decides them from outside — a missing response, a dead process (one ended for holding more memory than `run.memory_limit_mb` included), or a wekufe whose repeated casts did not agree with each other. A native kalku does not enforce its own timeout, and does not know that it has been asked to cast the same wekufe twice. Any other outcome is `invalid`.
+`timeout` and `nondeterministic` never appear here: the kaikai side decides them from outside — a missing response, or a wekufe whose repeated casts did not agree with each other. A native kalku does not enforce its own timeout, and does not know that it has been asked to cast the same wekufe twice. Any other outcome is `invalid`.
+
+`crashed` is decided from outside too when the kalku is what died: a dead process, one ended for holding more memory than `run.memory_limit_mb` included. A kalku says it itself only of what it watched from outside in its turn: the run of the tests it started for this cast ended with no verdict — the wekufe took the test runner down, or none of the selected tests ran — and the kalku is alive, restored, and ready for the next cast. It says what happened in `message`, and `crashed` without one is `invalid`. The kaikai side keeps that kalku and reports the wekufe apart from the score: nothing judged it, so it is neither a kill nor a survivor. A kalku that cannot go on after such a cast says so with a fatal `error` instead.
 
 `equivalent` means the wekufe compiled to the same code as the original, so no test ran: identical compiled code is the only mechanical evidence of equivalence, and a kalku never reports equivalence on any other ground. Should another kind of evidence appear, it arrives as a new optional field.
 

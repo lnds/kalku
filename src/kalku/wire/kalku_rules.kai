@@ -43,10 +43,14 @@ fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
 }
 
 fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
-  let allowed = [Killed, Survived, CompileError, Equivalent, NoCoverage]
+  let allowed = [Killed, Survived, CompileError, Equivalent, NoCoverage, Crashed]
   require(
     contains(allowed, m.outcome),
-    "cast_done: outcome must be killed, survived, compile_error, equivalent, or no_coverage"
+    "cast_done: outcome must be killed, survived, compile_error, equivalent, no_coverage, or crashed"
+  )!
+  require(
+    m.outcome != Crashed or is_some(m.message),
+    "cast_done: crashed needs a message that says what ended the run of the tests"
   )
 }
 

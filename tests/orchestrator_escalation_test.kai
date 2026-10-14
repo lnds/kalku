@@ -132,6 +132,27 @@ test "what the kalku said about a wekufe travels with the outcome" {
   assert r.said == Some("error: cannot find `shard_of` in this scope")
 }
 
+# A wekufe that took the test runner down was watched by a kalku that is
+# still there: nothing judged the wekufe, and nothing is wrong with the
+# kalku, which is kept for the next cast.
+test "a cast the kalku watched end with no verdict is a crash, and the kalku is kept" {
+  let unjudged = CastDone(CastDoneMsg {
+    wekufe: "w1",
+    outcome: Crashed,
+    killed_by: None,
+    message: Some("80 of 83 selected test(s) ran: the run exited with status 1"),
+    code_hash: None,
+    duration_ms: 3,
+    dirty: false
+  })
+  let r = on_reply(unjudged, warm())
+
+  assert r.outcome == Some(Crashed)
+  assert r.said == Some("80 of 83 selected test(s) ran: the run exited with status 1")
+  assert r.next == Free
+  assert recycling(r) == None
+}
+
 # A cast that is eating the machine leaves nobody to hear `abort`, so it is
 # not asked: the kalku is recycled, which ends what it started too. And the
 # wekufe is a `crashed`, never a kill.

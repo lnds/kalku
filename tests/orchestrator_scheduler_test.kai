@@ -137,6 +137,18 @@ test "a kalku whose reset is not clean is recycled" {
   assert done.failure == None
 }
 
+# A wekufe that takes the test runner down is said by the kalku that
+# watched it, which goes on to the next cast: one summons is all this run
+# allows, and it is all it needs.
+test "a cast the kalku reports as crashed does not cost the kalku" {
+  let done = with_mailbox {
+    casting(pool_of("pool_cast_unjudged.ndjson", 1, 1), casts(3, 5000))
+  }
+
+  assert tally(done) == [("killed", 1), ("crashed", 1), ("survived", 1)]
+  assert done.failure == None
+}
+
 # The kalku is lost; the wekufe it was casting is not.
 test "a kalku that crashes mid-cast reports its wekufe as crashed" {
   let done = with_mailbox { casting(pool_of("pool_crash.ndjson", 1, 2), casts(1, 5000)) }
