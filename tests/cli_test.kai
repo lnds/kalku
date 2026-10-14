@@ -1,4 +1,5 @@
 import kalku.cli
+import kalku.cli_help
 import kalku.wire.shapes
 import kalku.version
 
@@ -12,6 +13,27 @@ test "help and version flags" {
   assert cli.parse_args(["--help"]) == ShowHelp
   assert cli.parse_args(["--version"]) == ShowVersion
   assert cli.parse_args(["-V"]) == ShowVersion
+}
+
+# A command that does not know `--help` is read as a command: `kalku mcp
+# --help` served MCP on stdin and waited there for good, and `kalku init
+# --help` was refused. Asked about itself, every command says what it does.
+test "every command answers `--help` instead of running" {
+  assert all(explained(), cmd => cli.parse_args([cmd, "--help"]) == ShowHelpOf(cmd))
+  assert all(explained(), cmd => cli.parse_args([cmd, "-h"]) == ShowHelpOf(cmd))
+  assert all(explained(), cmd => cli.parse_args(["help", cmd]) == ShowHelpOf(cmd))
+  assert cli.parse_args(["mcp", "--help"]) == ShowHelpOf("mcp")
+  assert cli.parse_args(["init", "--lang", "elixir", "--help"]) == ShowHelpOf("init")
+  assert cli.parse_args(["run", "lib/a.ex", "--limit", "5", "-h"]) == ShowHelpOf("run")
+}
+
+test "what a command says of itself starts with how it is used" {
+  assert all(explained(), cmd => starts_with(trim(help_of(cmd)), "usage: kalku #{cmd}"))
+}
+
+test "help of something that is not a command is the whole help" {
+  assert cli.parse_args(["help", "nope"]) == ShowHelp
+  assert cli.parse_args(["nope", "--help"]) == Unknown("nope")
 }
 
 test "commands still to come are pending, others unknown" {

@@ -3,7 +3,7 @@ import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 
 fn a_slot() : Slot =
-  Slot { worker: 0, kalku: None, caps: [], doing: Idle, summons: 1, wrote: "" }
+  Slot { worker: 0, kalku: None, caps: [], doing: Idle, summons: 1, in_a_row: 1, wrote: "" }
 
 fn xs(n: Int) : String = repeat("x", n)
 

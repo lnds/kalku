@@ -1,0 +1,179 @@
+#[doc("""
+What each command says of itself when asked with `--help`.
+
+A command that does not know `--help` is read as a command: `kalku mcp
+--help` served MCP on stdin, and waited there for good. So the question is
+answered before any command is read, and answered for every one of them.
+""")]
+
+#[doc("The commands that have something to say of themselves.")]
+pub fn explained() : [String] = [
+  "init",
+  "run",
+  "cast",
+  "show",
+  "propose-equivalent",
+  "accept",
+  "reject",
+  "info",
+  "serve",
+  "mcp"
+]
+
+#[doc("The command a command line asks about, when it asks: `kalku <command> --help`, or `kalku help <command>`.")]
+pub fn asked_about(argv: [String]) : Option[String] = match argv {
+  ["help", cmd, ...] -> if contains(explained(), cmd) { Some(cmd) } else { None }
+  [cmd, ...rest] -> if contains(explained(), cmd) and any(rest, is_help) { Some(cmd) } else { None }
+  _ -> None
+}
+
+fn is_help(arg: String) : Bool = arg == "--help" or arg == "-h"
+
+#[doc("What a command does, what it writes, and what it takes.")]
+pub fn help_of(cmd: String) : String = match cmd {
+  "init" -> INIT
+  "run" -> RUN
+  "cast" -> CAST
+  "show" -> SHOW
+  "propose-equivalent" -> PROPOSE
+  "accept" -> ACCEPT
+  "reject" -> REJECT
+  "info" -> INFO
+  "serve" -> SERVE
+  "mcp" -> MCP
+  _ -> ""
+}
+
+const INIT : String = """
+usage: kalku init [dir] [--lang <name>] [-y]
+
+Set a project up, so that what a run needs is kept with it: a configuration
+the team shares, equivalents that are argued and recorded, a gate in CI.
+
+It reads the project's own markers (`mix.exs`, `kai.toml`, `Cargo.toml`,
+`pyproject.toml`, `pom.xml`), says what it found and what it will write,
+and asks before writing:
+
+  .kalku.toml      how a run is set up
+  .kalku/summon    how this project's kalku is summoned
+  the build file   for Elixir, one line in `deps`, named before it is added
+
+Nothing that is already there is written over. A project does not have to
+be set up to be measured: `kalku run <file>` measures it as it is and
+writes nothing in it.
+
+options:
+  --lang <name>    the project's language, when init should not guess
+  -y, --yes        do not ask before writing
+"""
+
+const RUN : String = """
+usage: kalku run [files...] [--since <ref>] [--all] [options]
+
+Cast wekufe over those files and report the ones that survived, each with
+its file, line, spell, diff and a hint. Nothing is written in the project's
+working tree: wekufe are cast in the reni, under the temporary directory.
+
+exit code: 0 when nothing blocks, 1 when a wekufe survived on a changed
+line or the score is under what the project holds it to, 2 when the run
+could not measure.
+
+options:
+  --limit <n>      cast at most n wekufe: 100 by default, 0 for all of them
+                   (a run with --since casts the whole change unless told otherwise)
+  --since <ref>    measure only the lines changed since that ref, and block
+                   when a wekufe survives on one of them
+  --all            measure every source file of the project, all of its wekufe
+  --shard <i/n>    cast only part i of n: the same part on every machine
+  --store-baseline store this run's score as the baseline `ratchet = true`
+                   holds later runs of the whole project to
+  --format <name>  human (the default), agent, json, or github
+  -v, --verbose    say what the run is doing while it does it
+"""
+
+const CAST : String = """
+usage: kalku cast <wekufe>... [--format <name>] [-v]
+
+Re-cast these wekufe, after a test was written for them. A wekufe is named
+as a run named it. What comes back is what a run reports, for these alone.
+
+options:
+  --format <name>  human (the default), agent, json, or github
+  -v, --verbose    say what the run is doing while it does it
+"""
+
+const SHOW : String = """
+usage: kalku show <wekufe> [--format <name>]
+
+One wekufe in full, from what the last runs kept: its site, the diff, the
+tests that judged it, a hint, and what became of it run after run. Nothing
+is cast.
+
+options:
+  --format <name>  human (the default) or json
+"""
+
+const PROPOSE : String = """
+usage: kalku propose-equivalent <wekufe> --reason <why>
+
+Argue that a survivor cannot be told apart from the original. The argument
+is written to `.kalku/equivalent.proposed`, where a person reads it; it
+suppresses nothing until `kalku accept` takes it. Only a survivor can be
+proposed.
+
+options:
+  --reason <why>   why no test could tell the wekufe from the original
+"""
+
+const ACCEPT : String = """
+usage: kalku accept <wekufe> [--reason <why>]
+
+Take a proposed equivalent into `.kalku/equivalent`, which every run reads:
+the wekufe is counted as equivalent from then on, with the reason beside
+it. One wekufe at a time, and only one that was proposed.
+
+options:
+  --reason <why>   what convinced you, recorded beside what was argued
+"""
+
+const REJECT : String = """
+usage: kalku reject <wekufe> [--reason <why>]
+
+Turn a proposed equivalent down. It leaves `.kalku/equivalent.proposed`
+for `.kalku/equivalent.rejected`, and the wekufe is a survivor that wants
+a test again.
+
+options:
+  --reason <why>   why the argument does not hold
+"""
+
+const INFO : String = """
+usage: kalku info [topic] [--json] [--snippet]
+
+What kalku knows about spells, outcomes, formats and agents. Without a
+topic, the list of them.
+
+options:
+  --json           print the topic as JSON
+  --snippet        with `agents`: only the lines to paste into CLAUDE.md
+"""
+
+const SERVE : String = """
+usage: kalku serve
+
+Answer the client protocol on a local socket, and keep the kalku of each
+project warm between runs. The socket is a file only its owner can open,
+under `$XDG_RUNTIME_DIR` or the temporary directory; nothing listens on
+the network. It runs until it is interrupted.
+"""
+
+const MCP : String = """
+usage: kalku mcp
+
+Serve the agent tools to an MCP host, over stdio: `kalku_run`,
+`kalku_cast`, `kalku_show` and `kalku_propose_equivalent`. It is started
+by the host, not by hand: it reads JSON-RPC on stdin until the host goes
+away. In Claude Code:
+
+  claude mcp add kalku -- kalku mcp
+"""

@@ -4,6 +4,7 @@ owns the I/O and the exit code.
 """)]
 
 import kalku.version
+import kalku.cli_help
 import kalku.core.shard
 import kalku.wire.shapes
 
@@ -12,6 +13,7 @@ import kalku.wire.shapes
 pub type Command
   = ShowVersion
   | ShowHelp
+  | ShowHelpOf(String)
   | Initialise(Setup)
   | Measure(Wanted)
   | Inform(Asked)
@@ -53,8 +55,18 @@ pub type Asked = { topic: Option[String], as_json: Bool, snippet_only: Bool }
 # Commands that are part of the design but not built yet.
 const PENDING : [String] = ["serve", "cast", "show", "merge"]
 
-#[doc("Read the arguments (program name excluded) into a `Command`.")]
-pub fn parse_args(argv: [String]) : Command {
+#[doc("""
+Read the arguments (program name excluded) into a `Command`.
+
+A command asked about itself is not read as a command: whatever else is on
+the line, the answer is what the command does.
+""")]
+pub fn parse_args(argv: [String]) : Command = match asked_about(argv) {
+  Some(cmd) -> ShowHelpOf(cmd)
+  None -> read_command(argv)
+}
+
+fn read_command(argv: [String]) : Command {
   case [] -> ShowHelp
   case ["help", ...] -> ShowHelp
   case ["-h", ...] -> ShowHelp
@@ -322,6 +334,6 @@ options:
   --snippet        print only the lines an agent pastes into CLAUDE.md
   --reason <why>   why a wekufe cannot be told apart from the original
   -v, --verbose    say what the run is doing while it does it
-  -h, --help       show this help
+  -h, --help       show this help; after a command, what that command does
   -V, --version    show the version
 """
