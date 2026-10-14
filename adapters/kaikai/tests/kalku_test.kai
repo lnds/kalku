@@ -93,6 +93,7 @@ test "it greets as a kaikai kalku and claims only what it can do" {
   # nothing shared to dirty: a capability is claimed only once it is true.
   assert has(ready, "\"cast\"")
   assert has(ready, "\"abort\"")
+  assert has(ready, "\"cast_after_baseline\"")
   assert not has(ready, "hot_load")
   assert not has(ready, "per_test_coverage")
   assert not has(ready, "reset")
@@ -314,4 +315,26 @@ test "a setting this kalku does not take is refused when it is greeted" {
   assert has(error_of(told([hello_with("{\"orcale\":\"make test\"}")])), "bad_options: kaikai.orcale")
   assert has(error_of(told([hello_with("{\"oracle\":3}")])), "bad_options: kaikai.oracle: expected a command")
   assert has(error_of(told([hello_with("{\"oracle\":\" \"}")])), "bad_options: kaikai.oracle")
+}
+
+# The kalku that ran the baseline and listed the sites goes on to cast, so
+# what those left in the copy must not change a verdict: the same wekufe
+# come out as they do from a kalku that was only prepared.
+test "a kalku that ran the baseline judges a wekufe as one only prepared would" {
+  let said = told([
+    hello(),
+    "{\"type\":\"prepare\",\"id\":2}",
+    "{\"type\":\"baseline\",\"id\":3}",
+    "{\"type\":\"sites\",\"id\":4,\"files\":[\"tiny.kai\"],\"spells\":[\"compare\"],\"exclude_calls\":[]}",
+    cast(5, "covered", 305, 307, ">"),
+    cast(6, "uncovered", 523, 524, ">="),
+    cast(7, "broken", 523, 524, "@"),
+    cast(8, "covered-again", 305, 307, ">")
+  ])
+
+  assert has(find(said, l => has(l, "baseline_done")).unwrap_or(""), "\"status\":\"green\"")
+  assert outcome_of(said, "covered") == "killed"
+  assert outcome_of(said, "uncovered") == "survived"
+  assert outcome_of(said, "broken") == "compile_error"
+  assert outcome_of(said, "covered-again") == "killed"
 }
