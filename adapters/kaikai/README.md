@@ -28,7 +28,7 @@ The package being measured is never written to: not the source, not a build dire
 
 ## What it claims, and what it does not
 
-`ready` announces `cast` and `abort`. Not:
+`ready` announces `cast`, `abort` and `cast_after_baseline`: nothing lives in the process between requests, so the kalku that ran the baseline goes on to cast instead of being banished and another prepared in its place. Not:
 
 | Capability | Why not |
 |---|---|
