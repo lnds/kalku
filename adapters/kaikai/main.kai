@@ -12,6 +12,8 @@ shared runtime to dirty. A capability is claimed only once it is true.
 """)]
 
 import fs.file
+import encoding.json
+import encoding.json_bind
 import actor
 import spawn
 import kalku.wire.enums
@@ -22,7 +24,13 @@ import kalku.wire.kalku_codec
 import kalku.wire.version
 import kaikai_kalku.work
 
-type Serving = { root: String, reni: String, worker: Int, work: Option[Work] }
+type Serving = {
+  root: String,
+  reni: String,
+  worker: Int,
+  oracle: Option[String],
+  work: Option[Work]
+}
 
 # Requests are read here and served on a fiber of its own, so that the input
 # ending is heard while a request is under way. After a `shutdown` it is a
@@ -35,7 +43,7 @@ fn main() : Int / Stdin + Stdout + Stderr + File + Process + Env + Spawn = with_
     let serving = n.spawn(
       () => with_mailbox {
         Actor.send(here, Actor.self())
-        serve(Serving { root: ".", reni: "", worker: 0, work: None })
+        serve(Serving { root: ".", reni: "", worker: 0, oracle: None, work: None })
       }
     )
     let server = Actor.receive()
@@ -87,7 +95,13 @@ fn answer(
 ) : Int / Actor[String] + Stdout + Stderr + File + Process = match request {
   Hello(m) -> {
     say(encode_reply(id, greeting(m)))
-    serve(Serving { root: m.root, reni: m.reni, worker: m.worker, work: None })
+    serve(Serving {
+      root: m.root,
+      reni: m.reni,
+      worker: m.worker,
+      oracle: oracle_of(m.options).unwrap_or(None),
+      work: None
+    })
   }
   Prepare -> prepared(id, state)
   Baseline -> {
@@ -121,14 +135,40 @@ fn greeting(m: HelloMsg) : KalkuReply = if not compatible(m.version) {
     true
   )
 } else {
-  Ready(ReadyMsg {
+  match oracle_of(m.options) {
+    Err(why) -> refusal("bad_options", why, true)
+    Ok(_) -> Ready(ReadyMsg {
     version: PROTOCOL_VERSION,
     language: "kaikai",
     adapter: "kalku_kaikai 0.0.0",
     runtime: "kaikai",
     spells: mutate_spells(),
     capabilities: [CastCap, AbortCap]
-  })
+    })
+  }
+}
+
+# What this kalku takes from the project's `[kaikai]` table. A setting it
+# does not know is refused, not ignored: a misspelt `oracle` would measure
+# with `kai test` and say nothing of it.
+fn oracle_of(options: Option[Options]) : Result[Option[String], String] = match options {
+  None -> Ok(None)
+  Some(o) -> match find(o.entries, e => e.fst != "oracle") {
+    Some(e) -> Err("kaikai.#{e.fst}: no such setting; this kalku takes `oracle`")
+    None -> match find(o.entries, e => e.fst == "oracle") {
+      None -> Ok(None)
+      Some(e) -> command_of(e.snd)
+    }
+  }
+}
+
+fn command_of(v: JsonValue) : Result[Option[String], String] = match v {
+  JStr(command) -> if is_blank(command) {
+    Err("kaikai.oracle: expected a command, got an empty one")
+  } else {
+    Ok(Some(command))
+  }
+  other -> Err("kaikai.oracle: expected a command, got #{json_encode(other)}")
 }
 
 # What `kai mutate` applies, in its own order. `foreign` is a driver's
@@ -142,7 +182,7 @@ fn prepared(
   state: Serving
 ) : Int / Actor[String] + Stdout + Stderr + File + Process {
   let started = 0
-  match work.prepare(state.root, state.reni, state.worker) {
+  match work.prepare(state.root, state.reni, state.worker, state.oracle) {
     Err(why) -> {
       say(encode_reply(id, refusal("prepare_failed", why, true)))
       serve(state)
@@ -220,7 +260,7 @@ fn cast_one(m: CastMsg, state: Serving) : KalkuReply / File + Process = match st
     Err(why) -> done(m.wekufe, CompileError, None, Some(why))
     Ok(spliced) -> {
       let was = splice_in(w, m.site.file, spliced)
-      let ran = test_only(w, m.tests)
+      let ran = judge(w, m.site.file, m.tests)
       restore(w, m.site.file, was)
       outcome_of(m.wekufe, ran)
     }

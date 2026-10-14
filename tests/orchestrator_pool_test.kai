@@ -1,6 +1,10 @@
 import kalku.wire.enums
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.wire.kalku_codec
+import encoding.json_bind
 
 fn a_slot() : Slot =
   Slot { worker: 0, kalku: None, caps: [], doing: Idle, summons: 1, in_a_row: 1, wrote: "" }
@@ -28,3 +32,30 @@ test "a chunk arriving in pieces reads as one message" {
   let slot = noted(noted(a_slot(), "the project "), "does not compile")
   assert own_words(slot) == Some("the project does not compile")
 }
+
+fn a_spec(options: Option[Options]) : PoolSpec = PoolSpec {
+  command: "kalku-x",
+  args: [],
+  workers: 1,
+  root: ".",
+  reni: "/tmp/reni",
+  inline_limit_bytes: 65536,
+  env: StrMap { entries: [] },
+  options: options,
+  greeting_ms: 1000,
+  summons_allowed: 2,
+  memory_mb: 0
+}
+
+# The project's settings for its language reach every kalku as they stand,
+# and a project with none sends nothing in their place.
+test "a kalku is greeted with its language's settings, when the project has any" {
+  let told = Options { entries: [("oracle", JStr("make test"))] }
+  assert has_text(
+    encode_request(1, greeting(a_spec(Some(told)), 0)),
+    "\"options\":{\"oracle\":\"make test\"}"
+  )
+  assert not has_text(encode_request(1, greeting(a_spec(None), 0)), "options")
+}
+
+fn has_text(text: String, needle: String) : Bool = is_some(index_of(text, needle))

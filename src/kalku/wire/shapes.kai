@@ -162,3 +162,22 @@ fn str_entry(kv: (String, JsonValue), path: String) : Result[(String, String), J
       found: json_shape_name(other)
     })
   }
+
+#[doc("A JSON object whose values are whatever its owner makes of them, in wire order.")]
+pub type Options = { entries: [(String, JsonValue)] }
+
+impl Eq for Options {
+  fn eq(a: Options, b: Options) : Bool = show(a) == show(b)
+}
+
+impl Show for Options {
+  fn show(x: Options) : String = json_encode(to_json(x))
+}
+
+impl Json for Options {
+  fn to_json(self: Options) : JsonValue = JObj(self.entries)
+  fn of_json(v: JsonValue, path: String) : Result[Options, JsonError] = match v {
+    JObj(kvs) -> Ok(Options { entries: kvs })
+    _ -> Err(JsonError { path: path, expected: "Object", found: json_shape_name(v) })
+  }
+}

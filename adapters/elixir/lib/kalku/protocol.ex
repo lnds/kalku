@@ -98,6 +98,7 @@ defmodule Kalku.Protocol do
 
   defp check(v, {:enum, name}, path) when is_binary(v), do: check_enum(v, name, path)
   defp check(v, :strmap, path) when is_map(v), do: check_strmap(v, path)
+  defp check(v, :object, _) when is_map(v), do: :ok
   defp check(v, :scope, path), do: check_scope(v, path)
 
   defp check(v, type, path),
@@ -166,6 +167,7 @@ defmodule Kalku.Protocol do
   defp type_name(:string), do: "String"
   defp type_name(:bool), do: "Bool"
   defp type_name(:strmap), do: "Object of strings"
+  defp type_name(:object), do: "Object"
   defp type_name({:list, _}), do: "Array"
   defp type_name({:shape, name}), do: "#{name} object"
   defp type_name({:enum, name}), do: "#{name} string"

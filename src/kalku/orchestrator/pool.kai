@@ -57,6 +57,7 @@ pub type PoolSpec = {
   reni: String,
   inline_limit_bytes: Int,
   env: StrMap,
+  options: Option[Options],
   greeting_ms: Int,
   summons_allowed: Int,
   memory_mb: Int
@@ -225,7 +226,8 @@ pub fn greeting(spec: PoolSpec, worker: Int) : KalkuRequest = Hello(HelloMsg {
   reni: spec.reni,
   worker: worker,
   inline_limit_bytes: spec.inline_limit_bytes,
-  env: spec.env
+  env: spec.env,
+  options: spec.options
 })
 
 # A greeting has its own deadline: a kalku that never says `ready` is as

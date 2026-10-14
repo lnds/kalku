@@ -445,6 +445,8 @@ ratchet = true          # the score of the whole project may not drop below the 
 partition_env = "MIX_TEST_PARTITION"
 ```
 
+A table named after the project's `language` is that kalku's, not kalku's: the kaikai side hands it over as it stands, in `hello.options`, and the kalku refuses a setting it cannot honour. The kaikai kalku takes `oracle`, a command to judge wekufe with in place of `kai test`.
+
 ## Caching
 
 Cache entries live in the reni. A wekufe outcome's key is:

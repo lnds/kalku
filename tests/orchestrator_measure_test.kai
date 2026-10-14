@@ -20,6 +20,7 @@ fn asking_of(script: String) : Asking = Asking {
     reni: ".kalku",
     inline_limit_bytes: 65536,
     env: StrMap { entries: [] },
+    options: None,
     greeting_ms: 5000,
     summons_allowed: 1,
     memory_mb: 0
