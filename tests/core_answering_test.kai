@@ -1,6 +1,8 @@
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.answering
+import kalku.core.equivalent
+import kalku.core.equivalent_parse as eqfile
 
 fn site_at(file: String, fun: String, ordinal: Int, spell: Spell) : Site = Site {
   site_id: "w1",
@@ -20,14 +22,13 @@ fn queue_of(lines: [String]) : String = join(lines, "\n") ++ "\n"
 
 fn a_queue() : String = queue_of([
   "# lib/billing.ex:42 compare",
-  "lib/billing.ex Billing.charge/2 1 compare: the wrapper changes the type, not the value",
+  "lib/billing.ex  Billing.charge/2  compare  \"a > b\"  #1   # the wrapper changes the type, not the value",
   "# lib/other.ex:9 arm",
-  "lib/other.ex Other.sum/2 1 arm: addition here is commutative"
+  "lib/other.ex  Other.sum/2  arm  \"a + b\"  #1   # addition here is commutative"
 ])
 
-# Accepting is a move between files, not a rewrite: the same text, read by
-# the same parser, having crossed from a queue into the record every run
-# reads.
+# Accepting is a move between files: the same entry, read by the same
+# parser, having crossed from a queue into the record every run reads.
 test "an accepted proposal keeps the argument that was made for it" {
   match accepted(a_queue(), a_site(), "") {
     Err(_) -> {
@@ -35,7 +36,7 @@ test "an accepted proposal keeps the argument that was made for it" {
     }
     Ok(a) -> {
       assert a.moved
-        == "lib/billing.ex Billing.charge/2 1 compare: the wrapper changes the type, not the value"
+        == "lib/billing.ex  Billing.charge/2  compare  \"a > b\"  #1   # the wrapper changes the type, not the value"
       assert a.note == "accepted"
     }
   }
@@ -98,19 +99,17 @@ test "a rejection keeps what was argued, and why it was refused" {
 # The key is matched, not the whole line: a person answers a site, and the
 # reason belongs to whoever proposed it.
 test "a proposal is found by its site, whatever it argued" {
-  let other_words = queue_of([
-    "lib/billing.ex Billing.charge/2 1 compare: something else entirely"
-  ])
+  let other_words = queue_of([line_for(a_site(), "something else entirely")])
 
   assert is_some(proposal_for(other_words, a_site()))
-  assert key_of("lib/a.ex A.f/1 2 arm: because") == "lib/a.ex A.f/1 2 arm"
+  assert argued_in(line_for(a_site(), "because"), a_site()) == Some("because")
 }
 
 # The spell is part of the key: two wekufe on one line are two decisions.
 test "two spells on one site are two proposals" {
   let both = queue_of([
-    "lib/billing.ex Billing.charge/2 1 compare: one argument",
-    "lib/billing.ex Billing.charge/2 1 literal: a different argument"
+    line_for(a_site(), "one argument"),
+    line_for(Site { ...a_site(), spell: Literal }, "a different argument")
   ])
 
   match accepted(both, a_site(), "") {
@@ -119,7 +118,73 @@ test "two spells on one site are two proposals" {
     }
     Ok(a) -> {
       assert is_some(index_of(a.moved, "compare"))
-      assert is_some(index_of(a.queue, "literal: a different argument"))
+      assert is_some(index_of(a.queue, "literal"))
+      assert is_some(index_of(a.queue, "a different argument"))
+    }
+  }
+}
+
+fn suppresses(line: String, site: Site) : Bool = match eqfile.parse(line) {
+  Ok([e]) -> covers(e.key, site)
+  _ -> false
+}
+
+# What `accept` writes is what every later run reads. A line the reader
+# refuses stops the project from being measured at all, one command after
+# the one that wrote it.
+test "what is accepted is an entry the next run reads, and it names the site" {
+  let queue = queue_of([line_for(a_site(), "the wrapper changes the type")])
+
+  match accepted(queue, a_site(), "checked the callers") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(a) -> {
+      assert suppresses(a.moved, a_site())
+      assert not suppresses(a.moved, Site { ...a_site(), ordinal: Some(2) })
+    }
+  }
+}
+
+# The original is source text: it holds quotes, a `#`, whatever was there.
+test "an original with a quote and a hash in it is still an entry" {
+  let odd = Site { ...a_site(), original: Some("say(\"a # b\") > 1") }
+
+  assert suppresses(line_for(odd, "why"), odd)
+  assert argued_in(line_for(odd, "it reads # as text"), odd) == Some("it reads # as text")
+}
+
+# A kalku that names no enclosing declaration is keyed by the line.
+test "a site with no enclosing declaration is written as a line key" {
+  let bare = Site { ...a_site(), enclosing: None }
+
+  assert line_for(bare, "why") == "lib/billing.ex:42:compare  # why"
+  assert suppresses(line_for(bare, "why"), bare)
+}
+
+# An entry is one line: a reason written over several would be read as
+# an entry and then as lines that are not one.
+test "a reason written over several lines is one line of the file" {
+  assert suppresses(line_for(a_site(), "first\n  second\n"), a_site())
+  assert argued_in(line_for(a_site(), "first\n  second\n"), a_site()) == Some("first second")
+}
+
+# A queue written before proposals were entries is still answered, and
+# what comes out of it is an entry.
+test "a proposal in the earlier spelling is accepted as an entry" {
+  let earlier = queue_of([
+    "# lib/billing.ex:42 compare",
+    "lib/billing.ex Billing.charge/2 1 compare: the wrapper changes the type"
+  ])
+
+  match accepted(earlier, a_site(), "") {
+    Err(_) -> {
+      assert false
+    }
+    Ok(a) -> {
+      assert suppresses(a.moved, a_site())
+      assert is_some(index_of(a.moved, "# the wrapper changes the type"))
+      assert is_empty(trim(a.queue))
     }
   }
 }
