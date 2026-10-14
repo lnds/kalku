@@ -165,7 +165,10 @@ defmodule Kalku.Prepare do
   defp start_apps do
     Mix.Task.rerun("app.config", [])
     Kalku.Log.start_on_stderr()
-    Kalku.Baseline.Started.watch(Mix.Project.config()[:app])
+    app = Mix.Project.config()[:app]
+    Kalku.Baseline.Started.watch(app)
+    start_dependencies(app)
+    Kalku.Runtime.mark_outside()
     Mix.Task.rerun("app.start", [])
     Kalku.Baseline.Started.seen()
     Kalku.Log.to_stderr()
@@ -175,6 +178,25 @@ defmodule Kalku.Prepare do
       {:error, "prepare_failed",
        "the project's applications did not start: #{Exception.message(e)}"}
   end
+
+  # Started before the project's own, as `app.start` would, so that what
+  # they register is known apart from what the project registers.
+  defp start_dependencies(app) do
+    _ = Application.load(app)
+    optional = Application.spec(app, :optional_applications) || []
+
+    for dep <- Application.spec(app, :applications) || [],
+        dep not in optional or loadable?(dep) do
+      case Application.ensure_all_started(dep) do
+        {:ok, _} -> :ok
+        {:error, reason} -> raise "#{dep} did not start: #{inspect(reason)}"
+      end
+    end
+
+    :ok
+  end
+
+  defp loadable?(app), do: Application.load(app) in [:ok, {:error, {:already_loaded, app}}]
 
   defp failure(diagnostics) when is_list(diagnostics) do
     diagnostics

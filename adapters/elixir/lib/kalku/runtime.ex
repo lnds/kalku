@@ -14,7 +14,10 @@ defmodule Kalku.Runtime do
   watching those would call a healthy runtime dirty on every cast.
   """
 
+  @compile {:no_warn_undefined, :telemetry}
+
   @mark {__MODULE__, :mark}
+  @outside {__MODULE__, :outside}
 
   @doc """
   Record what a clean runtime looks like.
@@ -26,6 +29,20 @@ defmodule Kalku.Runtime do
   """
   def mark(app) do
     :persistent_term.put(@mark, snapshot(app))
+    :ok
+  end
+
+  @doc """
+  Record the handlers telemetry and the logger hold before the project's
+  own application starts.
+
+  What the project registers there as it starts outlives its application:
+  stopping it leaves them in place, and starting it again finds them
+  already registered. Taken after its dependencies have started, because
+  what they registered is theirs, and they are not started again.
+  """
+  def mark_outside do
+    :persistent_term.put(@outside, handlers())
     :ok
   end
 
@@ -54,8 +71,8 @@ defmodule Kalku.Runtime do
       clean ->
         drop_new_tables(clean.tables, app)
         restore_env(clean.env, app)
-        restart(app)
-        {:ok, snapshot(app) == clean}
+        restarted = restart(app)
+        {:ok, restarted == :ok and snapshot(app) == clean}
     end
   end
 
@@ -93,6 +110,7 @@ defmodule Kalku.Runtime do
 
   def restart(app) do
     safely(fn -> Application.stop(app) end)
+    forget_registered()
     started = safely(fn -> Application.ensure_all_started(app) end)
     Kalku.Log.to_stderr()
 
@@ -100,6 +118,37 @@ defmodule Kalku.Runtime do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, Kalku.Baseline.first_lines(inspect(reason))}
       _ -> {:error, "it could not be started"}
+    end
+  end
+
+  # Whatever was registered since `mark_outside`: the project's own start
+  # registers it again.
+  defp forget_registered do
+    case :persistent_term.get(@outside, nil) do
+      nil ->
+        :ok
+
+      before ->
+        for id <- telemetry_ids(),
+            id not in before.telemetry,
+            do: safely(fn -> :telemetry.detach(id) end)
+
+        for id <- :logger.get_handler_ids(),
+            id not in before.logger,
+            do: safely(fn -> :logger.remove_handler(id) end)
+
+        :ok
+    end
+  end
+
+  defp handlers, do: %{telemetry: telemetry_ids(), logger: :logger.get_handler_ids()}
+
+  # Telemetry is a dependency of most projects and of none of the kalku's.
+  defp telemetry_ids do
+    if Code.ensure_loaded?(:telemetry) and function_exported?(:telemetry, :list_handlers, 1) do
+      for %{id: id} <- :telemetry.list_handlers([]), do: id
+    else
+      []
     end
   end
 
