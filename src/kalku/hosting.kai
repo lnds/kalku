@@ -19,6 +19,7 @@ server. Trapped by each run for itself it stopped only the run.
 """)]
 
 import actor
+import time
 import kalku.core.mcp
 import kalku.orchestrator.kalku_proc
 import kalku.wire.enums
@@ -37,13 +38,26 @@ on the last the loop ends rather than write to nobody.
 """)]
 pub fn tooling[e](
   tool: (Option[Int], Call) -> Came / Stdout + Actor[OrchMsg] + e
-) : Int / Stdin + Stdout + Spawn + Signal + e = with_mailbox {
+) : Int / Stdin + Stdout + Stderr + Clock + Spawn + Signal + e = with_mailbox {
   let me = Actor.self()
   trap()
   let _reading = spawn_actor(() => host_lines(me))
   let _waiting = spawn_actor(() => told_to_stop(me, Aside(NO_MORE, me, "")))
-  hosting(tool)
+  first_word(tool, FIRST_WORD_MS)
 }
+
+#[doc("""
+How long a host has to say its first word.
+
+A host spawns the server and speaks at once. Nothing heard by then means
+whatever started it is not a host — a shell, a tool that ran the command
+to see what it does — and waiting for it would hold that caller open for
+good.
+""")]
+pub const FIRST_WORD_MS : Int = 10000
+
+fn nobody_spoke(ms: Int) : String =
+  "kalku mcp: no MCP host spoke within #{ms / 1000}s, so there is nobody to serve. It is started by an agent host, as in `claude mcp add kalku -- kalku mcp`, not by hand."
 
 fn host_lines(to: Pid[OrchMsg]) : Unit / Stdin + Actor[OrchMsg] = match Stdin.read_line() {
   Some(line) -> {
@@ -53,17 +67,42 @@ fn host_lines(to: Pid[OrchMsg]) : Unit / Stdin + Actor[OrchMsg] = match Stdin.re
   None -> Actor.send(to, Aside(NO_MORE, to, ""))
 }
 
+#[doc("""
+Wait `ms` for the host's first word, then answer it as `hosting` answers
+every word after it: from then on the host keeps the pipe for as long as
+it wants the tools.
+""")]
+pub fn first_word[e](
+  tool: (Option[Int], Call) -> Came / Stdout + Actor[OrchMsg] + e,
+  ms: Int
+) : Int / Stdout + Stderr + Clock + Actor[OrchMsg] + e = match receive_timeout(millis(ms)) {
+  None -> {
+    Stderr.eprint(nobody_spoke(ms))
+    2
+  }
+  Some(Aside(what, _back, line)) -> if kept_on(what, line, tool) { hosting(tool) } else { 0 }
+  Some(_) -> first_word(tool, ms)
+}
+
 fn hosting[e](
   tool: (Option[Int], Call) -> Came / Stdout + Actor[OrchMsg] + e
 ) : Int / Stdout + Actor[OrchMsg] + e = match Actor.receive() {
-  Aside(what, _back, line) -> if what == NO_MORE {
-    0
-  } else {
-    let asked = asked_of(line)
-    if answered_host(asked.fst, asked.snd, tool) { hosting(tool) } else { 0 }
-  }
+  Aside(what, _back, line) -> if kept_on(what, line, tool) { hosting(tool) } else { 0 }
   # A kalku of a run that is over, saying so late.
   _ -> hosting(tool)
+}
+
+# Whether the host is still there after this line: answered, and not the
+# end of the pipe.
+fn kept_on[e](
+  what: Int,
+  line: String,
+  tool: (Option[Int], Call) -> Came / Stdout + Actor[OrchMsg] + e
+) : Bool / Stdout + Actor[OrchMsg] + e = if what == NO_MORE {
+  false
+} else {
+  let asked = asked_of(line)
+  answered_host(asked.fst, asked.snd, tool)
 }
 
 # Whether the host is still there to be answered again.
