@@ -138,6 +138,18 @@ defmodule Thing.MixProject do
 end
 """
 
+# The two halves are released together. A requirement any old kalku meets
+# lets a lock file keep one this binary was never run against.
+test "init requires the kalku of the binary that writes the requirement" {
+  let elixir_plan =
+    plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+
+  assert minor_of("0.14.6") == "0.14"
+  assert minor_of("1.2.0") == "1.2"
+  assert elixir_plan.dependency
+    == Some("{:kalku_elixir, \"~> #{minor_of(VERSION)}\", only: :test, runtime: false}")
+}
+
 # The dependency goes inside the list `deps` returns, which is the shape
 # every Mix project shares.
 test "init declares the dependency in the build file" {
