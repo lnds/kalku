@@ -8,7 +8,10 @@ reni, and the honesty about what it cannot know.
 
 It claims neither `hot_load` nor `per_test_coverage` nor `reset`: every
 cast rebuilds, kaikai reports no per-test coverage, and there is no
-shared runtime to dirty. A capability is claimed only once it is true.
+shared runtime to dirty. It claims `cast_after_baseline`: nothing lives in
+the process between requests, so the kalku that ran the baseline casts as
+one that was only prepared would. A capability is claimed only once it is
+true.
 """)]
 
 import fs.file
@@ -143,7 +146,7 @@ fn greeting(m: HelloMsg) : KalkuReply = if not compatible(m.version) {
     adapter: "kalku_kaikai 0.0.0",
     runtime: "kaikai",
     spells: mutate_spells(),
-    capabilities: [CastCap, AbortCap]
+    capabilities: [CastCap, AbortCap, CastAfterBaseline]
     })
   }
 }
