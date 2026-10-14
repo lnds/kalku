@@ -1,3 +1,19 @@
+## v0.14.7 (2026-10-13)
+
+### Fixed
+
+- **server**: the report of a run that stopped short says so (#334)
+- **init**: the requirement init writes starts at the binary's own minor (#333)
+- **protocol**: a kalku says `crashed` of a cast it watched end with no verdict (#331)
+- **cli**: every command answers `--help` instead of running (#332)
+- **scheduler**: the summons a run allows are counted in a row (#330)
+- a run that stops short reports what it cast (#328)
+- `kalku accept` writes an entry the next run reads (#327)
+
+### Changed
+
+- **server**: the server asks kaikai for its uid, not /usr/bin/id (#326)
+
 ## v0.14.6 (2026-10-13)
 
 ### Changed
