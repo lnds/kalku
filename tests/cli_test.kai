@@ -27,6 +27,15 @@ test "every command answers `--help` instead of running" {
   assert cli.parse_args(["run", "lib/a.ex", "--limit", "5", "-h"]) == ShowHelpOf("run")
 }
 
+# A server started with an argument it does not know started all the same,
+# and one started by something that is not a host waited for it for good.
+test "the servers take no arguments, and refuse any before they start" {
+  assert cli.parse_args(["mcp"]) == Mcp
+  assert cli.parse_args(["serve"]) == Serve
+  assert cli.parse_args(["mcp", "--foo"]) == Misused("`kalku mcp` does not take --foo")
+  assert cli.parse_args(["serve", "--x"]) == Misused("`kalku serve` does not take --x")
+}
+
 test "what a command says of itself starts with how it is used" {
   assert all(explained(), cmd => starts_with(trim(help_of(cmd)), "usage: kalku #{cmd}"))
 }

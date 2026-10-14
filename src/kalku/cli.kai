@@ -81,9 +81,16 @@ fn read_command(argv: [String]) : Command {
   case ["propose-equivalent", ...rest] -> proposing(rest, "", "")
   case ["accept", ...rest] -> answering(rest, "accept", true, "", "")
   case ["reject", ...rest] -> answering(rest, "reject", false, "", "")
-  case ["serve", ...] -> Serve
-  case ["mcp", ...] -> Mcp
+  case ["serve", ...rest] -> bare("serve", Serve, rest)
+  case ["mcp", ...rest] -> bare("mcp", Mcp, rest)
   case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
+}
+
+# A server takes nothing on its line: something it does not know is refused
+# before it starts, not ignored by a server that then waits for good.
+fn bare(name: String, cmd: Command, rest: [String]) : Command = match rest {
+  [] -> cmd
+  [other, ..._] -> Misused("`kalku #{name}` does not take #{other}")
 }
 
 # ---- init ---------------------------------------------------------------

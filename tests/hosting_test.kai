@@ -1,0 +1,23 @@
+import actor
+import kalku.core.mcp
+import kalku.hosting
+import kalku.orchestrator.kalku_proc
+
+fn no_tools(_id: Option[Int], _c: Call) : Came = NoHost
+
+# A host speaks as soon as it starts the server. A server nobody speaks to
+# was started by something that is not a host, and says so instead of
+# holding its caller open for good.
+test "a server no host speaks to gives up, and says why" {
+  assert with_mailbox { first_word(no_tools, 50) } == 2
+}
+
+test "a host that speaks in time is answered, and kept until it goes" {
+  let code = with_mailbox {
+    let me = Actor.self()
+    Actor.send(me, Aside(SAID, me, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"))
+    Actor.send(me, Aside(NO_MORE, me, ""))
+    first_word(no_tools, 50)
+  }
+  assert code == 0
+}

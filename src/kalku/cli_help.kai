@@ -173,7 +173,8 @@ usage: kalku mcp
 Serve the agent tools to an MCP host, over stdio: `kalku_run`,
 `kalku_cast`, `kalku_show` and `kalku_propose_equivalent`. It is started
 by the host, not by hand: it reads JSON-RPC on stdin until the host goes
-away. In Claude Code:
+away. A host speaks first; if nothing arrives within 10 seconds, it says so
+and exits 2. In Claude Code:
 
   claude mcp add kalku -- kalku mcp
 """
