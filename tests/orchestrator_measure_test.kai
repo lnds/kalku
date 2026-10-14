@@ -2,6 +2,7 @@ import actor
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.report
+import kalku.core.gate
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.attending
@@ -76,8 +77,27 @@ test "a kalku that reads the project in a protocol this side cannot speak is ref
 test "a kalku that does not say it can cast after its baseline is not kept" {
   let found = measured("reads_and_leaves.ndjson")
 
-  assert found.report == None
   assert is_some(index_of(found.failure.unwrap_or(""), "expected `baseline`, got `cast`"))
+}
+
+# The same run, read for what it leaves: the wekufe that kalku took with it
+# was cast, and the one after it was not. What was cast is reported, with
+# the stop said in the report itself and nothing to hold a floor to.
+test "a run that stops short reports what it cast, and that it stopped" {
+  let found = measured("reads_and_leaves.ndjson")
+
+  match found.report {
+    None -> {
+      assert false
+    }
+    Some(r) -> {
+      assert is_some(r.stopped)
+      assert r.stopped == found.failure
+      assert r.counts.crashed == 1
+      assert r.planned == 2
+      assert exit_code(judged_by(r, no_policy(), None).blockers) == 2
+    }
+  }
 }
 
 # With more workers than one, the kalku that read the project keeps the

@@ -35,7 +35,8 @@ pub fn json(r: Report, exit: Int) : String = encode_value(
       ...optional(
         "shard",
         r.shard.map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
-      )
+      ),
+      ...optional("stopped", r.stopped.map(w => JStr(w)))
     ]
   )
 )

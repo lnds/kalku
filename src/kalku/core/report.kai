@@ -75,7 +75,8 @@ pub type Report = {
   left_out: LeftOut,
   withheld: Option[String],
   doubted: Option[String],
-  shard: Option[Shard]
+  shard: Option[Shard],
+  stopped: Option[String]
 }
 
 #[doc("A wekufe that produced nothing to score, and what the kalku said about it.")]

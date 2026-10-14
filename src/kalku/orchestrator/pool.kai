@@ -7,7 +7,9 @@ working, or gone is still a slot, so the scheduler never has to ask how
 many kalku exist — only what each one is doing.
 
 Replacements are budgeted. A kalku that dies on startup would otherwise
-be summoned forever, turning a broken project into an infinite run.
+be summoned forever, turning a broken project into an infinite run. What
+is counted is summons in a row: a kalku that finished a cast started
+fine, and the one that replaces it later is not the same failure again.
 """)]
 
 import actor
@@ -41,6 +43,7 @@ pub type Slot = {
   caps: [Capability],
   doing: Doing,
   summons: Int,
+  in_a_row: Int,
   wrote: String
 }
 
@@ -61,7 +64,7 @@ pub type PoolSpec = {
 
 #[doc("Summon every kalku in the pool and greet each one.")]
 pub fn fill(spec: PoolSpec) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
-  counting(spec.workers) | (w => summon_slot(spec, w, 1))
+  counting(spec.workers) | (w => summon_slot(spec, w, 1, 1))
 
 #[doc("""
 The slot of a kalku that is already warm: summoned, greeted and prepared
@@ -73,6 +76,7 @@ pub fn warm_slot(k: Kalku, caps: [Capability]) : Slot = Slot {
   caps: caps,
   doing: Idle,
   summons: k.life.summons,
+  in_a_row: 1,
   wrote: ""
 }
 
@@ -86,10 +90,11 @@ pub fn fill_around(
   spec: PoolSpec,
   warm: Slot
 ) : [Slot] / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
-  counting(spec.workers) | (w => if w == warm.worker { warm } else { summon_slot(spec, w, 1) })
+  counting(spec.workers) | (w => if w == warm.worker { warm } else { summon_slot(spec, w, 1, 1) })
 
 #[doc("""
-Summon a replacement for a slot, unless it has used up its summons.
+Summon a replacement for a slot, unless it has used up its summons:
+the ones in a row since a kalku in it last finished a cast.
 
 A slot that is out of budget is `Lost` with the reason, which is what
 turns a kalku that dies on startup into a failed run instead of an
@@ -98,10 +103,10 @@ endless one.
 pub fn refill(spec: PoolSpec, slot: Slot, why: String) : Slot / Process + Spawn + Clock + Actor[
   OrchMsg
 ] + Ward =
-  if slot.summons >= spec.summons_allowed {
+  if slot.in_a_row >= spec.summons_allowed {
     Slot { ...slot, kalku: None, caps: [], doing: Lost(out_of_budget(spec, slot, why)) }
   } else {
-    summon_slot(spec, slot.worker, slot.summons + 1)
+    summon_slot(spec, slot.worker, slot.summons + 1, slot.in_a_row + 1)
   }
 
 #[doc("""
@@ -116,7 +121,7 @@ pub fn replace_slot(
   spec: PoolSpec,
   slot: Slot
 ) : Slot / Process + Spawn + Clock + Actor[OrchMsg] + Ward =
-  summon_slot(spec, slot.worker, slot.summons + 1)
+  summon_slot(spec, slot.worker, slot.summons + 1, slot.in_a_row)
 
 #[doc("""
 Stop a kalku where it stands, and leave the reaping to the ward.
@@ -225,15 +230,19 @@ pub fn greeting(spec: PoolSpec, worker: Int) : KalkuRequest = Hello(HelloMsg {
 
 # A greeting has its own deadline: a kalku that never says `ready` is as
 # useless as one that never finishes a cast, and far cheaper to catch.
-fn summon_slot(spec: PoolSpec, worker: Int, summons: Int) : Slot / Process + Spawn + Clock + Actor[
-  OrchMsg
-] + Ward {
+fn summon_slot(
+  spec: PoolSpec,
+  worker: Int,
+  summons: Int,
+  in_a_row: Int
+) : Slot / Process + Spawn + Clock + Actor[OrchMsg] + Ward {
   let empty = Slot {
     worker: worker,
     kalku: None,
     caps: [],
     doing: Lost(""),
     summons: summons,
+    in_a_row: in_a_row,
     wrote: ""
   }
   let life = Life { worker: worker, summons: summons }
@@ -279,6 +288,6 @@ fn from_byte(s: String, at: Int) : String = if at >= length(s) {
 }
 
 fn out_of_budget(spec: PoolSpec, slot: Slot, why: String) : String =
-  "#{why}; summoned #{slot.summons} time(s), the most this run allows is #{spec.summons_allowed}"
+  "#{why}; summoned #{slot.in_a_row} time(s) in a row, the most this run allows is #{spec.summons_allowed}"
 
 fn counting(n: Int) : [Int] = if n <= 0 { [] } else { enumerate(repeat(0, n)) | (.fst) }
