@@ -578,15 +578,9 @@ fn append_proposal(r: Remembered, reason: String) : Unit / File {
 }
 
 # The syntax `.kalku/equivalent` uses, so accepting one is a move between
-# files rather than a rewrite: the semantic key, then the reason.
-fn proposal_of(r: Remembered, reason: String) : String = join(
-  [
-    "# #{report.where_of(r.site)}",
-    "#{r.site.file} #{r.site.enclosing.unwrap_or("?")} #{r.site.ordinal.unwrap_or(1)} #{spell_name(r.site.spell)}: #{trim(reason)}",
-    ""
-  ],
-  "\n"
-)
+# files: the key, then the reason.
+fn proposal_of(r: Remembered, reason: String) : String =
+  join(["# #{report.where_of(r.site)}", line_for(r.site, reason), ""], "\n")
 
 # ---- the server ---------------------------------------------------------
 

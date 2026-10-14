@@ -25,6 +25,8 @@ accept them itself, with an extra step that fools nobody.
 
 import kalku.wire.enums
 import kalku.wire.shapes
+import kalku.core.equivalent
+import kalku.core.equivalent_parse as eqfile
 
 #[doc("What a queue of proposals came to once one of them was answered.")]
 #[derive(Eq, Show)]
@@ -38,30 +40,62 @@ pub type Unanswerable = NotProposed(String) | NothingProposed
 The `.kalku/equivalent` line a site would have, which is also the line a
 proposal is written as.
 
-Accepting is then a move between files rather than a rewrite: the same
-text, read by the same parser, having crossed from a queue into the
-record every run reads.
+Spelled by the function that shows an entry, so what is written here is
+what the file's reader reads: a proposal that crosses from the queue into
+the record every run reads is an entry there, not a line that stops the
+next run.
 """)]
 pub fn line_for(site: Site, reason: String) : String =
-  "#{site.file} #{site.enclosing.unwrap_or("?")} #{site.ordinal.unwrap_or(1)}"
-    ++ " #{spell_name(site.spell)}: #{trim(reason)}"
+  show_entry(Entry { key: key_for(site), reason: one_line(reason), at: 0 })
 
-#[doc("The key part of a line: everything before the reason.")]
-pub fn key_of(line: String) : String = match index_of(line, ":") {
-  None -> trim(line)
-  Some(at) -> trim(slice(line, 0, at))
+# The semantic key when the kalku said where the site is declared and what
+# it read there, and the line otherwise.
+fn key_for(site: Site) : Key = match (site.enclosing, site.original, site.ordinal) {
+  (Some(enclosing), Some(original), Some(ordinal)) -> Semantic(SemanticKey {
+    file: site.file,
+    enclosing: enclosing,
+    spell: site.spell,
+    original: original,
+    ordinal: ordinal
+  })
+  _ -> LineKey(LineRef { file: site.file, line: site.span.start.line, spell: site.spell })
+}
+
+# An entry is one line, so a reason written over several is joined.
+fn one_line(reason: String) : String =
+  join(lines(reason) | trim |? (l => not is_empty(l)), " ")
+
+#[doc("""
+What a queue line argues, if it argues for this site.
+
+A line is an entry and is read as one. A queue written before proposals
+were entries holds lines of `<file> <enclosing> <ordinal> <spell>: <reason>`,
+and those are still answered: an argument somebody made is not lost
+because of how it was spelled.
+""")]
+pub fn argued_in(line: String, site: Site) : Option[String] = match eqfile.parse(line) {
+  Ok([e]) -> if covers(e.key, site) { Some(e.reason) } else { None }
+  _ -> argued_before(line, site)
+}
+
+fn argued_before(line: String, site: Site) : Option[String] {
+  let key = "#{site.file} #{site.enclosing.unwrap_or("?")} #{site.ordinal.unwrap_or(1)}"
+    ++ " #{spell_name(site.spell)}:"
+  if starts_with(trim(line), key) {
+    Some(trim(slice(trim(line), length(key), length(trim(line)))))
+  } else {
+    None
+  }
 }
 
 #[doc("""
 The line in the queue that argues for this site, if one does.
 
-Matched on the key rather than the whole line, because the reason is the
+Matched on the site rather than the whole line, because the reason is the
 proposer's prose and a person answering is answering the site.
 """)]
-pub fn proposal_for(queue: String, site: Site) : Option[String] {
-  let want = key_of(line_for(site, ""))
-  find(lines(queue), l => (not is_comment(l)) and (not is_empty(trim(l))) and key_of(l) == want)
-}
+pub fn proposal_for(queue: String, site: Site) : Option[String] =
+  find(lines(queue), l => (not is_comment(l)) and is_some(argued_in(l, site)))
 
 fn is_comment(l: String) : Bool = starts_with(trim(l), "#")
 
@@ -112,7 +146,7 @@ pub fn accepted(
 ) : Result[Answered, Unanswerable] = match proposal_for(queue, site) {
   None -> if is_empty(trim(queue)) { Err(NothingProposed) } else { Err(NotProposed(site.file)) }
   Some(line) -> Ok(Answered {
-    moved: if is_empty(trim(witness)) { trim(line) } else { "#{trim(line)} (#{trim(witness)})" },
+    moved: line_for(site, with_note(argued_in(line, site).unwrap_or(""), witness)),
     queue: without(queue, line),
     note: "accepted"
   })
@@ -128,15 +162,20 @@ pub fn rejected(queue: String, site: Site, why: String) : Result[Answered, Unans
   match proposal_for(queue, site) {
     None -> if is_empty(trim(queue)) { Err(NothingProposed) } else { Err(NotProposed(site.file)) }
     Some(line) -> Ok(Answered {
-      moved: if is_empty(trim(why)) {
-        trim(line)
-      } else {
-        "#{trim(line)} (turned down: #{trim(why)})"
-      },
+      moved: line_for(
+        site,
+        with_note(
+          argued_in(line, site).unwrap_or(""),
+          if is_empty(trim(why)) { "" } else { "turned down: #{trim(why)}" }
+        )
+      ),
       queue: without(queue, line),
       note: "rejected"
     })
   }
+
+fn with_note(argued: String, note: String) : String =
+  if is_empty(trim(note)) { argued } else { "#{argued} (#{trim(note)})" }
 
 #[doc("What to say when a proposal cannot be answered.")]
 pub fn why_not(u: Unanswerable) : String = match u {
