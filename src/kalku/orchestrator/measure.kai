@@ -557,10 +557,21 @@ fn casting_them(
     length(uniq(casts | (.site.site_id)))
   )
   Found {
-    report: if is_some(stopped) {
+    report: 
+    # A run that stopped short reports what it cast, and that it stopped:
+    # the wekufe it measured were measured. One that cast nothing has
+    # nothing to report but why.
+    if is_some(stopped) and is_empty(casting.verdicts) {
       None
     } else {
-      Some(Report { ...report_of(ready, casting, known), shard: asking.shard })
+      Some(
+        Report {
+          ...report_of(ready, casting, known),
+          shard: asking.shard,
+          stopped: stopped,
+          blockers: stopped.map(why => [CouldNotMeasure(why)]).unwrap_or([])
+        }
+      )
     },
     failure: stopped,
     cast: written_down(casting, known)
@@ -698,7 +709,8 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     },
     withheld: known.withheld,
     doubted: known.doubted,
-    shard: None
+    shard: None,
+    stopped: None
   }
 }
 
@@ -728,8 +740,9 @@ pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Rep
   }
   # A run that could not measure at all never reaches here: that failure
   # is answered before a report exists. What can reach here is a run that
-  # measured part of what it was asked, because some file would not be
-  # searched, and the gate has to hear that.
+  # measured part of what it was asked, because it stopped before the end
+  # of its plan or some file would not be searched, and the gate has to
+  # hear that.
   Report {
     ...r,
     on_changed_lines: change.survivors,
@@ -737,7 +750,7 @@ pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Rep
       r.counts,
       change,
       policy,
-      trouble_of(r.skipped).or_else(() => trouble_with(r.left_out)),
+      r.stopped.or_else(() => trouble_of(r.skipped)).or_else(() => trouble_with(r.left_out)),
       was_partial(r),
       is_some(touched)
     )
