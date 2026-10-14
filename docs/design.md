@@ -334,7 +334,7 @@ cold ──prepare──► preparing ──ok──► baseline ──green─�
 | `timeout` | exceeded its timeout | reported apart |
 | `no_coverage` | no test executes the site: by the baseline's coverage, or seen by the kalku while the wekufe was cast. Code that runs once and not again in a warm runtime is among it where the kalku has no way to run it again | reported apart |
 | `compile_error` | the wekufe does not compile | excluded |
-| `crashed` | the cast produced no verdict: the kalku died, it could not run the tests it was given, or the wekufe held more memory than the ceiling (the message says how much) | reported apart |
+| `crashed` | the cast produced no verdict: the kalku died, the run of the tests it started ended before judging (the wekufe took the test runner down), it could not run the tests it was given, or the wekufe held more memory than the ceiling (the message says how much) | reported apart |
 | `equivalent` | proven by identical bytecode, or declared with a written reason | excluded |
 | `nondeterministic` | cast several times and did not agree with itself | reported apart |
 

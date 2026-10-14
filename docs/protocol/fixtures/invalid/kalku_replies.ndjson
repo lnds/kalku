@@ -21,3 +21,4 @@
 {"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage_path\":\"/c\",\"coverage_packed_path\":\"/p\",\"failures\":[]}"}
 {"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage\":[],\"coverage_withheld\":\"a line no test is credited with\",\"failures\":[]}"}
 {"expect":"invalid","line":"{\"type\":\"baseline_done\",\"id\":3,\"status\":\"green\",\"duration_ms\":1,\"tests\":[],\"coverage_doubted\":\"a line no test is credited with\",\"failures\":[]}"}
+{"expect":"invalid","line":"{\"type\":\"cast_done\",\"id\":6,\"wekufe\":\"w\",\"outcome\":\"crashed\",\"duration_ms\":4,\"dirty\":false}"}

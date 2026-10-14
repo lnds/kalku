@@ -38,6 +38,7 @@ import kalku.serving
 import kalku.hosting
 import kalku.orchestrator.server
 import kalku.cli
+import kalku.cli_help
 import kalku.core.gate
 import kalku.wire.client_msg
 import kalku.wire.shapes
@@ -51,6 +52,10 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     }
     ShowHelp -> {
       Stdout.print(cli.help_text())
+      0
+    }
+    ShowHelpOf(cmd) -> {
+      Stdout.print(help_of(cmd))
       0
     }
     Initialise(setup) -> settle(setup.root, setup.language, setup.assume_yes)
