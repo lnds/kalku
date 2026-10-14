@@ -588,7 +588,8 @@ fn proposal_of(r: Remembered, reason: String) : String =
 # definition, so the socket is a file only its owner can open, under a
 # directory the system already keeps private.
 fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix + Signal {
-  let mine = my_uid()
+  # Read once: it is what every later connection is checked against.
+  let mine = proc.uid()
   let path = socket_path(Env.get("XDG_RUNTIME_DIR"), asked_temp(), mine)
   # The mailbox and the ward belong to the server, not to a run: the
   # kalku a run leaves warm keep talking to this mailbox, and whatever is
@@ -629,23 +630,6 @@ fn run_for(
   }
 
 fn asked_temp() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
-
-# kaikai's stdlib cannot say what uid this process runs as, so it is
-# asked of the system. Read once, at the start: it is what every later
-# connection is checked against.
-fn my_uid() : Int / Process = match proc.start_piped("/usr/bin/id", ["-u"]) {
-  Err(_) -> 0 - 1
-  Ok(child) -> {
-    let said = drain_all(child, "")
-    let _ = proc.wait(child)
-    to_int(trim(said)).unwrap_or(0 - 1)
-  }
-}
-
-fn drain_all(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
-  Err(_) -> so_far
-  Ok(chunk) -> if is_empty(chunk) { so_far } else { drain_all(child, so_far ++ chunk) }
-}
 
 # What a client gets back for a `run`. The events arrive together rather
 # The run says what it is doing as it does it, and a client hears it then
