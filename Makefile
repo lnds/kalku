@@ -45,11 +45,16 @@ JKALKU     := adapters/java/dist/kalku-java
 JKALKU_SRC := $(shell find adapters/java/src/main -type f) adapters/java/pom.xml adapters/java/bin/kalku-java
 MVN        ?= mvn
 
+# The Go kalku: a Go module of the standard library and nothing else, built
+# with no C so the one binary runs wherever the platform does.
+GKALKU     := adapters/go/bin/kalku-go
+GKALKU_SRC := $(shell find adapters/go/kalku adapters/go/cmd -name '*.go' -not -name '*_test.go') adapters/go/go.mod
+
 # The scripted kalku the orchestrator tests talk to, built as its own package.
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java fmt fmt-check lint km ci check properties bench clean self-mutate field dist install uninstall
+.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java test-go fmt fmt-check lint km ci check properties bench clean self-mutate field dist install uninstall
 
 all: build
 
@@ -59,7 +64,7 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 	@mkdir -p $(BUILD)
 	$(KAI) build . -o $@
 
-test: test-kaikai test-elixir test-rust test-python test-java
+test: test-kaikai test-elixir test-rust test-python test-java test-go
 
 # Under the stack limit a shell gives, not the one make runs with: GNU Make
 # 3.81 raises it to 64 MB for its children, and a loop that keeps a frame
@@ -105,6 +110,9 @@ $(PYKALKU): $(PYKALKU_SRC)
 	cp $(PYKALKU_SRC) adapters/python/dist/app/kalku_python/
 	$(PYTHON) -m zipapp adapters/python/dist/app -m "kalku_python.__main__:main" -p "/usr/bin/env python3" -o $@
 
+$(GKALKU): $(GKALKU_SRC)
+	cd adapters/go && CGO_ENABLED=0 go build -trimpath -o bin/kalku-go ./cmd/kalku-go
+
 $(JKALKU): $(JKALKU_SRC)
 	cd adapters/java && $(MVN) -B -q -DskipTests package
 	@mkdir -p adapters/java/dist
@@ -141,6 +149,13 @@ test-java:
 	  cd adapters/java && mvn -B -q verify; \
 	else echo "test-java: skipped (no adapters/java/pom.xml, or no mvn)"; fi
 
+# The Go kalku, held to gofmt, vet and its own tests. A machine without Go
+# skips it; CI runs it on the oldest Go it measures and the newest.
+test-go:
+	@if [ -f adapters/go/go.mod ] && command -v go >/dev/null 2>&1; then \
+	  cd adapters/go && test -z "$$(gofmt -l .)" && go vet ./... && go test ./...; \
+	else echo "test-go: skipped (no adapters/go/go.mod, or no go)"; fi
+
 fmt:
 	$(KAI) fmt .
 
@@ -158,7 +173,7 @@ km:
 # without waiting for the tests.
 ci: fmt-check lint build test-kaikai km
 
-check: ci test-elixir test-rust test-python test-java
+check: ci test-elixir test-rust test-python test-java test-go
 
 # kalku on its own sources, through its own kalku: the project's claim,
 # run rather than asserted. Measured by the last release, pinned in
@@ -184,24 +199,25 @@ field: build
 # What a release ships: both binaries a user summons, side by side with
 # the licences they are shipped under. Flat, so a package manager can
 # install the tarball's contents without knowing this layout.
-dist: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU)
+dist: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU)
 	@rm -rf $(DIST) && mkdir -p $(DIST)
-	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
-	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python kalku-java LICENSE-MIT LICENSE-APACHE README.md
-	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/kalku-java $(DIST)/LICENSE-* $(DIST)/README.md
+	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
+	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python kalku-java kalku-go LICENSE-MIT LICENSE-APACHE README.md
+	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/kalku-java $(DIST)/kalku-go $(DIST)/LICENSE-* $(DIST)/README.md
 	@cd $(DIST) && (command -v sha256sum >/dev/null && sha256sum $(notdir $(TARBALL)) \
 	  || shasum -a 256 $(notdir $(TARBALL))) > $(notdir $(TARBALL)).sha256
 	@echo "built $(TARBALL)"
 
-install: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU)
+install: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(DESTDIR)$(PREFIX)/bin/
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python $(DESTDIR)$(PREFIX)/bin/kalku-java
+	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python $(DESTDIR)$(PREFIX)/bin/kalku-java $(DESTDIR)$(PREFIX)/bin/kalku-go
 
 clean:
 	rm -rf $(BUILD) $(DIST) .kai-cache
 	rm -f $(FAKE) $(KKALKU)
 	rm -rf adapters/kaikai/fixtures/reni
 	rm -rf adapters/java/dist adapters/java/target
+	rm -rf adapters/go/bin

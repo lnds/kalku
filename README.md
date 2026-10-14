@@ -20,7 +20,7 @@ Coding agents write tests fast, but a test can run a line without checking anyth
 
 It targets Elixir first. It is written in [kaikai](https://kaikai-lang.org/) and uses kalku to test its own code.
 
-> **Status: pre-alpha.** Kalku for Elixir, Rust, Python and kaikai ship in the binary on Homebrew, and the Elixir one is also on [Hex](https://hex.pm/packages/kalku_elixir). Everything below runs today; [what is done and what is not](#what-works-today) is at the end.
+> **Status: pre-alpha.** Kalku for Elixir, Rust, Python, Java, Go and kaikai ship in the binary on Homebrew, and the Elixir one is also on [Hex](https://hex.pm/packages/kalku_elixir). Everything below runs today; [what is done and what is not](#what-works-today) is at the end.
 
 ## Install
 
@@ -32,7 +32,7 @@ macOS on Apple Silicon and Linux on x86_64 with GLIBC 2.38 or newer —
 the platforms [kaikai](https://kaikai-lang.org/) publishes a
 toolchain for, and its floor is kalku's floor. The
 same tarballs are on every [release](https://github.com/lnds/kalku/releases):
-unpack it and put `kalku`, `kalku-kaikai`, `kalku-rust`, `kalku-python` and `kalku-java` on your `PATH`.
+unpack it and put `kalku`, `kalku-kaikai`, `kalku-rust`, `kalku-python`, `kalku-java` and `kalku-go` on your `PATH`.
 
 From source, with kaikai installed (the version in `.kaikai-version`):
 
@@ -235,6 +235,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Rust | native | sites come from `syn`, Rust's own parser; the **2024 edition only** (Rust 1.85 or later). It finds sites and casts them, answers `abort` in place, and selects tests by coverage where the LLVM tools are |
 | Python | native | sites come from `ast` and `tokenize`, Python's own parser; it runs in the **project's own interpreter** (3.12 or later) with the standard library only. Every run of the suite is a forked child, so `abort` is a kill and a wekufe never leaks; coverage per test comes from `sys.monitoring`; the project's own pytest options are kept |
 | Java | native | sites come from `javac`, the project's own compiler, through its public tree API; it runs on the **project's own JDK** (11 or later) with no dependencies. It builds the project with Maven in the reni, compiles each wekufe in memory, and runs the tests in a JVM of their own: JUnit 5 or later, JUnit 4, or TestNG. Maven or Gradle, one module or several |
+| Go | native | sites come from `go/parser`, Go's own parser; it runs the **module's own `go`** (1.21 or later) and is one static binary of the standard library. A wekufe reaches `go test` through `-overlay` and is never written to a file; only the packages whose tests are built from the mutated one run anew, and `abort` ends the cast's process group |
 | others | driver | wraps an existing framework (Stryker, …), normalizes its results, and recomputes the score |
 
 ## What works today
@@ -267,6 +268,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Java kalku: Maven projects of several modules; a site is judged by the tests of every module that uses its own | done |
 | Java kalku: Gradle builds, asked by running them with a script added from outside the project | done |
 | Java kalku: projects that test with JUnit 4 or with TestNG, run through their JUnit Platform engines | done |
+| **Go kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `go/parser`; `prepare`, `baseline` and `cast` in the reni through `-overlay`, `abort`, `kalku init` for Go modules, shipped in the release | done |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |

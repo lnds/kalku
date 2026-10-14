@@ -2,7 +2,7 @@
 What `kalku init` decides, worked out without touching a thing.
 
 A project says what it is written in — `mix.exs` means Elixir, `Cargo.toml`
-means Rust, `kai.toml` means kaikai — so being told is only needed when the
+means Rust, `go.mod` means Go, `kai.toml` means kaikai — so being told is only needed when the
 guess would be wrong. Everything here is a decision about files: what to look
 for, what to write, and what to say. `main` performs it, and asks first.
 
@@ -164,6 +164,18 @@ pub fn catalogue() : [Known] = [
     test_prefixes: [],
     test_suffixes: ["Test.java", "Tests.java", "IT.java"],
     ignored: ["target", "build", ".gradle", ".git", ".idea", ".mvn", "node_modules"]
+  },
+  Known {
+    language: "go",
+    marker: "go.mod",
+    also: [],
+    summon: go_summoner(),
+    outside: go_summoner(),
+    sources: [".go"],
+    tests: [],
+    test_prefixes: [],
+    test_suffixes: ["_test.go"],
+    ignored: ["testdata", "vendor", ".git"]
   }
 ]
 
@@ -416,6 +428,28 @@ command -v kalku-java >/dev/null || {
   exit 127
 }
 exec kalku-java "$@"
+"""
+
+# The Go kalku runs `go test` in a copy of the module in the reni, with the
+# `go` on the PATH, which picks the toolchain the module's go.mod asks for.
+# Nothing is built here: `prepare` is where the tests are compiled.
+fn go_summoner() : String = """
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the Go kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol. Nothing is built here: `go test` runs
+# inside `prepare`, in a copy of this module in the reni, with its output
+# on stderr. It uses the `go` on the PATH, which runs the toolchain this
+# module's go.mod asks for.
+set -eu
+#{reni_off()}
+
+command -v kalku-go >/dev/null || {
+  echo "kalku: kalku-go is not on PATH; put it beside kalku, as the release does" >&2
+  exit 127
+}
+exec kalku-go "$@"
 """
 
 # A kalku runs inside the project's own runtime, so the project has to

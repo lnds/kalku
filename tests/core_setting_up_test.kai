@@ -318,6 +318,34 @@ test "a Maven or a Gradle project is Java, and is summoned on its own JDK with n
   assert plan.dependency == None
 }
 
+test "a Go module is told by its go.mod, and summoned with nothing built on the way up" {
+  assert detect(["go.mod", "go.sum", "main.go"]).map(.language) == Ok("go")
+  let plan = plan_for(of("go"), "/r")
+  assert has(plan.config, "language = \"go\"")
+  assert has(plan.summoner, "exec kalku-go \"$@\"")
+  assert has(plan.summoner, "kalku-go is not on PATH")
+  assert not has(plan.summoner, "go build")
+  assert not has(plan.summoner, "go test ")
+  assert summon_is_current(plan.summoner)
+  assert starts_with(plan.summoner, "#!/bin/sh")
+  assert plan.dependency == None
+}
+
+# Go keeps a package's tests beside its code, known by their suffix alone;
+# `testdata` is never built, and `vendor` is someone else's code.
+test "Go sources are .go files that are not tests, testdata or vendored" {
+  let go = of("go")
+  assert is_source_of(go, "parser.go")
+  assert is_source_of(go, "internal/lexer/scan.go")
+  assert is_source_of(go, "cmd/tool/test.go")
+  assert not is_source_of(go, "parser_test.go")
+  assert not is_source_of(go, "internal/lexer/testdata/input.go")
+  assert not is_source_of(go, "vendor/github.com/x/y/y.go")
+  assert not is_source_of(go, "go.mod")
+  assert is_test_of(go, "internal/lexer/scan_test.go")
+  assert not is_test_of(go, "internal/lexer/scan.go")
+}
+
 # Maven keeps the suite apart by directory, and a test class is known by its name too.
 test "Java sources are .java files outside the suite, which is named by directory or by suffix" {
   let java = of("java")

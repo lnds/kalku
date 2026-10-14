@@ -26,6 +26,8 @@ jobs:
       python_project: ${{ steps.project.outputs.python_project }}
       java: ${{ steps.filter.outputs.java }}
       java_project: ${{ steps.project.outputs.java_project }}
+      go: ${{ steps.filter.outputs.go }}
+      go_project: ${{ steps.project.outputs.go_project }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -46,12 +48,15 @@ jobs:
               - '{adapters/python/**,docs/protocol/fixtures/**}'
             java:
               - '{adapters/java/**,docs/protocol/fixtures/**,Makefile}'
+            go:
+              - '{adapters/go/**,docs/protocol/fixtures/**}'
       - id: project
         run: |
           echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "rust_project=$([ -f adapters/rust/Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "python_project=$([ -f adapters/python/pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "java_project=$([ -f adapters/java/pom.xml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "go_project=$([ -f adapters/go/go.mod ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   # Format, lint and the quality gate: seconds of work, in a job of their
   # own so a slip in any of them is a red cross in a minute rather than
@@ -199,13 +204,39 @@ jobs:
           make adapters/java/dist/kalku-java
           printf '{"type":"shutdown","id":1}\n' | adapters/java/dist/kalku-java | grep -q '"type":"bye"'
 
+  # The Go kalku runs `go test` with the Go of the module it measures, so it is
+  # held to the oldest Go it supports and the newest. gofmt and vet run once,
+  # on the newest: their opinions change between releases.
+  go-kalku:
+    needs: changes
+    if: needs.changes.outputs.go == 'true' && needs.changes.outputs.go_project == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.21', stable]
+    defaults:
+      run:
+        working-directory: adapters/go
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false
+      - if: matrix.go == 'stable'
+        run: test -z "$(gofmt -l .)" && go vet ./...
+      - run: go test ./...
+
   # The one required check: green when every job that ran passed or was skipped.
   ci-ok:
     if: always()
-    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku, rust-kalku, python-kalku, java-kalku]
+    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku, rust-kalku, python-kalku, java-kalku, go-kalku]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}" "${{ needs.rust-kalku.result }}" "${{ needs.python-kalku.result }}" "${{ needs.java-kalku.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}" "${{ needs.rust-kalku.result }}" "${{ needs.python-kalku.result }}" "${{ needs.java-kalku.result }}" "${{ needs.go-kalku.result }}"; do
             case "$r" in success|skipped) ;; *) echo "a job ended in: $r"; exit 1 ;; esac
           done
