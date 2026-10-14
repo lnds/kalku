@@ -171,6 +171,19 @@ test "a kalku that dies at birth exhausts its summons and fails the run" {
   assert is_some(index_of(done.failure.unwrap_or(""), "the most this run allows is 2"))
 }
 
+# The summons a run allows are for a kalku that cannot start. One that cast
+# a wekufe and died of the next started fine, and so did the one after it:
+# with two summons allowed, three kalku die here and the run goes on, each
+# death a `crashed` with a name.
+test "a kalku that dies of a cast now and then does not use up the summons" {
+  let done = with_mailbox {
+    casting(pool_of("pool_casts_then_crashes.ndjson", 1, 2), casts(6, 5000))
+  }
+
+  assert tally(done) == [("killed", 3), ("crashed", 3)]
+  assert done.failure == None
+}
+
 # Cancelling stops the dispatching, and whatever was already measured is
 # still reported. Here nothing had been dispatched yet, so the run ends
 # empty rather than hanging.
@@ -225,7 +238,7 @@ test "a kalku that dies at birth is summoned exactly as often as allowed, and qu
   }
   let why = done.failure.unwrap_or("")
 
-  assert is_some(index_of(why, "summoned 2 time(s)"))
+  assert is_some(index_of(why, "summoned 2 time(s) in a row"))
   assert is_some(index_of(why, "it wrote: fake: the project does not compile"))
 }
 

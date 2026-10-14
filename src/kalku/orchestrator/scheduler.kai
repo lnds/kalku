@@ -519,7 +519,12 @@ fn react(
   let recorded = record(run, slot, r)
   match r.next {
     Keep -> recorded
-    Free -> Run { ...recorded, slots: put(recorded.slots, Slot { ...slot, doing: Idle }) }
+    # A kalku that is free again answered for what it was asked: whatever
+    # ends it later is not the failure of a kalku that cannot start.
+    Free -> Run {
+      ...recorded,
+      slots: put(recorded.slots, Slot { ...slot, doing: Idle, in_a_row: 1 })
+    }
     AskAbort -> chase(recorded, slot, Abort(AbortMsg { cast: job_id(slot) }), AwaitingAbort)
     AskReset -> chase(recorded, slot, Reset, AwaitingReset)
     Recycle(why) -> recycle(recorded, slot, why)

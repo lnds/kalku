@@ -72,6 +72,7 @@ fn a_slot(worker: Int, doing: Doing) : Slot = Slot {
   worker: worker,
   kalku: None,
   summons: 1,
+  in_a_row: 1,
   caps: [],
   doing: doing,
   wrote: ""
