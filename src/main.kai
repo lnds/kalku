@@ -714,6 +714,7 @@ fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
   survivors_on_changed_lines: r.on_changed_lines,
   suppression_changes: r.suppressions,
   left_out: if is_empty(r.left_out.tests) { None } else { Some(r.left_out.tests | (.test_id)) },
+  stopped: r.stopped,
   exit: exit_code(r.blockers)
 })
 
@@ -964,7 +965,7 @@ fn cast_it(
   let plan_of_it = plan(inputs_for(asking, known), _id => None)
   let casts = repeated(plan_of_it.to_cast)
   let done = streamed(say, () => cast_over(asking.spec, p.slots, casts, p.next_id))
-  let report = report_of(plan_of_it, agreed(done.fst), known)
+  let report = report_after(plan_of_it, casts, agreed(done.fst), known)
   (
     Project { ...p, slots: done.snd, next_id: done.trd },
     [report_event(report)]

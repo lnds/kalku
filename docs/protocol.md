@@ -479,6 +479,7 @@ Unlike the kalku protocol's `progress`, which reports how far one long request h
 | `survivors_on_changed_lines` | int | survivors on a line the run's diff touched; `0` when the run was not asked about a change. Sites on those lines that no test reaches block too, and are named in the report's `blocked_by`, not counted here |
 | `suppression_changes` | Suppression changes | |
 | `left_out`? | [test id] | tests that failed before anything was cast, and judged nothing; absent when every test judged |
+| `stopped`? | string | why the run ended before casting everything it planned: the counts and the score are of the wekufe it did cast, and `exit` is 2. Absent when the run got through its plan |
 | `exit` | int | the exit code a CLI client should return (*Running in CI* in `docs/design.md`) |
 
 **Counts:** `killed`, `survived`, `timeout`, `no_coverage`, `compile_error`, `crashed`, `nondeterministic` (ints), `equivalent` ({`bytecode`, `declared`} ints).
