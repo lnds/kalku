@@ -220,27 +220,28 @@ fn measured(
   let shape = wanted.shape
   let found = alone(() => telling(wanted.aloud, () => measure(asking)))
   remember(found.cast)
-  match found.failure {
-    Some(why) -> {
-      Stderr.eprint("kalku: #{why}")
+  match found.report {
+    None -> {
+      Stderr.eprint("kalku: #{found.failure.unwrap_or("nothing measured")}")
       2
     }
-    None -> match found.report {
-      None -> {
-        Stderr.eprint("kalku: nothing measured")
-        2
+    Some(whole) -> {
+      # The report is what was measured; the blockers are what the
+      # project asked to be held to. Judging here rather than in the run
+      # keeps the same measurement answerable to a different policy in
+      # CI than on a laptop.
+      let r = judged_by(whole, policy, asking.touched)
+      Stdout.print(printed(r, shape))
+      # A run that stopped short still measured what it cast, and says so
+      # where a reader of the report alone and a reader of the error alone
+      # both hear it.
+      match found.failure {
+        Some(why) -> Stderr.eprint("kalku: #{why}")
+        None -> ()
       }
-      Some(whole) -> {
-        # The report is what was measured; the blockers are what the
-        # project asked to be held to. Judging here rather than in the run
-        # keeps the same measurement answerable to a different policy in
-        # CI than on a laptop.
-        let r = judged_by(whole, policy, asking.touched)
-        Stdout.print(printed(r, shape))
-        let code = exit_code(r.blockers)
-        if wanted.store { keep_baseline(r, code) } else { () }
-        code
-      }
+      let code = exit_code(r.blockers)
+      if wanted.store { keep_baseline(r, code) } else { () }
+      code
     }
   }
 }

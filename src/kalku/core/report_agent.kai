@@ -147,6 +147,7 @@ fn summary_line(r: Report) : String = json_encode(
       ...withheld_field(r.withheld),
       ...doubted_field(r.doubted),
       ...shard_field(r.shard),
+      ...optional("stopped", r.stopped),
       ("exit", JNum(exit_code(r.blockers)))
     ]
   )

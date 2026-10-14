@@ -55,7 +55,8 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   left_out: nobody_left_out(),
   withheld: None,
   doubted: None,
-  shard: None
+  shard: None,
+  stopped: None
 }
 
 fn one() : Counts = tally([Cast(Killed), Cast(Survived)])
@@ -299,4 +300,24 @@ test "an agent is told why no survivor names the tests that reach it" {
 
   assert field(summary, "coverage_withheld") == JStr("a line no test is credited with")
   assert not has(last_line(agent(report_of([], one()), lines_of)), "coverage_withheld")
+}
+
+# A run that stopped before the end of its plan measured what it cast. An
+# agent that reads the counts and not that the run stopped takes a part
+# for the whole.
+test "a run that stopped short says so in the summary, and in the JSON" {
+  let why = "the run stopped after 1 of 2 wekufe: worker 0: did not answer `abort`"
+  let stopped = Report {
+    ...report_of([], one()),
+    stopped: Some(why),
+    blockers: [CouldNotMeasure(why)]
+  }
+  let summary = last_line(agent(stopped, lines_of))
+
+  assert field(summary, "stopped") == JStr(why)
+  assert field(summary, "exit") == JNum(2)
+  assert get(field(summary, "counts"), "killed") == JNum(1)
+  assert field(json(stopped, 2), "stopped") == JStr(why)
+  assert not has(last_line(agent(report_of([], one()), lines_of)), "stopped")
+  assert not has(json(report_of([], one()), 0), "stopped")
 }
