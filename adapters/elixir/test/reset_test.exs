@@ -40,6 +40,31 @@ defmodule Kalku.ResetTest do
     assert casts["after-reset"]["dirty"] == false
   end
 
+  # An application that registers handlers in telemetry and the logger as
+  # it starts finds them still there when it is started again, and a
+  # `:ok =` on the second registration takes the restart down. A reset has
+  # to clear what the project registered, and only that.
+  test "a reset restarts an application that registered handlers outside itself", %{reni: reni} do
+    lines =
+      summon(reni, "attached", [
+        request("prepare", 2),
+        request("baseline", 3),
+        cast("dirtier", 4, {218, 223}, ":twice", ["test/attached_test.exs:8"], "lib/attached.ex"),
+        request("reset", 5),
+        cast("after-reset", 6, {135, 136}, "1", ["test/attached_test.exs:12"], "lib/attached.ex"),
+        request("reset", 7)
+      ])
+
+    resets = replies(lines, "reset_done")
+    assert length(resets) == 2
+    assert Enum.all?(resets, &(&1["clean"] == true))
+
+    # The test that judges it needs the application up, and nothing else of
+    # the wekufe: a kill here would be the restart's doing, not the test's.
+    after_reset = Enum.find(replies(lines, "cast_done"), &(&1["wekufe"] == "after-reset"))
+    assert after_reset["outcome"] == "survived"
+  end
+
   test "a cast that touches nothing is not called dirty", %{reni: reni} do
     done =
       reply(
@@ -67,14 +92,18 @@ defmodule Kalku.ResetTest do
     assert "reset" in ready["capabilities"]
   end
 
-  defp cast(wekufe, id, {from, to}, replacement, tests) do
+  defp replies(lines, type) do
+    for line <- lines, {:ok, %{"type" => ^type} = body} <- [Kalku.Json.decode(line)], do: body
+  end
+
+  defp cast(wekufe, id, {from, to}, replacement, tests, file \\ "lib/green.ex") do
     Kalku.Json.encode(%{
       "type" => "cast",
       "id" => id,
       "wekufe" => wekufe,
       "site" => %{
         "site_id" => "s#{from}",
-        "file" => "lib/green.ex",
+        "file" => file,
         "span" => %{
           "start" => %{"line" => 1, "col" => 1, "byte" => from},
           "end" => %{"line" => 1, "col" => 1, "byte" => to}
