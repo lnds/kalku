@@ -1,3 +1,19 @@
+## v0.15.0 (2026-10-14)
+
+### Added
+
+- **kaikai**: a project can judge wekufe with its own oracle (#337)
+
+### Fixed
+
+- **elixir**: a reset restarts an application that registers handlers as it starts (#343)
+- **mcp**: a server nobody speaks to gives up, and the servers refuse arguments (#346)
+- **orchestrator**: a wait for a kalku's reply runs in constant stack (#340)
+
+### Changed
+
+- **kaikai**: the kalku that ran the baseline goes on to cast (#339)
+
 ## v0.14.7 (2026-10-13)
 
 ### Fixed
