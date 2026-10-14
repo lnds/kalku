@@ -19,9 +19,9 @@ import encoding.json_bind
 import kalku.wire.enums
 import kalku.wire.shapes
 
-#[doc("Where a kalku works: the copy it casts in, and the package it came from.")]
+#[doc("Where a kalku works: the copy it casts in, the package it came from, and the command that judges a wekufe when the project names one instead of `kai test`.")]
 #[derive(Eq, Show)]
-pub type Work = { root: String, copy: String }
+pub type Work = { root: String, copy: String, oracle: Option[String] }
 
 # Enough of a diagnostic to name the file, the line and the error.
 const KEPT_LINES : Int = 12
@@ -58,12 +58,17 @@ Copy the package into the reni, and warm the build cache there.
 A copy rather than a link: a wekufe is written into it, and a link would
 write into the user's file.
 """)]
-pub fn prepare(root: String, reni: String, worker: Int) : Result[Work, String] / Process + File {
+pub fn prepare(
+  root: String,
+  reni: String,
+  worker: Int,
+  oracle: Option[String]
+) : Result[Work, String] / Process + File {
   let copy = "#{reni}/work/#{worker}"
   if inside(reni, root) {
     Err(refuse_nested(reni, root))
   } else {
-    fill(root, copy)
+    fill(Work { root: root, copy: copy, oracle: oracle })
   }
 }
 
@@ -102,13 +107,12 @@ fn plain(path: String) : String = if starts_with(path, "./") {
 # Only what a package is: its manifest, its sources and its tests. A
 # repository also holds `.git`, a build directory and caches, and copying
 # those turns a cast into minutes of I/O for bytes nobody compiles.
-fn fill(root: String, copy: String) : Result[Work, String] / Process + File {
-  let _ = run(["/bin/rm", "-rf", copy])
-  let _ = run(["/bin/mkdir", "-p", copy])
-  match copy_worth_having(root, copy) {
+fn fill(w: Work) : Result[Work, String] / Process + File {
+  let _ = run(["/bin/rm", "-rf", w.copy])
+  let _ = run(["/bin/mkdir", "-p", w.copy])
+  match copy_worth_having(w.root, w.copy) {
     Err(e) -> Err("cannot copy the package into the reni: #{e}")
     Ok(_) -> {
-      let w = Work { root: root, copy: copy }
       let _warm = run_in(w, ["kai", "build", "."])
       Ok(w)
     }
@@ -139,16 +143,51 @@ pub fn sites_in(w: Work, which: String, spells: [Spell]) : Result[[Site], String
   }
 }
 
-#[doc("Run the whole suite in the copy, for a baseline.")]
-pub fn test_all(w: Work) : Ran / Process = read_run(run_in(w, ["kai", "test", "--json", "."]), 0)
+#[doc("Run the whole suite in the copy, for a baseline: the project's oracle when it names one.")]
+pub fn test_all(w: Work) : Ran / Process = match w.oracle {
+  Some(command) -> by_oracle(w, command)
+  None -> read_run(run_in(w, ["kai", "test", "--json", "."]), 0)
+}
 
 #[doc("""
-Run only these tests in the copy.
+Judge the wekufe spliced into `which` with these tests, or with the
+project's oracle.
 
-Given none, the whole suite runs: a kalku that skipped the tests would
-report every wekufe as a survivor, which is the loudest possible lie.
+An oracle says only whether it is content, and a wekufe that does not
+compile would discontent it as surely as one a test caught. So the copy is
+typechecked first, and a wekufe that fails there is a compile error, never
+a kill. What the typecheck cannot see, a backend gap, still reaches the
+oracle.
 """)]
-pub fn test_only(w: Work, ids: [String]) : Ran / Process = if is_empty(ids) {
+pub fn judge(w: Work, which: String, ids: [String]) : Ran / Process = match w.oracle {
+  None -> test_only(w, ids)
+  Some(command) -> match run_in(w, ["kai", "typecheck", which]) {
+    Err(e) -> broken(CutShort(e))
+    Ok(came) -> match came.exit {
+      Exited(0) -> by_oracle(w, command)
+      Exited(_) -> broken(NoBuild(diagnostic(lines(came.said))))
+      Signaled(signo) -> broken(CutShort("the typecheck was killed by signal #{signo}"))
+    }
+  }
+}
+
+# An oracle is one test, named by its command, and judged by how it ended:
+# 0 is content, any other status is a wekufe it caught. A signal is
+# neither, since whatever sent it ended the oracle before it could say.
+fn by_oracle(w: Work, command: String) : Ran / Process =
+  match run(["/bin/sh", "-c", "cd #{quoted(w.copy)} && (#{command}\n) 2>&1"]) {
+    Err(e) -> broken(CutShort(e))
+    Ok(came) -> match came.exit {
+      Exited(code) -> tallied([
+        Judged { timing: TestTiming { test_id: command, file: "", duration_ms: 0 }, failed: code != 0 }
+      ])
+      Signaled(signo) -> broken(CutShort("the oracle was killed by signal #{signo}"))
+    }
+  }
+
+# Given none, the whole suite runs: a kalku that skipped the tests would
+# report every wekufe as a survivor, which is the loudest possible lie.
+fn test_only(w: Work, ids: [String]) : Ran / Process = if is_empty(ids) {
   test_all(w)
 } else {
   read_run(

@@ -1,6 +1,8 @@
 import kalku.wire.enums
 import kalku.core.gate
 import kalku.core.config
+import kalku.wire.shapes
+import encoding.json_bind
 
 const FULL : String =
   "[run]\nworkers = 8\nspells = [\"arm\", \"compare\"]\nexclude = [\"lib/my_app_web/telemetry.ex\"]\nexclude_calls = [\"Logger.*\", \":telemetry.execute\"]\ntimeout_floor_ms = 250\n\n[score]\nthreshold = 0.80\n\n[elixir]\npartition_env = \"MIX_TEST_PARTITION\"\n"
@@ -53,9 +55,19 @@ test "a key nobody wrote keeps its default" {
   assert not c.ratchet
 }
 
-test "a table kalku does not own travels to its kalku untouched" {
-  assert (language_tables(FULL) | (.fst)) == ["elixir"]
-  assert language_tables("[run]\nworkers = 1\n") == []
+test "the table named after the language travels to its kalku as it stands" {
+  let text =
+    "language = \"kaikai\"\n\n[kaikai]\noracle = \"make test\"\nretries = 2\nflags = [\"-q\"]\n\n[elixir]\npartition_env = \"P\"\n"
+  assert config_of(text).options
+    == Some(Options {
+      entries: [
+        ("oracle", JStr("make test")),
+        ("retries", JNum(2)),
+        ("flags", JArr([JStr("-q")]))
+      ]
+    })
+  assert config_of(FULL).options == None
+  assert config_of("language = \"kaikai\"\n").options == None
 }
 
 test "a spell nobody has is a typo, and typos are errors" {

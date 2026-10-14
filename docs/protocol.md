@@ -156,6 +156,7 @@ First message after summoning.
 | `worker` | int | this kalku's index in the pool |
 | `inline_limit_bytes` | int | payloads above this go to files |
 | `env` | object of strings | extra environment for the test runtime |
+| `options?` | object | the project's settings for this kalku's language: the table of `.kalku.toml` named after it, as it stands. The kaikai side does not read them; a kalku that cannot honour one refuses `hello` with `bad_options` |
 
 | `ready` | Type | Meaning |
 |---|---|---|
@@ -425,6 +426,7 @@ Any request may be answered with `error`.
 | `code` | Meaning |
 |---|---|
 | `protocol_mismatch` | versions differ (answer to `hello`) |
+| `bad_options` | a setting in `hello.options` this kalku cannot honour, named in the message (answer to `hello`) |
 | `prepare_failed` | the project did not compile |
 | `unknown_test` | a test id is not known to this kalku |
 | `load_failed` | the original module could not be restored |

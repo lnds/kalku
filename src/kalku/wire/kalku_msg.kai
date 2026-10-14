@@ -16,7 +16,8 @@ pub type HelloMsg = {
   reni: String,
   worker: Int,
   inline_limit_bytes: Int,
-  env: StrMap
+  env: StrMap,
+  options: Option[Options]
 }
 
 #[doc("`sites`: find sites in these files for these spells.")]

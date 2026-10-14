@@ -42,6 +42,26 @@ A capability is claimed only once it is true. The consequences are worth stating
 - **Runs are slow.** With no coverage to select by, a wekufe costs a whole suite. Use `--limit` and a narrow scope.
 - **No trivial compiler equivalence.** A wekufe that compiles to the original's code is cast and run like any other.
 
+## An oracle other than `kai test`
+
+A project whose suite is not a set of `test` blocks names the command that judges it, in the `[kaikai]` table of `.kalku.toml`:
+
+```toml
+language = "kaikai"
+
+[kaikai]
+oracle = "make test-golden"
+```
+
+The oracle runs in the copy, through `/bin/sh`, and is judged by its exit status alone, as `kai mutate --oracle` judges it: 0 means healthy, any other status means the wekufe was caught, and a signal means nothing judged it (`crashed`). It is the whole suite of the baseline, as one test named by the command.
+
+What it costs:
+
+- **The whole oracle runs for every wekufe**: an exit status has no tests in it to select from.
+- **A typecheck before each oracle.** An exit status cannot tell a wekufe that does not compile from one a test caught, so the copy is typechecked first (`kai typecheck <file>`) and a failure there is a `compile_error`. What a typecheck cannot see, a backend gap, still reaches the oracle and is counted as a kill.
+
+Any other key in the table is refused when the kalku is greeted, so a misspelt `oracle` does not measure quietly with `kai test`.
+
 ## Sites
 
 Sites come from `kai mutate --list --json`, which is kaikai's own parser rather than a text scan. Each carries the span in bytes on both ends, the original and replacement text, and the enclosing declaration with an ordinal — so diffs are real and a declared equivalent keyed by meaning survives an edit above it.

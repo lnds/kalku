@@ -11,8 +11,10 @@ that kalku as it stands.
 """)]
 
 import encoding.toml
+import encoding.json_bind.{JsonValue, JStr, JBool, JNum, JReal, JArr, JObj}
 import kalku.wire.enums
 import kalku.core.gate
+import kalku.wire.shapes
 
 #[doc("What a project asked for, with kalku's defaults filled in.")]
 #[derive(Eq, Show)]
@@ -27,7 +29,8 @@ pub type Config = {
   timeout_floor_ms: Int,
   memory_limit_mb: Option[Int],
   policy: Policy,
-  ratchet: Bool
+  ratchet: Bool,
+  options: Option[Options]
 }
 
 #[doc("A key the config got wrong, and what was wrong with it.")]
@@ -49,7 +52,8 @@ pub fn defaults() : Config = Config {
   timeout_floor_ms: 500,
   memory_limit_mb: None,
   policy: no_policy(),
-  ratchet: false
+  ratchet: false,
+  options: None
 }
 
 #[doc("Read `.kalku.toml`. Every problem is reported, not just the first.")]
@@ -64,13 +68,23 @@ pub fn parse(text: String) : Result[Config, [ConfigProblem]] =
   }
 
 #[doc("""
-The tables kalku does not own, each with its name: a kalku's own settings
-travel to it untouched, so a language may take options kalku knows nothing
-about.
+The settings of the project's language, from the table named after it: kalku
+does not read them, it hands them to that language's kalku as they stand,
+so a kalku may take options kalku knows nothing about.
 """)]
-pub fn language_tables(text: String) : [(String, TomlValue)] = match toml.decode(text) {
-  None -> []
-  Some(root) -> filter(pairs_of(root), t => not contains(["run", "score"], t.fst))
+fn options_of(root: TomlValue, language: String) : Option[Options] =
+  match value_at(root, language) {
+    Some(TTbl(pairs)) -> Some(Options { entries: pairs | (p => (p.fst, as_json(p.snd))) })
+    _ -> None
+  }
+
+fn as_json(v: TomlValue) : JsonValue = match v {
+  TStr(s) -> JStr(s)
+  TBool(b) -> JBool(b)
+  TInt(n) -> JNum(n)
+  TReal(r) -> JReal(r)
+  TArr(xs) -> JArr(xs | as_json)
+  TTbl(ps) -> JObj(ps | (p => (p.fst, as_json(p.snd))))
 }
 
 # ---- reading -----------------------------------------------------------
@@ -90,7 +104,8 @@ fn of_toml(root: TomlValue) : Result[Config, [ConfigProblem]] {
     timeout_floor_ms: int_at(run, "timeout_floor_ms").unwrap_or(defaults().timeout_floor_ms),
     memory_limit_mb: int_at(run, "memory_limit_mb"),
     policy: Policy { threshold: real_at(score, "threshold"), baseline: None },
-    ratchet: bool_at(score, "ratchet").unwrap_or(false)
+    ratchet: bool_at(score, "ratchet").unwrap_or(false),
+    options: string_at(root, "language").and_then(l => options_of(root, l))
   }
   let problems =
     spells.fst

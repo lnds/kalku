@@ -54,7 +54,8 @@ defmodule Kalku.Schema do
       reni: :string,
       worker: :int,
       inline_limit_bytes: :int,
-      env: :strmap
+      env: :strmap,
+      options: {:opt, :object}
     ],
     "prepare" => [],
     "baseline" => [],

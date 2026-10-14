@@ -79,7 +79,8 @@ fn hello() : KalkuRequest = Hello(HelloMsg {
   reni: ".kalku",
   worker: 0,
   inline_limit_bytes: 65536,
-  env: StrMap { entries: [] }
+  env: StrMap { entries: [] },
+  options: None
 })
 
 fn a_cast(wekufe: String) : KalkuRequest =
