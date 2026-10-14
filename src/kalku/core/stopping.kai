@@ -2,9 +2,10 @@
 What a run says when it did not get through what it planned.
 
 A pool that runs out of kalku ends the run, and the wekufe it had not cast
-are not measured. A report built from the ones it did cast carries a score
-and a clean exit, so a CI job or an agent reads a finished run. Saying
-where it stopped, and why, is the only honest answer.
+are not measured. The ones it did cast were, and they are reported — but a
+report of them alone carries a score and a clean exit, so a CI job or an
+agent reads a finished run. Saying where it stopped, and why, in the
+report and in the exit code, is the only honest answer.
 """)]
 
 #[doc("""
