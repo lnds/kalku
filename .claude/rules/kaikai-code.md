@@ -184,6 +184,10 @@ Each of these cost a debugging session; none is in `kai info`.
 - **A clause-block needs one pattern per parameter**: a two-parameter
   function is `case Ready(m), caps ->`, never `case Ready(m) ->`.
 - **`when` is a reserved word**; a binder named `when` fails to parse.
+- **A lambda's body ends at the first top-level pipe** (`kai info pipes`,
+  §Precedence): `x => xs | (l => f(x, l))` is `(x => xs) | (l => …)`, and
+  `x` is not in scope on the right. Parenthesise a body that holds a pipe:
+  `x => (xs | (l => f(x, l)))`.
 - **`length(s)` on a `String` counts bytes**, not codepoints, which is
   what the protocol's limits are stated in.
 - **`argv()` excludes the program name**, so the first argument is `[path]`.

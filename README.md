@@ -269,7 +269,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Java kalku: Gradle builds, asked by running them with a script added from outside the project | done |
 | Java kalku: projects that test with JUnit 4 or with TestNG, run through their JUnit Platform engines | done |
 | **Go kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `go/parser`; `prepare`, `baseline` and `cast` in the reni through `-overlay`, `abort`, `kalku init` for Go modules, shipped in the release | done |
-| **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java, Go |
+| **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java, Go, kaikai |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | `--watch` and `--ci` | not yet |
@@ -368,9 +368,9 @@ src/kalku/core/shard.kai:30  literal  shard.wrap32/1
 score 40% · 2 killed · 3 survived · 1 compile error
 ```
 
-One module at a time, and slow on purpose: kaikai reports no per-test
-coverage and has no warm runtime to reload into, so every wekufe rebuilds
-the package and runs the whole suite. `SELF_MODULE`, `SELF_LIMIT` and
+One module at a time, and slow on purpose: kaikai has no warm runtime to
+reload into, so every wekufe rebuilds the package and runs the tests that
+reach its line. `SELF_MODULE`, `SELF_LIMIT` and
 `SELF_WORKERS` choose how much to measure and how hard. Leave the working
 tree alone while it runs — each worker copies the project when it starts,
 so an edit mid-run gets measured.

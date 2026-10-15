@@ -6,9 +6,10 @@ thin on purpose — kaikai's own `kai mutate` finds the sites and `kai
 test` judges them. What this adds is the protocol, the workspace in the
 reni, and the honesty about what it cannot know.
 
-It claims neither `hot_load` nor `per_test_coverage` nor `reset`: every
-cast rebuilds, kaikai reports no per-test coverage, and there is no
-shared runtime to dirty. It claims `cast_after_baseline`: nothing lives in
+It claims `per_test_coverage` from `kai test --coverage`, unless the
+project names an oracle of its own, which judges the package as one test
+and says nothing of lines. It claims neither `hot_load` nor `reset`: every
+cast rebuilds, and there is no shared runtime to dirty. It claims `cast_after_baseline`: nothing lives in
 the process between requests, so the kalku that ran the baseline casts as
 one that was only prepared would. A capability is claimed only once it is
 true.
@@ -31,6 +32,7 @@ type Serving = {
   root: String,
   reni: String,
   worker: Int,
+  inline_limit: Int,
   oracle: Option[String],
   work: Option[Work]
 }
@@ -46,7 +48,7 @@ fn main() : Int / Stdin + Stdout + Stderr + File + Process + Env + Spawn = with_
     let serving = n.spawn(
       () => with_mailbox {
         Actor.send(here, Actor.self())
-        serve(Serving { root: ".", reni: "", worker: 0, oracle: None, work: None })
+        serve(Serving { root: ".", reni: "", worker: 0, inline_limit: 0, oracle: None, work: None })
       }
     )
     let server = Actor.receive()
@@ -102,6 +104,7 @@ fn answer(
       root: m.root,
       reni: m.reni,
       worker: m.worker,
+      inline_limit: m.inline_limit_bytes,
       oracle: oracle_of(m.options).unwrap_or(None),
       work: None
     })
@@ -140,13 +143,17 @@ fn greeting(m: HelloMsg) : KalkuReply = if not compatible(m.version) {
 } else {
   match oracle_of(m.options) {
     Err(why) -> refusal("bad_options", why, true)
-    Ok(_) -> Ready(ReadyMsg {
-    version: PROTOCOL_VERSION,
-    language: "kaikai",
-    adapter: "kalku_kaikai 0.0.0",
-    runtime: "kaikai",
-    spells: mutate_spells(),
-    capabilities: [CastCap, AbortCap, CastAfterBaseline]
+    Ok(oracle) -> Ready(ReadyMsg {
+      version: PROTOCOL_VERSION,
+      language: "kaikai",
+      adapter: "kalku_kaikai 0.0.0",
+      runtime: "kaikai",
+      spells: mutate_spells(),
+      capabilities: if is_some(oracle) {
+        [CastCap, AbortCap, CastAfterBaseline]
+      } else {
+        [CastCap, PerTestCoverage, AbortCap, CastAfterBaseline]
+      }
     })
   }
 }
@@ -204,30 +211,79 @@ fn prepared(
 const IN_A_COPY : String =
   "it ran in a copy of the package kept in the reni: what the copy leaves out, `.git` for one, is not there"
 
-fn baseline_of(state: Serving) : KalkuReply / Process = match state.work {
+fn baseline_of(state: Serving) : KalkuReply / Process + File = match state.work {
   None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
-  Some(w) -> report_of(test_all(w))
+  Some(w) -> {
+    let r = test_all(w)
+    match r.mishap {
+      Some(_) -> report_of(r, (None, None))
+      None -> report_of(r, spoken(covered(r), state))
+    }
+  }
 }
 
-# Coverage is absent rather than faked: kaikai reports no per-test
-# coverage, so the kaikai side runs every test for every wekufe and knows
-# that it is doing so.
-fn report_of(r: Ran) : KalkuReply = match r.mishap {
-  Some(NoBuild(why)) -> refusal("baseline_failed", why, true)
-  Some(CutShort(why)) -> refusal("baseline_failed", why, true)
-  None -> BaselineDone(BaselineDoneMsg {
-    status: if r.failed == 0 { Green } else { Red },
-    duration_ms: 0,
-    tests: r.tests,
-    coverage: None,
-    coverage_path: None,
-    coverage_packed_path: None,
-    coverage_withheld: None,
-    coverage_doubted: None,
-    failures: failures_of(r),
-    differences: Some([IN_A_COPY])
-  })
+# Which tests ran each line, one entry a line. Only the tests the run
+# reported count: a record about anything else names nothing a cast can
+# select.
+fn covered(r: Ran) : [CoverageEntry] {
+  let known = r.tests | (.test_id)
+  let reached = r.reached |? (x => contains(known, x.test_id))
+  let places = uniq(sort(flat_map(reached, x => (x.lines | (l => "#{x.file}\u{0}#{pad(l)}")))))
+  places | (p => entry_at(p, reached))
 }
+
+# Lines sort as numbers once they are all the same width.
+fn pad(n: Int) : String {
+  let s = "#{n}"
+  "#{repeat("0", 9 - length(s))}#{s}"
+}
+
+fn entry_at(place: String, reached: [Reach]) : CoverageEntry {
+  let parts = split(place, "\u{0}")
+  let file = head(parts).unwrap_or("")
+  let line = to_int(last(parts).unwrap_or("0")).unwrap_or(0)
+  CoverageEntry {
+    file: file,
+    line: line,
+    tests: reached |? (x => x.file == file and contains(x.lines, line)) | (.test_id)
+  }
+}
+
+# Inline when it fits under the limit `hello` set, and in a file in the
+# reni when it does not.
+fn spoken(
+  entries: [CoverageEntry],
+  state: Serving
+) : (Option[[CoverageEntry]], Option[String]) / File {
+  let text = "[#{join(entries | (e => json_encode(to_json(e))), ",")}]"
+  if length(text) <= state.inline_limit {
+    (Some(entries), None)
+  } else {
+    let path = "#{state.reni}/coverage-#{state.worker}.json"
+    file.write(path, text)
+    (None, Some(path))
+  }
+}
+
+# Coverage is absent rather than faked where there is none: under an
+# oracle the kaikai side runs it for every wekufe and knows that it does.
+fn report_of(r: Ran, coverage: (Option[[CoverageEntry]], Option[String])) : KalkuReply =
+  match r.mishap {
+    Some(NoBuild(why)) -> refusal("baseline_failed", why, true)
+    Some(CutShort(why)) -> refusal("baseline_failed", why, true)
+    None -> BaselineDone(BaselineDoneMsg {
+      status: if r.failed == 0 { Green } else { Red },
+      duration_ms: 0,
+      tests: r.tests,
+      coverage: if is_some(coverage.fst) and r.reached != [] { coverage.fst } else { None },
+      coverage_path: coverage.snd,
+      coverage_packed_path: None,
+      coverage_withheld: None,
+      coverage_doubted: None,
+      failures: failures_of(r),
+      differences: Some([IN_A_COPY])
+    })
+  }
 
 fn failures_of(r: Ran) : [Failure] = match r.first_failure {
   Some(id) -> [Failure { test_id: id, message: "the test failed" }]

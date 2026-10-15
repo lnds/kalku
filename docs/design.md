@@ -233,7 +233,7 @@ kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mu
 
 kaikai compiles to native code and cannot hot-load, so "warm" here means a warm compiler and build cache, not a warm runtime; the kalku does not announce `hot_load`.
 
-This kalku needs from kaikai: the full site data in `--mutate-list-json` (span, original and replacement text, enclosing declaration, ordinal), and machine-readable results plus test selection in `kai test`. Without the latter it degrades to whole-suite runs with no `killed_by`.
+This kalku needs from kaikai: the full site data in `--mutate-list-json` (span, original and replacement text, enclosing declaration, ordinal), and machine-readable results, test selection and per-test coverage in `kai test` (`--json`, `--only`, `--coverage`), all of which it has. Under a project's own oracle there is no coverage, and every wekufe faces the oracle.
 
 `kai mutate` keeps its own driver for kaikai's CI. kalku is written in kaikai, so kaikai's CI must never depend on kalku: that would make the bootstrap circular. The two share the site format, not code.
 
