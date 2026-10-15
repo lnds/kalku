@@ -13,7 +13,7 @@ rebuilt — and the `kalku` binary drives it from outside.
 
 ```elixir
 # mix.exs
-{:kalku_elixir, "~> 0.15", only: :test, runtime: false}
+{:kalku_elixir, "~> 0.16", only: :test, runtime: false}
 ```
 
 Then install the `kalku` binary ([how](https://github.com/lnds/kalku#install))
