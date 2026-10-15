@@ -99,10 +99,22 @@ fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
       is_some(m.site) != (m.outcome == Gone),
       "outcome: site goes with every outcome but gone"
     )
-  ProgressEv(m) ->
+  ProgressEv(m) -> {
     require(
       m.done >= 0 and m.total >= 0 and m.estimate_ms.unwrap_or(0) >= 0,
       "progress: neither a count nor an estimate is negative"
+    )!
+    require(
+      bounds(m.estimate_ms, m.estimate_max_ms),
+      "progress: estimate_max_ms goes with estimate_ms and is not below it"
     )
+  }
   _ -> Ok(())
+}
+
+# The longest a run can take bounds its estimate, so it needs one to bound.
+fn bounds(estimate: Option[Int], most: Option[Int]) : Bool = match (estimate, most) {
+  (_, None) -> true
+  (Some(e), Some(m)) -> m >= e
+  (None, Some(_)) -> false
 }

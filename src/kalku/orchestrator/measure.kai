@@ -543,7 +543,12 @@ fn casting_them(
   Telling.tell_of(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
   )
-  Telling.will_cost(length(casts), estimate_ms(casts, known.durations, asking.spec.workers))
+  let workers = asking.spec.workers
+  Telling.will_cost(
+    length(casts),
+    estimate_ms(casts, known.durations, workers),
+    most_ms(casts, known.durations, workers)
+  )
   let casting = agreed(
     match warm {
       Some(first) -> cast_beside(asking.spec, first, casts)
