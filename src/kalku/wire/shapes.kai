@@ -135,8 +135,8 @@ pub type StrMap = { entries: [(String, String)] }
 
 impl Eq for StrMap {
   fn eq(a: StrMap, b: StrMap) : Bool =
-    (a.entries | (.fst)) == (b.entries | (.fst))
-      and (a.entries | (.snd)) == (b.entries | (.snd))
+    (a.entries | .fst) == (b.entries | .fst)
+      and (a.entries | .snd) == (b.entries | .snd)
 }
 
 impl Show for StrMap {

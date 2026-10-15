@@ -10,7 +10,7 @@ test "the processes of a listing are read, and what is not a process is skipped"
 
   assert length(procs) == 5
   assert procs_of("") == []
-  assert (procs | (.pid)) == [1, 100, 101, 102, 200]
+  assert (procs | .pid) == [1, 100, 101, 102, 200]
 }
 
 # The test binary of a project is a grandchild of the kalku, through cargo or
@@ -19,7 +19,7 @@ test "the processes of a listing are read, and what is not a process is skipped"
 test "a tree is the process and everything it started, and only that" {
   let procs = procs_of(listing())
 
-  assert (tree_of(100, procs) | (.pid)) == [100, 101, 102]
+  assert (tree_of(100, procs) | .pid) == [100, 101, 102]
   assert tree_mb(100, procs) == 6
   assert tree_mb(200, procs) == 9
   assert tree_mb(999, procs) == 0

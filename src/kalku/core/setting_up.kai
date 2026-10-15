@@ -189,7 +189,7 @@ which is a question for the owner rather than a coin to flip.
 pub fn detect(markers: [String]) : Result[Known, Puzzle] = match found_in(markers) {
   [] -> Err(Undetected)
   [only] -> Ok(only)
-  several -> Err(Ambiguous(several | (.language)))
+  several -> Err(Ambiguous(several | .language))
 }
 
 fn found_in(markers: [String]) : [Known] =
@@ -213,9 +213,9 @@ pub fn explain(p: Puzzle) : String {
     "this looks like more than one project (#{join(names, ", ")}); say which with `--lang`"
 }
 
-fn languages() : String = join(catalogue() | (.language), ", ")
+fn languages() : String = join(catalogue() | .language, ", ")
 
-fn markers() : String = join(catalogue() | (.marker), " or ")
+fn markers() : String = join(catalogue() | .marker, " or ")
 
 #[doc("Everything init would write, given the language and where the reni goes.")]
 pub fn plan_for(known: Known, reni: String) : Plan = Plan {

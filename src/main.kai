@@ -265,7 +265,7 @@ fn printed(r: Report, shape: Shape) : String / File {
 # files are read here and looked up purely, because the format reads
 # nothing itself — which is what makes it testable without a filesystem.
 fn sources_of(r: Report) : [(String, [String])] / File =
-  uniq(r.survivors | (.site.file)) | (path => (path, read_lines(path)))
+  uniq(r.survivors | .site.file) | (path => (path, read_lines(path)))
 
 fn read_lines(path: String) : [String] / File =
   if file.exists(path) { lines(file.read(path)) } else { [] }
@@ -493,8 +493,8 @@ fn asking_again(
   wanted: Wanted,
   declared: [equivalent.Entry]
 ) : Asking / Env = Asking {
-  ...asking_of(c, pool_of(c), uniq(sites | (.file)), declared),
-  only: sites | (.site_id)
+  ...asking_of(c, pool_of(c), uniq(sites | .file), declared),
+  only: sites | .site_id
 }
 
 # Proposed, never applied: an agent may say why a wekufe cannot be told
@@ -719,7 +719,7 @@ fn report_event(r: Report) : ServerEvent = ReportEv(ReportMsg {
   counts: r.counts,
   survivors_on_changed_lines: r.on_changed_lines,
   suppression_changes: r.suppressions,
-  left_out: if is_empty(r.left_out.tests) { None } else { Some(r.left_out.tests | (.test_id)) },
+  left_out: if is_empty(r.left_out.tests) { None } else { Some(r.left_out.tests | .test_id) },
   stopped: r.stopped,
   exit: exit_code(r.blockers)
 })
@@ -903,8 +903,8 @@ fn narrowed(
   sites: [Site],
   declared: [equivalent.Entry]
 ) : Asking / Env = Asking {
-  ...asking_at(cfg, root, uniq(sites | (.file)), declared),
-  only: sites | (.site_id)
+  ...asking_at(cfg, root, uniq(sites | .file), declared),
+  only: sites | .site_id
 }
 
 fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File {

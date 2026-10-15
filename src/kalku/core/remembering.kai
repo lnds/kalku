@@ -66,7 +66,7 @@ pub fn appended(was: String, rs: [Remembered]) : String =
 
 #[doc("Every outcome a wekufe has had, oldest first.")]
 pub fn history(all: [Remembered], wekufe: String) : [Outcome] =
-  filter(all, r => r.wekufe == wekufe) | (.outcome)
+  filter(all, r => r.wekufe == wekufe) | .outcome
 
 #[doc("The sites named by these wekufe, in the order they were named.")]
 pub fn sites_for(all: [Remembered], wekufe: [String]) : [Site] = flat_map(
@@ -90,7 +90,7 @@ would measure nothing and say so with a score of `n/a`, which reads as
 "nothing to break"; this is how it is told apart.
 """)]
 pub fn gone(named: [String], found: [Site]) : [String] =
-  filter(named, w => not contains(found | (.site_id), w))
+  filter(named, w => not contains(found | .site_id, w))
 
 fn last(rs: [Remembered]) : Option[Remembered] = match reverse(rs) {
   [] -> None

@@ -6,12 +6,12 @@ import kalku.core.verdict
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
 
 fn terms_of(name: String) : [String] = match page(name) {
-  Some(t) -> t.entries | (.term)
+  Some(t) -> t.entries | .term
   None -> []
 }
 
 test "every topic is listed, and every listed topic exists" {
-  let named = topics() | (.name)
+  let named = topics() | .name
 
   assert contains(named, "spells")
   assert contains(named, "outcomes")

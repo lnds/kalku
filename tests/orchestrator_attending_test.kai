@@ -34,7 +34,7 @@ test "status is answered mid-run, from what the session says about itself" {
     Reply(id, SessionsEv(m)) -> {
       assert id == 7
       assert length(m.sessions) == 1
-      assert (m.sessions | (.state)) == [StateRunning]
+      assert (m.sessions | .state) == [StateRunning]
     }
     other -> {
       assert other == SayNothing

@@ -162,7 +162,7 @@ fn left_out_fields(out: LeftOut) : [(String, JsonValue)] = if is_empty(out.tests
   [
     ("left_out", JArr(out.tests | (f => JStr(f.test_id)))),
     ...strings("differences", out.differences),
-    ...strings("reached_only_by_left_out", out.sites | (.site_id))
+    ...strings("reached_only_by_left_out", out.sites | .site_id)
   ]
 }
 
@@ -192,7 +192,7 @@ fn shard_field(shard: Option[Shard]) : [(String, JsonValue)] = match shard {
 # over a whole run, which is a bigger claim than any single equivalent and
 # belongs to whoever owns the project.
 fn repeated_field(r: Report) : [(String, JsonValue)] {
-  let groups = repeated_calls(r.survivors | (.site), WORTH_SAYING)
+  let groups = repeated_calls(r.survivors | .site, WORTH_SAYING)
   if is_empty(groups) {
     []
   } else {
@@ -266,7 +266,7 @@ fn strings(name: String, values: [String]) : [(String, JsonValue)] =
   if is_empty(values) { [] } else { [(name, JArr(values | (v => JStr(v))))] }
 
 fn window(lines: [String], from: Int, to: Int) : [String] =
-  enumerate(lines) |? (l => l.fst + 1 >= from and l.fst + 1 <= to) | (.snd)
+  enumerate(lines) |? (l => l.fst + 1 >= from and l.fst + 1 <= to) | .snd
 
 fn undent(lines: [String]) : [String] {
   let filled = filter(lines, l => not is_blank(l))

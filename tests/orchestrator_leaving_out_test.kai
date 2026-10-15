@@ -55,7 +55,7 @@ test "a test that fails before anything is cast is handed to no cast" {
     }
     Ok(known) -> {
       assert known.tests == ["test/a_test.exs:3"]
-      assert (known.left_out | (.test_id)) == ["test/a_test.exs:9"]
+      assert (known.left_out | .test_id) == ["test/a_test.exs:9"]
       assert known.differences == ["the build is elsewhere"]
 
       let ready = plan(inputs_for(asking_of("red_some_pass.ndjson"), known), nothing_cached)
@@ -63,7 +63,7 @@ test "a test that fails before anything is cast is handed to no cast" {
 
       # Line 7 only the failing test reaches; line 9 nothing does. Neither
       # is cast, and they are not the same thing to tell a reader.
-      assert (ready.no_coverage | (.site_id)) == ["s7", "s9"]
+      assert (ready.no_coverage | .site_id) == ["s7", "s9"]
       assert known.only_theirs == [place_of("lib/a.ex", 7)]
     }
   }
@@ -117,7 +117,7 @@ test "a wekufe a kalku saw no test run is not a survivor, and its reason is kept
 }
 
 fn sites_in(p: Plan) : [String] =
-  sort((p.to_cast | (c => c.site.site_id)) ++ (p.no_coverage | (.site_id)))
+  sort((p.to_cast | (c => c.site.site_id)) ++ (p.no_coverage | .site_id))
 
 # The shards of a run are added up afterwards, so each site is in one of
 # them and only one: the cast ones, and the ones the plan set aside.
@@ -148,7 +148,7 @@ test "where coverage is doubted, each wekufe takes the rest of the suite to face
       let ready = plan(inputs_for(asking_of("red_some_pass.ndjson"), known), nothing_cached)
       let more = measure.Known { ...known, tests: known.tests ++ ["test/b_test.exs:2"] }
 
-      assert (doubting(ready, more).to_cast | (.rest)) == [[]]
+      assert (doubting(ready, more).to_cast | .rest) == [[]]
 
       let doubted = doubting(ready, measure.Known { ...more, doubted: Some("a line is nobody's") })
       assert (doubted.to_cast | (c => (c.tests, c.rest)))

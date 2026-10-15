@@ -98,7 +98,7 @@ pub fn plan(inputs: Inputs, cached: (String) -> Option[Outcome]) : Plan {
 pub fn covering(site: Site, inputs: Inputs) : [String] = match inputs.coverage {
   None -> inputs.all_tests
   Some(entries) ->
-    concat(entries |? (e => e.file == site.file and e.line == site.span.start.line) | (.tests))
+    concat(entries |? (e => e.file == site.file and e.line == site.span.start.line) | .tests)
 }
 
 #[doc("How long a wekufe may run: a multiple of what its tests cost, never below the floor.")]
@@ -196,7 +196,7 @@ fn consume(rest: String, parts: [String], first: Bool) : Bool = match parts {
 # up sooner, and the same inputs always give the same plan.
 # How many tests judge each is counted once, not at every comparison.
 fn order(casts: [Wekufe]) : [Wekufe] =
-  sort_by(casts | (c => (length(c.tests), c)), compare_casts) | (.snd)
+  sort_by(casts | (c => (length(c.tests), c)), compare_casts) | .snd
 
 fn compare_casts(left: (Int, Wekufe), right: (Int, Wekufe)) : Int {
   let a = left.snd

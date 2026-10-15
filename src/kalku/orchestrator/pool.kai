@@ -292,4 +292,4 @@ fn from_byte(s: String, at: Int) : String = if at >= length(s) {
 fn out_of_budget(spec: PoolSpec, slot: Slot, why: String) : String =
   "#{why}; summoned #{slot.in_a_row} time(s) in a row, the most this run allows is #{spec.summons_allowed}"
 
-fn counting(n: Int) : [Int] = if n <= 0 { [] } else { enumerate(repeat(0, n)) | (.fst) }
+fn counting(n: Int) : [Int] = if n <= 0 { [] } else { enumerate(repeat(0, n)) | .fst }
