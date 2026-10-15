@@ -51,7 +51,7 @@ Outcomes (`killed`, `survived`, `timeout`, …) keep plain technical names: they
 - **Clients** speak the client protocol to the server over a Unix socket. The MCP server for coding agents is one more client of that protocol, not a parallel path.
 - **The kaikai side** holds one **session** per project root. Planner, scheduler, cache, and scorer are pure logic behind effect rows; only the edges spawn processes or touch the network.
 - **Each kalku** speaks the kalku protocol (`docs/protocol.md`) over stdio. Kalku are supervised actors on the kaikai side and are meant to stay warm: a hung cast is aborted inside the kalku, and a kalku is banished only when it stops answering (see *Timeouts and dirty state*).
-- **The reni** lives under `$XDG_CACHE_HOME/kalku/<project-hash>/`. It holds build artefacts and caches, never source copies: source is read from the working tree, read-only.
+- **The reni** lives under the machine's temporary directory, at `$TMPDIR/kalku/<name>-<key>/`: the project's folder name, so a person can find it, and a short hash of its absolute path, so two checkouts whose folders share a name never share one. A project's `.kalku.toml` can set another place. It holds build artefacts, caches, and the copies some kalku cast into; the working tree is only ever read.
 
 ### One binary, two lifetimes
 

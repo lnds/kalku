@@ -167,6 +167,14 @@ test "the reni of `.` is the reni of where one is standing" {
   assert reni_here(".") == reni_here(here)
   assert reni_here("") == reni_here(here)
   assert reni_here("/a/b/proj/") == reni_here("/a/b/proj")
-  assert reni_here("/a/b/proj") == reni_here("proj")
   assert reni_here("/a/b/proj") != reni_here("/a/b/other")
+  assert reni_here("#{here}/proj") == reni_here("proj")
+}
+
+# Two checkouts whose folders share a name — two clones, two worktrees —
+# are two projects, and sharing a reni would mix one's artefacts into the
+# other's run. The name is still in it, so a person can find it.
+test "two projects whose folders share a name do not share a reni" {
+  assert reni_here("/a/b/proj") != reni_here("/a/c/proj")
+  assert is_some(index_of(reni_here("/a/b/proj"), "/kalku/proj-"))
 }
