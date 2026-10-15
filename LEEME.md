@@ -20,7 +20,7 @@ Los agentes de código escriben tests rápido, pero un test puede ejecutar una l
 
 Apunta primero a Elixir. Está escrito en [kaikai](https://kaikai-lang.org/) y usa kalku para probar su propio código.
 
-> **Estado: pre-alpha.** Los kalku para Elixir, Rust, Python, Java, Go y kaikai vienen en el binario de Homebrew, y el de Elixir también está en [Hex](https://hex.pm/packages/kalku_elixir). Todo lo que sigue funciona hoy; [qué está hecho y qué no](#qué-funciona-hoy) está al final.
+> **Estado: beta.** Los kalku para Elixir, Rust, Python, Java, Go y kaikai vienen en el binario de Homebrew, y el de Elixir también está en [Hex](https://hex.pm/packages/kalku_elixir). Todo lo que sigue funciona hoy; [qué está hecho y qué no](#qué-funciona-hoy) está al final.
 
 ## Instalación
 

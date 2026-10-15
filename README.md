@@ -20,7 +20,7 @@ Coding agents write tests fast, but a test can run a line without checking anyth
 
 It targets Elixir first. It is written in [kaikai](https://kaikai-lang.org/) and uses kalku to test its own code.
 
-> **Status: pre-alpha.** Kalku for Elixir, Rust, Python, Java, Go and kaikai ship in the binary on Homebrew, and the Elixir one is also on [Hex](https://hex.pm/packages/kalku_elixir). Everything below runs today; [what is done and what is not](#what-works-today) is at the end.
+> **Status: beta.** Kalku for Elixir, Rust, Python, Java, Go and kaikai ship in the binary on Homebrew, and the Elixir one is also on [Hex](https://hex.pm/packages/kalku_elixir). Everything below runs today; [what is done and what is not](#what-works-today) is at the end.
 
 ## Install
 
