@@ -4,7 +4,6 @@ The protocol's closed sets and their wire names. Each set is a table of
 disagree on a spelling.
 """)]
 
-import encoding.json
 import encoding.json_bind
 
 #[doc("A class of defect a kalku can cast; `Foreign` is a driver framework's own operator.")]
