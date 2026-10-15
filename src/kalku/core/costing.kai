@@ -11,6 +11,13 @@ It counts the tests and nothing else. Loading a wekufe into a warm kalku
 costs something too, and that is not a number this side can know without
 measuring it, so the estimate is a floor rather than a promise and says
 so in the words around it.
+
+Where the baseline doubted its coverage, a wekufe its own tests do not
+kill faces the rest of the suite as well, and which ones will is only
+known by casting them. The run then has two numbers, what its covering
+tests cost and what it costs if every wekufe needs the rest, and says
+both: the first alone would be read as the likely duration and be off by
+the size of the suite.
 """)]
 
 import kalku.core.planner
@@ -29,6 +36,16 @@ pub fn tests_ms(casts: [Wekufe], durations: [(String, Int)]) : Int {
 }
 
 #[doc("""
+How long the tests of these wekufe took in the baseline, counting the rest
+of the suite for each: what the work is if no wekufe is killed by its own
+tests.
+""")]
+pub fn most_tests_ms(casts: [Wekufe], durations: [(String, Int)]) : Int {
+  let told = told_by(None, durations)
+  sum(casts | (c => cost_of(told, c.tests) + cost_of(told, c.rest)))
+}
+
+#[doc("""
 How long a run is likely to take, in milliseconds.
 
 Workers share the work, so they divide it; a run with none is a run that
@@ -38,6 +55,15 @@ pub fn estimate_ms(casts: [Wekufe], durations: [(String, Int)], workers: Int) : 
   requires workers >= 0
   ensures result >= 0
 = if workers <= 0 { 0 } else { tests_ms(casts, durations) / workers }
+
+#[doc("""
+The longest a run can take, in milliseconds: the estimate when no cast
+carries the rest of the suite, and more when the coverage was doubted.
+""")]
+pub fn most_ms(casts: [Wekufe], durations: [(String, Int)], workers: Int) : Int
+  requires workers >= 0
+  ensures result >= 0
+= if workers <= 0 { 0 } else { most_tests_ms(casts, durations) / workers }
 
 #[doc("""
 That estimate in the words someone can act on.
@@ -59,14 +85,21 @@ pub fn how_long(ms: Int) : String = if ms < 1000 {
 #[doc("""
 The whole sentence a run prints before it starts casting.
 
-It takes the estimate rather than computing it, so the number a person
-reads and the number a client is sent are the same one.
+It takes the estimates rather than computing them, so the numbers a
+person reads and the numbers a client is sent are the same ones. When the
+longest the run can take reads the same as the estimate, there is one
+number to say; when it does not, the estimate is said as the floor it is.
 """)]
-pub fn what_it_costs(ms: Int) : String = if ms < 1000 {
+pub fn what_it_costs(ms: Int, most: Int) : String = if most < 1000 {
   "this should be quick"
-} else {
+} else if how_long(most) == how_long(ms) {
   "about #{how_long(ms)} at the rate the baseline ran, plus loading each wekufe"
+} else {
+  "#{at_least(ms)}up to #{how_long(most)} at the rate the baseline ran, plus loading each wekufe: the coverage is doubted, so a wekufe its own tests do not kill faces the rest of the suite too"
 }
+
+# A floor under a minute says nothing anyone would wait differently for.
+fn at_least(ms: Int) : String = if ms < 60000 { "" } else { "at least #{how_long(ms)} and " }
 
 fn plural(n: Int, unit: String) : String = if n == 1 { "1 #{unit}" } else { "#{n} #{unit}s" }
 

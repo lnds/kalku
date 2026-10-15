@@ -69,16 +69,64 @@ test "an estimate never rounds its way down to nothing" {
 }
 
 test "a run with nothing to cast promises nothing" {
-  assert what_it_costs(estimate_ms([], took(100), 1)) == "this should be quick"
+  assert what_it_costs(estimate_ms([], took(100), 1), most_ms([], took(100), 1))
+    == "this should be quick"
 }
 
-test "a run that will take a while says so, and says what the number is" {
-  let many = repeat(cast_of(1, ["t1", "t2"]), 100)
-  let said = what_it_costs(estimate_ms(many, took(1000), 1))
+fn said_of(casts: [Wekufe], durations: [(String, Int)]) : String =
+  what_it_costs(estimate_ms(casts, durations, 1), most_ms(casts, durations, 1))
 
-  assert is_some(index_of(said, "5 minutes"))
-  assert is_some(index_of(said, "at the rate the baseline ran"))
-  assert is_some(index_of(said, "plus loading each wekufe"))
+fn says(said: String, part: String) : Bool = is_some(index_of(said, part))
+
+test "a run that will take a while says so, and says what the number is" {
+  let said = said_of(repeat(cast_of(1, ["t1", "t2"]), 100), took(1000))
+
+  assert says(said, "about 5 minutes")
+  assert says(said, "at the rate the baseline ran")
+  assert says(said, "plus loading each wekufe")
+  assert not says(said, "up to")
+}
+
+fn doubted(line: Int, tests: [String], rest: [String]) : Wekufe =
+  Wekufe { ...cast_of(line, tests), rest: rest }
+
+# Where the coverage is doubted, a wekufe its own tests do not kill faces
+# the rest of the suite. Which ones will is only known by casting them, so
+# the most a run can cost counts the rest for every one of them.
+test "the most a run can cost counts the rest of the suite" {
+  let casts = [doubted(1, ["t1"], ["t2"]), doubted(2, ["t2"], ["t1"])]
+
+  assert tests_ms(casts, took(100)) == 300
+  assert most_tests_ms(casts, took(100)) == 600
+  assert most_ms(casts, took(100), 2) == 300
+  assert most_ms([cast_of(1, ["t1", "t2"])], took(100), 1)
+    == estimate_ms([cast_of(1, ["t1", "t2"])], took(100), 1)
+}
+
+# A hundred wekufe judged by a test of a second, with a suite of a minute
+# behind each: the covering tests alone would announce two minutes for a
+# run that can take more than an hour and a half.
+test "a run whose coverage is doubted says the estimate is a floor" {
+  let suite = [("t1", 1000), ("t2", 60000)]
+  let said = said_of(repeat(doubted(1, ["t1"], ["t2"]), 100), suite)
+
+  assert says(said, "at least 2 minutes and up to 2 hours")
+  assert says(said, "the coverage is doubted")
+  assert not says(said, "about")
+}
+
+test "a floor under a minute is not said as one" {
+  let said = said_of(repeat(doubted(1, ["t1"], ["t2"]), 10), [("t1", 100), ("t2", 60000)])
+
+  assert says(said, "up to 10 minutes")
+  assert not says(said, "at least")
+}
+
+check "the most a run can cost is never less than its estimate" with a: Int, b: Int, n: Int {
+  let durations = [("t1", abs(a) % 100000), ("t2", abs(b) % 100000)]
+  let casts = [doubted(1, ["t1"], ["t2"]), cast_of(2, ["t2"])]
+  let workers = 1 + abs(n) % 8
+  most_ms(casts, durations, workers) >= estimate_ms(casts, durations, workers)
 }
 
 # More workers never make a run cost more, and neither does dropping a

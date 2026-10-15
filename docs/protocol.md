@@ -462,8 +462,11 @@ Events, terminal event `report`:
 | `done` | int | wekufe cast so far |
 | `total` | int | wekufe this run will cast |
 | `estimate_ms`? | int | how long the casting is likely to take; sent once, before the first wekufe |
+| `estimate_max_ms`? | int | the longest the casting can take; sent with `estimate_ms`, only when it is larger |
 
 `estimate_ms` is the baseline's own test durations — what the tests that judge each planned wekufe took — shared out over the run's workers. It counts the tests and nothing else, so it is a floor rather than a promise: loading a wekufe into a warm kalku costs something the kaikai side cannot know without measuring it. A client with no terminal to watch reads the number and can show it, or refuse the run, instead of waiting out a surprise.
+
+`estimate_max_ms` is sent when the baseline said `coverage_doubted`. Each cast then carries the rest of the suite, which a wekufe faces when its own tests do not kill it, and which wekufe will is only known by casting them. `estimate_max_ms` counts the rest for every wekufe, the same way. The likely duration is somewhere between the two, and a client shows both rather than `estimate_ms` alone, which would be off by the size of the suite. It is never below `estimate_ms`, and never sent without it.
 
 Unlike the kalku protocol's `progress`, which reports how far one long request has got, this one is about the casting.
 
