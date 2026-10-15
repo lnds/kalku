@@ -123,7 +123,7 @@ func (s *Service) greet(id int64, h *Hello) Reply {
 			fmt.Sprintf("%s is older than go%d.%d, the oldest Go this kalku measures", version, Oldest[0], Oldest[1]), true))
 	}
 	s.hello, s.project = h, project
-	return say(Ready(id, Version, version, []string{"cast", "abort", "cast_after_baseline"}))
+	return say(Ready(id, Version, version, []string{"cast", "per_test_coverage", "abort", "cast_after_baseline"}))
 }
 
 // `go version` in the module's directory, which is the Go its go.mod
@@ -196,7 +196,109 @@ func (s *Service) baseline(ctx context.Context, id int64) string {
 			failures = append(failures, Failure{Test: t.ID, Message: why})
 		}
 	}
-	return BaselineDone(id, since(started), timed, failures, s.project.Differences())
+	passed := map[string]bool{}
+	for _, t := range tests {
+		if v := ran.verdict(t); v == "pass" || v == "skip" {
+			passed[t.ID] = true
+		}
+	}
+	reached, withheld, err := s.project.Cover(ctx, tests, passed)
+	if err != nil {
+		return Error(id, "baseline_failed", err.Error(), true)
+	}
+	coverage := Coverage{Withheld: withheld}
+	if withheld == "" {
+		coverage, err = spoken(reached, s.hello)
+		if err != nil {
+			return Error(id, "baseline_failed", "cannot write the coverage into the reni: "+err.Error(), true)
+		}
+	}
+	return BaselineDone(id, since(started), timed, coverage, failures, s.project.Differences())
+}
+
+// What a baseline says about coverage: inline when it is small, and packed
+// in a file in the reni when it is not, which is every project big enough to
+// be worth measuring.
+func spoken(reached Reached, h *Hello) (Coverage, error) {
+	files := make([]string, 0, len(reached))
+	for f := range reached {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	entries := []Entry{}
+	size := 0
+	for _, f := range files {
+		lines := make([]int, 0, len(reached[f]))
+		for l := range reached[f] {
+			lines = append(lines, l)
+		}
+		sort.Ints(lines)
+		for _, l := range lines {
+			e := Entry{File: f, Line: l, Tests: reached[f][l]}
+			size += len(e.json()) + 1
+			entries = append(entries, e)
+		}
+	}
+	if int64(size) <= h.InlineLimitBytes {
+		return Coverage{Inline: entries}, nil
+	}
+	path := filepath.Join(h.Reni, "coverage", fmt.Sprintf("%d.json", h.Worker))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return Coverage{}, err
+	}
+	return Coverage{PackedPath: path}, os.WriteFile(path, []byte(packed(entries)), 0o644)
+}
+
+// The packed form: every test id once, and the lines of each file that the
+// same tests reach, together.
+func packed(entries []Entry) string {
+	index := map[string]int{}
+	var ids []string
+	type group struct {
+		file  string
+		lines []int
+		tests []int
+	}
+	var groups []*group
+	byKey := map[string]*group{}
+	for _, e := range entries {
+		positions := make([]int, len(e.Tests))
+		for i, t := range e.Tests {
+			at, ok := index[t]
+			if !ok {
+				at = len(ids)
+				index[t] = at
+				ids = append(ids, t)
+			}
+			positions[i] = at
+		}
+		k := e.File + "\x00" + fmt.Sprint(positions)
+		g := byKey[k]
+		if g == nil {
+			g = &group{file: e.File, tests: positions}
+			byKey[k] = g
+			groups = append(groups, g)
+		}
+		g.lines = append(g.lines, e.Line)
+	}
+	reached := make([]string, len(groups))
+	for i, g := range groups {
+		o := newObject().str("file", g.file)
+		o.key("lines")
+		o.b.WriteString(ints(g.lines))
+		o.key("tests")
+		o.b.WriteString(ints(g.tests))
+		reached[i] = o.String()
+	}
+	return newObject().strs("tests", ids).objects("reached", reached).String() + "\n"
+}
+
+func ints(xs []int) string {
+	parts := make([]string, len(xs))
+	for i, x := range xs {
+		parts[i] = strconv.Itoa(x)
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }
 
 func (s *Service) cast(ctx context.Context, id int64, c *CastRequest) Reply {

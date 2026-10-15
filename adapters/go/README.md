@@ -34,13 +34,19 @@ later.
 - **Runs** `go test -json` and counts each test's own verdict. Only the
   packages whose test binary holds the mutated package run anew; the others'
   binaries are unchanged, and `go test` may answer for them from its cache.
+- **Coverage per test** from Go's cover tool: each test is run alone on a
+  binary built with `-cover -coverpkg=./...`, and is credited with every line
+  of each function it entered. A test that passes in the suite and fails
+  alone three times withholds the coverage, and says so.
 - **`abort`** ends the cast's process group, and the kalku takes the next
   request.
 
 ## Limits worth knowing
 
-- No per-test coverage yet: every wekufe faces the whole suite, cut down to the
-  packages that can see it.
+- Coverage is by function, not by line: a test that entered a function is
+  asked about every wekufe in it.
+- A test that reaches code only through a program it builds and runs is not
+  credited with that code.
 - One module, from its root, with `GOWORK=off`: a `go.work` around it is not
   used, and a module nested inside it is not measured with it.
 - Without type information, a literal is changed by its text: an integer that
