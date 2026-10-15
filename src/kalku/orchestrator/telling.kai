@@ -26,7 +26,7 @@ pub effect Telling {
   tell_of(line: String) : Unit
   entered(phase: Phase) : Unit
   got_through(done: Int, total: Int) : Unit
-  will_cost(casts: Int, estimate_ms: Int) : Unit
+  will_cost(casts: Int, estimate_ms: Int, most_ms: Int) : Unit
 }
 
 #[doc("""
@@ -65,8 +65,8 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     Stderr.eprint("kalku: #{done} of #{total}")
     resume(())
   }
-  will_cost(_casts, estimate_ms, resume) -> {
-    Stderr.eprint("kalku: #{what_it_costs(estimate_ms)}")
+  will_cost(_casts, estimate_ms, most_ms, resume) -> {
+    Stderr.eprint("kalku: #{what_it_costs(estimate_ms, most_ms)}")
     resume(())
   }
   return(x) -> x
@@ -79,7 +79,7 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   tell_of(_line, resume) -> resume(())
   entered(_phase, resume) -> resume(())
   got_through(_done, _total, resume) -> resume(())
-  will_cost(_casts, _estimate_ms, resume) -> resume(())
+  will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume(())
   return(x) -> x
 }
 

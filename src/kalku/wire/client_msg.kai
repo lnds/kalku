@@ -55,7 +55,12 @@ terminal to watch reads that number and can refuse the run instead of
 waiting out a surprise.
 """)]
 #[derive(Json, Eq, Show)]
-pub type RunProgressMsg = { done: Int, total: Int, estimate_ms: Option[Int] }
+pub type RunProgressMsg = {
+  done: Int,
+  total: Int,
+  estimate_ms: Option[Int],
+  estimate_max_ms: Option[Int]
+}
 
 #[doc("`outcome`: what happened to one wekufe.")]
 #[derive(Json, Eq, Show)]

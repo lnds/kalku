@@ -50,7 +50,7 @@ fn how_far(
     tell_of(_line, resume) -> resume((), state)
     entered(_phase, resume) -> resume((), state)
     got_through(done, total, resume) -> resume((), state ++ [(done, total)])
-    will_cost(_casts, _estimate_ms, resume) -> resume((), state)
+    will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
     return(_x) -> state
   }
 )

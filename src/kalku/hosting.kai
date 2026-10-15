@@ -203,9 +203,9 @@ fn told_to_host[a, e](progress: Option[String], body: () -> a / Telling + e) : a
           Stdout.print(progress_note(token, count, "#{done} of #{total}"))
           resume(())
         }
-        will_cost(_casts, estimate_ms, resume) -> {
+        will_cost(_casts, estimate_ms, most_ms, resume) -> {
           count := count + 1
-          Stdout.print(progress_note(token, count, what_it_costs(estimate_ms)))
+          Stdout.print(progress_note(token, count, what_it_costs(estimate_ms, most_ms)))
           resume(())
         }
         return(x) -> x
