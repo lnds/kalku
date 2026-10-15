@@ -389,3 +389,94 @@ func TestEverythingBeforeAShutdownIsAnswered(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The fingerprint of each test, as a baseline gave it.
+func fingerprints(t *testing.T, base map[string]any) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, x := range base["tests"].([]any) {
+		x := x.(map[string]any)
+		f, _ := x["fingerprint"].(string)
+		if f == "" {
+			t.Fatalf("a test with no fingerprint: %v", x)
+		}
+		out[x["test"].(string)] = f
+	}
+	return out
+}
+
+func offer(prints map[string]string) []any {
+	var out []any
+	for test, f := range prints {
+		out = append(out, map[string]any{"test": test, "fingerprint": f})
+	}
+	return out
+}
+
+func strs(v any) []string {
+	var out []string
+	for _, x := range v.([]any) {
+		out = append(out, x.(string))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// A test whose package's fingerprint has not changed is not run again; one
+// whose package, or any package its test binary is built from, has changed
+// runs. The module's root holds every package below it, so its tests run
+// whatever changed.
+func TestABaselineRunsOnlyTheTestsOfWhatChanged(t *testing.T) {
+	t.Parallel()
+	root := calc(t)
+	first := summon(t)
+	if ready := first.start(root, map[string]string{}); !strings.Contains(fmt.Sprint(ready["capabilities"]), "partial_baseline") {
+		t.Fatalf("ready: %v", ready)
+	}
+	prints := fingerprints(t, first.ask(map[string]any{"type": "baseline", "id": 3}))
+	first.leave()
+
+	again := summon(t)
+	again.start(root, map[string]string{})
+	same := again.ask(map[string]any{"type": "baseline", "id": 3, "reuse": offer(prints)})
+	if len(same["tests"].([]any)) != 0 || strings.Join(strs(same["reused"]), " ") != strings.Join(sorted(everyTest), " ") {
+		t.Fatalf("nothing changed, and the baseline said: %v", same)
+	}
+	if same["status"] != "green" {
+		t.Fatalf("a baseline that ran nothing is green: %v", same)
+	}
+	again.leave()
+
+	order := filepath.Join(root, "internal/order/order.go")
+	text, _ := os.ReadFile(order)
+	if err := os.WriteFile(order, append(text, []byte("\n// changed\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed := summon(t)
+	changed.start(root, map[string]string{})
+	base := changed.ask(map[string]any{"type": "baseline", "id": 3, "reuse": offer(prints)})
+	reused := strings.Join(strs(base["reused"]), " ")
+	want := "internal/limits/limits_test.go:TestRoom internal/limits/limits_test.go:TestWithin internal/slow/slow_test.go:TestTwice"
+	if reused != want {
+		t.Fatalf("reused %s, want %s", reused, want)
+	}
+	now := fingerprints(t, base)
+	if now["internal/order/order_test.go:TestFirst"] == prints["internal/order/order_test.go:TestFirst"] {
+		t.Error("the fingerprint of a changed package did not change")
+	}
+	// The coverage is of the tests that ran: a reused test brings its own.
+	for _, e := range base["coverage"].([]any) {
+		for _, test := range e.(map[string]any)["tests"].([]any) {
+			if strings.Contains(reused, test.(string)) {
+				t.Errorf("a reused test is credited with a line: %v", e)
+			}
+		}
+	}
+	changed.leave()
+}
+
+func sorted(xs []string) []string {
+	out := append([]string{}, xs...)
+	sort.Strings(out)
+	return out
+}

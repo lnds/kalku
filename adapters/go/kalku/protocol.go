@@ -68,6 +68,9 @@ type Request struct {
 	Cast   *CastRequest
 	Abort  int64
 	Reload []string
+	// The tests a baseline may leave out, with the fingerprint each had when
+	// it last ran.
+	Reuse map[string]string
 }
 
 // Decode reads one line of the kalku protocol, as sent to a kalku.
@@ -113,7 +116,11 @@ func Decode(line string) (*Request, error) {
 			}
 		}
 		r.Hello = h
-	case "prepare", "baseline", "reset", "shutdown":
+	case "prepare", "reset", "shutdown":
+	case "baseline":
+		if _, present := f.optional("reuse"); present {
+			r.Reuse = f.reuse("reuse")
+		}
 	case "sites":
 		r.Sites = &SitesRequest{
 			Files:        f.list("files"),
@@ -227,6 +234,26 @@ func (f *fields) list(key string) []string {
 			f.fail(fmt.Sprintf("%s[%d]", key, i), "expected a string")
 		}
 		out = append(out, s)
+	}
+	return out
+}
+
+func (f *fields) reuse(key string) map[string]string {
+	items, ok := f.required(key).([]any)
+	if !ok {
+		f.fail(key, "expected a list")
+		return nil
+	}
+	out := make(map[string]string, len(items))
+	for i, item := range items {
+		o, ok := item.(map[string]any)
+		if !ok {
+			f.fail(fmt.Sprintf("%s[%d]", key, i), "expected an object")
+			continue
+		}
+		in := fields{o: o}
+		out[in.str("test")] = in.str("fingerprint")
+		f.nest(fmt.Sprintf("%s[%d]", key, i), in)
 	}
 	return out
 }
@@ -508,9 +535,10 @@ func Prepared(id int64, durationMS int64, modules int) string {
 
 // Timed is one test of a baseline and what it took.
 type Timed struct {
-	Test       string
-	File       string
-	DurationMS int64
+	Test        string
+	File        string
+	DurationMS  int64
+	Fingerprint string // what the test runs; empty when the kalku cannot say
 }
 
 // Failure is a test that failed in a baseline.
@@ -539,14 +567,18 @@ func (e Entry) json() string {
 }
 
 // BaselineDone answers `baseline`.
-func BaselineDone(id int64, durationMS int64, tests []Timed, coverage Coverage, failures []Failure, differences []string) string {
+func BaselineDone(id int64, durationMS int64, tests []Timed, coverage Coverage, failures []Failure, differences, reused []string) string {
 	status := "green"
 	if len(failures) > 0 {
 		status = "red"
 	}
 	ts := make([]string, len(tests))
 	for i, t := range tests {
-		ts[i] = newObject().str("test", t.Test).str("file", t.File).int("duration_ms", t.DurationMS).String()
+		obj := newObject().str("test", t.Test).str("file", t.File).int("duration_ms", t.DurationMS)
+		if t.Fingerprint != "" {
+			obj.str("fingerprint", t.Fingerprint)
+		}
+		ts[i] = obj.String()
 	}
 	fs := make([]string, len(failures))
 	for i, f := range failures {
@@ -568,6 +600,9 @@ func BaselineDone(id int64, durationMS int64, tests []Timed, coverage Coverage, 
 	o.objects("failures", fs)
 	if len(differences) > 0 {
 		o.strs("differences", differences)
+	}
+	if len(reused) > 0 {
+		o.strs("reused", reused)
 	}
 	return o.String()
 }
