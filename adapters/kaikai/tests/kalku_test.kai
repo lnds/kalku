@@ -89,14 +89,64 @@ test "it greets as a kaikai kalku and claims only what it can do" {
 
   assert field(ready, "type") == "ready"
   assert field(ready, "language") == "kaikai"
-  # No warm runtime to reload into, no per-test coverage from kaikai, and
-  # nothing shared to dirty: a capability is claimed only once it is true.
+  # No warm runtime to reload into and nothing shared to dirty: a
+  # capability is claimed only once it is true.
   assert has(ready, "\"cast\"")
+  assert has(ready, "\"per_test_coverage\"")
   assert has(ready, "\"abort\"")
   assert has(ready, "\"cast_after_baseline\"")
   assert not has(ready, "hot_load")
-  assert not has(ready, "per_test_coverage")
   assert not has(ready, "reset")
+}
+
+# An oracle judges the package as one test and says nothing of lines.
+test "under an oracle no coverage is claimed" {
+  let ready = head(told([hello_with("{\"oracle\":\"kai test .\"}")])).unwrap_or("")
+  assert field(ready, "type") == "ready"
+  assert not has(ready, "per_test_coverage")
+}
+
+fn baseline_line(said: [String]) : String =
+  find(said, l => has(l, "\"type\":\"baseline_done\"")).unwrap_or("")
+
+# Each line is credited to the tests that ran it, as `kai test --coverage`
+# says them. `clamp/1` is run by one test only, and `wrapped/1`'s line by
+# another, so a wekufe in either faces that test and no other.
+test "a baseline says which tests ran which lines" {
+  let line = baseline_line(
+    told([
+      hello(),
+      "{\"type\":\"prepare\",\"id\":2}",
+      "{\"type\":\"baseline\",\"id\":3}"
+    ])
+  )
+  assert field(line, "status") == "green"
+  assert has(
+    line,
+    "{\"file\":\"tiny.kai\",\"line\":10,\"tests\":[\"tests/tiny_test.kai:clamp keeps a positive number\"]}"
+  )
+  assert has(
+    line,
+    "{\"file\":\"tiny.kai\",\"line\":7,\"tests\":[\"tests/also_test.kai:total of nothing is nothing\",\"tests/tiny_test.kai:total adds\"]}"
+  )
+  assert not has(line, "tests/tiny_test.kai\",\"line\"")
+}
+
+# Coverage larger than `hello` allows on a line goes to a file in the reni.
+test "coverage over the inline limit is written to a file" {
+  let tight =
+    "{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":\"#{TINY}\",\"reni\":\"#{reni()}\",\"worker\":0,\"inline_limit_bytes\":10,\"env\":{}}"
+  let line = baseline_line(
+    told([
+      tight,
+      "{\"type\":\"prepare\",\"id\":2}",
+      "{\"type\":\"baseline\",\"id\":3}"
+    ])
+  )
+  let path = field(line, "coverage_path")
+  assert path == "#{reni()}/coverage-0.json"
+  assert not has(line, "\"coverage\":")
+  assert has(file.read(path), "clamp keeps a positive number")
 }
 
 test "sites come from kaikai's own parser, with the span and text to match" {
@@ -261,7 +311,9 @@ test "a kalku whose run is gone ends in the middle of a cast, and the package is
 }
 
 fn error_of(said: [String]) : String =
-  find(said, l => has(l, "\"type\":\"error\"")).map(l => "#{field(l, "code")}: #{field(l, "message")}").unwrap_or("no error")
+  find(said, l => has(l, "\"type\":\"error\"")).map(
+    l => "#{field(l, "code")}: #{field(l, "message")}"
+  ).unwrap_or("no error")
 
 # An oracle is any command, judged by its exit status alone. `kai test`
 # exits non-zero when a test fails, so as an oracle it kills what the
@@ -297,7 +349,8 @@ test "the oracle is the whole suite of a baseline" {
     "{\"type\":\"prepare\",\"id\":2}",
     "{\"type\":\"baseline\",\"id\":3}"
   ])
-  assert field(find(red, l => has(l, "\"type\":\"baseline_done\"")).unwrap_or(""), "status") == "red"
+  assert field(find(red, l => has(l, "\"type\":\"baseline_done\"")).unwrap_or(""), "status")
+    == "red"
 }
 
 # A signal ends the oracle before it can say anything, so nothing judged
@@ -312,8 +365,14 @@ test "an oracle that is killed is a crash, not a kill" {
 }
 
 test "a setting this kalku does not take is refused when it is greeted" {
-  assert has(error_of(told([hello_with("{\"orcale\":\"make test\"}")])), "bad_options: kaikai.orcale")
-  assert has(error_of(told([hello_with("{\"oracle\":3}")])), "bad_options: kaikai.oracle: expected a command")
+  assert has(
+    error_of(told([hello_with("{\"orcale\":\"make test\"}")])),
+    "bad_options: kaikai.orcale"
+  )
+  assert has(
+    error_of(told([hello_with("{\"oracle\":3}")])),
+    "bad_options: kaikai.oracle: expected a command"
+  )
   assert has(error_of(told([hello_with("{\"oracle\":\" \"}")])), "bad_options: kaikai.oracle")
 }
 
