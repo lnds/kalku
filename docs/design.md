@@ -195,6 +195,33 @@ Not proposed: annotations and the default of an annotation's element; `serialVer
 
 `enclosing` names a method with its package, its classes and the types of its parameters as the source writes them — `com.acme.Parser.next(int,List<String>)` — because overloads with the same number of parameters are ordinary in Java. A constructor is `<init>`, and an anonymous class is `$1`, `$2`, counted within its top-level class.
 
+### The Go kalku
+
+Go has no mutation tool that is maintained and widely used, which is the case kalku is native for. The Go kalku is written in Go, with the standard library and nothing else, and ships as one static binary, `kalku-go`.
+
+- **It runs the project's own `go`.** Every command is the `go` on the PATH, started in the module, so the toolchain is the one the module's `go.mod` asks for. Go 1.21 is the oldest it measures, the first whose `go` command chooses that toolchain; an older one is refused by name in answer to `hello`. The kalku's own parser is the one it was built with, so a release is built by the newest Go.
+- **Sites come from `go/parser`**, never from a scan of the text. A file the build leaves out on this machine — `_windows.go`, a `//go:build` line that does not hold — is skipped as `not_built`, because every wekufe in it would survive for having never been compiled; so are generated files, test files, and a file that belongs to a module nested inside this one.
+- **`prepare` copies the module into the reni** — everything but `.git` — and has `go test -list` build every test binary and name the tests in them. The build cache is the reni's own (`GOCACHE`), and `GOWORK=off`: the module's `go.mod` chooses every dependency, as it does for the module's own CI. A test is a top-level `Test`, `Example` or `Fuzz` function, named by its file: `internal/lexer/scan_test.go:TestScan`. A subtest is part of the test that ran it.
+- **A wekufe is never written into the copy.** It is written beside it and handed to `go test` through `-overlay`, which builds the copy as though that file held the wekufe. Nothing a cast does needs undoing, so `dirty` is always false and a killed kalku leaves the copy as it was. The copy is named by its path with every link resolved, because an overlay that names the other spelling of the same file is ignored without a word, and every wekufe would then survive.
+- **Only the tests that can see the wekufe run anew.** `prepare` also asks `go list -test` what each package's test binary is built from. A cast runs the packages whose binary holds the mutated package with `-count=1`; every other package's binary is the one an earlier cast built, unchanged, and `go test` may answer for it from its own test cache, which it keeps by the binary and by what the tests read. A baseline runs everything for real.
+- **The verdict is counted from the tests.** Every top-level test's `pass`, `fail` or `skip` is read from `go test -json`, never a package's summary. A test binary that did not build is `compile_error`, with what the compiler said under the file's own name; a test that failed, or started and never finished because the wekufe took its binary down, is the kill; a selected test that never started is `crashed`.
+- **`abort` ends the cast's process group.** `go test` is started in a group of its own, because a test binary is its child; the abort kills the group and the next request is served. Input that ends with no `shutdown` ends every group under way, and then the kalku.
+
+Measured on the fixture module (3 packages, 6 tests, 17 sites): `kalku run --all` takes 18.6 s with a cold cache, and a cast 0.6 to 1 s. On a real one, `google/uuid` v1.6.0 (43 tests), `version4.go` and `util.go` gave 286 wekufe in 10 minutes: 7 of them were timeouts at the 60 s floor, a lock that a wekufe never released, and the other 279 casts took 0.65 s on average. 231 of the 236 survivors are entries of one lookup table, `[256]byte`, that no test reads.
+
+Not claimed yet: `per_test_coverage` (Go's coverage profile is per run, so per test means a run per test; it comes later, measured), `hot_load` (each cast links a test binary), and `code_hash`.
+
+| Spell | Go forms |
+|---|---|
+| `arm` | delete a clause of a `switch` or a type switch — never `default`, and never the last clause, which is what a switch is most often written to fall to |
+| `compare` | `>=`↔`>`, `<=`↔`<`, `==`↔`!=` |
+| `connect` | `&&`↔`\|\|` |
+| `negate` | the condition `c` of an `if` or a `for` becomes `!(c)` |
+| `literal` | `n`→`n+1` for plain decimals — `n-1` for the largest value of a sized type, `255` or `32767`, which is most often that type — and `true`↔`false` |
+| `call` | a call that is a whole statement is deleted |
+
+Not proposed: an integer in an array's length, in a `case` list, or as the key of a composite literal, where changing it changes a type or repeats a case; hexadecimal, octal, binary and underscored numbers; a `true` or `false` that is somebody's variable; a call whose removal would leave an import or a variable unused, or a `panic` that ends its block, each a compile error rather than a wekufe; anything in a call `exclude_calls` names; and a wekufe that no longer parses.
+
 ### The kaikai kalku
 
 kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mutate-list-json` catalogues sites from the AST, `kaic2 --mutate-apply <i>` writes the spliced source, and a shell driver owns the run loop. The kaikai kalku is a thin native kalku over those flags:

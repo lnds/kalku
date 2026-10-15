@@ -52,6 +52,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # The Go kalku is built with no C, by a Go no older than the one its
+      # module names.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
       - run: make dist
 
       # A binary that only runs on the machine that built it is not a
@@ -64,6 +71,7 @@ jobs:
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-rust" | grep -q '"type":"bye"'
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-python" | grep -q '"type":"bye"'
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-java" | grep -q '"type":"bye"'
+          printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-go" | grep -q '"type":"bye"'
 
       - name: Check the tarball is named for this platform
         run: ls dist/kalku-*-${{ matrix.platform }}.tar.gz

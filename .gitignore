@@ -17,6 +17,9 @@ tests/fake_kalku/fake_kalku
 # built by `make test-kaikai-kalku`
 adapters/kaikai/bin/
 adapters/kaikai/fixtures/reni/
+
+# built by `make adapters/go/bin/kalku-go`
+adapters/go/bin/
 /dist/
 
 # Local environment files can hold secrets
