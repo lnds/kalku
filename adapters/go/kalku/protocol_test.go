@@ -14,8 +14,22 @@ import (
 
 const fixtures = "../../../docs/protocol/fixtures"
 
+// The fixtures belong to the repository, outside this module. Measured on a
+// copy, they are not there: that is a skip, except on CI, where a missing
+// fixture is a broken checkout.
+func needFixtures(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat(fixtures); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("the protocol fixtures are missing: %s", fixtures)
+		}
+		t.Skip("the protocol fixtures are not next to this module")
+	}
+}
+
 func lines(t *testing.T, name string) []string {
 	t.Helper()
+	needFixtures(t)
 	data, err := os.ReadFile(filepath.Join(fixtures, name))
 	if err != nil {
 		t.Fatalf("no fixture %s", name)
@@ -25,6 +39,7 @@ func lines(t *testing.T, name string) []string {
 
 // Every request a kalku can be sent decodes.
 func TestEveryRequestFixtureDecodes(t *testing.T) {
+	needFixtures(t)
 	files, _ := filepath.Glob(filepath.Join(fixtures, "kalku/requests/*.ndjson"))
 	seen := 0
 	for _, f := range files {
