@@ -1,4 +1,3 @@
-import encoding.json
 import fake_kalku.script
 
 fn steps_of(text: String) : [Step] = match parse_script(text) {
