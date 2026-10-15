@@ -138,11 +138,11 @@ func TestWhatItSaysIsTheFixturesByteForByte(t *testing.T) {
 		"bye": {Bye(7)},
 		"baseline_done/coverage": {
 			BaselineDone(3, 18300, []Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}},
-				Coverage{Inline: []Entry{{File: "lib/my_app/parser.ex", Line: 42, Tests: []string{"test/my_app/parser_test.exs:18"}}}}, nil, nil),
+				Coverage{Inline: []Entry{{File: "lib/my_app/parser.ex", Line: 42, Tests: []string{"test/my_app/parser_test.exs:18"}}}}, nil, nil, nil),
 			BaselineDone(3, 18300, []Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}},
-				Coverage{PackedPath: "/tmp/kalku/my_app/coverage.json"}, nil, nil),
+				Coverage{PackedPath: "/tmp/kalku/my_app/coverage.json"}, nil, nil, nil),
 			BaselineDone(3, 18300, []Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}},
-				Coverage{Withheld: "The suite reached 1 line(s) that no single test is credited with (parser.ex:42)."}, nil, nil),
+				Coverage{Withheld: "The suite reached 1 line(s) that no single test is credited with (parser.ex:42)."}, nil, nil, nil),
 		},
 		"sites_found": {SitesFound(4, nil, nil)},
 		"aborted":     {Aborted(9, 5, true), Aborted(9, 5, false)},
@@ -156,7 +156,11 @@ func TestWhatItSaysIsTheFixturesByteForByte(t *testing.T) {
 			BaselineDone(3, 9100,
 				[]Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}}, Coverage{},
 				[]Failure{{Test: "test/my_app/parser_test.exs:18", Message: "Assertion with == failed\ncode: assert next_token(\"\", 0) == :eof"}},
-				[]string{"the build is in /tmp/kalku/my_app/build, not in _build"}),
+				[]string{"the build is in /tmp/kalku/my_app/build, not in _build"}, nil),
+			BaselineDone(3, 4100,
+				[]Timed{{Test: "test/my_app/lexer_test.exs:5", File: "test/my_app/lexer_test.exs", DurationMS: 9, Fingerprint: "51be0c3a9d24"}},
+				Coverage{Inline: []Entry{{File: "lib/my_app/lexer.ex", Line: 12, Tests: []string{"test/my_app/lexer_test.exs:5"}}}},
+				nil, nil, []string{"test/my_app/parser_test.exs:18"}),
 		},
 	}
 	for name, messages := range said {
@@ -190,5 +194,23 @@ func TestAStringIsEscapedOnlyWhereJSONRequires(t *testing.T) {
 	want := `{"type":"error","id":1,"code":"c","message":"¡ñandú! <a&b> \"q\" \\ \n\t\u0001","fatal":false}`
 	if got != want {
 		t.Errorf("\n got %s\nwant %s", got, want)
+	}
+}
+
+// A baseline names the tests it may leave out with the fingerprint each had,
+// and a malformed entry is refused rather than read as no offer.
+func TestABaselineReadsWhatItMayReuse(t *testing.T) {
+	r, err := Decode(`{"type":"baseline","id":3,"reuse":[{"test":"a_test.go:TestA","fingerprint":"f1"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Reuse["a_test.go:TestA"] != "f1" || len(r.Reuse) != 1 {
+		t.Fatalf("reuse = %v", r.Reuse)
+	}
+	if r, err := Decode(`{"type":"baseline","id":3}`); err != nil || r.Reuse != nil {
+		t.Fatalf("a baseline with nothing to reuse: %v, %v", r, err)
+	}
+	if _, err := Decode(`{"type":"baseline","id":3,"reuse":[{"test":"a_test.go:TestA"}]}`); err == nil {
+		t.Fatal("an offer without a fingerprint was taken")
 	}
 }

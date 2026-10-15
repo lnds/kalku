@@ -38,6 +38,11 @@ later.
   binary built with `-cover -coverpkg=./...`, and is credited with every line
   of each function it entered. A test that passes in the suite and fails
   alone three times withholds the coverage, and says so.
+- **A baseline runs only what changed.** A test is fingerprinted by its
+  package: the files of every package of the module its test binary is built
+  from, what they embed, `go.mod`, `go.sum`, the toolchain, and the tested
+  package's whole directory. A test offered back with the fingerprint it
+  has now is not run again.
 - **`abort`** ends the cast's process group, and the kalku takes the next
   request.
 
@@ -47,6 +52,8 @@ later.
   asked about every wekufe in it.
 - A test that reaches code only through a program it builds and runs is not
   credited with that code.
+- A test that reads files from outside its own package's directory is not
+  run again when only those files change; `kalku run --all` runs every test.
 - One module, from its root, with `GOWORK=off`: a `go.work` around it is not
   used, and a module nested inside it is not measured with it.
 - Without type information, a literal is changed by its text: an integer that

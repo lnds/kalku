@@ -89,7 +89,7 @@ func (s *Service) Handle(ctx context.Context, r *Request) Reply {
 	}
 	switch r.Type {
 	case "baseline":
-		return say(s.baseline(ctx, r.ID))
+		return say(s.baseline(ctx, r.ID, r.Reuse))
 	case "cast":
 		return s.cast(ctx, r.ID, r.Cast)
 	}
@@ -123,7 +123,7 @@ func (s *Service) greet(id int64, h *Hello) Reply {
 			fmt.Sprintf("%s is older than go%d.%d, the oldest Go this kalku measures", version, Oldest[0], Oldest[1]), true))
 	}
 	s.hello, s.project = h, project
-	return say(Ready(id, Version, version, []string{"cast", "per_test_coverage", "abort", "cast_after_baseline"}))
+	return say(Ready(id, Version, version, []string{"cast", "per_test_coverage", "abort", "cast_after_baseline", "partial_baseline"}))
 }
 
 // `go version` in the module's directory, which is the Go its go.mod
@@ -172,9 +172,33 @@ func (s *Service) prepare(ctx context.Context, id int64) string {
 }
 
 // Every test runs, and runs for real: no result comes from the test cache.
-func (s *Service) baseline(ctx context.Context, id int64) string {
+// The exception is a test the kaikai side offers to reuse, which is left out
+// when its package has the fingerprint it was offered with: nothing it runs
+// has changed since it passed.
+func (s *Service) baseline(ctx context.Context, id int64, reuse map[string]string) string {
 	started := time.Now()
-	tests := s.project.Tests()
+	prints, err := s.project.Fingerprints()
+	if err != nil {
+		// Without fingerprints every test runs, and none is offered back.
+		fmt.Fprintln(os.Stderr, "kalku-go: the tests have no fingerprint:", err)
+		prints = nil
+	}
+	var tests []Test
+	var reused []string
+	for _, t := range s.project.Tests() {
+		if f, ok := reuse[t.ID]; ok && f != "" && f == prints[t.Package] {
+			reused = append(reused, t.ID)
+			continue
+		}
+		tests = append(tests, t)
+	}
+	if len(tests) == 0 {
+		coverage, err := spoken(Reached{}, s.hello)
+		if err != nil {
+			return Error(id, "baseline_failed", "cannot write the coverage into the reni: "+err.Error(), true)
+		}
+		return BaselineDone(id, since(started), nil, coverage, nil, s.project.Differences(), reused)
+	}
 	ran, err := s.project.Run(ctx, tests, nil)
 	if err != nil {
 		return Error(id, "baseline_failed", err.Error(), true)
@@ -183,7 +207,7 @@ func (s *Service) baseline(ctx context.Context, id int64) string {
 	timed := make([]Timed, 0, len(tests))
 	var failures []Failure
 	for _, t := range tests {
-		timed = append(timed, Timed{Test: t.ID, File: t.File, DurationMS: elapsedMS(ran.elapsed[key(t.Package, t.Name)])})
+		timed = append(timed, Timed{Test: t.ID, File: t.File, DurationMS: elapsedMS(ran.elapsed[key(t.Package, t.Name)]), Fingerprint: prints[t.Package]})
 		switch ran.verdict(t) {
 		case "pass", "skip":
 		case "fail":
@@ -213,7 +237,7 @@ func (s *Service) baseline(ctx context.Context, id int64) string {
 			return Error(id, "baseline_failed", "cannot write the coverage into the reni: "+err.Error(), true)
 		}
 	}
-	return BaselineDone(id, since(started), timed, coverage, failures, s.project.Differences())
+	return BaselineDone(id, since(started), timed, coverage, failures, s.project.Differences(), reused)
 }
 
 // What a baseline says about coverage: inline when it is small, and packed
