@@ -3,10 +3,13 @@ package kalku
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -148,7 +151,70 @@ func (k *kalku) leave() {
 var everyTest = []string{
 	"calc_test.go:TestClamp", "calc_test.go:TestSign", "example_test.go:ExampleSign",
 	"internal/limits/limits_test.go:TestWithin", "internal/limits/limits_test.go:TestRoom",
+	"internal/order/order_test.go:TestFirst", "internal/order/order_test.go:TestSecond",
 	"internal/slow/slow_test.go:TestTwice",
+}
+
+// The tests a baseline credits with a line.
+func credited(base map[string]any, file string, line int) []string {
+	var out []string
+	for _, e := range base["coverage"].([]any) {
+		e := e.(map[string]any)
+		if e["file"] == file && e["line"] == float64(line) {
+			for _, t := range e["tests"].([]any) {
+				out = append(out, t.(string))
+			}
+		}
+	}
+	return out
+}
+
+// A test is credited with every line of a function it entered, so the case
+// a test only evaluated on its way past is credited to it too; a package's
+// declarations go to every test whose binary holds the package; a function
+// no test calls is credited to none.
+func TestTheBaselineSaysWhichTestsReachWhichLines(t *testing.T) {
+	t.Parallel()
+	k := summon(t)
+	ready := k.start(calc(t), map[string]string{})
+	if !strings.Contains(fmt.Sprint(ready["capabilities"]), "per_test_coverage") {
+		t.Fatalf("ready: %v", ready)
+	}
+	base := k.ask(map[string]any{"type": "baseline", "id": 3})
+	want := map[string][]string{
+		"calc.go:24": {"calc_test.go:TestSign", "example_test.go:ExampleSign"},
+		"calc.go:13": {"calc_test.go:TestClamp"},
+		"internal/limits/limits.go:6": {"calc_test.go:TestClamp", "calc_test.go:TestSign", "example_test.go:ExampleSign",
+			"internal/limits/limits_test.go:TestRoom", "internal/limits/limits_test.go:TestWithin"},
+		"internal/limits/limits.go:31": nil,
+	}
+	for at, tests := range want {
+		file, line, _ := strings.Cut(at, ":")
+		n, _ := strconv.Atoi(line)
+		got := credited(base, file, n)
+		sort.Strings(got)
+		sort.Strings(tests)
+		if strings.Join(got, " ") != strings.Join(tests, " ") {
+			t.Errorf("%s: got %v, want %v", at, got, tests)
+		}
+	}
+	k.leave()
+}
+
+// A test that passes in the suite and fails alone reaches something else
+// alone than in the suite, so no coverage is reported, and why is said.
+func TestCoverageIsWithheldWhenATestNeedsAnotherBeforeIt(t *testing.T) {
+	t.Parallel()
+	k := summon(t)
+	k.start(calc(t), map[string]string{"CALC_ORDER": "1"})
+	base := k.ask(map[string]any{"type": "baseline", "id": 3})
+	if base["status"] != "green" || base["coverage"] != nil {
+		t.Fatalf("baseline: %v", base)
+	}
+	if said, _ := base["coverage_withheld"].(string); !strings.Contains(said, "internal/order/order_test.go:TestSecond") {
+		t.Fatalf("withheld: %q", said)
+	}
+	k.leave()
 }
 
 func TestItMeasuresAModuleEndToEnd(t *testing.T) {

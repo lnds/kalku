@@ -120,7 +120,15 @@ func TestWhatItSaysIsTheFixturesByteForByte(t *testing.T) {
 			Error(5, "unknown_test", "no test test/my_app/parser_test.exs:99", false),
 			Error(11, "bad_request", "unknown_type: frobnicate", false),
 		},
-		"bye":         {Bye(7)},
+		"bye": {Bye(7)},
+		"baseline_done/coverage": {
+			BaselineDone(3, 18300, []Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}},
+				Coverage{Inline: []Entry{{File: "lib/my_app/parser.ex", Line: 42, Tests: []string{"test/my_app/parser_test.exs:18"}}}}, nil, nil),
+			BaselineDone(3, 18300, []Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}},
+				Coverage{PackedPath: "/tmp/kalku/my_app/coverage.json"}, nil, nil),
+			BaselineDone(3, 18300, []Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}},
+				Coverage{Withheld: "The suite reached 1 line(s) that no single test is credited with (parser.ex:42)."}, nil, nil),
+		},
 		"sites_found": {SitesFound(4, nil, nil)},
 		"aborted":     {Aborted(9, 5, true), Aborted(9, 5, false)},
 		"reset_done":  {ResetDone(10, true, 140)},
@@ -131,13 +139,14 @@ func TestWhatItSaysIsTheFixturesByteForByte(t *testing.T) {
 		},
 		"baseline_done": {
 			BaselineDone(3, 9100,
-				[]Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}},
+				[]Timed{{Test: "test/my_app/parser_test.exs:18", File: "test/my_app/parser_test.exs", DurationMS: 12}}, Coverage{},
 				[]Failure{{Test: "test/my_app/parser_test.exs:18", Message: "Assertion with == failed\ncode: assert next_token(\"\", 0) == :eof"}},
 				[]string{"the build is in /tmp/kalku/my_app/build, not in _build"}),
 		},
 	}
 	for name, messages := range said {
-		fixture := lines(t, "kalku/replies/"+name+".ndjson")
+		file, _, _ := strings.Cut(name, "/")
+		fixture := lines(t, "kalku/replies/"+file+".ndjson")
 		for _, m := range messages {
 			if !slices.Contains(fixture, m) {
 				t.Errorf("%s is not in the fixtures:\n  %s", name, m)

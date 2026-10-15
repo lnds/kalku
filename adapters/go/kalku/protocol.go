@@ -519,9 +519,27 @@ type Failure struct {
 	Message string
 }
 
-// BaselineDone answers `baseline`. This kalku measures no coverage, so a
-// baseline carries none.
-func BaselineDone(id int64, durationMS int64, tests []Timed, failures []Failure, differences []string) string {
+// Coverage is what a baseline says about which tests reach which lines: at
+// most one of its fields is set.
+type Coverage struct {
+	Inline     []Entry
+	PackedPath string
+	Withheld   string
+}
+
+// Entry is one line and the tests that reach it.
+type Entry struct {
+	File  string
+	Line  int
+	Tests []string
+}
+
+func (e Entry) json() string {
+	return newObject().str("file", e.File).int("line", int64(e.Line)).strs("tests", e.Tests).String()
+}
+
+// BaselineDone answers `baseline`.
+func BaselineDone(id int64, durationMS int64, tests []Timed, coverage Coverage, failures []Failure, differences []string) string {
 	status := "green"
 	if len(failures) > 0 {
 		status = "red"
@@ -534,8 +552,20 @@ func BaselineDone(id int64, durationMS int64, tests []Timed, failures []Failure,
 	for i, f := range failures {
 		fs[i] = newObject().str("test", f.Test).str("message", f.Message).String()
 	}
-	o := message("baseline_done", id).str("status", status).int("duration_ms", durationMS).
-		objects("tests", ts).objects("failures", fs)
+	o := message("baseline_done", id).str("status", status).int("duration_ms", durationMS).objects("tests", ts)
+	switch {
+	case coverage.Inline != nil:
+		es := make([]string, len(coverage.Inline))
+		for i, e := range coverage.Inline {
+			es[i] = e.json()
+		}
+		o.objects("coverage", es)
+	case coverage.PackedPath != "":
+		o.str("coverage_packed_path", coverage.PackedPath)
+	case coverage.Withheld != "":
+		o.str("coverage_withheld", coverage.Withheld)
+	}
+	o.objects("failures", fs)
 	if len(differences) > 0 {
 		o.strs("differences", differences)
 	}

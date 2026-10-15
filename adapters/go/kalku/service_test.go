@@ -265,3 +265,42 @@ func TestACrashSaysWhatTheBinaryDiedOf(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestAFailureAloneIsSaidByWhatTheTestSaid(t *testing.T) {
+	out := "--- FAIL: TestV (0.00s)\n    uuid_test.go:817: time reversed\nFAIL\ncoverage: 17.1% of statements in ./...\n"
+	if got := lastLine(out); got != "uuid_test.go:817: time reversed" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// The packed form names each test once and keeps together the lines the
+// same tests reach.
+func TestCoverageIsPackedByTheTestsThatReachALine(t *testing.T) {
+	got := packed([]Entry{
+		{File: "a.go", Line: 3, Tests: []string{"x", "y"}},
+		{File: "a.go", Line: 4, Tests: []string{"x", "y"}},
+		{File: "a.go", Line: 9, Tests: []string{"y"}},
+		{File: "b.go", Line: 1, Tests: []string{"x", "y"}},
+	})
+	want := `{"tests":["x","y"],"reached":[{"file":"a.go","lines":[3,4],"tests":[0,1]},{"file":"a.go","lines":[9],"tests":[1]},{"file":"b.go","lines":[1],"tests":[0,1]}]}` + "\n"
+	if got != want {
+		t.Fatalf("\n got %s\nwant %s", got, want)
+	}
+}
+
+// Coverage too large for the line goes to a file in the reni.
+func TestCoverageAboveTheLimitGoesToAFile(t *testing.T) {
+	reni := t.TempDir()
+	reached := Reached{"a.go": {3: {"x"}}}
+	small, err := spoken(reached, &Hello{Reni: reni, InlineLimitBytes: 1000})
+	if err != nil || len(small.Inline) != 1 {
+		t.Fatalf("small: %+v %v", small, err)
+	}
+	large, err := spoken(reached, &Hello{Reni: reni, Worker: 2, InlineLimitBytes: 10})
+	if err != nil || large.PackedPath != filepath.Join(reni, "coverage", "2.json") {
+		t.Fatalf("large: %+v %v", large, err)
+	}
+	if data, _ := os.ReadFile(large.PackedPath); !strings.Contains(string(data), `"lines":[3]`) {
+		t.Fatalf("file: %s", data)
+	}
+}
