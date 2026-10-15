@@ -1,3 +1,10 @@
+## v0.16.0 (2026-10-14)
+
+### Added
+
+- **go**: per-test coverage from Go's cover tool (#354)
+- **go**: a native Go kalku (#348)
+
 ## v0.15.0 (2026-10-14)
 
 ### Added
