@@ -28,18 +28,17 @@ The package being measured is never written to: not the source, not a build dire
 
 ## What it claims, and what it does not
 
-`ready` announces `cast`, `abort` and `cast_after_baseline`: nothing lives in the process between requests, so the kalku that ran the baseline goes on to cast instead of being banished and another prepared in its place. Not:
+`ready` announces `cast`, `per_test_coverage`, `abort` and `cast_after_baseline`. Coverage comes from `kai test --json --coverage`: the baseline credits each line of the package to the tests that ran it, so a wekufe faces those tests, and one in code no test runs is `no_coverage` rather than a survivor. Under an oracle there is no coverage, since an oracle judges as one test. Nothing lives in the process between requests, so the kalku that ran the baseline goes on to cast instead of being banished and another prepared in its place. Not:
 
 | Capability | Why not |
 |---|---|
 | `hot_load` | every cast rebuilds; there is no warm runtime to splice into |
-| `per_test_coverage` | kaikai reports no per-test coverage, so **every test runs for every wekufe** |
 | `code_hash` | kaikai exposes no hash of the emitted code, so no trivial compiler equivalence and no cache sharing between identical wekufe |
 | `reset` | nothing is shared between casts, so nothing can be dirtied |
 
 A capability is claimed only once it is true. The consequences are worth stating plainly rather than discovering:
 
-- **Runs are slow.** With no coverage to select by, a wekufe costs a whole suite. Use `--limit` and a narrow scope.
+- **Every cast rebuilds.** A wekufe costs a build of the package and the tests that reach it. Use `--limit` and a narrow scope.
 - **No trivial compiler equivalence.** A wekufe that compiles to the original's code is cast and run like any other.
 
 ## An oracle other than `kai test`

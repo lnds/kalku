@@ -272,7 +272,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | kalku de Java: builds Gradle, consultados al ejecutarlos con un script agregado desde fuera del proyecto | hecho |
 | kalku de Java: proyectos que prueban con JUnit 4 o con TestNG, a través de sus motores para JUnit Platform | hecho |
 | **kalku de Go** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde `go/parser`; `prepare`, `baseline` y `cast` en el reni a través de `-overlay`, `abort`, `kalku init` para módulos Go, incluido en el release | hecho |
-| **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python, Java, Go |
+| **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python, Java, Go, kaikai |
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
 | `--watch` y `--ci` | todavía no |
@@ -376,9 +376,9 @@ src/kalku/core/shard.kai:30  literal  shard.wrap32/1
 score 40% · 2 killed · 3 survived · 1 compile error
 ```
 
-Un módulo a la vez, y lento a propósito: kaikai no reporta cobertura por
-test ni tiene un runtime caliente en el que recargar, así que cada wekufe
-reconstruye el paquete y corre la suite completa. `SELF_MODULE`, `SELF_LIMIT`
+Un módulo a la vez, y lento a propósito: kaikai no tiene un runtime caliente
+en el que recargar, así que cada wekufe reconstruye el paquete y corre los
+tests que llegan a su línea. `SELF_MODULE`, `SELF_LIMIT`
 y `SELF_WORKERS` eligen cuánto medir y con cuánta fuerza. No toques el árbol
 de trabajo mientras corre: cada worker copia el proyecto al iniciar, así que
 una edición a mitad de corrida termina siendo medida.

@@ -26,15 +26,20 @@ pub type Work = { root: String, copy: String, oracle: Option[String] }
 # Enough of a diagnostic to name the file, the line and the error.
 const KEPT_LINES : Int = 12
 
-#[doc("What running the tests came to.")]
+#[doc("What running the tests came to, and, for a run asked for coverage, the lines each test ran.")]
 #[derive(Eq, Show)]
 pub type Ran = {
   passed: Int,
   failed: Int,
   first_failure: Option[String],
   mishap: Option[Mishap],
-  tests: [TestTiming]
+  tests: [TestTiming],
+  reached: [Reach]
 }
+
+#[doc("The lines of one package file that one test ran, as `kai test --coverage` says them.")]
+#[derive(Eq, Show)]
+pub type Reach = { test_id: String, file: String, lines: [Int] }
 
 #[doc("""
 Why a run produced no verdict, which is never the same as a verdict.
@@ -143,11 +148,18 @@ pub fn sites_in(w: Work, which: String, spells: [Spell]) : Result[[Site], String
   }
 }
 
-#[doc("Run the whole suite in the copy, for a baseline: the project's oracle when it names one.")]
+#[doc("""
+Run the whole suite in the copy, for a baseline, with the lines each test
+runs: the project's oracle when it names one, which judges as one test
+and says nothing of lines.
+""")]
 pub fn test_all(w: Work) : Ran / Process = match w.oracle {
   Some(command) -> by_oracle(w, command)
-  None -> read_run(run_in(w, ["kai", "test", "--json", "."]), 0)
+  None -> read_run(run_in(w, ["kai", "test", "--json", "--coverage", "."]), 0)
 }
+
+# The whole suite, without the coverage a cast has no use for.
+fn every_test(w: Work) : Ran / Process = read_run(run_in(w, ["kai", "test", "--json", "."]), 0)
 
 #[doc("""
 Judge the wekufe spliced into `which` with these tests, or with the
@@ -179,7 +191,10 @@ fn by_oracle(w: Work, command: String) : Ran / Process =
     Err(e) -> broken(CutShort(e))
     Ok(came) -> match came.exit {
       Exited(code) -> tallied([
-        Judged { timing: TestTiming { test_id: command, file: "", duration_ms: 0 }, failed: code != 0 }
+        Judged {
+          timing: TestTiming { test_id: command, file: "", duration_ms: 0 },
+          failed: code != 0
+        }
       ])
       Signaled(signo) -> broken(CutShort("the oracle was killed by signal #{signo}"))
     }
@@ -188,7 +203,7 @@ fn by_oracle(w: Work, command: String) : Ran / Process =
 # Given none, the whole suite runs: a kalku that skipped the tests would
 # report every wekufe as a survivor, which is the loudest possible lie.
 fn test_only(w: Work, ids: [String]) : Ran / Process = if is_empty(ids) {
-  test_all(w)
+  every_test(w)
 } else {
   read_run(
     run_in(w, ["kai", "test", "--json", ...flat_map(ids, id => ["--only", id]), "."]),
@@ -236,8 +251,7 @@ fn run(argv: [String]) : Result[Came, String] / Process = match argv {
 
 # A command under way leads a process group of its own. The effect has
 # nothing to ask: it is there for what its handler does on the way out.
-effect Group {
-}
+effect Group {}
 
 const SIGKILL : Int = 9
 
@@ -288,7 +302,8 @@ fn read_run(out: Result[Came, String], wanted: Int) : Ran = match out {
     if is_empty(judged) {
       broken(NoBuild(diagnostic(said)))
     } else {
-      read_all(came, judged, wanted)
+      let r = read_all(came, judged, wanted)
+      Ran { ...r, reached: if is_some(r.mishap) { [] } else { flat_map(said, reach_of) } }
     }
   }
 }
@@ -326,14 +341,15 @@ fn ended(exit: Exit) : String = match exit {
 }
 
 fn broken(why: Mishap) : Ran =
-  Ran { passed: 0, failed: 0, first_failure: None, mishap: Some(why), tests: [] }
+  Ran { passed: 0, failed: 0, first_failure: None, mishap: Some(why), tests: [], reached: [] }
 
 fn tallied(judged: [Judged]) : Ran = Ran {
   passed: length(judged |? (j => not j.failed)),
   failed: length(judged |? (.failed)),
   first_failure: first_failed(judged),
   mishap: None,
-  tests: judged | (.timing)
+  tests: judged | (.timing),
+  reached: []
 }
 
 fn first_failed(judged: [Judged]) : Option[String] =
@@ -362,6 +378,32 @@ fn judged_of(line: String) : [Judged] = if is_some(index_of(line, "\"type\":\"te
   }
 } else {
   []
+}
+
+# `{"type":"coverage","id":…,"lines":{"lib.kai":[3,4]}}`, one record after
+# each test of a run asked for coverage; a file per key.
+fn reach_of(line: String) : [Reach] = if is_some(index_of(line, "\"type\":\"coverage\"")) {
+  match json_decode(line) {
+    None -> []
+    Some(v) -> match (as_string(get(v, "id")), get(v, "lines")) {
+      (Some(id), JObj(files)) ->
+        files | (f => Reach { test_id: id, file: f.fst, lines: ints_of(f.snd) })
+      _ -> []
+    }
+  }
+} else {
+  []
+}
+
+fn ints_of(v: JsonValue) : [Int] = match v {
+  JArr(items) -> flat_map(
+    items,
+    i => match as_int(i) {
+      Some(n) -> [n]
+      None -> []
+    }
+  )
+  _ -> []
 }
 
 # No test ran, so the output is a diagnostic rather than results. A
