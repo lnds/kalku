@@ -29,9 +29,14 @@ pub type Site = {
   reload: Reload
 }
 
-#[doc("One test that ran in a baseline, with its duration.")]
+#[doc("One test that ran in a baseline, with its duration, and what it runs where the kalku can say.")]
 #[derive(Json, Eq, Show)]
-pub type TestTiming = { #[json(rename = "test")] test_id: String, file: String, duration_ms: Int }
+pub type TestTiming = {
+  #[json(rename = "test")] test_id: String,
+  file: String,
+  duration_ms: Int,
+  fingerprint: Option[String]
+}
 
 #[doc("The tests that execute one source line.")]
 #[derive(Json, Eq, Show)]

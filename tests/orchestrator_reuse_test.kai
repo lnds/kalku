@@ -1,0 +1,136 @@
+import actor
+import fs.file
+import os.process as proc
+import path as paths
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.report
+import kalku.core.reusing
+import kalku.keeping
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.attending
+import kalku.orchestrator.telling
+import kalku.orchestrator.measure
+
+const FAKE : String = "./tests/fake_kalku/fake_kalku"
+
+fn asking_of(script: String, store: String) : Asking = Asking {
+  spec: PoolSpec {
+    command: FAKE,
+    args: ["tests/fixtures/scripts/#{script}"],
+    workers: 1,
+    root: ".",
+    reni: ".kalku",
+    inline_limit_bytes: 65536,
+    env: StrMap { entries: [] },
+    options: None,
+    greeting_ms: 5000,
+    summons_allowed: 1,
+    memory_mb: 0
+  },
+  files: ["lib/a.ex"],
+  only: [],
+  spells: [],
+  exclude_calls: [],
+  exclude: [],
+  equivalents: [],
+  limit: 0,
+  timeout_floor_ms: 5000,
+  touched: None,
+  shard: None,
+  store: Some(store),
+  reuse: true
+}
+
+fn measured(script: String, store: String) : Found / Process + Spawn + Clock + File + Stderr =
+  with_mailbox { alone(() => untold(() => measuring(asking_of(script, store)))) }
+
+fn store_at(name: String) : String / Env =
+  "#{Env.get("TMPDIR").unwrap_or("/tmp")}/kalku-reuse-test/#{name}/fake.json"
+
+fn gone(store: String) : Unit / Process {
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", paths.dirname(store)]).map(c => proc.wait(c))
+  ()
+}
+
+fn judged_by(found: Found, wekufe: String) : [String] =
+  concat(filter(found.cast, c => c.wekufe == wekufe) | .tests)
+
+# The first run has nothing kept, runs the whole suite, and keeps it. The
+# second is told one test is unchanged: it does not run it, and what that
+# test reached comes from the first run, so the wekufe only it reaches is
+# still judged by it rather than by nobody.
+test "a baseline keeps what it measured, and the next one reuses what did not change" {
+  let store = store_at("keeps")
+  gone(store)
+
+  let first = measured("fingerprints.ndjson", store)
+  assert first.failure == None
+  assert first.report.map(.reused) == Some(0)
+  match load(store) {
+    Ok(Some(kept)) -> {
+      assert (kept.tests | .fingerprint) == ["f1", "f2"]
+    }
+    _ -> {
+      assert false
+    }
+  }
+
+  let second = measured("reuses_one.ndjson", store)
+  assert second.failure == None
+  assert second.report.map(.reused) == Some(1)
+  assert judged_by(second, "s3") == ["test/a_test.exs:3"]
+  assert judged_by(second, "s7") == ["test/a_test.exs:9"]
+  match load(store) {
+    Ok(Some(kept)) -> {
+      assert (kept.tests | (k => (k.test_id, k.fingerprint)))
+        == [("test/a_test.exs:9", "f2b"), ("test/a_test.exs:3", "f1")]
+    }
+    _ -> {
+      assert false
+    }
+  }
+
+  gone(store)
+}
+
+# A kalku that names a test it was never offered does not know what it is
+# saying: the coverage of that test cannot come from anywhere.
+test "a kalku that reuses a test it was never offered stops the run" {
+  let store = store_at("unoffered")
+  gone(store)
+
+  let found = measured("reuses_unoffered.ndjson", store)
+  assert found.report == None
+  assert is_some(index_of(found.failure.unwrap_or(""), "which it was never offered"))
+
+  gone(store)
+}
+
+# A store answers for the setting it was measured in. Another version of
+# the kalku is another run, and nothing kept is offered to it.
+test "nothing kept is offered to another version of the kalku" {
+  let store = store_at("setting")
+  gone(store)
+  let _ = save(store, Store { setting: "another", tests: [] })
+
+  let found = measured("reuses_unoffered.ndjson", store)
+  assert is_some(index_of(found.failure.unwrap_or(""), "which it was never offered"))
+
+  gone(store)
+}
+
+test "a store nobody can read is said, and the whole suite runs" {
+  let store = store_at("unreadable")
+  gone(store)
+  let _ = save(store, Store { setting: "s", tests: [] })
+  file.write(store, "not json")
+
+  assert is_some(index_of(load(store).err().unwrap_or(""), "could not be read"))
+  let found = measured("fingerprints.ndjson", store)
+  assert found.failure == None
+  assert found.report.map(.reused) == Some(0)
+
+  gone(store)
+}

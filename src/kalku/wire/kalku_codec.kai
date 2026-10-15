@@ -17,7 +17,7 @@ import kalku.wire.kalku_rules
 pub fn encode_request(id: Int, r: KalkuRequest) : String {
   case id, Hello(m) -> envelope("hello", id, to_json(m))
   case id, Prepare -> envelope("prepare", id, no_fields())
-  case id, Baseline -> envelope("baseline", id, no_fields())
+  case id, Baseline(m) -> envelope("baseline", id, to_json(m))
   case id, Sites(m) -> envelope("sites", id, to_json(m))
   case id, Cast(m) -> envelope("cast", id, to_json(m))
   case id, Abort(m) -> envelope("abort", id, to_json(m))
@@ -37,7 +37,7 @@ pub fn decode_request(line: String) : Result[Msg[KalkuRequest], ProtocolError] {
 fn request_body(kind: String, v: JsonValue) : Result[KalkuRequest, ProtocolError] = match kind {
   "hello" -> body(hellomsg_of_json(v, ""), m => Hello(m))
   "prepare" -> Ok(Prepare)
-  "baseline" -> Ok(Baseline)
+  "baseline" -> body(baselinemsg_of_json(v, ""), m => Baseline(m))
   "sites" -> body(sitesmsg_of_json(v, ""), m => Sites(m))
   "cast" -> body(castmsg_of_json(v, ""), m => Cast(m))
   "abort" -> body(abortmsg_of_json(v, ""), m => Abort(m))

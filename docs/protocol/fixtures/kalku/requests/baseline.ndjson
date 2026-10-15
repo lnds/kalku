@@ -1,1 +1,2 @@
 {"type":"baseline","id":3}
+{"type":"baseline","id":3,"reuse":[{"test":"test/my_app/parser_test.exs:18","fingerprint":"9f2c41d07a6e"}]}

@@ -1,0 +1,128 @@
+#[doc("""
+A baseline that runs only what changed: what a run offers its kalku from
+the kept store, what it takes back, and what it keeps for the next run.
+
+The store is offered only to a kalku that says it can tell an unchanged
+test by its fingerprint, and only under the setting it was measured in. A
+test the kalku reused brings back the coverage and the cost it was kept
+with; one it was never offered is a kalku that does not know what it is
+saying, and stops the run. The store is written again after every baseline
+whose coverage the kalku stands behind, so a run that reused nothing still
+leaves the next one something to reuse.
+""")]
+
+import encoding.json
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.core.reusing
+import kalku.keeping
+import kalku.orchestrator.pool
+import kalku.orchestrator.telling
+
+#[doc("Where a run keeps its baseline, the setting it is measured in, and what was kept there before.")]
+pub type Keeping = { path: String, setting: String, store: Option[Store] }
+
+#[doc("""
+How a run keeps its baseline, when it can: a store to keep it in, and a
+kalku that fingerprints its tests. What was kept is read only when the run
+may reuse it.
+""")]
+pub fn keeping_of(
+  path: Option[String],
+  reuse: Bool,
+  caps: [Capability],
+  hello: KalkuReply,
+  spec: PoolSpec
+) : Option[Keeping] / File + Telling = match (path, hello) {
+  (Some(p), Ready(m)) -> if contains(caps, PartialBaseline) {
+    Some(
+      Keeping {
+        path: p,
+        setting: setting_of(m.language, m.adapter, m.runtime, given(spec)),
+        store: if reuse { loaded(p) } else { None }
+      }
+    )
+  } else {
+    None
+  }
+  _ -> None
+}
+
+# What a run hands its kalku, as it is handed: the greeting, without what
+# names this checkout, which two worktrees of one repository do not share.
+fn given(spec: PoolSpec) : String = match greeting(spec, 0) {
+  Hello(m) -> json_encode(to_json(HelloMsg { ...m, root: "", reni: "" }))
+  _ -> ""
+}
+
+fn loaded(path: String) : Option[Store] / File + Telling = match load(path) {
+  Ok(store) -> store
+  Err(why) -> {
+    Telling.tell_of(why)
+    None
+  }
+}
+
+#[doc("The tests a run offers its kalku.")]
+pub fn offer_of(keeping: Option[Keeping]) : [Reuse] = match keeping {
+  Some(k) -> match k.store {
+    Some(store) -> offered(store, k.setting)
+    None -> []
+  }
+  None -> []
+}
+
+#[doc("The `baseline` request that makes this offer.")]
+pub fn asked_with(offer: [Reuse]) : KalkuRequest =
+  Baseline(BaselineMsg { reuse: if is_empty(offer) { None } else { Some(offer) } })
+
+#[doc("""
+What the kept store says of the tests the kalku reused; an error when it
+reused a test nobody offered it.
+""")]
+pub fn brought(
+  keeping: Option[Keeping],
+  offer: [Reuse],
+  reply: KalkuReply
+) : Result[[Kept], String] =
+  match reply {
+    BaselineDone(m) -> {
+      let reused = m.reused.unwrap_or([])
+      match unoffered(offer, reused) {
+        [] -> Ok(
+          match keeping.map(.store) {
+            Some(Some(store)) -> held(store, reused)
+            _ -> []
+          }
+        )
+        names -> Err(
+          "the kalku says it reused #{join(names, ", ")}, which it was never offered; its baseline cannot be believed"
+        )
+      }
+    }
+    _ -> Ok([])
+  }
+
+#[doc("""
+Keep this baseline for the next run, when the kalku stood behind its
+coverage: what ran and passed, with the coverage it reported, and what it
+reused, as it was kept. Coverage that was withheld or doubted is not kept,
+and neither is anything else of that baseline.
+""")]
+pub fn keep(
+  keeping: Option[Keeping],
+  reply: KalkuReply,
+  coverage: Option[[CoverageEntry]],
+  kept: [Kept]
+) : Unit / File + Telling = match (keeping, reply, coverage) {
+  (Some(k), BaselineDone(m), Some(entries)) -> if is_none(m.coverage_doubted) {
+    match save(k.path, after(k.setting, m.tests, m.failures | .test_id, entries, kept)) {
+      Ok(_) -> ()
+      Err(why) -> Telling.tell_of("the baseline could not be kept for the next run: #{why}")
+    }
+  } else {
+    ()
+  }
+  _ -> ()
+}

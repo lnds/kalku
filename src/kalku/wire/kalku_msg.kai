@@ -45,7 +45,7 @@ pub type DelegateMsg = { scope: Scope, spells: Option[[Spell]] }
 pub type KalkuRequest
   = Hello(HelloMsg)
   | Prepare
-  | Baseline
+  | Baseline(BaselineMsg)
   | Sites(SitesMsg)
   | Cast(CastMsg)
   | Abort(AbortMsg)
@@ -69,7 +69,15 @@ pub type ReadyMsg = {
 #[derive(Json, Eq, Show)]
 pub type PreparedMsg = { duration_ms: Int, modules: Int }
 
-#[doc("`baseline_done`: the full suite ran once.")]
+#[doc("A test the kaikai side holds a passing result and the coverage of, and what it ran then.")]
+#[derive(Json, Eq, Show)]
+pub type Reuse = { #[json(rename = "test")] test_id: String, fingerprint: String }
+
+#[doc("`baseline`: run the suite, leaving out the tests whose fingerprint has not changed.")]
+#[derive(Json, Eq, Show)]
+pub type BaselineMsg = { reuse: Option[[Reuse]] }
+
+#[doc("`baseline_done`: the suite ran once, all of it or what was not reused.")]
 #[derive(Json, Eq, Show)]
 pub type BaselineDoneMsg = {
   status: BaselineStatus,
@@ -81,7 +89,8 @@ pub type BaselineDoneMsg = {
   coverage_withheld: Option[String],
   coverage_doubted: Option[String],
   failures: [Failure],
-  differences: Option[[String]]
+  differences: Option[[String]],
+  reused: Option[[String]]
 }
 
 #[doc("`sites_found`: the sites in the requested files.")]

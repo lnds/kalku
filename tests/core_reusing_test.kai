@@ -1,0 +1,97 @@
+import kalku.core.reusing
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+
+fn timing(test_id: String, fingerprint: Option[String]) : TestTiming =
+  TestTiming { test_id: test_id, file: "t.go", duration_ms: 10, fingerprint: fingerprint }
+
+fn at(file: String, line: Int, tests: [String]) : CoverageEntry =
+  CoverageEntry { file: file, line: line, tests: tests }
+
+fn coverage() : [CoverageEntry] = [
+  at("a.go", 3, ["t1", "t2"]),
+  at("a.go", 4, ["t1"]),
+  at("a.go", 5, ["t1"]),
+  at("a.go", 9, ["t1"]),
+  at("b.go", 1, ["t2"])
+]
+
+fn store() : Store =
+  after("s", [timing("t1", Some("f1")), timing("t2", Some("f2"))], [], coverage(), [])
+
+test "lines are kept as runs, and read back as the lines they were" {
+  assert runs([9, 3, 4, 5, 4]) == "3-5,9"
+  assert runs([7]) == "7"
+  assert runs([]) == ""
+  assert lines_of("3-5,9") == [3, 4, 5, 9]
+  assert lines_of("") == []
+  assert lines_of("x,2-1,4") == [4]
+}
+
+# What a test reached is what the coverage credited it with, and nothing
+# another test reached.
+test "a test is kept with the lines it reached, a file at a time" {
+  let kept = store().tests
+
+  assert (kept | .test_id) == ["t1", "t2"]
+  assert (kept | (k => k.reached))
+    == [
+      [Reached { file: "a.go", lines: "3-5,9" }],
+      [Reached { file: "a.go", lines: "3" }, Reached { file: "b.go", lines: "1" }]
+    ]
+}
+
+# The coverage a reused test brings back is the coverage it was kept with,
+# so a run that reused it plans as one that ran it would.
+test "what a kept test reached comes back as the coverage it was" {
+  let back = coverage_of(held(store(), ["t1"]))
+
+  assert back
+    == [at("a.go", 3, ["t1"]), at("a.go", 4, ["t1"]), at("a.go", 5, ["t1"]), at("a.go", 9, ["t1"])]
+  assert (timings_of(held(store(), ["t2"])) | .duration_ms) == [10]
+}
+
+# A test that failed judges nothing and its coverage is not trusted; one
+# the kalku could not fingerprint cannot be told unchanged. The next
+# baseline runs both.
+test "a failed test, or one with no fingerprint, is not kept" {
+  let s = after(
+    "s",
+    [timing("t1", Some("f1")), timing("t2", None), timing("t3", Some("f3"))],
+    ["t3"],
+    coverage(),
+    []
+  )
+
+  assert (s.tests | .test_id) == ["t1"]
+}
+
+test "what a baseline reused is kept as it was, beside what ran" {
+  let earlier = store()
+  let s = after("s", [timing("t3", Some("f3"))], [], [], held(earlier, ["t2"]))
+
+  assert (s.tests | .test_id) == ["t3", "t2"]
+  assert (s.tests | .fingerprint) == ["f3", "f2"]
+}
+
+# A store answers only for the setting it was measured in: another
+# version of the kalku, another runtime, another environment is another
+# run.
+test "a store offers its tests in its own setting and in no other" {
+  assert (offered(store(), "s") | .fingerprint) == ["f1", "f2"]
+  assert offered(store(), "another") == []
+  assert setting_of("go", "0.17.0", "go1.27", "{}") != setting_of("go", "0.17.0", "go1.26", "{}")
+  assert setting_of("go", "0.17.0", "go1.27", "{}") == setting_of("go", "0.17.0", "go1.27", "{}")
+}
+
+test "a test reused that was never offered is named" {
+  let offer = offered(store(), "s")
+
+  assert unoffered(offer, ["t1"]) == []
+  assert unoffered(offer, ["t1", "t9"]) == ["t9"]
+}
+
+check "lines survive being kept as runs" with xs: [Int] {
+  let lines = uniq(sort(xs | (x => abs(x) % 500)))
+  lines_of(runs(lines)) == lines
+}

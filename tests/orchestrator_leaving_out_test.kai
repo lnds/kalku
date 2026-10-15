@@ -36,7 +36,9 @@ fn asking_of(script: String) : Asking = Asking {
   limit: 0,
   timeout_floor_ms: 1000,
   touched: None,
-  shard: None
+  shard: None,
+  store: None,
+  reuse: false
 }
 
 fn learnt(script: String) : Result[measure.Known, String] / Process + Spawn + Clock + File =
