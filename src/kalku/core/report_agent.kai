@@ -146,6 +146,7 @@ fn summary_line(r: Report) : String = json_encode(
       ...left_out_fields(r.left_out),
       ...withheld_field(r.withheld),
       ...doubted_field(r.doubted),
+      ...reused_field(r.reused),
       ...shard_field(r.shard),
       ...optional("stopped", r.stopped),
       ("exit", JNum(exit_code(r.blockers)))
@@ -178,6 +179,11 @@ fn doubted_field(why: Option[String]) : [(String, JsonValue)] = match why {
   None -> []
   Some(said) -> [("coverage_doubted", JStr(said))]
 }
+
+# A test a kept baseline answered for did not run: an agent that changed
+# what it runs and is told it passed should know which run said so.
+fn reused_field(reused: Int) : [(String, JsonValue)] =
+  if reused == 0 { [] } else { [("baseline_reused", JNum(reused))] }
 
 # A shard's counts are of a part, and an agent that reads them as the
 # project's has been told something nobody measured.

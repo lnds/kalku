@@ -1,0 +1,101 @@
+#[doc("""
+Where a project's baseline is kept between runs, and keeping it there.
+
+Not in the project, which may want nothing of kalku in it, and not in the
+reni, which is one checkout's: the store belongs to the repository, so a
+worktree opened a minute ago finds what the main checkout measured. The
+repository is told by its first commit, which every clone and worktree of
+it shares; where the project sits inside it tells two projects of one
+repository apart. A directory that is not a repository is kept by its
+path, and shares with nothing.
+
+Sharing is safe because nothing is reused on the strength of where it came
+from: a kept test is reused only where its kalku says its fingerprint has
+not changed, so an entry from another branch that differs does not match,
+and its test runs.
+""")]
+
+import fs.file
+import fs.dir
+import path as paths
+import encoding.json
+import encoding.json_bind
+import kalku.diffing
+import kalku.settling
+import kalku.core.reusing
+import kalku.core.setting_up
+
+#[doc("Where the store of this project's baseline for this language is kept on this machine.")]
+pub fn store_for(root: String, language: String) : String / Process + Env =
+  "#{cache_home()}/kalku/repos/#{identity(root)}/#{language}.json"
+
+fn cache_home() : String / Env = match Env.get("XDG_CACHE_HOME") {
+  Some(dir) -> if is_empty(dir) { home_cache() } else { dir }
+  None -> home_cache()
+}
+
+fn home_cache() : String / Env = "#{Env.get("HOME").unwrap_or("/tmp")}/.cache"
+
+# A repository can have more than one first commit, when histories were
+# joined; the least of them names it, so every clone picks the same one.
+fn identity(root: String) : String / Process + Env =
+  match (
+    asked(root, ["rev-list", "--max-parents=0", "HEAD"]),
+    asked(root, ["rev-parse", "--show-prefix"])
+  ) {
+    (Some(firsts), Some(prefix)) -> match sort(filter(lines(firsts), l => l != "")) {
+      [first, ..._] -> "#{slice(first, 0, 12)}/#{inside(trim(prefix))}"
+      [] -> by_path(root)
+    }
+    _ -> by_path(root)
+  }
+
+fn inside(prefix: String) : String = if is_empty(prefix) { "top" } else { path_key("/#{prefix}") }
+
+fn by_path(root: String) : String / Env = "path/#{path_key(absolute(root))}"
+
+fn asked(root: String, args: [String]) : Option[String] / Process = diffing.git(root, args, "").ok()
+
+#[doc("""
+The store kept at this path: none when there is none, and an error that
+says why when there is one nobody can read — which a run tells, and then
+measures the whole suite as if there were none.
+""")]
+pub fn load(path: String) : Result[Option[Store], String] / File = if file.exists(path) {
+  match json_decode(file.read(path)) {
+    None -> Err(unreadable(path, "it is not JSON"))
+    Some(v) -> match store_of_json(v, "") {
+      Ok(store) -> Ok(Some(store))
+      Err(e) -> Err(unreadable(path, json_error_show(e)))
+    }
+  }
+} else {
+  Ok(None)
+}
+
+#[doc("""
+Keep a store at this path, whole or not at all.
+
+Written beside the path and moved into place, so a run that reads it while
+another writes sees one store or the other and never half of each. The name
+written to is the content's own, so two runs writing at once never write
+into the same file unless they are writing the same thing.
+""")]
+pub fn save(path: String, store: Store) : Result[Unit, String] / File {
+  let text = json_encode(to_json(store))
+  made(paths.dirname(path))
+  let beside = "#{path}.#{setting_of("", "", "", text)}"
+  file.write(beside, text)
+  file.rename(beside, path)
+}
+
+fn made(path: String) : Unit / File = if path == "" or path == "/" or file.exists(path) {
+  ()
+} else {
+  made(paths.dirname(path))
+  let _ = dir.create_dir(path)
+  ()
+}
+
+fn unreadable(path: String, why: String) : String =
+  "the kept baseline #{path} could not be read, so the whole suite runs: #{why}"

@@ -61,7 +61,8 @@ swept.
 pub fn reni_here(root: String) : String / Env =
   reni_for(temp_dir(), named_after(root), path_key(absolute(root)))
 
-fn absolute(root: String) : String / Env = if paths.is_absolute(root) {
+#[doc("Where `root` is, as an absolute path: a relative one is taken from where the run stands.")]
+pub fn absolute(root: String) : String / Env = if paths.is_absolute(root) {
   root
 } else {
   "#{Env.get("PWD").unwrap_or("")}/#{root}"

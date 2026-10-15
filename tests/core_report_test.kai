@@ -47,6 +47,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     blockers: blockers,
     left_out: nobody_left_out(),
     withheld: None,
+    reused: 0,
     doubted: None,
     shard: None,
     stopped: None

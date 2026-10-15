@@ -1,0 +1,176 @@
+#[doc("""
+What a project's baseline measured before, kept so the next run need not
+measure it again.
+
+A test is kept with the fingerprint its kalku gave it: what it runs,
+compiled, and what it reads that is not code. The next baseline hands the
+fingerprints back, and the kalku runs only the tests whose fingerprint has
+changed; what the others reached and cost comes from here. Whether two
+fingerprints mean the same run is the kalku's to say — only it knows what a
+test runs — so nothing here looks at the project's files.
+
+A store is about one setting: the kalku that measured it, the runtime it
+ran on, and what the run gave it. Under any other setting it answers for
+nothing.
+""")]
+
+import collections.map as maps
+import collections.map.{Map}
+import crypto.hash
+import encoding.hex
+import encoding.json
+import encoding.json_bind
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+
+#[doc("The lines of one file a test reached, as runs: `3-7,9`.")]
+#[derive(Json, Eq, Show)]
+pub type Reached = { file: String, lines: String }
+
+#[doc("One test as the store keeps it: what it runs, what it cost, and what it reached.")]
+#[derive(Json, Eq, Show)]
+pub type Kept = {
+  #[json(rename = "test")] test_id: String,
+  file: String,
+  duration_ms: Int,
+  fingerprint: String,
+  reached: [Reached]
+}
+
+#[doc("What a project's suite measured, and the setting it was measured in.")]
+#[derive(Json, Eq, Show)]
+pub type Store = { setting: String, tests: [Kept] }
+
+#[doc("""
+The setting a store is about: the kalku's language, its version, the
+runtime it reports, and what the run hands it — its environment and its
+options, as they are sent.
+""")]
+pub fn setting_of(language: String, adapter: String, runtime: String, given: String) : String =
+  hex.encode(sha256(bytes(join([language, adapter, runtime, given], "\u{1f}")) | byte_to_int))
+
+#[doc("The tests a store can offer a baseline in this setting; none in another.")]
+pub fn offered(store: Store, setting: String) : [Reuse] = if store.setting == setting {
+  store.tests | (k => Reuse { test_id: k.test_id, fingerprint: k.fingerprint })
+} else {
+  []
+}
+
+#[doc("""
+The reused tests that were never offered, which a kalku has no business
+naming: the coverage of a test nobody kept cannot come from here.
+""")]
+pub fn unoffered(offer: [Reuse], reused: [String]) : [String] {
+  let known = maps.from(offer | (r => (r.test_id, true)))
+  reused |? (t => is_none(maps.get(known, t)))
+}
+
+#[doc("What the store holds of the tests a baseline reused.")]
+pub fn held(store: Store, reused: [String]) : [Kept] {
+  let wanted = maps.from(reused | (t => (t, true)))
+  store.tests |? (k => is_some(maps.get(wanted, k.test_id)))
+}
+
+#[doc("What the kept tests reached, as a baseline reports it: one entry for each line of each test.")]
+pub fn coverage_of(kept: [Kept]) : [CoverageEntry] = flat_map(
+  kept,
+  k => flat_map(
+    k.reached,
+    r => (lines_of(r.lines) | (l => CoverageEntry { file: r.file, line: l, tests: [k.test_id] }))
+  )
+)
+
+#[doc("What the kept tests cost, as a baseline reports it.")]
+pub fn timings_of(kept: [Kept]) : [TestTiming] = kept
+  | (k => TestTiming {
+    test_id: k.test_id,
+    file: k.file,
+    duration_ms: k.duration_ms,
+    fingerprint: Some(k.fingerprint)
+  })
+
+#[doc("""
+The store a baseline leaves: every test that ran, passed, and was given a
+fingerprint, with what it reached; and the tests it reused, as they were.
+
+A test that failed is not kept, and neither is one with no fingerprint: the
+next baseline runs both.
+""")]
+pub fn after(
+  setting: String,
+  ran: [TestTiming],
+  failed: [String],
+  coverage: [CoverageEntry],
+  reused: [Kept]
+) : Store {
+  let reach = reached_by(coverage)
+  let gone = maps.from(failed | (t => (t, true)))
+  let fresh = flat_map(
+    ran,
+    t => match t.fingerprint {
+      Some(f) -> if is_some(maps.get(gone, t.test_id)) {
+        []
+      } else {
+        [
+          Kept {
+            test_id: t.test_id,
+            file: t.file,
+            duration_ms: t.duration_ms,
+            fingerprint: f,
+            reached: maps.get(reach, t.test_id).unwrap_or([])
+          }
+        ]
+      }
+      None -> []
+    }
+  )
+  Store { setting: setting, tests: fresh ++ reused }
+}
+
+# Coverage arrives a line at a time with the tests that reach it; a test is
+# kept with the lines it reaches, a file at a time.
+fn reached_by(coverage: [CoverageEntry]) : Map[String, [Reached]] {
+  let by_test = foldl(coverage, maps.empty(), credit)
+  maps.transform_values(by_test, places => grouped(places))
+}
+
+fn credit(m: Map[String, [(String, Int)]], e: CoverageEntry) : Map[String, [(String, Int)]] =
+  foldl(
+    e.tests,
+    m,
+    (acc, t) => maps.update(acc, t, [(e.file, e.line)], before => [(e.file, e.line), ...before])
+  )
+
+fn grouped(places: [(String, Int)]) : [Reached] {
+  let by_file = foldl(
+    places,
+    maps.empty(),
+    (acc, p) => maps.update(acc, p.fst, [p.snd], before => [p.snd, ...before])
+  )
+  maps.to_pairs(by_file) | (p => Reached { file: p.fst, lines: runs(p.snd) })
+}
+
+#[doc("Lines as runs: `[3, 4, 5, 9]` is `3-5,9`.")]
+pub fn runs(lines: [Int]) : String = join(spans(uniq(sort(lines))) | span_text, ",")
+
+fn spans(lines: [Int]) : [(Int, Int)] = reverse(foldl(lines, [], extend))
+
+fn extend(acc: [(Int, Int)], l: Int) : [(Int, Int)] = match acc {
+  [last, ...rest] -> if l == last.snd + 1 { [(last.fst, l), ...rest] } else { [(l, l), ...acc] }
+  [] -> [(l, l)]
+}
+
+fn span_text(s: (Int, Int)) : String = if s.fst == s.snd { "#{s.fst}" } else { "#{s.fst}-#{s.snd}" }
+
+#[doc("The lines a run of runs names: `3-5,9` is `[3, 4, 5, 9]`. What does not read as one is none.")]
+pub fn lines_of(text: String) : [Int] = flat_map(split(text, ","), lines_in)
+
+fn lines_in(part: String) : [Int] = match split(part, "-") {
+  [one] -> to_int(one).map(l => [l]).unwrap_or([])
+  [from, to] -> match (to_int(from), to_int(to)) {
+    (Some(a), Some(b)) ->
+      if a <= b { enumerate(repeat(0, b - a + 1)) | (i => a + i.fst) } else { [] }
+    _ -> []
+  }
+  _ -> []
+}

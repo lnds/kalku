@@ -75,6 +75,7 @@ pub type Report = {
   left_out: LeftOut,
   withheld: Option[String],
   doubted: Option[String],
+  reused: Int,
   shard: Option[Shard],
   stopped: Option[String]
 }
@@ -94,6 +95,7 @@ pub fn human(r: Report) : String = join(
     ...left_out_block(r.left_out, r.left_out.sites | where_of),
     ...withheld_block(r.withheld),
     ...doubted_block(r.doubted),
+    ...reused_block(r.reused),
     summary_line(r),
     ...suppression_block(r),
     ...blocker_block(r)
@@ -121,6 +123,17 @@ fn doubted_block(why: Option[String]) : [String] = match why {
   Some(said) -> [
     "a wekufe the tests that reach it did not kill faced every other test before it was called a survivor: which tests reach a line may be missing some.",
     "  #{said}",
+    ""
+  ]
+}
+
+# A baseline that ran only what changed says so where the score is read:
+# a reader of the score alone would take it for a run of the whole suite.
+fn reused_block(reused: Int) : [String] = if reused == 0 {
+  []
+} else {
+  [
+    "#{reused} test(s) of the baseline were not run again: a kept baseline answered for them, because the kalku says nothing they run has changed. `--all` runs every one.",
     ""
   ]
 }

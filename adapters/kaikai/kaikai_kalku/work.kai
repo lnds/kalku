@@ -192,7 +192,7 @@ fn by_oracle(w: Work, command: String) : Ran / Process =
     Ok(came) -> match came.exit {
       Exited(code) -> tallied([
         Judged {
-          timing: TestTiming { test_id: command, file: "", duration_ms: 0 },
+          timing: TestTiming { test_id: command, file: "", duration_ms: 0, fingerprint: None },
           failed: code != 0
         }
       ])
@@ -325,7 +325,7 @@ fn read_all(came: Came, judged: [Judged], wanted: Int) : Ran {
   }
 }
 
-fn no_failures(judged: [Judged]) : Bool = is_empty(judged |? (.failed))
+fn no_failures(judged: [Judged]) : Bool = is_empty(judged |? .failed)
 
 # `kai test` exits non-zero for a failing test too, so this is only ever
 # read where no test failed: there, a non-zero status is the runtime
@@ -345,10 +345,10 @@ fn broken(why: Mishap) : Ran =
 
 fn tallied(judged: [Judged]) : Ran = Ran {
   passed: length(judged |? (j => not j.failed)),
-  failed: length(judged |? (.failed)),
+  failed: length(judged |? .failed),
   first_failure: first_failed(judged),
   mishap: None,
-  tests: judged | (.timing),
+  tests: judged | .timing,
   reached: []
 }
 
@@ -369,7 +369,8 @@ fn judged_of(line: String) : [Judged] = if is_some(index_of(line, "\"type\":\"te
           timing: TestTiming {
             test_id: id,
             file: as_string(get(v, "file")).unwrap_or(""),
-            duration_ms: as_int(get(v, "duration_ms")).unwrap_or(0)
+            duration_ms: as_int(get(v, "duration_ms")).unwrap_or(0),
+            fingerprint: None
           },
           failed: as_string(get(v, "status")).unwrap_or("") != "pass"
         }
@@ -414,13 +415,13 @@ fn diagnostic(said: [String]) : String =
 
 fn from_first_error(said: [String]) : [String] =
   match find(enumerate(said), l => is_some(index_of(l.snd, "error"))) {
-    Some(hit) -> take(enumerate(said) |? (l => l.fst >= hit.fst) | (.snd), KEPT_LINES)
+    Some(hit) -> take(enumerate(said) |? (l => l.fst >= hit.fst) | .snd, KEPT_LINES)
     None -> last_few(said, KEPT_LINES)
   }
 
 fn last_few(said: [String], keep: Int) : [String] {
   let extra = length(said) - keep
-  if extra <= 0 { said } else { enumerate(said) |? (l => l.fst >= extra) | (.snd) }
+  if extra <= 0 { said } else { enumerate(said) |? (l => l.fst >= extra) | .snd }
 }
 
 # ---- reading a site ----------------------------------------------------

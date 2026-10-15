@@ -8,6 +8,7 @@ import kalku.wire.enums
 import kalku.core.report
 import kalku.core.score
 import kalku.core.cache
+import kalku.keeping
 import kalku.core.planner
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.attending
@@ -344,8 +345,13 @@ fn asking_for(
   files: [String],
   touched: Option[[FileChange]],
   declared: [equivalent.Entry]
-) : Asking / Env = Asking {
+) : Asking / Env + Process = Asking {
   ...asking_of(c, pool_of(c), files, declared),
+  store: c.language.map(language => store_for(".", language)),
+  reuse: 
+  # What a baseline measured is reused by every run but one over the whole
+  # project, which is what the full suite is for.
+  not wanted.all,
   limit: 
   # A change is already bounded by the diff, and a gate that answered for a
   # slice of one would pass a pull request over lines nobody looked at, so
@@ -389,7 +395,9 @@ fn asking_of(
   limit: 0,
   timeout_floor_ms: c.timeout_floor_ms,
   touched: None,
-  shard: None
+  shard: None,
+  store: None,
+  reuse: false
 }
 
 #[doc("Where a project writes down what it has decided cannot be told apart.")]

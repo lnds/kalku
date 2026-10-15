@@ -183,6 +183,7 @@ First message after summoning.
 | `reset` | global state can be reset in place | a dirty kalku is recycled |
 | `code_hash` | `cast_done` carries `code_hash` and may prove `equivalent` | no trivial compiler equivalence |
 | `cast_after_baseline` | the kalku that answered `baseline` can go on to `cast`, and judges a wekufe as a kalku that was only prepared would | it is banished once it has answered `sites`, and another is summoned and prepared in its place |
+| `partial_baseline` | `baseline_done` gives each test a `fingerprint`, and `baseline` takes `reuse`: a test whose fingerprint has not changed is not run again | every baseline runs the whole suite |
 
 Rule: `ready` announces **exactly one** of `cast` or `delegate`; otherwise `invalid`.
 
@@ -202,13 +203,18 @@ Compile the project into the reni and start the test environment. `prepare` has 
 
 ### `baseline` → `baseline_done`
 
-Run the full suite, with per-test coverage when capable. `baseline` has no fields.
+Run the full suite, with per-test coverage when capable.
+
+| `baseline` | Type | Meaning |
+|---|---|---|
+| `reuse`? | [{`test`, `fingerprint`}] | tests the kaikai side holds a passing result and the coverage of, with the fingerprint each had then; only to a kalku with `partial_baseline` |
 
 | `baseline_done` | Type | Meaning |
 |---|---|---|
 | `status` | `"green"` \| `"red"` | |
 | `duration_ms` | int | |
-| `tests` | [{`test`, `file`, `duration_ms`}] | every test that ran |
+| `tests` | [{`test`, `file`, `duration_ms`, `fingerprint`?}] | every test that ran |
+| `reused`? | [test id] | the tests of `reuse` that were not run, because their fingerprint is the one given |
 | `coverage`? | [{`file`, `line`, `tests`}] | inline coverage |
 | `coverage_path`? | string | the same entries, as one JSON array, in a file |
 | `coverage_packed_path`? | string | the same coverage, packed, in a file |
@@ -232,10 +238,16 @@ A position past the end of `tests` is `invalid`.
 
 `coverage_doubted` is for a kalku that reports its coverage and does not stand behind all of it: what the suite reached and what its tests are credited with do not add up, so a line that is credited may be missing a test. A test that fails is a kill whoever else was asked, so the coverage is still worth having. The kaikai side sends each `cast` with the tests credited with the line in `tests` and every other test in `rest`, and calls a wekufe a survivor only when neither noticed; it quotes the sentence in every report.
 
+A **fingerprint** says what a test runs: an opaque string that changes whenever anything the test could observe changes. It is the kalku's to compute, because only the kalku knows what a test runs. The source files its coverage names are not enough: a macro expands into the module that calls it, a constant is inlined where it is used, a generic is instantiated at its caller, and none of those shows in the coverage of the test that runs them. So a fingerprint is taken over what was compiled, and over the inputs the kalku knows a test reads that are not code, such as a package's test data. Two fingerprints are the same only when a run of the test would be the same; a kalku that cannot say that of a test gives it no fingerprint, and that test is always run.
+
+`reuse` is how a baseline runs only what changed. The kalku computes, for each test it names, the fingerprint the test has now. If it is the one given, the test is not run and is listed in `reused`. Every other test runs as in a full baseline: one that is new, one whose fingerprint differs, and one that is not in `reuse` at all. A reused test is in neither `tests` nor `failures`, and the coverage covers only the tests that ran; the kaikai side has the rest, and merges it. `status` is about the tests that ran. A test in `reused` that was not in `reuse` is `invalid`.
+
 `differences` is what a test could tell: a copy of the project in place of the tree, a build kept somewhere else, a suite run serially. Only the kalku knows which of these is so, and the kaikai side quotes the sentences as they are when it refuses a red suite — a test that fails for one of them fails under the kalku and not in the project.
 
 ```json
 {"type":"baseline","id":3}
+{"type":"baseline","id":3,"reuse":[{"test":"test/my_app/parser_test.exs:18","fingerprint":"9f2c41d07a6e"}]}
+{"type":"baseline_done","id":3,"status":"green","duration_ms":4100,"tests":[{"test":"test/my_app/lexer_test.exs:5","file":"test/my_app/lexer_test.exs","duration_ms":9,"fingerprint":"51be0c3a9d24"}],"coverage":[{"file":"lib/my_app/lexer.ex","line":12,"tests":["test/my_app/lexer_test.exs:5"]}],"failures":[],"reused":["test/my_app/parser_test.exs:18"]}
 {"type":"baseline_done","id":3,"status":"green","duration_ms":18300,"tests":[{"test":"test/my_app/parser_test.exs:18","file":"test/my_app/parser_test.exs","duration_ms":12}],"coverage":[{"file":"lib/my_app/parser.ex","line":42,"tests":["test/my_app/parser_test.exs:18"]}],"failures":[]}
 ```
 

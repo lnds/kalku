@@ -267,7 +267,13 @@ One kalku runs the full suite once with per-test coverage. The baseline yields:
 - **Coverage map:** `(file, line) → [test ids]`.
 - **Durations** per test, from which each wekufe's timeout is derived (`max(3 × covering tests' baseline, floor)`).
 
-The baseline is cached by the hashes of all source and test files; an unchanged project reuses it.
+**A baseline runs only what changed.** Each run keeps what its baseline measured: every test that passed, with what it reached, what it cost, and the fingerprint its kalku gave it. The next run offers those tests back (`reuse`), and the kalku runs every test except the ones whose fingerprint it finds unchanged. A reused test brings back its coverage and duration from the store, and the run plans with it as if it had run.
+
+The fingerprint is the kalku's, because only the kalku knows what a test runs. Hashing on this side the source files a test's coverage names would miss what that coverage never shows: a macro expanded into the module that calls it, a constant inlined where it is used, a generic instantiated at its caller. So a kalku fingerprints what was compiled and the inputs it knows a test reads; for Go that is the package's test binary, built with coverage, and the package's other files. A test it cannot fingerprint always runs.
+
+The store is not in the project, which may want nothing of kalku in it, and not in the reni, which belongs to one checkout. It belongs to the repository: `~/.cache/kalku/repos/<first commit>/<where the project is in it>/<language>.json` (under `$XDG_CACHE_HOME` when that is set). Every worktree and clone of a repository finds what another measured, and a directory that is not a repository is kept by its path. Sharing is safe because nothing is reused for where it came from: an entry from another branch whose fingerprint differs does not match, and its test runs. A store is about one setting — the kalku's language, version and runtime, and the environment and options the run hands it — and is offered under no other.
+
+A run over the whole project (`--all`) runs the whole suite and keeps it; every other run reuses. The report says how many tests were reused (`baseline_reused`), because a score built on a reused baseline is a claim about tests that did not run this time. Coverage the kalku withheld or doubted is not kept.
 
 The kalku that ran the baseline is the pool's first worker where it announces `cast_after_baseline`: it has built the project and holds its suite, and summoning another to cast in its place pays for the build again before the first wekufe. A kalku announces it only when a wekufe cast after its baseline is judged as it would be in a kalku that was only prepared; one that does not is banished once it has reported the sites.
 
@@ -531,7 +537,7 @@ With `[score] ratchet = true`, a run of the whole project (`kalku run --all`) is
 
 ### Cache
 
-The reni is saved between builds (e.g. `actions/cache` on `~/.cache/kalku`, keyed by the hash of `mix.lock` and restored by prefix). Baseline, coverage, and unchanged outcomes are reused, so incremental runs work in CI too.
+The kept baseline is saved between builds with `actions/cache` on `~/.cache/kalku/repos`, keyed by the commit and restored by prefix, so a pull request starts from what `main` measured and its baseline runs only the tests the change can reach. Nothing is written to the repository.
 
 ### Output
 
@@ -602,7 +608,7 @@ One JSON object per survivor, complete enough to act on without opening other fi
 
 `covering_tests` lists the first five tests that cover the line and `covering_count` how many there are. A line that a whole suite reaches is covered by every test in it, and listing a thousand of them per survivor made a run too large to fit in a tool result; the full list is what `kalku show <wekufe>` (and the `kalku_show` tool) answers.
 
-Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score. A kalku that reports coverage it doubts has each wekufe cast against the tests credited with its line and then, when none notices, against every other test: its survivors are judged by the whole suite too, and the summary carries why in `coverage_doubted`.
+Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score. A kalku that reports coverage it doubts has each wekufe cast against the tests credited with its line and then, when none notices, against every other test: its survivors are judged by the whole suite too, and the summary carries why in `coverage_doubted`. When a kept baseline answered for some of the tests, the summary carries how many in `baseline_reused`, and the human report says it above the score.
 
 A run that stops before the end of its plan — no kalku is left to carry it — still reports what it cast: the wekufe it measured were measured. The summary carries why in `stopped`, the human report says `PARTIAL` above the score and `blocked: could not measure` below it, and the exit code is 2, so nothing reads a part as the whole.
 

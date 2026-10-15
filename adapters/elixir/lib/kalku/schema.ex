@@ -29,7 +29,8 @@ defmodule Kalku.Schema do
       replacement: :string,
       reload: {:enum, :reload}
     ],
-    test_timing: [test: :string, file: :string, duration_ms: :int],
+    test_timing: [test: :string, file: :string, duration_ms: :int, fingerprint: {:opt, :string}],
+    reuse: [test: :string, fingerprint: :string],
     coverage: [file: :string, line: :int, tests: {:list, :string}],
     failure: [test: :string, message: :string],
     skipped: [file: :string, reason: :string, message: :string],
@@ -58,7 +59,7 @@ defmodule Kalku.Schema do
       options: {:opt, :object}
     ],
     "prepare" => [],
-    "baseline" => [],
+    "baseline" => [reuse: {:opt, {:list, {:shape, :reuse}}}],
     "sites" => [
       files: {:list, :string},
       spells: {:list, {:enum, :spell}},
@@ -97,7 +98,8 @@ defmodule Kalku.Schema do
       coverage_withheld: {:opt, :string},
       coverage_doubted: {:opt, :string},
       failures: {:list, {:shape, :failure}},
-      differences: {:opt, {:list, :string}}
+      differences: {:opt, {:list, :string}},
+      reused: {:opt, {:list, :string}}
     ],
     "progress" => [done: :int, total: :int],
     "sites_found" => [sites: {:list, {:shape, :site}}, skipped: {:list, {:shape, :skipped}}],

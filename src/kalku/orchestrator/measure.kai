@@ -43,6 +43,8 @@ import kalku.orchestrator.ward
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
 import kalku.orchestrator.interrupting
+import kalku.orchestrator.reuse
+import kalku.core.reusing
 import kalku.wire.kalku_codec
 
 #[doc("What to measure, and with what.")]
@@ -58,7 +60,9 @@ pub type Asking = {
   limit: Int,
   timeout_floor_ms: Int,
   touched: Option[[FileChange]],
-  shard: Option[Shard]
+  shard: Option[Shard],
+  store: Option[String],
+  reuse: Bool
 }
 
 # `durations` holds pairs, which have no `Eq`, so this record derives
@@ -74,7 +78,8 @@ pub type Known = {
   differences: [String],
   only_theirs: [String],
   withheld: Option[String],
-  doubted: Option[String]
+  doubted: Option[String],
+  reused: Int
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -200,17 +205,21 @@ fn interview(
   asking: Asking
 ) : Result[([Capability], Known), String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   greet(k, asking)!
-  let caps = able(await_kind(k, "ready")!)!
+  let hello = await_kind(k, "ready")!
+  let caps = able(hello)!
+  let keeping = keeping_of(asking.store, asking.reuse, caps, hello, asking.spec)
+  let offer = offer_of(keeping)
   Telling.entered(PhasePreparing)
   Telling.tell_of("preparing #{asking.spec.root}; this builds the project and can take minutes")
   tell(k, 2, Prepare)!
   (await_kind(k, "prepared")!) |> ignore
   Telling.entered(PhaseBaselining)
   Telling.tell_of("running the suite once, for a baseline")
-  tell(k, 3, Baseline)!
+  tell(k, 3, asked_with(offer))!
   let baseline = await_kind(k, "baseline_done")!
+  let kept = brought(keeping, offer, baseline)!
   let failing = failures_of(baseline)
-  let suite = judging_of(baseline, failing)
+  let suite = judging_of(baseline, failing) ++ (kept | .test_id)
   refuse_red(baseline, suite)!
   Telling.tell_of(
     if is_empty(failing) {
@@ -219,6 +228,7 @@ fn interview(
       going_on_without(failing, length(suite))
     }
   )
+  if is_empty(kept) { () } else { Telling.tell_of(reused_line(length(kept), length(suite))) }
   tell(
     k,
     4,
@@ -240,8 +250,10 @@ fn interview(
       "no wekufe answers to #{join(names, ", ")} any more: a wekufe is named by the text it was cast in, and its file has changed since. Run `kalku run <file>` again to get new names"
     )
   })!
+  let reported = coverage_from(baseline)!
+  keep(keeping, baseline, reported, kept)
   let narrowed =
-    (coverage_from(baseline)!).map(entries => told.without(entries, failing | .test_id))
+    reported.map(entries => told.without(entries ++ coverage_of(kept), failing | .test_id))
   Ok(
     (
       caps,
@@ -249,13 +261,14 @@ fn interview(
         sites: found.sites,
         tests: suite,
         coverage: narrowed.map(.coverage),
-        durations: durations_of(baseline),
+        durations: durations_of(baseline) ++ (timings_of(kept) | (t => (t.test_id, t.duration_ms))),
         skipped: found.skipped,
         left_out: failing,
         differences: differences_of(baseline),
         only_theirs: narrowed.map(.only_theirs).unwrap_or([]),
         withheld: withheld_of(baseline),
-        doubted: doubted_of(baseline)
+        doubted: doubted_of(baseline),
+        reused: length(kept)
       }
     )
   )
@@ -722,6 +735,7 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     },
     withheld: known.withheld,
     doubted: known.doubted,
+    reused: known.reused,
     shard: None,
     stopped: None
   }
@@ -854,3 +868,10 @@ fn settled(verdicts: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {
     }
   }
 }
+
+#[doc("""
+How a run says that part of its baseline was not run: how many tests a
+kept baseline answered for, out of the suite, and why that is honest.
+""")]
+pub fn reused_line(reused: Int, of: Int) : String =
+  "#{reused} of the #{of} were not run again: a kept baseline answered for them, and the kalku says nothing they run has changed"

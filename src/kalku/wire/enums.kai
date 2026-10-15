@@ -43,6 +43,7 @@ pub type Capability
   | ResetCap
   | CodeHash
   | CastAfterBaseline
+  | PartialBaseline
   | OtherCapability(String)
 
 #[doc("Whether casting a site reloads only its module or also the modules that depend on it at compile time.")]
@@ -110,7 +111,8 @@ fn capabilities() : [(String, Capability)] = [
   ("abort", AbortCap),
   ("reset", ResetCap),
   ("code_hash", CodeHash),
-  ("cast_after_baseline", CastAfterBaseline)
+  ("cast_after_baseline", CastAfterBaseline),
+  ("partial_baseline", PartialBaseline)
 ]
 
 fn formats() : [(String, Format)] = [
