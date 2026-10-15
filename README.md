@@ -387,7 +387,19 @@ It has a warm runtime and per-test coverage, so a module takes minutes. The
 one wekufe it cannot tell apart from the original is proposed in
 `.kalku/equivalent.proposed`, with its reason, for a person to accept.
 
-The same run happens nightly (`.github/workflows/self-mutate.yml`, also
+The Go kalku measures itself from `adapters/go`, with its own binary on the
+`PATH` (`make adapters/go/bin/kalku-go`):
+
+```sh
+cd adapters/go && PATH="$PWD/bin:$PATH" kalku run --limit 0 kalku/source.go
+```
+
+A file takes a few minutes, most of them the baseline: coverage runs each
+test alone, and the tests that drive a real kalku over a pipe take seconds
+each. Those tests start a binary built from the copy, which a wekufe never
+reaches, so they are credited with nothing of it.
+
+The kaikai side's run happens nightly (`.github/workflows/self-mutate.yml`, also
 startable by hand with a module and a limit) and its report is attached to
 the run. It is advisory: a gate that blocks a pull request has to measure
 the lines that pull request changed, and that does not exist yet.

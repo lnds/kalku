@@ -396,7 +396,19 @@ minutos. El único wekufe que no puede distinguir del original queda
 propuesto en `.kalku/equivalent.proposed`, con su razón, para que una persona
 lo acepte.
 
-La misma corrida ocurre cada noche (`.github/workflows/self-mutate.yml`, que
+El kalku de Go se mide a sí mismo desde `adapters/go`, con su propio binario
+en el `PATH` (`make adapters/go/bin/kalku-go`):
+
+```sh
+cd adapters/go && PATH="$PWD/bin:$PATH" kalku run --limit 0 kalku/source.go
+```
+
+Un archivo toma unos minutos, la mayoría en el baseline: la cobertura corre
+cada test solo, y los tests que manejan un kalku real por un pipe toman
+segundos cada uno. Esos tests arrancan un binario construido desde la copia,
+al que un wekufe nunca llega, así que no se les acredita nada de él.
+
+La corrida del lado kaikai ocurre cada noche (`.github/workflows/self-mutate.yml`, que
 también se puede iniciar a mano con un módulo y un límite) y su reporte se
 adjunta a la corrida. Es informativa: una barrera que bloquea un pull request
 tiene que medir las líneas que ese pull request cambió, y eso todavía no
