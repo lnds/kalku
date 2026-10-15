@@ -68,7 +68,7 @@ fn line_ref_in(text: String) : Option[LineRef] = match first_entry(text) {
 
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
 
-fn ids(sites: [Site]) : [String] = sites | (.site_id)
+fn ids(sites: [Site]) : [String] = sites | .site_id
 
 const SEMANTIC : String =
   "lib/my_app/parser.ex  MyApp.Parser.next_token/2  compare  \">=\"  #1   # index is always even here"

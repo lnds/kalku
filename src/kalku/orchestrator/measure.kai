@@ -241,7 +241,7 @@ fn interview(
     )
   })!
   let narrowed =
-    (coverage_from(baseline)!).map(entries => told.without(entries, failing | (.test_id)))
+    (coverage_from(baseline)!).map(entries => told.without(entries, failing | .test_id))
   Ok(
     (
       caps,
@@ -265,7 +265,7 @@ fn interview(
 # given wekufe is the coverage's business; without coverage, all of them
 # do — slow, and the only honest reading of "this kalku cannot say".
 fn suite_of(reply: KalkuReply) : [String] = match reply {
-  BaselineDone(m) -> m.tests | (.test_id)
+  BaselineDone(m) -> m.tests | .test_id
   _ -> []
 }
 
@@ -333,7 +333,7 @@ fn doubted_of(reply: KalkuReply) : Option[String] = match reply {
 }
 
 fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
-  let gone = failing | (.test_id)
+  let gone = failing | .test_id
   suite_of(reply) |? (t => not contains(gone, t))
 }
 
@@ -446,7 +446,7 @@ otherwise hold that line until the kalku died, which for a lock is never.
 """)]
 pub fn still_waiting(kind: String, waited_ms: Int, said: [String]) : String {
   let so_far = "still waiting for `#{kind}`; nothing heard for #{waited_ms / 1000}s"
-  let tail = filter(enumerate(said), i => i.fst == length(said) - 1) | (.snd)
+  let tail = filter(enumerate(said), i => i.fst == length(said) - 1) | .snd
   match tail {
     [line, ..._] -> "#{so_far}. The kalku last said: #{trim(line)}"
     [] -> "#{so_far}. If this is a build, it is a slow one"
@@ -608,7 +608,7 @@ pub fn inputs_for(asking: Asking, known: Known) : Inputs = Inputs {
 # rather than obeyed, because a suppression nobody can point at cannot be
 # told from a hole somebody hid.
 pub fn suppressed_by(entries: [equivalent.Entry], sites: [Site]) : [String] =
-  match_sites(entries, sites).suppressed | (.site_id)
+  match_sites(entries, sites).suppressed | .site_id
 
 #[doc("Entries that point at no site in this run.")]
 pub fn orphans_among(entries: [equivalent.Entry], sites: [Site]) : [equivalent.Entry] =
@@ -639,7 +639,7 @@ pub fn doubting(ready: Plan, known: Known) : Plan = match known.doubted {
 fn longer(a: Int, b: Int) : Int = if a > b { a } else { b }
 
 fn whole_budget(known: Known) : Int =
-  TIMEOUT_FACTOR * DEPENDENTS_FACTOR * sum(known.durations | (.snd))
+  TIMEOUT_FACTOR * DEPENDENTS_FACTOR * sum(known.durations | .snd)
 
 #[doc("""
 The part of a plan a shard owns, or all of it for a run that is not one.
@@ -658,7 +658,7 @@ pub fn part_of(ready: Plan, shard: Option[Shard]) : Plan = Plan {
 fn limited(casts: [Wekufe], limit: Int) : [Wekufe] = if limit <= 0 {
   casts
 } else {
-  enumerate(casts) |? (c => c.fst < limit) | (.snd)
+  enumerate(casts) |? (c => c.fst < limit) | .snd
 }
 
 #[doc("""
@@ -672,8 +672,8 @@ stopped travels in the report, and blocks it.
 pub fn report_after(ready: Plan, casts: [Wekufe], casting: Casting, known: Known) : Report {
   let stopped = stopped_short(
     casting.failure,
-    length(uniq(casting.verdicts | (.wekufe))),
-    length(uniq(casts | (.site.site_id)))
+    length(uniq(casting.verdicts | .wekufe)),
+    length(uniq(casts | .site.site_id))
   )
   Report {
     ...report_of(ready, casting, known),
@@ -828,7 +828,7 @@ fn max_casts(n: Int) : Int = if n < 1 { 1 } else { n }
 # measurement of it.
 pub fn agreed(casting: Casting) : Casting = Casting {
   ...casting,
-  verdicts: uniq(casting.verdicts | (.wekufe)) | (w => settled(casting.verdicts, w))
+  verdicts: uniq(casting.verdicts | .wekufe) | (w => settled(casting.verdicts, w))
 }
 
 fn settled(verdicts: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {

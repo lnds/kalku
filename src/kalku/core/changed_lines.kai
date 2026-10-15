@@ -22,7 +22,7 @@ pub fn touches(changes: [FileChange], file: String, line: Int) : Bool =
   any(changes, c => c.file == file and any(c.ranges, r => line >= r.from and line <= r.to))
 
 #[doc("The files the change touched, in the order the diff named them.")]
-pub fn files(changes: [FileChange]) : [String] = changes | (.file)
+pub fn files(changes: [FileChange]) : [String] = changes | .file
 
 # A `+++ b/<path>` line opens a file; `@@ … +start,count @@` adds a range to
 # the file that is open. `/dev/null` closes one: the file is gone, so none of

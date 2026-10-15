@@ -128,7 +128,7 @@ fn drop_heading(kept: [String]) : [String] = match last(kept) {
 }
 
 fn slice_list(xs: [String], from: Int, to: Int) : [String] =
-  enumerate(xs) |? (i => i.fst >= from and i.fst < to) | (.snd)
+  enumerate(xs) |? (i => i.fst >= from and i.fst < to) | .snd
 
 #[doc("""
 Accept the proposal for this site: it leaves the queue and joins the

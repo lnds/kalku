@@ -82,7 +82,7 @@ fn tally(c: Casting) : [(String, Int)] {
   uniq(names) | (n => (n, length(filter(names, x => x == n))))
 }
 
-fn wekufe_named(c: Casting) : [String] = c.verdicts | (.wekufe)
+fn wekufe_named(c: Casting) : [String] = c.verdicts | .wekufe
 
 test "four kalku cast a hundred wekufe, and every one is accounted for exactly once" {
   let done = with_mailbox { casting(pool_of("pool_happy.ndjson", 4, 1), casts(100, 5000)) }

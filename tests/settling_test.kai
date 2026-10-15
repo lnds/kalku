@@ -113,7 +113,7 @@ test "what a run cast in a project nobody set up is remembered in the reni" {
   let _ = passing_through(dir)
   remember_in(dir, [a_cast("w1")])
 
-  assert (ledger_in(dir) | (.wekufe)) == ["w1"]
+  assert (ledger_in(dir) | .wekufe) == ["w1"]
   assert file.exists("#{reni_here(dir)}/runs.ndjson")
   assert folders.list_dir(dir) == ["mix.exs"]
 
@@ -127,7 +127,7 @@ test "a project that was set up keeps its own ledger" {
   let _ = folders.create_dir("#{dir}/.kalku")
   remember_in(dir, [a_cast("w1")])
 
-  assert (ledger_in(dir) | (.wekufe)) == ["w1"]
+  assert (ledger_in(dir) | .wekufe) == ["w1"]
   assert file.exists("#{dir}/#{LEDGER_PATH}")
   assert not file.exists("#{reni_here(dir)}/runs.ndjson")
 

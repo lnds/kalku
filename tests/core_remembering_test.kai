@@ -38,7 +38,7 @@ test "a cast written down reads back as it was" {
 test "a ledger of many lines reads back in order" {
   let text = join(ledger() | line_of, "\n")
 
-  assert (read_all(text) | (.wekufe)) == ["w1", "w2", "w1"]
+  assert (read_all(text) | .wekufe) == ["w1", "w2", "w1"]
 }
 
 # A half-written line is what a killed run leaves behind, and it is not a
@@ -60,7 +60,7 @@ test "the last word about a wekufe is the one that counts" {
 # `cast` names wekufe; what it needs is sites, and the ledger is where a
 # name becomes a place.
 test "a wekufe's name becomes the site it was cast at" {
-  assert (sites_for(ledger(), ["w2", "w1"]) | (.span.start.line)) == [9, 4]
+  assert (sites_for(ledger(), ["w2", "w1"]) | .span.start.line) == [9, 4]
   assert strangers(ledger(), ["w1", "stranger", "w2"]) == ["stranger"]
 }
 
@@ -82,7 +82,7 @@ test "casts are appended to the ledger one line each, and no casts leave it as i
   let first = appended("", [cast_of("w1", 4, Survived)])
   let both = appended(first, [cast_of("w2", 9, Killed)])
 
-  assert (read_all(both) | (.wekufe)) == ["w1", "w2"]
+  assert (read_all(both) | .wekufe) == ["w1", "w2"]
   assert appended(both, []) == both
   assert appended("", []) == ""
 }

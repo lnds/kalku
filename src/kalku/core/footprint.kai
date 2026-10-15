@@ -39,7 +39,7 @@ fn proc_of(line: String) : [Proc] = match filter(split(trim(line), " "), w => w 
 pub fn tree_of(root: Int, procs: [Proc]) : [Proc] = grown(filter(procs, p => p.pid == root), procs)
 
 fn grown(tree: [Proc], procs: [Proc]) : [Proc] {
-  let known = tree | (.pid)
+  let known = tree | .pid
   let more = filter(procs, p => contains(known, p.ppid) and (not contains(known, p.pid)))
   if is_empty(more) { tree } else { grown(tree ++ more, procs) }
 }

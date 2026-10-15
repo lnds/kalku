@@ -233,7 +233,7 @@ fn counted(tests: [String]) : String = if length(tests) <= SHOWN_TESTS {
 # line of configuration are not the same artefact, and a reader who has
 # just argued the same case five times should be told there is a line.
 fn pattern_block(r: Report) : [String] = flat_map(
-  repeated_calls(r.survivors | (.site), WORTH_SAYING),
+  repeated_calls(r.survivors | .site, WORTH_SAYING),
   as_advice
 )
 
