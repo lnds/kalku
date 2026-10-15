@@ -37,11 +37,27 @@ test "a language kalku has no kalku for is named, with what it does have" {
   assert named("Elixir").map(.language) == Ok("elixir")
 }
 
-# The reni is named after the project so two projects never share one,
-# and it lives outside the tree it measures.
+# The reni lives outside the tree it measures, named after the project so
+# a person can find it.
 test "the reni is outside the project and named after it" {
-  assert reni_for("/tmp", "thing") == "/tmp/kalku/thing"
-  assert reni_for("/tmp/", "thing") == "/tmp/kalku/thing"
+  assert reni_for("/tmp", "thing", "k") == "/tmp/kalku/thing-k"
+  assert reni_for("/tmp/", "thing", "k") == "/tmp/kalku/thing-k"
+}
+
+# Two checkouts whose folders share a name — two clones, two worktrees —
+# are two projects, and sharing a reni would mix one's artefacts into the
+# other's run.
+test "two projects whose folders share a name do not share a reni" {
+  assert path_key("/home/u/a/kalku") != path_key("/home/u/b/kalku")
+  assert length(path_key("/home/u/a/kalku")) == 12
+}
+
+test "one project has one key however its path is spelled" {
+  let key = path_key("/home/u/kalku")
+
+  assert path_key("/home/u/kalku/") == key
+  assert path_key("/home/u/./kalku") == key
+  assert path_key("/home//u/kalku") == key
 }
 
 test "what init writes says how to summon the kalku" {

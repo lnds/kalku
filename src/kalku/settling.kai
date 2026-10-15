@@ -58,7 +58,14 @@ from the machine that ran it means nothing on anyone else's — worse, it
 means something wrong on the machine it came from once the directory is
 swept.
 """)]
-pub fn reni_here(root: String) : String / Env = reni_for(temp_dir(), named_after(root))
+pub fn reni_here(root: String) : String / Env =
+  reni_for(temp_dir(), named_after(root), path_key(absolute(root)))
+
+fn absolute(root: String) : String / Env = if paths.is_absolute(root) {
+  root
+} else {
+  "#{Env.get("PWD").unwrap_or("")}/#{root}"
+}
 
 #[doc("A project nobody set up: its language, the summoning a run wrote for it, and the configuration `init` would have written.")]
 pub type Passing = { language: String, summon: String, reni: String, config: String }

@@ -13,6 +13,8 @@ summons, which is why it is written into the project as a script the
 owner can read and change.
 """)]
 
+import crypto.hash
+import encoding.hex
 import kalku.version
 
 #[doc("""
@@ -225,12 +227,24 @@ pub fn plan_for(known: Known, reni: String) : Plan = Plan {
   dependency: dependency_for(known)
 }
 
-# The reni is named after the project so two projects do not share one,
-# and it sits outside the project because a run's artefacts are not the
-# project's — and because a kalku that copies its tree would copy the
-# reni into itself.
-#[doc("Where a project's reni goes, given a temporary directory and the project's name.")]
-pub fn reni_for(under: String, leaf: String) : String = "#{trim_right_slash(under)}/kalku/#{leaf}"
+# The reni is named after the project so a person can find it, and keyed
+# by where the project is so two projects whose folders share a name do
+# not share one. It sits outside the project because a run's artefacts are
+# not the project's — and because a kalku that copies its tree would copy
+# the reni into itself.
+#[doc("Where a project's reni goes, given a temporary directory, the project's name and its key.")]
+pub fn reni_for(under: String, leaf: String, key: String) : String =
+  "#{trim_right_slash(under)}/kalku/#{leaf}-#{key}"
+
+#[doc("""
+The key of a project at this absolute path: short, and the same for the
+same path on every run.
+""")]
+pub fn path_key(absolute: String) : String =
+  slice(hex.encode(sha256(bytes(tidy(absolute)) | byte_to_int)), 0, 12)
+
+# `/a/b/`, `/a/./b` and `/a//b` are one project and one key.
+fn tidy(p: String) : String = "/#{join(filter(split(p, "/"), s => s != "" and s != "."), "/")}"
 
 fn trim_right_slash(path: String) : String = if ends_with(path, "/") {
   slice(path, 0, length(path) - 1)
