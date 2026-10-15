@@ -1,3 +1,9 @@
+## v0.17.0 (2026-10-15)
+
+### Added
+
+- **kaikai**: per-test coverage from kai test --coverage (#359)
+
 ## v0.16.0 (2026-10-14)
 
 ### Added
