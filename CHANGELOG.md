@@ -1,3 +1,16 @@
+## v0.18.0 (2026-10-16)
+
+### Added
+
+- **elixir**: a baseline runs only the test modules that changed (#377)
+- **go**: a baseline runs only the packages that changed (#370)
+- **protocol**: a baseline reuses the tests whose fingerprint has not changed (#369)
+
+### Fixed
+
+- **settling**: key a reni by the project's path, not its folder's name (#368)
+- **costing**: count the rest of the suite when coverage is doubted (#367)
+
 ## v0.17.0 (2026-10-15)
 
 ### Added
