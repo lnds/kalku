@@ -188,9 +188,13 @@ defmodule Kalku.Loop do
     end
   end
 
-  defp dispatch("baseline", id, _body, %{root: root, prepared: true} = state)
+  defp dispatch("baseline", id, body, %{root: root, prepared: true} = state)
        when is_binary(root) do
-    case Baseline.run(root, reni: state.reni, inline_limit_bytes: state.inline_limit) do
+    case Baseline.run(root,
+           reni: state.reni,
+           inline_limit_bytes: state.inline_limit,
+           reuse: body["reuse"] || []
+         ) do
       {:ok, body} -> {:reply, reply("baseline_done", id, body), state}
       {:error, code, message} -> {:reply, error(id, code, message, true), state}
     end
@@ -297,7 +301,8 @@ defmodule Kalku.Loop do
         "abort",
         "reset",
         "recompile_dependents",
-        "cast_after_baseline"
+        "cast_after_baseline",
+        "partial_baseline"
       ]
     }
   end

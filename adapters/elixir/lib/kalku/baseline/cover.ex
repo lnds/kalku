@@ -167,9 +167,8 @@ defmodule Kalku.Baseline.Cover do
 
   defp ebin_of(app), do: Path.join([Mix.Project.build_path(), "lib", to_string(app), "ebin"])
 
-  # A module names the file it was compiled from, which is what a site is
-  # reported against.
-  defp source(module) do
+  @doc "The file a module was compiled from, which is what a site is reported against."
+  def source(module) do
     case module.module_info(:compile)[:source] do
       nil -> written_in(module)
       source -> to_string(source)

@@ -111,6 +111,16 @@ Running the suite whole and then each test alone measures the same thing twice, 
 
 The kalku declares OTP's `:tools` application, which is where `:cover` lives.
 
+### A baseline that runs only what changed
+
+The kalku claims `partial_baseline`: each test is given the fingerprint of its test module, and a module all of whose tests the kaikai side offers back in `reuse` with the fingerprint it has now is not run, and its tests are listed in `reused`. A module is run whole or not at all, because its tests share what `setup_all` made.
+
+The fingerprint covers the test file and every file the compiler records it depending on, at compile time or at run time, all the way down: `mix xref`'s graph, and the modules the test file names, traced as it is loaded. A macro expands into the module that uses it and the compiler records the dependency, so changing a macro reruns the tests of every module that expands it. Every fingerprint also covers what a test reaches without naming it: the configuration, `priv/`, the Erlang sources under `src/`, the files under `test/` that are not test files, `mix.exs`, `mix.lock`, and the Elixir and OTP versions.
+
+A dependency the compiler cannot see — a module the configuration names and the code calls through a variable, a protocol dispatching to its implementation — would be missed, so a module is given a fingerprint only when every file its tests executed in the baseline is one the fingerprint covers. A module that reaches further, or has a failing test, has none and always runs. Given the same files, the tests take the same way through them, so the check holds whenever the fingerprint matches again.
+
+Not covered: what a test reads from anywhere else, such as another directory, the environment, or the network. On `plug` (689 tests, doctests included, in 31 test modules), a run of one file took 32 s with the whole suite and 18 s with 447 tests reused, with the same report.
+
 ## Casting
 
 `cast` splices the site's span into the module's source **in memory**, compiles from a string, and loads the result into the warm runtime. Nothing is written to the project: the file on disk is the one the developer left there, before the cast and after it.

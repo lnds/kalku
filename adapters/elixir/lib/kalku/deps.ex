@@ -54,12 +54,15 @@ defmodule Kalku.Deps do
     _, _ -> :error
   end
 
-  # Two things have to be undone for the length of the question. The
-  # kalku runs mix quietly, so a quiet shell would answer nothing at all;
-  # and a task writes to the group leader, which is where the answer is
-  # caught rather than printed, because printing it is printing onto the
-  # protocol.
-  defp capture(work) do
+  @doc """
+  What a mix task prints, caught rather than printed.
+
+  Two things have to be undone for the length of the question. The kalku
+  runs mix quietly, so a quiet shell would answer nothing at all; and a
+  task writes to the group leader, which is where the answer is caught
+  rather than printed, because printing it is printing onto the protocol.
+  """
+  def capture(work) do
     {:ok, io} = StringIO.open("")
     original_leader = Process.group_leader()
     original_shell = Mix.shell()

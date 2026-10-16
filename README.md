@@ -270,7 +270,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Java kalku: projects that test with JUnit 4 or with TestNG, run through their JUnit Platform engines | done |
 | **Go kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `go/parser`; `prepare`, `baseline` and `cast` in the reni through `-overlay`, `abort`, `kalku init` for Go modules, shipped in the release | done |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java, Go, kaikai |
-| **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go |
+| **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go, Elixir |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | `--watch` and `--ci` | not yet |
