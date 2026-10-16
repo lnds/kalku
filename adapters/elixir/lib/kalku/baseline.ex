@@ -12,10 +12,14 @@ defmodule Kalku.Baseline do
   runtime cold for the casts that follow.
   """
 
-  alias Kalku.Baseline.{Started, Calls, Collector, Cover, Packed, Recorder}
+  alias Kalku.Baseline.{Started, Calls, Collector, Cover, Fingerprint, Packed, Recorder}
 
   @doc """
   Runs the suite and reports what it did.
+
+  `reuse` is what the kaikai side holds a passing result of: a test module
+  all of whose tests it offers, each with the fingerprint the module has
+  now, is not run, and its tests are reported as reused.
 
   Returns `{:ok, map}` shaped like `baseline_done`, or `{:error, code,
   message}` when the suite could not be run at all — which is not the same
@@ -28,19 +32,48 @@ defmodule Kalku.Baseline do
     with {:ok, files} <- test_files(root),
          :ok <- start_exunit(measuring),
          {:ok, modules} <- load(root, files),
-         {:ok, {measured, doubt}} <- through(modules, measuring) do
+         prints = fingerprints(modules, measuring, root),
+         {reused, running} = reusable(modules, prints, Keyword.get(opts, :reuse, []), root),
+         {:ok, {measured, doubt}} <- through(running, reused, measuring) do
       Kalku.Runtime.mark(Mix.Project.config()[:app])
       elapsed = System.monotonic_time(:millisecond) - started
-      report(measured, doubt, elapsed, root, opts)
+      report(measured, doubt, elapsed, root, opts, {prints, reused_ids(reused, root)})
     end
   end
+
+  # The modules each loaded test file names, as the compiler saw it name them.
+  @references {__MODULE__, :references}
+
+  # A fingerprint stands on what each test was seen to execute, so a run
+  # that does not count lines gives none.
+  defp fingerprints(modules, true, root),
+    do: Fingerprint.of(modules, :persistent_term.get(@references, %{}), root)
+
+  defp fingerprints(_modules, false, _root), do: %{}
+
+  # A module is run whole or not at all: its tests share what `setup_all`
+  # made, and one left out may be the one a test after it needs.
+  defp reusable(modules, prints, reuse, root) do
+    offered = Map.new(reuse, &{&1["test"], &1["fingerprint"]})
+
+    Enum.split_with(modules, fn module ->
+      ids = ids_of(module, root)
+      print = prints[module][:print]
+      ids != [] and print != nil and Enum.all?(ids, &(offered[&1] == print))
+    end)
+  end
+
+  defp reused_ids(reused, root), do: reused |> Enum.flat_map(&ids_of(&1, root)) |> Enum.uniq()
+
+  defp ids_of(module, root),
+    do: for(t <- module.__ex_unit__().tests, do: test_id(t.tags.file, t.tags.line, root))
 
   # The suite is run by ExUnit, and ExUnit is something a test can take
   # down: a project that stops applications on its way out, reached from a
   # test, stops the one running it. That is a suite that could not be run,
   # and it is said like any other, not left for the pipe closing to say.
-  defp through(modules, measuring) do
-    {:ok, ran(modules, measuring)}
+  defp through(modules, reused, measuring) do
+    {:ok, ran(modules, reused, measuring)}
   rescue
     e -> could_not_run(Exception.message(e))
   catch
@@ -50,9 +83,9 @@ defmodule Kalku.Baseline do
     Cover.stop()
   end
 
-  defp ran(modules, measuring) do
+  defp ran(modules, reused, measuring) do
     if measuring, do: Cover.reset()
-    seen_through(modules)
+    leaving_out(reused, fn -> seen_through(modules) end)
     # What the suite as a whole reached. Per-test attribution has to add
     # up to this, and where it does not, something swallowed it.
     whole = if measuring, do: MapSet.new(Cover.covered()), else: MapSet.new()
@@ -61,6 +94,17 @@ defmodule Kalku.Baseline do
     if measuring and judged_by_some?(tests),
       do: attributed(tests, modules, whole),
       else: {tests, nil}
+  end
+
+  # ExUnit runs every module loaded since its last run, beside the ones it
+  # is handed, so a module reused is left out by name.
+  defp leaving_out([], run), do: run.()
+
+  defp leaving_out(reused, run) do
+    ExUnit.configure(exclude: Enum.map(reused, &{:module, &1}))
+    run.()
+  after
+    ExUnit.configure(exclude: [])
   end
 
   @doc """
@@ -292,14 +336,17 @@ defmodule Kalku.Baseline do
   # A test is named by where it is written, relative to the project: an
   # absolute path would name this machine, and every kalku in the pool
   # would call the same test something different.
-  defp report(tests, doubt, duration_ms, root, opts) do
+  defp report(tests, doubt, duration_ms, root, opts, {prints, reused}) do
     named = for t <- tests, do: {test_id(t.file, t.line, root), t}
 
     failures = for {id, t} <- named, t.failure != nil, do: %{"test" => id, "message" => t.failure}
+    given = if doubt == nil, do: standing(tests, prints, root), else: %{}
 
     timings =
-      for {id, t} <- named,
-          do: %{"test" => id, "file" => relative(t.file, root), "duration_ms" => t.duration_ms}
+      for {id, t} <- named do
+        %{"test" => id, "file" => relative(t.file, root), "duration_ms" => t.duration_ms}
+        |> Map.merge(if(given[t.module], do: %{"fingerprint" => given[t.module]}, else: %{}))
+      end
 
     body = %{
       "status" => if(failures == [], do: "green", else: "red"),
@@ -309,7 +356,30 @@ defmodule Kalku.Baseline do
       "differences" => differences()
     }
 
-    {:ok, body |> Map.merge(coverage_field(named, root, opts)) |> Map.merge(doubted_field(doubt))}
+    {:ok,
+     body
+     |> Map.merge(coverage_field(named, root, opts, reused != []))
+     |> Map.merge(doubted_field(doubt))
+     |> Map.merge(if(reused == [], do: %{}, else: %{"reused" => reused}))}
+  end
+
+  # The fingerprint of each module whose tests all passed and stayed inside
+  # what it covers. A module with a failing test is not kept for the next
+  # run, so it is not given one.
+  defp standing(tests, prints, root) do
+    tests
+    |> Enum.filter(&(&1.module != nil))
+    |> Enum.group_by(& &1.module)
+    |> Enum.reject(fn {_, own} -> Enum.any?(own, &(&1.failure != nil)) end)
+    |> Enum.flat_map(fn {module, own} ->
+      reached = for t <- own, {file, _} <- t.lines, uniq: true, do: relative(file, root)
+
+      case prints[module] && Fingerprint.standing(prints[module], reached) do
+        nil -> []
+        print -> [{module, print}]
+      end
+    end)
+    |> Map.new()
   end
 
   @doc """
@@ -359,11 +429,15 @@ defmodule Kalku.Baseline do
   # in the reni, packed: a megabyte of JSON per worker is a cost the
   # protocol lets us decline, and written line by line a large project's
   # coverage is the same few thousand names a hundred megabytes over.
-  defp coverage_field(named, root, opts) do
+  #
+  # Where tests were reused, coverage that names nothing still says the ones
+  # that ran reached nothing, and the kaikai side has the rest of it.
+  defp coverage_field(named, root, opts, reusing) do
     limit = Keyword.get(opts, :inline_limit_bytes, 65_536)
     reached = for {id, t} <- named, do: {id, placed(t.lines, root)}
 
     case Packed.references(reached) do
+      0 when reusing -> %{"coverage" => []}
       0 -> %{}
       n when n * @bytes_a_name > limit -> packed(reached, opts)
       _ -> inline_or_packed(coverage(named, root), reached, limit, opts)
@@ -429,7 +503,10 @@ defmodule Kalku.Baseline do
   def loaded_modules, do: :persistent_term.get(@modules, [])
 
   @doc "Forget the loaded suite, so the next baseline reads the files again."
-  def forget, do: :persistent_term.erase(@modules)
+  def forget do
+    :persistent_term.erase(@modules)
+    :persistent_term.erase(@references)
+  end
 
   # The modules are kept, not just loaded, for two reasons that both bite.
   # ExUnit takes the suite it is given and does not keep it for a second
@@ -465,9 +542,15 @@ defmodule Kalku.Baseline do
     helper = Path.join(root, "test/test_helper.exs")
     if File.exists?(helper), do: Code.require_file(helper)
 
-    case Kernel.ParallelCompiler.require(files, return_diagnostics: true) do
+    {required, named} =
+      Fingerprint.tracing(fn ->
+        Kernel.ParallelCompiler.require(files, return_diagnostics: true)
+      end)
+
+    case required do
       {:ok, modules, _info} ->
         keep_suite_state()
+        :persistent_term.put(@references, named)
         {:ok, remember(test_modules(modules))}
 
       {:error, errors, _info} ->
