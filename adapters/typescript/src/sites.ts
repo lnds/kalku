@@ -174,6 +174,7 @@ class Walker {
     if (ts.isCallExpression(parent) && moduleCall(parent) && child === parent.arguments[0]) return true;
     if (ts.isElementAccessExpression(parent) && child === parent.argumentExpression && ts.isStringLiteral(child))
       return true;
+    if (ts.isBinaryExpression(parent) && typeofGuard(parent) && ts.isStringLiteral(child)) return true;
     return false;
   }
 
@@ -253,15 +254,17 @@ class Walker {
   }
 
   // A call that is a whole statement, awaited or not, becomes an empty
-  // statement: `;` keeps the statements around it apart where a line with
-  // no semicolon would otherwise run into the next.
+  // block: `{}` is a statement wherever one stands, the body of an `if`
+  // included, where TypeScript refuses an empty `;`, and it keeps the
+  // statements around it apart where a line with no semicolon would
+  // otherwise run into the next.
   private call(stmt: ts.ExpressionStatement, enclosing: string): void {
     let e: ts.Expression = stmt.expression;
     if (ts.isAwaitExpression(e)) e = e.expression;
     if (!ts.isCallExpression(e)) return;
     if (e.expression.kind === ts.SyntaxKind.SuperKeyword || e.expression.kind === ts.SyntaxKind.ImportKeyword) return;
     if (this.excluded(e)) return;
-    this.propose("call", stmt.getStart(this.sf), stmt.getEnd(), ";", enclosing);
+    this.propose("call", stmt.getStart(this.sf), stmt.getEnd(), "{}", enclosing);
   }
 
   private excluded(call: ts.CallExpression): boolean {
@@ -322,6 +325,13 @@ class Walker {
       return false;
     }
   }
+}
+
+// `typeof x === "string"`: the name of a type, which a type checker narrows
+// by. An empty name is a compile error wherever types are checked, and the
+// guard itself is already the `compare` and `negate` spells' to change.
+function typeofGuard(e: ts.BinaryExpression): boolean {
+  return COMPARE.has(e.operatorToken.kind) && (ts.isTypeOfExpression(e.left) || ts.isTypeOfExpression(e.right));
 }
 
 function cmp(a: string, b: string): number {
