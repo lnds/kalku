@@ -1,3 +1,10 @@
+## v0.18.1 (2026-10-17)
+
+### Fixed
+
+- **kaikai**: a baseline with thousands of covered lines no longer overflows the kalku's fiber (#382)
+- **elixir**: a wekufe that breaks ExUnit leaves the runtime dirty, not every later cast crashed (#381)
+
 ## v0.18.0 (2026-10-16)
 
 ### Added
