@@ -1,0 +1,53 @@
+#[doc("""
+One wekufe to a `site_id`, which is what the protocol says it names.
+
+A kalku that lists one wekufe twice would have it cast twice and counted
+once, and a run that planned more than it answered for reads as partial
+with nothing left out. Two listings that agree on where and what they
+write are one wekufe and are kept once. Two that share a name and
+disagree are a kalku that cannot say which wekufe it cast, and nothing
+measured under that name could be trusted.
+
+In a module of its own because importing a map brings its `filter` and
+`contains` with it, over the lists' own.
+""")]
+
+import collections.map
+import kalku.wire.enums
+import kalku.wire.shapes
+
+type Seen = { named: Map[String, Site], kept: [Site], clash: Option[String] }
+
+#[doc("""
+The sites with each repeated listing of one wekufe kept once, in the
+order they came; an error naming the first `site_id` given to two
+different wekufe.
+""")]
+pub fn one_each(sites: [Site]) : Result[[Site], String] {
+  let seen = list.foldl(sites, Seen { named: map.empty(), kept: [], clash: None }, noted)
+  match seen.clash {
+    Some(why) -> Err(why)
+    None -> Ok(reverse(seen.kept))
+  }
+}
+
+fn noted(seen: Seen, s: Site) : Seen = match map.get(seen.named, s.site_id) {
+  None -> Seen { ...seen, named: map.put(seen.named, s.site_id, s), kept: [s, ...seen.kept] }
+  Some(first) -> if same_wekufe(first, s) or is_some(seen.clash) {
+    seen
+  } else {
+    Seen { ...seen, clash: Some(clash_of(first, s)) }
+  }
+}
+
+# The semantic key (`enclosing`, `ordinal`) is left out on purpose: it
+# says where a wekufe sits for suppressions to find it again, and two
+# listings of one wekufe can disagree on it.
+fn same_wekufe(a: Site, b: Site) : Bool =
+  a.file == b.file and a.span == b.span and a.spell == b.spell and a.replacement == b.replacement
+
+fn clash_of(a: Site, b: Site) : String =
+  "the kalku named two different wekufe `#{a.site_id}`: #{described(a)}, and #{described(b)}. A name that stands for two wekufe cannot say which one was cast"
+
+fn described(s: Site) : String =
+  "#{spell_name(s.spell)} at #{s.file}:#{s.span.start.line}:#{s.span.start.col} writing `#{s.replacement}`"

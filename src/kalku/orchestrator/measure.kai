@@ -24,6 +24,7 @@ import kalku.wire.envelope
 import kalku.wire.packed
 import kalku.core.verdict
 import kalku.core.skipping
+import kalku.core.listing
 import kalku.core.stopping
 import kalku.core.blaming
 import kalku.core.told
@@ -239,12 +240,13 @@ fn interview(
     })
   )!
   let found = sites_found_of(await_kind(k, "sites_found")!)!
+  let sites = one_each(found.sites)!
   each(found.skipped, s => Telling.tell_of("skipped #{skipped_line(s)}"))
-  (match nothing_usable(length(found.sites), found.skipped) {
+  (match nothing_usable(length(sites), found.skipped) {
     Some(why) -> Err(why)
     None -> Ok(())
   })!
-  (match gone(asking.only, found.sites) {
+  (match gone(asking.only, sites) {
     [] -> Ok(())
     names -> Err(
       "no wekufe answers to #{join(names, ", ")} any more: a wekufe is named by the text it was cast in, and its file has changed since. Run `kalku run <file>` again to get new names"
@@ -258,7 +260,7 @@ fn interview(
     (
       caps,
       Known {
-        sites: found.sites,
+        sites: sites,
         tests: suite,
         coverage: narrowed.map(.coverage),
         durations: durations_of(baseline) ++ (timings_of(kept) | (t => (t.test_id, t.duration_ms))),

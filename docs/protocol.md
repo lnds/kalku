@@ -109,6 +109,8 @@ Half-open `[start, end)`.
 | `replacement` | string | text written in its place; `""` deletes |
 | `reload` | `"module"` \| `"dependents"` | `dependents`: the module is a compile-time dependency of others, so a cast recompiles them too |
 
+A `site_id` names one wekufe. If a `sites_found` lists the same `site_id` twice with the same `file`, `span`, `spell`, and `replacement`, both entries are that one wekufe: the kaikai side keeps the first and casts it once. If the two entries differ in any of those fields, the kaikai side cannot tell which wekufe a verdict under that name belongs to, and it ends the run before casting, naming both entries.
+
 `enclosing`, `spell`, `original`, and `ordinal` form the site's semantic key, which `.kalku/equivalent` entries match against; it survives edits elsewhere in the file where line numbers do not. A site without them falls back to a line-based key.
 
 ```json

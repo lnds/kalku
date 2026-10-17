@@ -113,3 +113,29 @@ test "the kalku that read the project casts beside the ones summoned after it" {
   assert found.failure == None
   assert (found.cast | (c => (c.wekufe, c.outcome))) == [("s3", Killed), ("s7", Killed)]
 }
+
+# The kalku lists `s3` twice, differing only in its ordinal, and the script
+# answers two casts and then expects `shutdown`: a third cast would end the
+# run. One wekufe is cast once, and the run is not partial for it.
+test "a wekufe a kalku lists twice is cast once and planned once" {
+  let found = measured("lists_twice.ndjson")
+
+  assert found.failure == None
+  assert (found.cast | (c => (c.wekufe, c.outcome))) == [("s3", Killed), ("s7", Killed)]
+  match found.report {
+    None -> {
+      assert false
+    }
+    Some(r) -> {
+      assert r.planned == 2
+      assert r.counts.killed == 2
+    }
+  }
+}
+
+test "one name a kalku gives two different wekufe ends the run before anything is cast" {
+  let found = measured("names_two.ndjson")
+
+  assert found.cast == []
+  assert is_some(index_of(found.failure.unwrap_or(""), "named two different wekufe `s3`"))
+}
