@@ -42,7 +42,11 @@ pub struct SitesRequest {
 pub enum Request {
     Hello(Hello),
     Prepare,
-    Baseline,
+    /// A baseline, with the tests the kaikai side offers back: each test's id
+    /// and the fingerprint it had when it last passed.
+    Baseline {
+        reuse: Vec<(String, String)>,
+    },
     Sites(SitesRequest),
     Cast {
         wekufe: String,
@@ -169,7 +173,7 @@ fn body(kind: &str, o: &Obj) -> Result<Request, DecodeError> {
             env: env(o)?,
         }),
         "prepare" => Request::Prepare,
-        "baseline" => Request::Baseline,
+        "baseline" => Request::Baseline { reuse: reuse(o)? },
         "sites" => Request::Sites(SitesRequest {
             files: strings(o, "files", "")?,
             spells: spells(o)?,
@@ -257,6 +261,26 @@ fn env(o: &Obj) -> Result<Vec<(String, String)>, DecodeError> {
             .collect(),
         _ => Err(bad("env", "must be an object")),
     }
+}
+
+// The tests a baseline is offered back, when it is offered any.
+fn reuse(o: &Obj) -> Result<Vec<(String, String)>, DecodeError> {
+    let items = match o.get("reuse") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Array(items)) => items,
+        Some(_) => return Err(bad("reuse", "must be an array")),
+    };
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let at = format!("reuse[{i}]");
+            let Value::Object(one) = item else {
+                return Err(bad(&at, "must be an object"));
+            };
+            Ok((string(one, "test", &at)?, string(one, "fingerprint", &at)?))
+        })
+        .collect()
 }
 
 fn spells(o: &Obj) -> Result<Vec<Spell>, DecodeError> {
@@ -443,6 +467,8 @@ pub struct Timed {
     pub test: String,
     pub file: String,
     pub duration_ms: u64,
+    /// What the test runs, when the kalku can say it.
+    pub fingerprint: Option<String>,
 }
 
 /// One failing test and what it said.
@@ -491,16 +517,21 @@ pub fn baseline_done(
     failures: &[Failure],
     coverage: Option<&Coverage>,
     differences: &[String],
+    reused: &[String],
 ) -> String {
     let status = if failures.is_empty() { "green" } else { "red" };
     let tests: Vec<Value> = tests
         .iter()
         .map(|t| {
-            object(vec![
+            let mut fields = vec![
                 ("test", t.test.clone().into()),
                 ("file", t.file.clone().into()),
                 ("duration_ms", t.duration_ms.into()),
-            ])
+            ];
+            if let Some(f) = &t.fingerprint {
+                fields.push(("fingerprint", f.clone().into()));
+            }
+            object(fields)
         })
         .collect();
     let failures: Vec<Value> = failures
@@ -530,6 +561,10 @@ pub fn baseline_done(
     if !differences.is_empty() {
         let said: Vec<Value> = differences.iter().map(|d| d.as_str().into()).collect();
         fields.push(("differences", said.into()));
+    }
+    if !reused.is_empty() {
+        let said: Vec<Value> = reused.iter().map(|t| t.as_str().into()).collect();
+        fields.push(("reused", said.into()));
     }
     line("baseline_done", id, fields)
 }
@@ -700,7 +735,10 @@ mod tests {
     fn every_simple_request_decodes() {
         for (line, request) in [
             (r#"{"type":"prepare","id":1}"#, Request::Prepare),
-            (r#"{"type":"baseline","id":1}"#, Request::Baseline),
+            (
+                r#"{"type":"baseline","id":1}"#,
+                Request::Baseline { reuse: vec![] },
+            ),
             (r#"{"type":"reset","id":1}"#, Request::Reset),
             (r#"{"type":"shutdown","id":1}"#, Request::Shutdown),
             (
@@ -961,8 +999,9 @@ mod tests {
             test: "a::t".into(),
             file: "a.rs".into(),
             duration_ms: 4,
+            fingerprint: None,
         }];
-        let green = reply(&baseline_done(3, 10, &timed, &[], None, &[]));
+        let green = reply(&baseline_done(3, 10, &timed, &[], None, &[], &[]));
         assert_eq!(green["type"], "baseline_done");
         assert_eq!(green["status"], "green");
         assert_eq!(green["duration_ms"], 10);
@@ -975,7 +1014,7 @@ mod tests {
             test: "a::t".into(),
             message: "boom".into(),
         };
-        let red = reply(&baseline_done(3, 10, &timed, &[failure], None, &[]));
+        let red = reply(&baseline_done(3, 10, &timed, &[failure], None, &[], &[]));
         assert_eq!(red["status"], "red");
         assert_eq!(
             red["failures"],
@@ -1015,6 +1054,7 @@ mod tests {
             &[],
             Some(&Coverage::Inline(vec![entry])),
             &[],
+            &[],
         ));
         assert_eq!(
             inline["coverage"],
@@ -1029,23 +1069,81 @@ mod tests {
             &[],
             Some(&Coverage::Path("/reni/coverage/0.json".into())),
             &[],
+            &[],
         ));
         assert_eq!(by_path["coverage_path"], "/reni/coverage/0.json");
         assert!(by_path.get("coverage").is_none());
 
-        let none = reply(&baseline_done(3, 1, &[], &[], None, &[]));
+        let none = reply(&baseline_done(3, 1, &[], &[], None, &[], &[]));
         assert!(none.get("coverage").is_none() && none.get("coverage_path").is_none());
     }
 
     #[test]
     fn a_baseline_says_how_its_run_differed_only_when_there_is_something_to_say() {
-        let silent = reply(&baseline_done(3, 1, &[], &[], None, &[]));
+        let silent = reply(&baseline_done(3, 1, &[], &[], None, &[], &[]));
         assert!(silent.get("differences").is_none());
 
-        let said = baseline_done(3, 1, &[], &[], None, &["it ran in a copy".to_string()]);
+        let said = baseline_done(3, 1, &[], &[], None, &["it ran in a copy".to_string()], &[]);
         assert_eq!(reply(&said)["differences"], json!(["it ran in a copy"]));
         // After `failures`, where the table of the protocol lists it.
         assert!(said.ends_with(r#""failures":[],"differences":["it ran in a copy"]}"#));
+    }
+
+    #[test]
+    fn a_baseline_reads_the_tests_it_is_offered_back() {
+        let line =
+            r#"{"type":"baseline","id":1,"reuse":[{"test":"a.rs::t","fingerprint":"9f2c"}]}"#;
+        assert_eq!(
+            decode(line).unwrap().1,
+            Request::Baseline {
+                reuse: vec![("a.rs::t".into(), "9f2c".into())]
+            }
+        );
+        assert_eq!(
+            bad_field(r#"{"type":"baseline","id":1,"reuse":{}}"#),
+            "reuse: must be an array"
+        );
+        assert_eq!(
+            bad_field(r#"{"type":"baseline","id":1,"reuse":[{"test":"a.rs::t"}]}"#),
+            "reuse[0].fingerprint: is required"
+        );
+    }
+
+    #[test]
+    fn a_baseline_names_what_it_reused_and_what_each_test_runs() {
+        let timed = [
+            Timed {
+                test: "a::t".into(),
+                file: "a.rs".into(),
+                duration_ms: 4,
+                fingerprint: Some("51be".into()),
+            },
+            Timed {
+                test: "a::u".into(),
+                file: "a.rs".into(),
+                duration_ms: 2,
+                fingerprint: None,
+            },
+        ];
+        let said = reply(&baseline_done(
+            3,
+            1,
+            &timed,
+            &[],
+            None,
+            &[],
+            &["b::v".into()],
+        ));
+        assert_eq!(
+            said["tests"],
+            json!([
+                {"test": "a::t", "file": "a.rs", "duration_ms": 4, "fingerprint": "51be"},
+                {"test": "a::u", "file": "a.rs", "duration_ms": 2}
+            ])
+        );
+        assert_eq!(said["reused"], json!(["b::v"]));
+        let none = reply(&baseline_done(3, 1, &[], &[], None, &[], &[]));
+        assert!(none.get("reused").is_none());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Answeran.results.iter().find(|r| &r.name == name)ing requests.
+//! Answering requests.
 //!
 //! One request per line in, one reply per line out, and nothing else may
 //! reach stdout: anything a toolchain prints goes to stderr, because the
@@ -139,7 +139,7 @@ impl Service {
             Request::Sites(r) => self.sites(id, r),
             Request::Abort { cast } => Step::Reply(protocol::aborted(id, cast, self.restored)),
             Request::Prepare => self.prepare(id),
-            Request::Baseline => self.baseline(id),
+            Request::Baseline { reuse } => self.baseline(id, &reuse),
             Request::Cast {
                 wekufe,
                 site,
@@ -195,7 +195,7 @@ impl Service {
             .sysroot
             .as_deref()
             .and_then(|sysroot| coverage::find_tools(sysroot, &toolchain.host));
-        let mut capabilities = vec!["cast", "abort"];
+        let mut capabilities = vec!["cast", "abort", "partial_baseline"];
         if self.tools.is_some() {
             capabilities.push("per_test_coverage");
         }
@@ -292,7 +292,11 @@ impl Service {
     // own: stable libtest does not time them. With the LLVM tools at hand the
     // run is on an instrumented build and each test also says which lines it
     // reached, which is what lets a cast run only the tests that matter.
-    fn baseline(&mut self, id: i64) -> Step {
+    //
+    // A test the kaikai side offers back is left out when its package has the
+    // fingerprint it was offered with: nothing it runs has changed since it
+    // passed.
+    fn baseline(&mut self, id: i64, reuse: &[(String, String)]) -> Step {
         let (Some(project), Some(hello)) = (self.project.as_mut(), self.hello.as_ref()) else {
             return Self::not_ready(id, "`hello` has to come first");
         };
@@ -300,7 +304,26 @@ impl Service {
             return Self::not_ready(id, "`prepare` has to come first");
         }
         let started = Instant::now();
-        if let Some(tools) = &self.tools {
+        let prints = project.fingerprints().unwrap_or_else(|e| {
+            // Without fingerprints every test runs, and none is offered back.
+            eprintln!("kalku-rust: the tests have no fingerprint: {e}");
+            HashMap::new()
+        });
+        let offered: HashMap<&str, &str> = reuse
+            .iter()
+            .map(|(t, f)| (t.as_str(), f.as_str()))
+            .collect();
+        let mut reused = Vec::new();
+        let mut running = Vec::new();
+        for (test, index, name) in &self.session.listed {
+            let print = prints.get(&self.session.targets[*index].package);
+            if print.is_some_and(|p| offered.get(test.as_str()) == Some(&p.as_str())) {
+                reused.push(test.clone());
+            } else {
+                running.push((test, *index, name, print));
+            }
+        }
+        if let Some(tools) = self.tools.as_ref().filter(|_| !running.is_empty()) {
             match project.instrument(tools) {
                 Ok(Build::Built(_)) => {}
                 Ok(Build::Failed(why)) => {
@@ -312,8 +335,8 @@ impl Service {
         let covering = self.tools.is_some();
         let (mut tests, mut failures) = (Vec::new(), Vec::new());
         let mut reached = Vec::new();
-        for (test, index, name) in &self.session.listed {
-            let target = &self.session.targets[*index];
+        for (test, index, name, print) in running {
+            let target = &self.session.targets[index];
             let one = Instant::now();
             let ran = if covering {
                 project.run_covered(target, name).map(|(ran, lines)| {
@@ -327,12 +350,15 @@ impl Service {
                 Ok(ran) => ran,
                 Err(e) => return Self::failed(id, "baseline_failed", &e),
             };
+            let passed = ran.results.iter().find(|r| r.name == *name);
             tests.push(Timed {
                 test: test.clone(),
                 file: target.file.clone(),
                 duration_ms: millis(one),
+                // A test that failed is not offered back, so needs none.
+                fingerprint: print.filter(|_| passed.is_some_and(|r| r.passed)).cloned(),
             });
-            match ran.results.iter().find(|r| r.name == *name) {
+            match passed {
                 Some(r) if r.passed => {}
                 Some(r) => failures.push(Failure {
                     test: test.clone(),
@@ -359,6 +385,7 @@ impl Service {
             &failures,
             coverage.as_ref(),
             &project.differences(),
+            &reused,
         ))
     }
 
@@ -559,7 +586,7 @@ fn name(r: &Request) -> &'static str {
     match r {
         Request::Hello(_) => "hello",
         Request::Prepare => "prepare",
-        Request::Baseline => "baseline",
+        Request::Baseline { .. } => "baseline",
         Request::Sites(_) => "sites",
         Request::Cast { .. } => "cast",
         Request::Abort { .. } => "abort",
@@ -608,6 +635,8 @@ mod tests {
         reached: HashMap<String, crate::coverage::Lines>,
         // How it says its run of the suite differs.
         unlike: Vec<String>,
+        // What each package's tests run; none when it cannot say.
+        prints: Option<HashMap<String, String>>,
     }
 
     fn io_error(what: &str) -> io::Error {
@@ -663,6 +692,7 @@ mod tests {
                 instrument: None,
                 reached: HashMap::new(),
                 unlike: Vec::new(),
+                prints: None,
             };
             (fake, seen)
         }
@@ -725,6 +755,10 @@ mod tests {
 
         fn differences(&self) -> Vec<String> {
             self.unlike.clone()
+        }
+
+        fn fingerprints(&mut self) -> io::Result<HashMap<String, String>> {
+            self.prints.clone().ok_or_else(|| io_error("no metadata"))
         }
 
         fn write(&mut self, file: &str, text: &str) -> io::Result<()> {
@@ -827,7 +861,7 @@ mod tests {
         let names = [
             (Request::Hello(hello), "hello"),
             (Request::Prepare, "prepare"),
-            (Request::Baseline, "baseline"),
+            (Request::Baseline { reuse: vec![] }, "baseline"),
             (Request::Sites(sites), "sites"),
             (
                 Request::Cast {
@@ -933,6 +967,100 @@ mod tests {
         let said = say(&mut service, json!({"type": "prepare", "id": 2}));
 
         assert_eq!(said["modules"], 2);
+    }
+
+    #[test]
+    fn a_test_that_passed_carries_its_packages_fingerprint_and_one_that_failed_none() {
+        let (mut fake, _) = Fake::new();
+        fake.prints = Some(HashMap::from([("p".to_string(), "9f2c".to_string())]));
+        fake.ran = Box::new(|_, names| {
+            Ok(Ran {
+                results: names
+                    .iter()
+                    .map(|n| {
+                        if n == "t::two" {
+                            fail(n, "no")
+                        } else {
+                            pass(n)
+                        }
+                    })
+                    .collect(),
+                success: false,
+            })
+        });
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(&mut service, json!({"type": "baseline", "id": 3}));
+
+        assert_eq!(said["tests"][0]["fingerprint"], "9f2c", "{said}");
+        assert!(said["tests"][1].get("fingerprint").is_none(), "{said}");
+        assert!(said.get("reused").is_none());
+    }
+
+    #[test]
+    fn a_test_offered_back_with_its_fingerprint_is_not_run_again() {
+        let (mut fake, seen) = Fake::new();
+        fake.prints = Some(HashMap::from([("p".to_string(), "9f2c".to_string())]));
+        fake.listing.insert(
+            "src/lib.rs".into(),
+            vec!["t::one".into(), "t::two".into(), "t::three".into()],
+        );
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(
+            &mut service,
+            json!({"type": "baseline", "id": 3, "reuse": [
+                {"test": "src/lib.rs::t::one", "fingerprint": "9f2c"},
+                {"test": "src/lib.rs::t::two", "fingerprint": "51be"}
+            ]}),
+        );
+
+        assert_eq!(said["reused"], json!(["src/lib.rs::t::one"]), "{said}");
+        let ran: Vec<_> = said["tests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["test"].as_str().unwrap())
+            .collect();
+        assert_eq!(ran, ["src/lib.rs::t::two", "src/lib.rs::t::three"]);
+        assert!(!seen.borrow().runs.iter().any(|(_, n)| n == &["t::one"]));
+    }
+
+    #[test]
+    fn without_fingerprints_every_test_runs_whatever_it_is_offered() {
+        let (fake, _) = Fake::new();
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(
+            &mut service,
+            json!({"type": "baseline", "id": 3, "reuse": [
+                {"test": "src/lib.rs::t::one", "fingerprint": "9f2c"}
+            ]}),
+        );
+
+        assert_eq!(said["tests"].as_array().unwrap().len(), 2, "{said}");
+        assert!(said["tests"][0].get("fingerprint").is_none());
+        assert!(said.get("reused").is_none());
+    }
+
+    #[test]
+    fn a_baseline_with_every_test_reused_runs_nothing() {
+        let (mut fake, seen) = Fake::new();
+        fake.prints = Some(HashMap::from([("p".to_string(), "9f2c".to_string())]));
+        let mut service = prepared_and_baselined(fake);
+        let before = seen.borrow().runs.len();
+
+        let said = say(
+            &mut service,
+            json!({"type": "baseline", "id": 3, "reuse": [
+                {"test": "src/lib.rs::t::one", "fingerprint": "9f2c"},
+                {"test": "src/lib.rs::t::two", "fingerprint": "9f2c"}
+            ]}),
+        );
+
+        assert_eq!(said["status"], "green", "{said}");
+        assert_eq!(said["tests"], json!([]));
+        assert_eq!(seen.borrow().runs.len(), before);
     }
 
     #[test]
@@ -1475,7 +1603,7 @@ mod tests {
         );
         assert_eq!(
             ready["capabilities"],
-            json!(["cast", "abort", "per_test_coverage"])
+            json!(["cast", "abort", "partial_baseline", "per_test_coverage"])
         );
         assert_eq!(
             say(&mut service, json!({"type": "prepare", "id": 2}))["type"],
@@ -1499,7 +1627,10 @@ mod tests {
                 "reni": "/r", "worker": 0, "inline_limit_bytes": 1, "env": {}}),
         );
 
-        assert_eq!(ready["capabilities"], json!(["cast", "abort"]));
+        assert_eq!(
+            ready["capabilities"],
+            json!(["cast", "abort", "partial_baseline"])
+        );
     }
 
     #[test]

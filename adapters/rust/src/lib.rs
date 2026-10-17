@@ -11,6 +11,7 @@
 pub mod cancel;
 pub mod coverage;
 pub mod editions;
+pub mod fingerprint;
 pub mod framing;
 pub mod project;
 pub mod protocol;

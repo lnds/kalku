@@ -208,3 +208,58 @@ fn a_test_says_which_lines_of_the_project_it_ran() {
         "a test that calls nothing reached the body of `used`"
     );
 }
+
+// A package's tests are built from every package of the workspace it
+// depends on, so a change there is a change to them; the fingerprints are of
+// the copy, and agree between two workers' copies of one project.
+#[test]
+fn a_fingerprint_follows_the_packages_a_test_is_built_from() {
+    let dir = Dir::new("prints");
+    dir.file(
+        "proj/Cargo.toml",
+        "[workspace]\nmembers = [\"app\", \"core\"]\nresolver = \"3\"\n",
+    );
+    dir.file(
+        "proj/app/Cargo.toml",
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
+         [dependencies]\ncore = { path = \"../core\" }\n",
+    );
+    dir.file("proj/app/src/lib.rs", TESTS);
+    dir.file(
+        "proj/core/Cargo.toml",
+        "[package]\nname = \"core\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    );
+    dir.file("proj/core/src/lib.rs", TESTS);
+    let prints = |worker: i64| {
+        let mut project = Cargo::new(dir.0.join("proj"), dir.0.join("reni"), worker, vec![]);
+        let targets = built(&mut project);
+        let prints = project.fingerprints().unwrap();
+        let mut by_file: Vec<(String, String)> = targets
+            .into_iter()
+            .map(|t| (t.file, prints[&t.package].clone()))
+            .collect();
+        by_file.sort();
+        by_file
+    };
+
+    let before = prints(0);
+    assert_eq!(before.len(), 2);
+    assert_ne!(before[0].1, before[1].1);
+    assert_eq!(before, prints(1));
+
+    dir.file(
+        "proj/app/src/lib.rs",
+        &format!("{TESTS}\npub fn more() {{}}\n"),
+    );
+    let app_changed = prints(0);
+    assert_ne!(app_changed[0].1, before[0].1, "app");
+    assert_eq!(app_changed[1].1, before[1].1, "core");
+
+    dir.file(
+        "proj/core/src/lib.rs",
+        &format!("{TESTS}\npub fn more() {{}}\n"),
+    );
+    let core_changed = prints(0);
+    assert_ne!(core_changed[0].1, app_changed[0].1, "app");
+    assert_ne!(core_changed[1].1, app_changed[1].1, "core");
+}
