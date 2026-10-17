@@ -25,3 +25,8 @@ export class Counter extends Base {
 
   private async save(_x: number): Promise<void> {}
 }
+
+export function guarded(flag: boolean, items: number[]): void {
+  if (flag) items.pop();
+  else items.shift();
+}
