@@ -224,6 +224,32 @@ Not claimed: `hot_load` (each cast links a test binary) and `code_hash`.
 
 Not proposed: an integer in an array's length, in a `case` list, or as the key of a composite literal, where changing it changes a type or repeats a case; hexadecimal, octal, binary and underscored numbers; a `true` or `false` that is somebody's variable; a call whose removal would leave an import or a variable unused, or a `panic` that ends its block, each a compile error rather than a wekufe; anything in a call `exclude_calls` names; and a wekufe that no longer parses.
 
+### The TypeScript kalku
+
+TypeScript has a maintained mutation framework, Stryker, which is the case the design gives a driver for. kalku does not drive it, for the reasons the Rust and Java kalku gave: the driver path is not implemented, and what makes kalku worth running — the shared spells and their hints, `exclude_calls`, equivalents keyed to the enclosing function, per-test selection, the gate on changed lines — needs the kalku to own the loop. The TypeScript kalku is native, written in TypeScript, and ships as one file, `kalku-typescript`, that runs on the project's own Node.
+
+- **Sites come from the TypeScript compiler's parser**, which the kalku carries inside it, and never from a scan of the text. One parser for every project means the same sites whatever version of TypeScript the project installed, and it reads JavaScript as well: `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs` and `.cjs`. The parser counts in UTF-16 code units, so one module turns its positions into the protocol's bytes and characters.
+- **It runs the project's own test runner**, Vitest 3 or later, or Jest 29 or later, from the project's `node_modules`, on the Node the kalku was started with, which is the one on the PATH, which a version manager picks for the project. Node 20 is the oldest it runs on; an older one is refused by name in answer to `hello`. The runner is the one the project depends on; a project that depends on both says which with `runner` under `[typescript]`.
+- **It runs in the project's tree, and writes nothing there.** A run of the tests is a process of the runner's own, and the wekufe is handed to it in memory. Vitest is run through its Node API with a Vite plugin that answers the mutated file's `load` with the wekufe, so Vite transforms it as it would the file. Jest is run through its own command with every transform the project's configuration resolves to wrapped: the wrapper hands the project's own transformer (ts-jest, babel-jest, …) the wekufe as the file's text, and keys the transformer's cache by that text. Every cache a runner keeps is in the reni; Vitest 5's module cache, which serves transformed files from `node_modules` past every plugin, is turned off; snapshots are never written (`CI=true` for Vitest, `--ci` for Jest); coverage is not collected.
+- **A verdict stands only if the wekufe was loaded.** The plugin, or the wrapper, leaves a mark in the reni when it serves the wekufe. A cast whose wekufe was never loaded met no test, whatever the tests did, and is `no_coverage`: so a cache that served the original would be a wekufe nobody measured, not a survivor.
+- **A test is its file and its titles**, outermost `describe` first: `test/calc.test.ts:above › is true at the floor`. A cast runs the files of the tests it was given with a name pattern that matches exactly those tests, and reads each test's own status from the runner's JSON report, never a file's or the run's summary. A test asked for that failed is the kill; a test file of the asked tests that did not run is a compile error when the runner said why in the compiler's words (a type error from ts-jest, a syntax error), and a kill otherwise, since it ran at the baseline; a test asked for that never ran is `crashed`.
+- **`abort` ends the run's process group.** The runner starts workers of its own; a group of its own takes them all, and the next request is served by the same kalku. Input that ends with no `shutdown` ends every group under way, and then the kalku.
+
+Not proposed: anything in a type — an interface, a type alias, an annotation, an ambient declaration, an enum; imports, exports and decorators; a directive such as `"use strict"`; the name of a property; the module a `require`, an `import()` or a `vi.mock` names; the labels of a `case`; the strings of JSX attributes, which are markup; an in-source test block, `if (import.meta.vitest)`; `super(...)`; anything in a call `exclude_calls` names; test files, declaration files, and a tool's configuration (`vitest.config.ts`, `jest.config.js`), which the tools load before a wekufe can be served in its place.
+
+Measured on the Vitest fixture (4 test files, 6 tests, 20 sites): `kalku run --all` took 2 min 10 s, of which two wekufe that loop forever waited out the 60 s floor; every other cast took 0.7 s. On the Jest fixture with ts-jest, 6 wekufe in two files took 7.4 s.
+
+Not claimed yet: `per_test_coverage`, so every wekufe faces the whole suite; `partial_baseline`; `hot_load`, since each cast starts the runner; `code_hash`.
+
+| Spell | TypeScript forms |
+|---|---|
+| `arm` | delete a clause of a `switch` — never `default`, and never the last clause |
+| `compare` | `<`↔`<=`, `>`↔`>=`, `===`↔`!==`, `==`↔`!=` |
+| `connect` | `&&`↔`\|\|` |
+| `negate` | the condition `c` of an `if`, a loop or a conditional expression becomes `!(c)`, and a `!` is dropped |
+| `literal` | `n`→`n+1` for plain decimals, `true`↔`false`, a non-empty string → `""` |
+| `call` | a call that is a whole statement, awaited or not, becomes an empty statement |
+
 ### The kaikai kalku
 
 kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mutate-list-json` catalogues sites from the AST, `kaic2 --mutate-apply <i>` writes the spliced source, and a shell driver owns the run loop. The kaikai kalku is a thin native kalku over those flags:

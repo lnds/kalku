@@ -1,0 +1,3 @@
+{"site_id":"fb6a57bbd742","file":"connect/either.ts","enclosing":"allowed","ordinal":1,"span":{"start":{"line":2,"col":17,"byte":98},"end":{"line":2,"col":19,"byte":100}},"spell":"connect","original":"||","replacement":"&&","reload":"module"}
+{"site_id":"fcf227ebd974","file":"connect/either.ts","enclosing":"allowed","ordinal":1,"span":{"start":{"line":2,"col":27,"byte":108},"end":{"line":2,"col":29,"byte":110}},"spell":"connect","original":"&&","replacement":"||","reload":"module"}
+{"site_id":"637f58148999","file":"connect/either.ts","enclosing":"fallback","ordinal":1,"span":{"start":{"line":6,"col":18,"byte":187},"end":{"line":6,"col":29,"byte":198}},"spell":"literal","original":"\"anonymous\"","replacement":"\"\"","reload":"module"}

@@ -1,0 +1,24 @@
+{
+  "name": "kalku-typescript",
+  "version": "0.18.2",
+  "description": "The TypeScript kalku: finds the places where a defect can be cast in a TypeScript or JavaScript project, and casts them",
+  "license": "MIT OR Apache-2.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc --noEmit -p tsconfig.test.json",
+    "format": "prettier --write src test build.mjs",
+    "format:check": "prettier --check src test build.mjs",
+    "test": "node build.mjs && tsc -p tsconfig.test.json && node --test --test-concurrency=1 build/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "esbuild": "0.28.2",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3"
+  }
+}

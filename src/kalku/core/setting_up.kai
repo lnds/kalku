@@ -2,8 +2,8 @@
 What `kalku init` decides, worked out without touching a thing.
 
 A project says what it is written in — `mix.exs` means Elixir, `Cargo.toml`
-means Rust, `go.mod` means Go, `kai.toml` means kaikai — so being told is only needed when the
-guess would be wrong. Everything here is a decision about files: what to look
+means Rust, `go.mod` means Go, `tsconfig.json` means TypeScript, `kai.toml`
+means kaikai — so being told is only needed when the guess would be wrong. Everything here is a decision about files: what to look
 for, what to write, and what to say. `main` performs it, and asks first.
 
 The catalogue below is the one place the kaikai side knows a language by
@@ -178,6 +178,37 @@ pub fn catalogue() : [Known] = [
     test_prefixes: [],
     test_suffixes: ["_test.go"],
     ignored: ["testdata", "vendor", ".git"]
+  },
+  Known {
+    language: "typescript",
+    marker: "tsconfig.json",
+    also: [],
+    summon: typescript_summoner(),
+    outside: typescript_summoner(),
+    sources: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
+    tests: ["__tests__", "__mocks__"],
+    test_prefixes: [],
+    test_suffixes: [
+      ".test.ts",
+      ".test.tsx",
+      ".test.mts",
+      ".test.cts",
+      ".test.js",
+      ".test.jsx",
+      ".test.mjs",
+      ".test.cjs",
+      ".spec.ts",
+      ".spec.tsx",
+      ".spec.mts",
+      ".spec.cts",
+      ".spec.js",
+      ".spec.jsx",
+      ".spec.mjs",
+      ".spec.cjs"
+    ],
+    ignored: [
+      "node_modules", "dist", "build", "coverage", "out", ".next", ".turbo", ".cache", ".git"
+    ]
   }
 ]
 
@@ -464,6 +495,27 @@ command -v kalku-go >/dev/null || {
   exit 127
 }
 exec kalku-go "$@"
+"""
+
+# The TypeScript kalku runs the project's own Vitest or Jest from its
+# node_modules, on the `node` on the PATH, which a version manager picks for
+# the project. Nothing is built here: the runner transforms the code itself.
+fn typescript_summoner() : String = """
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the TypeScript kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol. Nothing is built here: the project's
+# own Vitest or Jest runs inside each request, with its output on stderr,
+# on the `node` on the PATH.
+set -eu
+#{reni_off()}
+
+command -v kalku-typescript >/dev/null || {
+  echo "kalku: kalku-typescript is not on PATH; put it beside kalku, as the release does" >&2
+  exit 127
+}
+exec kalku-typescript "$@"
 """
 
 # A kalku runs inside the project's own runtime, so the project has to

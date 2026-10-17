@@ -362,6 +362,39 @@ test "Go sources are .go files that are not tests, testdata or vendored" {
   assert not is_test_of(go, "internal/lexer/scan.go")
 }
 
+# A tsconfig.json, and not a package.json: a project in another language
+# often keeps one at its root for its tooling, and would become ambiguous.
+test "a TypeScript project is told by its tsconfig.json, and summoned with nothing built on the way up" {
+  assert detect(["package.json", "tsconfig.json", "src"]).map(.language) == Ok("typescript")
+  assert detect(["go.mod", "package.json"]).map(.language) == Ok("go")
+  let plan = plan_for(of("typescript"), "/r")
+  assert has(plan.config, "language = \"typescript\"")
+  assert has(plan.summoner, "exec kalku-typescript \"$@\"")
+  assert has(plan.summoner, "kalku-typescript is not on PATH")
+  assert not has(plan.summoner, "npm ")
+  assert summon_is_current(plan.summoner)
+  assert starts_with(plan.summoner, "#!/bin/sh")
+  assert plan.dependency == None
+}
+
+# A test file is known by its suffix or by the directory Jest looks in, and
+# node_modules and what a build leaves are someone else's.
+test "TypeScript and JavaScript sources are the files outside the suite, node_modules and a build" {
+  let ts = of("typescript")
+  assert is_source_of(ts, "src/parser.ts")
+  assert is_source_of(ts, "src/view.tsx")
+  assert is_source_of(ts, "lib/index.mjs")
+  assert is_source_of(ts, "src/testing.ts")
+  assert not is_source_of(ts, "src/parser.test.ts")
+  assert not is_source_of(ts, "src/view.spec.tsx")
+  assert not is_source_of(ts, "src/__tests__/parser.ts")
+  assert not is_source_of(ts, "node_modules/vitest/index.js")
+  assert not is_source_of(ts, "dist/index.js")
+  assert not is_source_of(ts, "package.json")
+  assert is_test_of(ts, "test/calc.test.ts")
+  assert not is_test_of(ts, "src/calc.ts")
+}
+
 # Maven keeps the suite apart by directory, and a test class is known by its name too.
 test "Java sources are .java files outside the suite, which is named by directory or by suffix" {
   let java = of("java")
