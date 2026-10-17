@@ -39,8 +39,12 @@ defmodule Kalku.Cast.Tests do
     select(root, ids)
 
     case told_by(modules) do
-      {:ok, ran} -> judged(ran, ids, root)
-      {:error, why} -> unjudged("the tests stopped being run before they ended: " <> why)
+      {:ok, ran} ->
+        judged(ran, ids, root)
+
+      {:error, why} ->
+        Kalku.Runtime.unended()
+        unjudged("the tests stopped being run before they ended: " <> why)
     end
   end
 

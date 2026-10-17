@@ -8,16 +8,26 @@ defmodule Kalku.Runtime do
   So each cast is weighed against a mark taken when the project was
   prepared, and a cast that moved anything says `dirty`.
 
-  Only named ETS tables and the project's application env are watched.
-  Anonymous tables belong to whoever holds them and vanish with it, and
-  processes come and go under a supervisor without anything being wrong;
-  watching those would call a healthy runtime dirty on every cast.
+  Only named ETS tables, the project's application env and ExUnit's are
+  watched. Anonymous tables belong to whoever holds them and vanish with
+  it, and processes come and go under a supervisor without anything being
+  wrong; watching those would call a healthy runtime dirty on every cast.
+
+  ExUnit is watched because it judges every cast after this one: a wekufe
+  that changes its configuration, or a run that stopped halfway and left
+  it holding the modules it was given, makes every later run fail before a
+  test starts — `crashed`, cast after cast, for what none of them did.
   """
 
   @compile {:no_warn_undefined, :telemetry}
 
   @mark {__MODULE__, :mark}
   @outside {__MODULE__, :outside}
+  @unended {__MODULE__, :unended}
+
+  # What the kalku itself sets before every run: no measure of what a cast
+  # changed.
+  @per_run [:include, :exclude, :max_cases, :max_failures]
 
   @doc """
   Record what a clean runtime looks like.
@@ -46,13 +56,23 @@ defmodule Kalku.Runtime do
     :ok
   end
 
+  @doc """
+  Says that a run of the tests stopped before it ended.
+
+  ExUnit is then left with that run still open and refuses the next one;
+  only starting it again puts that right.
+  """
+  def unended, do: :persistent_term.put(@unended, true)
+
   @doc "True when the runtime no longer matches the mark."
   def dirty?(app) do
     case :persistent_term.get(@mark, nil) do
       nil -> false
-      clean -> snapshot(app) != clean
+      clean -> unended?() or snapshot(app) != clean
     end
   end
+
+  defp unended?, do: :persistent_term.get(@unended, false)
 
   @doc """
   Put the runtime back the way it was marked.
@@ -71,14 +91,20 @@ defmodule Kalku.Runtime do
       clean ->
         drop_new_tables(clean.tables, app)
         restore_env(clean.env, app)
+        restore_env(clean.runner, :ex_unit, @per_run)
+        runner = start_runner_again()
         restarted = restart(app)
-        {:ok, restarted == :ok and snapshot(app) == clean}
+        {:ok, runner == :ok and restarted == :ok and snapshot(app) == clean}
     end
   end
 
   @doc "What is being watched, as it stands."
   def snapshot(app) do
-    %{tables: named_tables(), env: Enum.sort(Application.get_all_env(app))}
+    %{
+      tables: named_tables(),
+      env: Enum.sort(Application.get_all_env(app)),
+      runner: Enum.sort(Keyword.drop(Application.get_all_env(:ex_unit), @per_run))
+    }
   end
 
   # A named table is a deliberate one: something asked for that name and
@@ -93,13 +119,31 @@ defmodule Kalku.Runtime do
 
   # Both directions: what the cast changed goes back, and what it added is
   # taken away. Restoring only the keys we know would leave the additions.
-  defp restore_env(clean, app) do
-    for {key, _value} <- Application.get_all_env(app), not List.keymember?(clean, key, 0) do
+  defp restore_env(clean, app, kept \\ []) do
+    for {key, _value} <- Application.get_all_env(app),
+        key not in kept,
+        not List.keymember?(clean, key, 0) do
       safely(fn -> Application.delete_env(app, key) end)
     end
 
     for {key, value} <- clean do
       safely(fn -> Application.put_env(app, key, value) end)
+    end
+  end
+
+  # Its configuration lives in the application env, which stopping the
+  # application leaves in place.
+  defp start_runner_again do
+    if unended?() do
+      safely(fn -> Application.stop(:ex_unit) end)
+      :persistent_term.erase(@unended)
+
+      case safely(fn -> Application.ensure_all_started(:ex_unit) end) do
+        {:ok, _} -> :ok
+        _ -> :error
+      end
+    else
+      :ok
     end
   end
 
