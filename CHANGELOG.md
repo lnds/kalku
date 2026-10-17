@@ -1,3 +1,9 @@
+## v0.18.2 (2026-10-17)
+
+### Fixed
+
+- **measure**: a wekufe a kalku lists twice is cast once, and one name for two wekufe ends the run (#385)
+
 ## v0.18.1 (2026-10-17)
 
 ### Fixed
