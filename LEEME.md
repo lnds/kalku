@@ -278,7 +278,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **Un baseline que corre solo lo que cambió**: los tests que su kalku identifica, por su huella, como sin cambios se reusan de un almacén que se guarda por repositorio, fuera del proyecto | hecho: Go, Elixir, TypeScript, Python, Rust, kaikai, Java |
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
-| `--watch` y `--ci` | todavía no |
+| `--watch` | todavía no |
 | **`[score] ratchet`** — el score del proyecto completo no puede bajar de la línea base guardada con `--store-baseline` | listo |
 | `merge` — combinar reportes de shards | todavía no |
 | **`--all` y `--shard i/n`** — el proyecto completo, por partes, para una corrida nocturna | listo: un shard dice que lo es y no se le exige el umbral |
