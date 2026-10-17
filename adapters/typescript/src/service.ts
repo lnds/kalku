@@ -1,6 +1,7 @@
 // The requests, answered one at a time in the order they came.
 
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { credited, entries, instrumentAll, packed, records, sources } from "./coverage";
 import path from "node:path";
 import * as wire from "./protocol";
 import type { CastRequest, Hello, Outcome, Request, SitesRequest, Site, Skipped } from "./protocol";
@@ -134,7 +135,7 @@ export class Service {
     }
     this.hello = h;
     const runtime = `Node ${process.versions.node}, ${this.runner.name === "vitest" ? "Vitest" : "Jest"} ${this.runner.version}`;
-    return wire.ready(id, VERSION, runtime, ["cast", "abort", "cast_after_baseline"]);
+    return wire.ready(id, VERSION, runtime, ["cast", "per_test_coverage", "abort", "cast_after_baseline"]);
   }
 
   private async prepare(id: number, runner: Runner, signal: AbortSignal): Promise<string> {
@@ -171,15 +172,71 @@ export class Service {
         if (t.status === "failed") failures.push({ test, message: t.failure || "it failed" });
       }
     }
+    const passed = new Set(tests.map((t) => t.test));
+    for (const f of failures) passed.delete(f.test);
+    const coverage = passed.size === 0 ? { inline: [] } : await this.coverage(root, runner, ran, passed, signal);
     return wire.baselineDone(
       id,
       Date.now() - started,
       tests,
-      {},
+      coverage,
       failures,
       [...runner.differences(), ...this.envDifference()],
       undefined,
     );
+  }
+
+  // A second run of the whole suite, with every source instrumented, says
+  // which tests reach which lines. Its own verdicts judge nothing: a test
+  // that passed in the first run and not in this one may have stopped
+  // before it reached all it reaches, and the coverage is said to be in
+  // doubt rather than trusted.
+  private async coverage(
+    root: string,
+    runner: Runner,
+    plain: RunResult,
+    passed: Set<string>,
+    signal: AbortSignal,
+  ): Promise<wire.Coverage> {
+    const dir = path.join(this.work, "coverage");
+    rmSync(dir, { recursive: true, force: true });
+    const out = path.join(dir, "records");
+    mkdirSync(out, { recursive: true });
+    const counted = instrumentAll(root, path.join(dir, "instrumented"), sources(root, testFile, configFile));
+    const manifest = path.join(dir, "manifest.json");
+    writeFileSync(manifest, JSON.stringify(counted.manifest));
+    const ran = await runner.run("all", undefined, signal, { manifest, out });
+    if (ran.failed !== undefined)
+      return { withheld: `the run that counts which tests reach which lines failed: ${ran.failed}` };
+    const names = namesByFile(root, plain);
+    const found = records(out);
+    const reached = new Set<string>();
+    const byFile = credited(counted.counters, found, (file, said) => {
+      const id = names.get(relative(root, file))?.get(Array.isArray(said) ? said.join(" ") : said);
+      if (id === undefined || !passed.has(id)) return undefined;
+      reached.add(id);
+      return id;
+    });
+    const second = new Set<string>();
+    for (const f of ran.files)
+      for (const t of unique(f.tests)) if (t.status === "passed") second.add(testId(root, f.file, t.names));
+    const doubted = [...passed].filter((t) => !second.has(t) || !reached.has(t)).sort();
+    const coverage = this.spoken(entries(byFile));
+    if (doubted.length === 0) return coverage;
+    return {
+      ...coverage,
+      doubted: `${doubted.length} test(s) that passed did not pass in the run that counts coverage, or were not counted in it, so the lines they reach may be missing: ${doubted.slice(0, 3).join(", ")}${doubted.length > 3 ? ", …" : ""}`,
+    };
+  }
+
+  // Inline when it fits under the limit `hello` set, and packed in a file in
+  // the reni when it does not, which is every project worth measuring.
+  private spoken(all: wire.CoverageEntry[]): wire.Coverage {
+    const size = all.reduce((n, e) => n + JSON.stringify(e).length + 1, 0);
+    if (size <= (this.hello?.inline_limit_bytes ?? 0)) return { inline: all };
+    const file = path.join(this.work, "coverage", "packed.json");
+    writeFileSync(file, packed(all));
+    return { packedPath: file };
   }
 
   private envDifference(): string[] {
@@ -257,6 +314,23 @@ function unique(tests: TestResult[]): TestResult[] {
     names[names.length - 1] = `${names[names.length - 1]} (${n})`;
     return { ...t, names };
   });
+}
+
+// For each test file, its tests by their titles joined with spaces: the
+// name Jest gives the test that is running, and how the list of titles a
+// Vitest record carries is joined to be looked up.
+function namesByFile(root: string, ran: RunResult): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>();
+  for (const f of ran.files) {
+    const file = relative(root, f.file);
+    const byName = new Map<string, string>();
+    for (const t of unique(f.tests)) {
+      const id = testId(root, f.file, t.names);
+      if (!byName.has(t.names.join(" "))) byName.set(t.names.join(" "), id);
+    }
+    out.set(file, byName);
+  }
+  return out;
 }
 
 function selection(root: string, ids: string[]): Selection {
@@ -362,9 +436,12 @@ export function configFile(file: string): boolean {
   );
 }
 
-/** True for a file that belongs to the suite: `*.test.ts`, `*.spec.ts`, anything under `__tests__` or `__mocks__`. */
+// The directories a project keeps its suite in, helpers and fixtures with it.
+const SUITE_DIRS = ["test", "tests", "__tests__", "__mocks__", "__fixtures__"];
+
+/** True for a file that belongs to the suite: `*.test.ts`, `*.spec.ts`, anything in a directory the suite is kept in. */
 export function testFile(file: string): boolean {
   const parts = file.split("/");
-  if (parts.includes("__tests__") || parts.includes("__mocks__")) return true;
+  if (parts.slice(0, -1).some((p) => SUITE_DIRS.includes(p))) return true;
   return /\.(test|spec)\.[cm]?[jt]sx?$/.test(parts[parts.length - 1] ?? "");
 }

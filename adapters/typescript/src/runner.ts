@@ -38,6 +38,16 @@ export function wekufeOf(file: string, text: string, served: string): Wekufe {
   return { files: real === file ? [file] : [file, real], text, served };
 }
 
+/**
+ * A run that counts which tests reach which code: `manifest` names, for
+ * each instrumented file, the file holding its instrumented text, and the
+ * setup file the runner loads writes its records into `out`.
+ */
+export interface Counting {
+  manifest: string;
+  out: string;
+}
+
 export interface RunResult {
   files: FileResult[];
   /** Set when the runner itself failed and wrote no report. */
@@ -50,7 +60,12 @@ export interface Runner {
   readonly name: "vitest" | "jest";
   readonly version: string;
   prepare(signal?: AbortSignal): Promise<void>;
-  run(selection: Selection | "all", wekufe: Wekufe | undefined, signal?: AbortSignal): Promise<RunResult>;
+  run(
+    selection: Selection | "all",
+    wekufe: Wekufe | undefined,
+    signal?: AbortSignal,
+    counting?: Counting,
+  ): Promise<RunResult>;
   differences(): string[];
 }
 
