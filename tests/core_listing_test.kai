@@ -1,0 +1,49 @@
+import kalku.core.listing
+import kalku.wire.enums
+import kalku.wire.shapes
+
+fn at(id: String, byte: Int, replacement: String, ordinal: Int) : Site = Site {
+  site_id: id,
+  file: "src/a.kai",
+  enclosing: Some("a.f/1"),
+  ordinal: Some(ordinal),
+  span: Span {
+    start: Position { line: 3, col: 5, byte: byte },
+    end: Some(Position { line: 3, col: 13, byte: byte + 8 })
+  },
+  spell: Call,
+  original: Some("last(xs)"),
+  replacement: replacement,
+  reload: ModuleOnly
+}
+
+test "sites each named once come back as they were" {
+  let sites = [at("a", 10, "xs", 1), at("b", 40, "ys", 1)]
+  assert one_each(sites) == Ok(sites)
+}
+
+# A kalku can list one wekufe twice, differing only in the ordinal it
+# counted: cast twice and counted once, the run read as partial.
+test "one wekufe listed twice is kept once, where it first came" {
+  let first = at("a", 10, "xs", 1)
+  let other = at("b", 40, "ys", 1)
+  assert one_each([first, other, at("a", 10, "xs", 2)]) == Ok([first, other])
+}
+
+fn refusal(sites: [Site]) : String = match one_each(sites) {
+  Ok(_) -> "accepted"
+  Err(why) -> why
+}
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+test "one name for two different wekufe is refused, naming both" {
+  let why = refusal([at("a", 10, "xs", 1), at("a", 10, "ys", 1)])
+  assert has(why, "`a`")
+  assert has(why, "call at src/a.kai:3:5 writing `xs`")
+  assert has(why, "call at src/a.kai:3:5 writing `ys`")
+}
+
+test "a name for two wekufe is refused even where the span differs" {
+  assert is_err(one_each([at("a", 10, "xs", 1), at("a", 20, "xs", 1)]))
+}
