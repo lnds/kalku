@@ -50,11 +50,16 @@ MVN        ?= mvn
 GKALKU     := adapters/go/bin/kalku-go
 GKALKU_SRC := $(shell find adapters/go/kalku adapters/go/cmd -name '*.go' -not -name '*_test.go') adapters/go/go.mod
 
+# The TypeScript kalku: one file of JavaScript, the TypeScript parser bundled
+# inside it, that runs on the project's own Node.
+TSKALKU     := adapters/typescript/bin/kalku-typescript
+TSKALKU_SRC := $(wildcard adapters/typescript/src/*.ts) adapters/typescript/build.mjs adapters/typescript/package-lock.json
+
 # The scripted kalku the orchestrator tests talk to, built as its own package.
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java test-go fmt fmt-check lint km ci check properties bench clean self-mutate field dist install uninstall
+.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java test-go test-typescript fmt fmt-check lint km ci check properties bench clean self-mutate field dist install uninstall
 
 all: build
 
@@ -64,7 +69,7 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 	@mkdir -p $(BUILD)
 	$(KAI) build . -o $@
 
-test: test-kaikai test-elixir test-rust test-python test-java test-go
+test: test-kaikai test-elixir test-rust test-python test-java test-go test-typescript
 
 # Under the stack limit a shell gives, not the one make runs with: GNU Make
 # 3.81 raises it to 64 MB for its children, and a loop that keeps a frame
@@ -113,6 +118,9 @@ $(PYKALKU): $(PYKALKU_SRC)
 $(GKALKU): $(GKALKU_SRC)
 	cd adapters/go && CGO_ENABLED=0 go build -trimpath -o bin/kalku-go ./cmd/kalku-go
 
+$(TSKALKU): $(TSKALKU_SRC)
+	cd adapters/typescript && npm ci --no-audit --no-fund && node build.mjs
+
 $(JKALKU): $(JKALKU_SRC)
 	cd adapters/java && $(MVN) -B -q -DskipTests package
 	@mkdir -p adapters/java/dist
@@ -156,6 +164,16 @@ test-go:
 	  cd adapters/go && test -z "$$(gofmt -l .)" && go vet ./... && go test ./...; \
 	else echo "test-go: skipped (no adapters/go/go.mod, or no go)"; fi
 
+# The TypeScript kalku, held to Prettier, the compiler's strict checks and its
+# own tests, which run each fixture project's own test runner: a fixture whose
+# packages are not installed is installed first. A machine without npm skips it.
+test-typescript:
+	@if [ -f adapters/typescript/package.json ] && command -v npm >/dev/null 2>&1; then \
+	  cd adapters/typescript && npm ci --no-audit --no-fund && \
+	  for p in testdata/projects/*/; do (cd "$$p" && npm ci --no-audit --no-fund) || exit 1; done && \
+	  npm run format:check && npm run check && npm test; \
+	else echo "test-typescript: skipped (no adapters/typescript/package.json, or no npm)"; fi
+
 fmt:
 	$(KAI) fmt .
 
@@ -173,7 +191,7 @@ km:
 # without waiting for the tests.
 ci: fmt-check lint build test-kaikai km
 
-check: ci test-elixir test-rust test-python test-java test-go
+check: ci test-elixir test-rust test-python test-java test-go test-typescript
 
 # kalku on its own sources, through its own kalku: the project's claim,
 # run rather than asserted. Measured by the last release, pinned in
@@ -199,21 +217,21 @@ field: build
 # What a release ships: both binaries a user summons, side by side with
 # the licences they are shipped under. Flat, so a package manager can
 # install the tarball's contents without knowing this layout.
-dist: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU)
+dist: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU)
 	@rm -rf $(DIST) && mkdir -p $(DIST)
-	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
-	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python kalku-java kalku-go LICENSE-MIT LICENSE-APACHE README.md
-	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/kalku-java $(DIST)/kalku-go $(DIST)/LICENSE-* $(DIST)/README.md
+	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
+	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python kalku-java kalku-go kalku-typescript LICENSE-MIT LICENSE-APACHE README.md
+	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/kalku-java $(DIST)/kalku-go $(DIST)/kalku-typescript $(DIST)/LICENSE-* $(DIST)/README.md
 	@cd $(DIST) && (command -v sha256sum >/dev/null && sha256sum $(notdir $(TARBALL)) \
 	  || shasum -a 256 $(notdir $(TARBALL))) > $(notdir $(TARBALL)).sha256
 	@echo "built $(TARBALL)"
 
-install: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU)
+install: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) $(DESTDIR)$(PREFIX)/bin/
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python $(DESTDIR)$(PREFIX)/bin/kalku-java $(DESTDIR)$(PREFIX)/bin/kalku-go
+	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python $(DESTDIR)$(PREFIX)/bin/kalku-java $(DESTDIR)$(PREFIX)/bin/kalku-go $(DESTDIR)$(PREFIX)/bin/kalku-typescript
 
 clean:
 	rm -rf $(BUILD) $(DIST) .kai-cache
@@ -221,3 +239,4 @@ clean:
 	rm -rf adapters/kaikai/fixtures/reni
 	rm -rf adapters/java/dist adapters/java/target
 	rm -rf adapters/go/bin
+	rm -rf adapters/typescript/bin adapters/typescript/build

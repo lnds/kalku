@@ -28,6 +28,8 @@ jobs:
       java_project: ${{ steps.project.outputs.java_project }}
       go: ${{ steps.filter.outputs.go }}
       go_project: ${{ steps.project.outputs.go_project }}
+      typescript: ${{ steps.filter.outputs.typescript }}
+      typescript_project: ${{ steps.project.outputs.typescript_project }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -50,6 +52,8 @@ jobs:
               - '{adapters/java/**,docs/protocol/fixtures/**,Makefile}'
             go:
               - '{adapters/go/**,docs/protocol/fixtures/**}'
+            typescript:
+              - '{adapters/typescript/**,docs/protocol/fixtures/**,Makefile}'
       - id: project
         run: |
           echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
@@ -57,6 +61,7 @@ jobs:
           echo "python_project=$([ -f adapters/python/pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "java_project=$([ -f adapters/java/pom.xml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "go_project=$([ -f adapters/go/go.mod ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "typescript_project=$([ -f adapters/typescript/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   # Format, lint and the quality gate: seconds of work, in a job of their
   # own so a slip in any of them is a red cross in a minute rather than
@@ -230,13 +235,43 @@ jobs:
         run: test -z "$(gofmt -l .)" && go vet ./...
       - run: go test ./...
 
+  # The TypeScript kalku runs on the Node of the project it measures, with the
+  # project's own Vitest or Jest, so it is held to the oldest Node it supports
+  # and the newest, against a fixture project for each runner and version it
+  # names. Prettier and the strict compiler run once, on the newest.
+  typescript-kalku:
+    needs: changes
+    if: needs.changes.outputs.typescript == 'true' && needs.changes.outputs.typescript_project == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '24']
+    defaults:
+      run:
+        working-directory: adapters/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci --no-audit --no-fund
+      - name: Install the fixture projects
+        run: for p in testdata/projects/*/; do (cd "$p" && npm ci --no-audit --no-fund) || exit 1; done
+      - if: matrix.node == '24'
+        run: npm run format:check && npm run check
+      - run: npm test
+      # What a release ships is one file, run by the Node on the PATH.
+      - name: The shipped file answers
+        run: printf '{"type":"shutdown","id":1}\n' | bin/kalku-typescript | grep -q '"type":"bye"'
+
   # The one required check: green when every job that ran passed or was skipped.
   ci-ok:
     if: always()
-    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku, rust-kalku, python-kalku, java-kalku, go-kalku]
+    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku, rust-kalku, python-kalku, java-kalku, go-kalku, typescript-kalku]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}" "${{ needs.rust-kalku.result }}" "${{ needs.python-kalku.result }}" "${{ needs.java-kalku.result }}" "${{ needs.go-kalku.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}" "${{ needs.rust-kalku.result }}" "${{ needs.python-kalku.result }}" "${{ needs.java-kalku.result }}" "${{ needs.go-kalku.result }}" "${{ needs.typescript-kalku.result }}"; do
             case "$r" in success|skipped) ;; *) echo "a job ended in: $r"; exit 1 ;; esac
           done

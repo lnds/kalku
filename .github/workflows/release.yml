@@ -59,6 +59,12 @@ jobs:
           go-version: stable
           cache: false
 
+      # The TypeScript kalku is bundled by esbuild into one file, which runs on
+      # whatever Node the project has from 20 on.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - run: make dist
 
       # A binary that only runs on the machine that built it is not a
@@ -72,6 +78,7 @@ jobs:
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-python" | grep -q '"type":"bye"'
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-java" | grep -q '"type":"bye"'
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-go" | grep -q '"type":"bye"'
+          printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-typescript" | grep -q '"type":"bye"'
 
       - name: Check the tarball is named for this platform
         run: ls dist/kalku-*-${{ matrix.platform }}.tar.gz
