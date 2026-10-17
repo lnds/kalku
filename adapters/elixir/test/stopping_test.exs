@@ -33,23 +33,60 @@ defmodule Kalku.StoppingTest do
         summon(reni, "stopping", [
           request("prepare", 2),
           request("baseline", 3),
-          cast(4, {"done ", ">"}, ">="),
-          cast(5, {"done > ", "10"}, "100")
+          cast("stopping", 4, {"done ", ">"}, ">="),
+          request("reset", 5),
+          cast("stopping", 6, {"done > ", "10"}, "100")
         ])
 
       assert reply(lines, "baseline_done")["status"] == "green"
 
-      [stopped, quiet] =
-        lines
-        |> Enum.map(&Kalku.Json.decode!/1)
-        |> Enum.filter(&(&1["type"] == "cast_done"))
+      [stopped, quiet] = casts_done(lines)
 
       # Not `killed`: no test said so. Not `survived`: none got to say.
       assert stopped["outcome"] == "crashed"
       assert stopped["message"] =~ "stopped being run before they ended"
 
+      # A run that stopped halfway leaves ExUnit refusing the next one until
+      # it is started again: a runtime left changed.
+      assert stopped["dirty"] == true
+      assert reply(lines, "reset_done")["clean"] == true
+
       assert quiet["outcome"] == "survived"
+      assert quiet["dirty"] == false
     end
+  end
+
+  # ExUnit judges every cast after this one, so a wekufe that changes how it
+  # runs would be blamed on each of them: `crashed`, cast after cast.
+  describe "a wekufe that changes ExUnit's configuration" do
+    setup :a_reni
+
+    test "leaves the runtime dirty, and a reset puts it back for the next cast",
+         %{reni: reni} do
+      lines =
+        summon(reni, "forgetting", [
+          request("prepare", 2),
+          request("baseline", 3),
+          cast("forgetting", 4, {"done ", ">"}, ">="),
+          request("reset", 5),
+          cast("forgetting", 6, {"done > ", "10"}, "100")
+        ])
+
+      assert reply(lines, "baseline_done")["status"] == "green"
+
+      [forgot, next] = casts_done(lines)
+      assert forgot["dirty"] == true
+      assert reply(lines, "reset_done")["clean"] == true
+
+      assert next["outcome"] == "survived"
+      assert next["dirty"] == false
+    end
+  end
+
+  defp casts_done(lines) do
+    lines
+    |> Enum.map(&Kalku.Json.decode!/1)
+    |> Enum.filter(&(&1["type"] == "cast_done"))
   end
 
   # The fixture, with its test asking for one more than is left to do.
@@ -70,9 +107,9 @@ defmodule Kalku.StoppingTest do
     File.write!(path, String.replace(text, was, now))
   end
 
-  defp cast(id, {lead, target}, replacement) do
-    file = "lib/stopping.ex"
-    source = File.read!(Path.join(project("stopping"), file))
+  defp cast(fixture, id, {lead, target}, replacement) do
+    file = "lib/#{fixture}.ex"
+    source = File.read!(Path.join(project(fixture), file))
     {at, _} = :binary.match(source, lead <> target)
     from = at + byte_size(lead)
 
@@ -91,7 +128,7 @@ defmodule Kalku.StoppingTest do
         "replacement" => replacement,
         "reload" => "module"
       },
-      "tests" => ["test/stopping_test.exs:4"]
+      "tests" => ["test/#{fixture}_test.exs:4"]
     })
   end
 end
