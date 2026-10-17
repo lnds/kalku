@@ -1,6 +1,7 @@
 import os.process as proc
 import fs.file
 import encoding.json
+import encoding.json_bind
 import time
 
 # The kalku is driven as the kaikai side drives it: a real binary, a real
@@ -95,6 +96,7 @@ test "it greets as a kaikai kalku and claims only what it can do" {
   assert has(ready, "\"per_test_coverage\"")
   assert has(ready, "\"abort\"")
   assert has(ready, "\"cast_after_baseline\"")
+  assert has(ready, "\"partial_baseline\"")
   assert not has(ready, "hot_load")
   assert not has(ready, "reset")
 }
@@ -414,4 +416,88 @@ test "a kalku that ran the baseline judges a wekufe as one only prepared would" 
   assert outcome_of(said, "uncovered") == "survived"
   assert outcome_of(said, "broken") == "compile_error"
   assert outcome_of(said, "covered-again") == "killed"
+}
+
+fn reuse_hello(reni: String) : String =
+  "{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":\"#{TINY}\",\"reni\":\"#{reni}\",\"worker\":0,\"inline_limit_bytes\":65536,\"env\":{}}"
+
+fn baseline_with(reni: String, reuse: String) : String / Process + File = baseline_line(
+  told([
+    reuse_hello(reni),
+    "{\"type\":\"prepare\",\"id\":2}",
+    "{\"type\":\"baseline\",\"id\":3,\"reuse\":#{reuse}}"
+  ])
+)
+
+fn of_each_test(line: String, name: String) : [String] = match json_decode(line) {
+  Some(v) -> match get(v, "tests") {
+    JArr(tests) -> tests | (t => as_string(get(t, name)).unwrap_or(""))
+    _ -> []
+  }
+  None -> []
+}
+
+fn print_of(line: String) : String = head(of_each_test(line, "fingerprint")).unwrap_or("")
+
+fn offer(ids: [String], print: String) : String =
+  "[#{join(ids | (id => "{\"test\":\"#{id}\",\"fingerprint\":\"#{print}\"}"), ",")}]"
+
+test "a green baseline gives every test the one fingerprint of the package" {
+  let prints = of_each_test(baseline_with("#{reni()}/reuse-green", "[]"), "fingerprint")
+
+  assert length(prints) == 5
+  assert length(uniq(sort(prints))) == 1
+  assert length(head(prints).unwrap_or("")) == 24
+}
+
+test "a suite offered whole with the fingerprint it has now runs none of it" {
+  let at = "#{reni()}/reuse-whole"
+  let first = baseline_with(at, "[]")
+  let line = baseline_with(at, offer(of_each_test(first, "test"), print_of(first)))
+
+  assert field(line, "status") == "green"
+  assert has(line, "\"tests\":[]")
+  assert has(line, "\"reused\":[\"tests/also_test.kai:total of nothing is nothing\",")
+}
+
+# The kalku cannot list a suite without running it, so a test missing from
+# the offer may be one that failed last time: the whole suite runs.
+test "a suite offered in part runs whole" {
+  let at = "#{reni()}/reuse-part"
+  let first = baseline_with(at, "[]")
+  let line = baseline_with(at, offer(drop(of_each_test(first, "test"), 1), print_of(first)))
+
+  assert length(of_each_test(line, "test")) == 5
+  assert not has(line, "\"reused\"")
+}
+
+test "a suite offered with another fingerprint runs whole" {
+  let at = "#{reni()}/reuse-stale"
+  let first = baseline_with(at, "[]")
+  let line = baseline_with(at, offer(of_each_test(first, "test"), "000000000000000000000000"))
+
+  assert length(of_each_test(line, "test")) == 5
+  assert not has(line, "\"reused\"")
+}
+
+# Nothing the reuse needs is kept in the reni, which is one checkout's: a
+# fresh one reuses what another measured.
+test "a suite measured in one reni is reused from another" {
+  let first = baseline_with("#{reni()}/reuse-one", "[]")
+  let line =
+    baseline_with("#{reni()}/reuse-other", offer(of_each_test(first, "test"), print_of(first)))
+
+  assert has(line, "\"tests\":[]")
+  assert has(line, "\"reused\":[")
+}
+
+# An oracle is a command, and what it reads is not known to be inside the
+# package.
+test "under an oracle nothing is fingerprinted" {
+  let oracle = hello_with("{\"oracle\":\"kai test .\"}")
+  let said = told([oracle, "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":3}"])
+
+  assert not has(head(said).unwrap_or(""), "partial_baseline")
+  assert field(baseline_line(said), "status") == "green"
+  assert not has(baseline_line(said), "fingerprint")
 }
