@@ -1,3 +1,16 @@
+## v0.19.0 (2026-10-17)
+
+### Added
+
+- **typescript**: a baseline runs only the test files that changed (#392)
+- **typescript**: coverage per test (#391)
+- **typescript**: a TypeScript kalku (#388)
+
+### Fixed
+
+- **typescript**: tests that share their titles are credited with the coverage either ran (#394)
+- **typescript**: a removed call leaves `{}`, and a typeof guard's type name is not a site (#393)
+
 ## v0.18.2 (2026-10-17)
 
 ### Fixed
