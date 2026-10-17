@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -62,6 +63,8 @@ final class Service {
   // What the compiler says of a file compiled the way a cast compiles it, before any change:
   // nothing when it compiles. Asked once for each file, and once for the whole project.
   private final Map<String, Compiler.Result> unchanged = new HashMap<>();
+  // The digests of the jars the tests run with, for as long as this kalku lives.
+  private final Map<String, String> jars = new HashMap<>();
 
   Service(InputStream in, OutputStream out, String adapter) {
     this(in, out, adapter, () -> {});
@@ -288,7 +291,8 @@ final class Service {
     }
     hello = request;
     return Protocol.ready(
-        request.id, adapter, runtime(), Arrays.asList("cast", "per_test_coverage", "recompile_dependents", "abort"));
+        request.id, adapter, runtime(), Arrays.asList(
+            "cast", "per_test_coverage", "recompile_dependents", "abort", "partial_baseline"));
   }
 
   // A runtime cut down to less than a JDK may lack the compiler's classes altogether, and then
@@ -477,23 +481,79 @@ final class Service {
 
   // ---- baseline ------------------------------------------------------------
 
+  // What one run of the suite came to.
+  private static final class Baselined {
+    final Map<Maven.Build, Child.Ran> plain = new LinkedHashMap<>();
+    // The outermost classes run of each module that did not run all of them.
+    final Map<Maven.Build, Set<String>> only = new HashMap<>();
+    final List<Map<String, Object>> tests = new ArrayList<>();
+    final List<Map<String, Object>> failures = new ArrayList<>();
+    String problem;
+  }
+
+  // Every test runs, but for the tests of a class the kaikai side offers to reuse: when every
+  // test that class ran is offered with the fingerprint it has now, none of them runs again.
   private String baseline(Protocol.Request request) throws IOException {
     if (project == null) {
       return Protocol.error(request.id, "not_ready", "`prepare` has to come first", false);
     }
     long started = System.nanoTime();
-    Map<Maven.Build, Child.Ran> plain = new LinkedHashMap<>();
-    List<Map<String, Object>> ranTests = new ArrayList<>();
-    List<Map<String, Object>> failures = new ArrayList<>();
-    for (Maven.Build module : tested()) {
-      Child.Ran ran =
-          Child.run(
-              module, runners.get(module), Collections.emptyList(), "run",
-              Collections.emptyList(), work.resolve("run"), environment());
-      if (ran.problem() != null) {
-        return Protocol.error(request.id, "baseline_failed", ran.problem(), true);
+    Prints prints = new Prints(project, Paths.get(hello.reni).resolve("prints"), setting(), jars);
+    List<String> reused = new ArrayList<>();
+    Map<Maven.Build, Set<String>> left = reusable(request.reuse, prints, reused);
+    Baselined run = run(left);
+    // A test may fail for what a test that was left out would have done before it: what
+    // fails is then told by the whole suite.
+    if (run.problem == null && !run.failures.isEmpty() && !reused.isEmpty()) {
+      reused.clear();
+      run = run(new HashMap<>());
+    }
+    if (run.problem != null) {
+      return Protocol.error(request.id, "baseline_failed", run.problem, true);
+    }
+    // A red baseline ends the run: there is nothing to select tests for.
+    List<Map<String, Object>> reached = null;
+    if (run.failures.isEmpty()) {
+      if (run.plain.isEmpty() && !reused.isEmpty()) {
+        reached = new ArrayList<>();
+      } else {
+        Executed ran = new Executed();
+        reached = coverage(run, ran);
+        if (reached != null) {
+          fingerprint(run, ran, prints);
+        }
       }
-      plain.put(module, ran);
+    }
+    String spilled = null;
+    if (reached != null && Json.encode(reached).getBytes(StandardCharsets.UTF_8).length > hello.inlineLimit) {
+      // Past what the kaikai side takes on a line, the same entries go to a file in the reni.
+      Path file = Paths.get(hello.reni).resolve("coverage").resolve(hello.worker + ".json");
+      Files.createDirectories(file.getParent());
+      Files.write(file, (Json.encode(reached) + "\n").getBytes(StandardCharsets.UTF_8));
+      spilled = file.toString();
+      reached = null;
+    }
+    return Protocol.baselineDone(
+        request.id, ms(started), run.tests, run.failures, reached, spilled,
+        differences(project, environment().keySet()), reused);
+  }
+
+  private Baselined run(Map<Maven.Build, Set<String>> left) throws IOException {
+    Baselined out = new Baselined();
+    for (Maven.Build module : tested()) {
+      Set<String> only = left.get(module);
+      if (only != null && only.isEmpty()) {
+        continue;
+      }
+      Child.Ran ran = Child.suite(module, runners.get(module), only, work.resolve("run"), environment());
+      if (ran.problem() != null) {
+        out.problem = ran.problem();
+        return out;
+      }
+      out.plain.put(module, ran);
+      if (only != null) {
+        out.only.put(module, only);
+      }
       for (Map<?, ?> event : ran.of("test")) {
         String id = named(module, (String) event.get("id"));
         String outcome = (String) event.get("outcome");
@@ -506,29 +566,110 @@ final class Service {
         test.put("test", id);
         test.put("file", fileOf(module, (String) event.get("id")));
         test.put("duration_ms", event.get("ms"));
-        ranTests.add(test);
+        out.tests.add(test);
         if (outcome.equals("failed")) {
           Map<String, Object> failure = new LinkedHashMap<>();
           failure.put("test", id);
           failure.put("message", String.valueOf(event.get("message")));
-          failures.add(failure);
+          out.failures.add(failure);
         }
       }
     }
-    // A red baseline ends the run: there is nothing to select tests for.
-    List<Map<String, Object>> reached = failures.isEmpty() ? coverage(plain) : null;
-    String spilled = null;
-    if (reached != null && Json.encode(reached).getBytes(StandardCharsets.UTF_8).length > hello.inlineLimit) {
-      // Past what the kaikai side takes on a line, the same entries go to a file in the reni.
-      Path file = Paths.get(hello.reni).resolve("coverage").resolve(hello.worker + ".json");
-      Files.createDirectories(file.getParent());
-      Files.write(file, (Json.encode(reached) + "\n").getBytes(StandardCharsets.UTF_8));
-      spilled = file.toString();
-      reached = null;
+    return out;
+  }
+
+  // What the tests are run with that no file of the project says.
+  private String setting() {
+    return adapter
+        + "\n" + runtime()
+        + "\n" + System.getProperty("java.vm.version", "")
+        + "\n" + System.getProperty("os.name", "") + " " + System.getProperty("os.arch", "")
+        + "\n" + new java.util.TreeMap<>(environment());
+  }
+
+  // The tests offered whose class can be left out, into `reused`; and of each module that
+  // leaves a class out, the outermost classes that are left to run.
+  private Map<Maven.Build, Set<String>> reusable(
+      Map<String, String> offer, Prints prints, List<String> reused) throws IOException {
+    Map<Maven.Build, Set<String>> out = new HashMap<>();
+    Set<String> asked = new LinkedHashSet<>(offer.values());
+    for (String print : asked) {
+      Prints.Recipe recipe = prints.recall(print);
+      if (recipe == null) {
+        continue;
+      }
+      Maven.Build module = null;
+      for (Maven.Build each : tested()) {
+        if (each.name.equals(recipe.module)) {
+          module = each;
+        }
+      }
+      boolean offered = module != null;
+      for (String test : recipe.tests) {
+        offered &= print.equals(offer.get(test)) && tests.get(test) == module;
+      }
+      String owner = Child.outermost(local(recipe.tests.get(0)));
+      if (!offered || !print.equals(prints.of(module, owner, recipe.classes))) {
+        continue;
+      }
+      reused.addAll(recipe.tests);
+      out.computeIfAbsent(module, m -> new LinkedHashSet<>()).add(owner);
     }
-    return Protocol.baselineDone(
-        request.id, ms(started), ranTests, failures, reached, spilled,
-        differences(project, environment().keySet()));
+    // What a module leaves to run: the classes of its tests that were not left out.
+    Map<Maven.Build, Set<String>> left = new HashMap<>();
+    for (Map.Entry<Maven.Build, Set<String>> each : out.entrySet()) {
+      Set<String> remaining = new LinkedHashSet<>();
+      for (Map.Entry<String, Maven.Build> test : tests.entrySet()) {
+        String outer = Child.outermost(local(test.getKey()));
+        if (test.getValue() == each.getKey() && !each.getValue().contains(outer)) {
+          remaining.add(outer);
+        }
+      }
+      left.put(each.getKey(), remaining);
+    }
+    return left;
+  }
+
+  // Which class files each test ran, and which every test of a module may depend on.
+  private static final class Executed {
+    final Map<String, Set<String>> byTest = new HashMap<>();
+    final Map<Maven.Build, Set<String>> shared = new HashMap<>();
+  }
+
+  // Gives the tests of each class that ran the fingerprint of what they ran, and keeps how
+  // it was taken. A class one of whose tests left no count gets none.
+  private void fingerprint(Baselined run, Executed ran, Prints prints) throws IOException {
+    Map<String, List<Map<String, Object>>> byClass = new LinkedHashMap<>();
+    for (Map<String, Object> test : run.tests) {
+      String id = (String) test.get("test");
+      Maven.Build module = tests.get(id);
+      byClass
+          .computeIfAbsent(module.name + "\t" + Child.outermost(local(id)), k -> new ArrayList<>())
+          .add(test);
+    }
+    for (List<Map<String, Object>> each : byClass.values()) {
+      Maven.Build module = tests.get((String) each.get(0).get("test"));
+      Set<String> classes = new TreeSet<>(ran.shared.getOrDefault(module, Collections.emptySet()));
+      List<String> ids = new ArrayList<>();
+      boolean counted = true;
+      for (Map<String, Object> test : each) {
+        String id = (String) test.get("test");
+        ids.add(id);
+        Set<String> of = ran.byTest.get(id);
+        counted &= of != null;
+        if (of != null) {
+          classes.addAll(of);
+        }
+      }
+      if (!counted) {
+        continue;
+      }
+      String print = prints.of(module, Child.outermost(local(ids.get(0))), classes);
+      prints.keep(print, new Prints.Recipe(module.name, ids, classes));
+      for (Map<String, Object> test : each) {
+        test.put("fingerprint", print);
+      }
+    }
   }
 
   /**
@@ -625,7 +766,10 @@ final class Service {
   // the reason said on stderr, wherever the answer cannot be trusted. Nothing is the safe
   // answer: every wekufe is then cast against the whole suite, slower and still right. A wrong
   // answer would leave a site without the test that catches it, and it would never be cast.
-  private List<Map<String, Object>> coverage(Map<Maven.Build, Child.Ran> plain) throws IOException {
+  //
+  // Which class files each test ran goes into `ran`, for its fingerprint.
+  private List<Map<String, Object>> coverage(Baselined run, Executed ran) throws IOException {
+    Map<Maven.Build, Child.Ran> plain = run.plain;
     try {
       if (plain.isEmpty()) {
         return withheld("the project has no tests");
@@ -685,8 +829,8 @@ final class Service {
       Map<String, Set<String>> reach = new LinkedHashMap<>();
       Set<String> everyTest = new HashSet<>();
       long counted = 0;
-      for (Map.Entry<Maven.Build, Child.Ran> ran : plain.entrySet()) {
-        Maven.Build module = ran.getKey();
+      for (Map.Entry<Maven.Build, Child.Ran> measured : plain.entrySet()) {
+        Maven.Build module = measured.getKey();
         List<Maven.Build> within = new ArrayList<>();
         within.add(module);
         within.addAll(module.uses);
@@ -695,16 +839,17 @@ final class Service {
           classes.add(each.classes);
         }
         Path dumps = work.resolve("coverage").resolve(String.valueOf(project.modules.indexOf(module)));
+        List<Path> testClasses = Collections.singletonList(module.testClasses);
         Child.Ran watched =
             Child.cover(
-                module, runners.get(module), tools, classes, dumps, work.resolve("run"),
-                environment());
+                module, runners.get(module), tools, classes, testClasses, run.only.get(module),
+                dumps, work.resolve("run"), environment());
         if (watched.problem() != null) {
           return withheld(watched.problem());
         }
         // The agent changes when classes are loaded and what is in them. If a test then ends
         // otherwise than it did without it, what was counted is not what the suite does.
-        if (!outcomes(ran.getValue()).equals(outcomes(watched))) {
+        if (!outcomes(measured.getValue()).equals(outcomes(watched))) {
           return withheld("the tests did not end the same way with the agent counting");
         }
         Path log = work.resolve("run").resolve("tests.log");
@@ -732,15 +877,36 @@ final class Service {
         Path placesFile = dumps.resolve("places");
         Path testsFile = dumps.resolve("tests");
         Path answer = dumps.resolve("reached");
+        Path listed = dumps.resolve("directories");
+        Path classesRan = dumps.resolve("ran");
         Files.write(placesFile, asked, StandardCharsets.UTF_8);
         Files.write(testsFile, dumped, StandardCharsets.UTF_8);
+        List<String> directories = new ArrayList<>();
+        for (Path dir : classes) {
+          directories.add(dir.toString());
+        }
+        directories.add(module.testClasses.toString());
+        Files.write(listed, directories, StandardCharsets.UTF_8);
         String wrong =
-            Child.read(module, tools, reader, dumps, placesFile, testsFile, answer, environment());
+            Child.read(
+                module, tools, reader, dumps, placesFile, testsFile, answer, listed, classesRan,
+                environment());
         if (wrong != null) {
           return withheld(wrong);
         }
+        for (String line : Files.readAllLines(classesRan, StandardCharsets.UTF_8)) {
+          String[] part = line.split("\t");
+          String file =
+              project.root.relativize(Paths.get(part[1]).resolve(part[2] + ".class")).toString()
+                  .replace('\\', '/');
+          Set<String> into =
+              part[0].equals("*")
+                  ? ran.shared.computeIfAbsent(module, m -> new TreeSet<>())
+                  : ran.byTest.computeIfAbsent(named(module, part[0]), t -> new TreeSet<>());
+          into.add(file);
+        }
         List<String> ofModule = new ArrayList<>();
-        for (String id : outcomes(ran.getValue()).keySet()) {
+        for (String id : outcomes(measured.getValue()).keySet()) {
           ofModule.add(named(module, id));
         }
         for (String line : Files.readAllLines(answer, StandardCharsets.UTF_8)) {
@@ -765,8 +931,9 @@ final class Service {
       }
       // A suite that reaches no site at all is not something a suite does: it is an agent
       // that counted nothing, and every site with code would be reported as one no test
-      // reaches.
-      if (counted == 0 && !places.isEmpty()) {
+      // reaches. Part of a suite may well reach none, and then its tests running their own
+      // classes is what says the agent counted.
+      if (counted == 0 && !places.isEmpty() && (run.only.isEmpty() || ran.byTest.isEmpty())) {
         return withheld("nothing was counted in any of the project's classes");
       }
 

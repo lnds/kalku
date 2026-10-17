@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -204,13 +205,28 @@ final class Child {
       Path scratch,
       Map<String, String> env)
       throws IOException {
-    return start(build, runner, before, mode, tests, scratch, env, null);
+    return start(build, runner, before, mode, tests, null, scratch, env, null);
   }
 
   /**
-   * Runs every test with the coverage agent counting, and waits.
+   * Runs the classes the build takes for tests that are in {@code only}, by the name of the
+   * outermost class, and waits.
+   */
+  static Ran suite(
+      Maven.Build build, Path runner, Set<String> only, Path scratch, Map<String, String> env)
+      throws IOException {
+    return start(
+            build, runner, Collections.emptyList(), "run", Collections.emptyList(), only, scratch,
+            env, null)
+        .finish();
+  }
+
+  /**
+   * Runs the tests with the coverage agent counting, and waits.
    *
    * @param classes the class directories counted in: the module's own and those it uses
+   * @param tests class directories of tests, counted in too and never initialised up front
+   * @param only the outermost classes of the tests to run, or null for every one
    * @param dumps where what each test reached is written
    */
   static Ran cover(
@@ -218,6 +234,8 @@ final class Child {
       Path runner,
       Maven.Coverage coverage,
       List<Path> classes,
+      List<Path> tests,
+      Set<String> only,
       Path dumps,
       Path scratch,
       Map<String, String> env)
@@ -227,7 +245,9 @@ final class Child {
     // Only the project's own classes are counted in: by the packages its classes are in, in
     // this module and in the ones it uses.
     List<String> counted = new ArrayList<>();
-    for (Path each : classes) {
+    List<Path> within = new ArrayList<>(classes);
+    within.addAll(tests);
+    for (Path each : within) {
       for (String pattern : packages(each)) {
         if (!counted.contains(pattern)) {
           counted.add(pattern);
@@ -240,8 +260,8 @@ final class Child {
       counting.add("classes:" + each);
     }
     return start(
-            build, runner, Collections.emptyList(), "cover", Collections.emptyList(), scratch, env,
-            counting)
+            build, runner, Collections.emptyList(), "cover", Collections.emptyList(), only,
+            scratch, env, counting)
         .finish();
   }
 
@@ -266,7 +286,8 @@ final class Child {
 
   /**
    * Reads what the agent counted, in a JVM of its own, and writes which tests reach which
-   * places.
+   * places; and, when {@code listed} is given, which classes of the directories it lists each
+   * test ran, into {@code ran}.
    *
    * @return what went wrong, or null
    */
@@ -278,6 +299,8 @@ final class Child {
       Path places,
       Path tests,
       Path out,
+      Path listed,
+      Path ran,
       Map<String, String> env)
       throws IOException {
     List<Path> classpath = new ArrayList<>();
@@ -295,6 +318,10 @@ final class Child {
                 tests.toString(),
                 out.toString())
             .directory(build.dir.toFile());
+    if (listed != null) {
+      builder.command().add(listed.toString());
+      builder.command().add(ran.toString());
+    }
     builder.environment().clear();
     builder.environment().putAll(env);
     builder.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
@@ -318,6 +345,7 @@ final class Child {
       List<Path> before,
       String mode,
       List<String> tests,
+      Set<String> only,
       Path scratch,
       Map<String, String> env,
       List<String> counting)
@@ -338,7 +366,9 @@ final class Child {
     // With no test chosen, the suite is the classes the build takes for tests.
     if (tests.isEmpty()) {
       for (String name : build.suite.classes(build.testClasses)) {
-        asked.add("class:" + name);
+        if (only == null || only.contains(outermost(name))) {
+          asked.add("class:" + name);
+        }
       }
     }
     // Surefire runs a failed test again only where it runs the JUnit Platform itself.
@@ -391,6 +421,18 @@ final class Child {
     builder.redirectErrorStream(true).redirectOutput(log.toFile());
 
     return new Running(builder.start(), events);
+  }
+
+  /** The outermost class a test or a class name is in: `a.B` for `a.B$C#m()`. */
+  static String outermost(String name) {
+    int end = name.length();
+    for (char c : new char[] {'#', '$'}) {
+      int at = name.indexOf(c);
+      if (at >= 0 && at < end) {
+        end = at;
+      }
+    }
+    return name.substring(0, end);
   }
 
   private static void read(Ran ran, Path events) throws IOException {

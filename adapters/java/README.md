@@ -56,6 +56,16 @@ JDK, with the kalku's jar behind it.
   wekufe is then cast only against the tests that reach it. It is withheld,
   and the whole suite used, whenever it cannot be trusted.
 
+- **A baseline runs only the test classes something changed under.** The
+  tests of a class share a fingerprint: the bytecode of every class of the
+  project they ran, as JaCoCo saw it, with what every test may depend on (what
+  ran outside any test, every static initialiser, the classes with no code);
+  the jars they run with, the build files, the names of every class, the
+  module's files that are not compiled sources, the environment, the JDK and
+  the kalku. A class is left out when every test it ran is offered with the
+  fingerprint it has now. A test that fails where others were left out is run
+  again with the whole suite.
+
 - **Several modules**: Maven runs once at the top; each module's tests run in a
   JVM of its own; and a site is judged by its module's tests and by those of
   every module that uses it. A test is then named with its module,
@@ -105,7 +115,8 @@ each wekufe is known: `calc`; `generated`, part of whose code an annotation
 processor writes; `tables`, whose class fills a table when it is first used;
 and `shop`, three modules of which one uses another and one is nothing but
 tests. `junit4` and `testng` are `calc` under tests written for those,
-`suite` is `calc` under a build that says which classes are its tests and what
+`reuse` is two classes each run by a test class of its own, for a baseline
+that runs only what changed, `suite` is `calc` under a build that says which classes are its tests and what
 they run with, `roots` and `checks` keep their code and their tests in two
 directories each, and `gradle/` holds Gradle builds of the same sources.
 

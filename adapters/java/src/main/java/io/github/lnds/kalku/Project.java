@@ -129,7 +129,7 @@ final class Project {
   // Gradle build, in the project and in each of its modules. What the user's own build left there is not copied, since a build goes by times
   // and would trust classes that are older than the sources beside them; and what the build
   // in the reni left there is not taken away.
-  private static boolean output(Path dir) {
+  static boolean output(Path dir) {
     if (dir.getFileName() == null || dir.getParent() == null) {
       return false;
     }
