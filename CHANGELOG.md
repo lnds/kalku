@@ -1,3 +1,12 @@
+## v0.20.0 (2026-10-17)
+
+### Added
+
+- **java**: a baseline runs only the test classes that changed (#399)
+- **rust**: a baseline runs only the packages that changed (#398)
+- **kaikai**: a baseline runs only when the package changed (#397)
+- **python**: a baseline runs only the test files that changed (#396)
+
 ## v0.19.0 (2026-10-17)
 
 ### Added
