@@ -858,3 +858,59 @@ fn a_baseline_with_coverage_names_the_tests_that_reached_each_line() {
     assert_eq!(tests_of(8), ["src/lib.rs::tests::zero_is_outside"]);
     k.leave();
 }
+
+// A second baseline offered back what the first one said runs none of it
+// again; once the source changes, every test of the package runs.
+#[test]
+fn a_baseline_runs_only_what_changed() {
+    let project = Project::new("reuse", "2024", &[("src/lib.rs", TESTED)]);
+    let baseline = |reuse: &Value| {
+        let mut k = Kalku::summon();
+        let ready = k.hello(&project.0);
+        assert!(
+            ready["capabilities"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("partial_baseline")),
+            "{ready}"
+        );
+        let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+        assert_eq!(prepared["type"], "prepared", "{prepared}");
+        let said = k.ask(json!({"type": "baseline", "id": 3, "reuse": reuse}));
+        k.leave();
+        said
+    };
+
+    let first = baseline(&json!([]));
+    assert_eq!(first["status"], "green", "{first}");
+    let offered: Vec<Value> = first["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| json!({"test": t["test"], "fingerprint": t["fingerprint"]}))
+        .collect();
+    assert_eq!(offered.len(), 2);
+    assert!(
+        offered.iter().all(|o| o["fingerprint"].is_string()),
+        "{first}"
+    );
+
+    let again = baseline(&json!(offered));
+    assert_eq!(again["tests"], json!([]), "{again}");
+    assert_eq!(
+        again["reused"],
+        json!([
+            "src/lib.rs::tests::one_is_inside",
+            "src/lib.rs::tests::zero_is_outside"
+        ])
+    );
+
+    fs::write(
+        project.0.join("src/lib.rs"),
+        TESTED.replace("a >= 1", "a > 0"),
+    )
+    .unwrap();
+    let changed = baseline(&json!(offered));
+    assert_eq!(changed["tests"].as_array().unwrap().len(), 2, "{changed}");
+    assert!(changed.get("reused").is_none());
+}

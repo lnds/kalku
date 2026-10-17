@@ -11,6 +11,7 @@
 
 use crate::cancel::{Stop, capture};
 use crate::coverage::{Lines, Tools, parse_lcov};
+use crate::fingerprint;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -84,6 +85,12 @@ pub trait Project {
     /// a sentence each: what a test can tell, and nothing else.
     fn differences(&self) -> Vec<String> {
         Vec::new()
+    }
+    /// What the tests of each package run, by the package's id: two runs of a
+    /// test whose package has the same fingerprint run the same code on the
+    /// same files. A project that cannot say has none, and every test runs.
+    fn fingerprints(&mut self) -> io::Result<HashMap<String, String>> {
+        Err(io::ErrorKind::Unsupported.into())
     }
 }
 
@@ -326,6 +333,35 @@ impl Project for Cargo {
         };
         let lines = self.lines_of(&tools, &profiles)?;
         Ok((ran, lines))
+    }
+
+    fn fingerprints(&mut self) -> io::Result<HashMap<String, String>> {
+        let mut rustc = Command::new("rustc");
+        rustc
+            .arg("-vV")
+            .current_dir(&self.work)
+            .env_clear()
+            .envs(self.env.iter().map(|(k, v)| (k, v)))
+            .stdin(Stdio::null())
+            .stderr(Stdio::inherit());
+        let said = capture(rustc, self.stop.as_ref())?;
+        if !said.status.success() {
+            return Err(io::Error::other("rustc could not say which it is"));
+        }
+        let mut metadata = self.cargo();
+        metadata.args(["metadata", "--format-version", "1"]);
+        let out = capture(metadata, self.stop.as_ref())?;
+        if !out.status.success() {
+            return Err(io::Error::other("cargo could not describe the project"));
+        }
+        let metadata: Value = serde_json::from_slice(&out.stdout).map_err(io::Error::other)?;
+        let base = fingerprint::base(
+            env!("CARGO_PKG_VERSION"),
+            &String::from_utf8_lossy(&said.stdout),
+            &self.env,
+            &self.work,
+        );
+        Ok(fingerprint::fingerprints(&metadata, &self.work, &base))
     }
 
     // Unlike `cargo test` at the root of the project. A suite that is green
