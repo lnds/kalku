@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from kalku_python import framing, protocol, runner, service
+from kalku_python import dependency, framing, protocol, runner, service
 
 
 class Out(io.BytesIO):
@@ -165,7 +165,7 @@ def site(**changes):
 def test_it_greets_with_the_runtime_it_runs_in_and_its_capabilities(harness):
     said = harness().hello()
     assert said["type"] == "ready" and said["language"] == "python"
-    assert said["capabilities"] == ["cast", "abort", "per_test_coverage"]
+    assert said["capabilities"] == ["cast", "abort", "per_test_coverage", "partial_baseline"]
     assert said["runtime"].startswith(f"CPython {sys.version.split()[0]}, pytest ")
 
 
@@ -913,7 +913,7 @@ def attributed(tmp_path, files, monkeypatch, limit):
     ids = [f"{n}::t" for n in files if n.startswith("tests/")]
     tests = [{"test": i, "file": i.partition("::")[0], "duration_ms": 1} for i in ids]
     svc = service.Service(0, Out())
-    return svc._attributed(tmp_path, tests, {i: {} for i in ids})
+    return svc._attributed(tmp_path, dependency.build(tmp_path), tests, {i: {} for i in ids})
 
 
 IMPORTERS = {

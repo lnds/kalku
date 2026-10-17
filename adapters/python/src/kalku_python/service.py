@@ -26,6 +26,7 @@ from . import (
     __version__,
     coverage,
     dependency,
+    fingerprint,
     framing,
     project,
     protocol,
@@ -169,7 +170,7 @@ class Service:
         if isinstance(request, Prepare):
             return [self._prepare(ident)], False
         if isinstance(request, Baseline):
-            return [self._baseline(ident)], False
+            return [self._baseline(ident, request.reuse)], False
         if isinstance(request, Cast):
             return self._cast(ident, request), False
         name = {Reset: "reset", Reload: "reload", Delegate: "delegate"}[type(request)]
@@ -212,7 +213,9 @@ class Service:
             )
         self.hello = hello
         runtime = f"CPython {sys.version.split()[0]}, pytest {pytest.__version__}"
-        return protocol.ready(ident, self.adapter, runtime, ["cast", "abort", "per_test_coverage"])
+        return protocol.ready(
+            ident, self.adapter, runtime, ["cast", "abort", "per_test_coverage", "partial_baseline"]
+        )
 
     # ---- sites --------------------------------------------------------------
 
@@ -275,13 +278,23 @@ class Service:
 
     # ---- baseline -----------------------------------------------------------
 
-    def _baseline(self, ident: int) -> str:
+    def _baseline(self, ident: int, reuse: dict[str, str]) -> str:
+        """Every test runs, but for the test files whose tests the kaikai side
+        offers back with the fingerprint they have now: nothing those tests run
+        has changed since they passed."""
         assert self.hello is not None
         if not self.session.prepared:
             return protocol.error(ident, "not_ready", "`prepare` has to come first", False)
         started = time.monotonic()
         work = self._work()
-        events = self._run(runner.Spec(str(work), "baseline"))
+        graph = dependency.build(work)
+        prints = self._prints(work, graph)
+        skip, reused = self._reusable(prints, reuse) if prints is not None else ([], [])
+        if skip and len(skip) == len(set(self.session.files.values())):
+            return protocol.baseline_done(
+                ident, _ms(started), [], [], ("inline", []), differences(work), reused
+            )
+        events = self._run(runner.Spec(str(work), "baseline", skip=skip))
         if events is None:
             return protocol.error(ident, "aborted", "the kalku was asked to stop", True)
         problem = _problem(events)
@@ -302,21 +315,87 @@ class Service:
                 failures.append({"test": e["id"], "message": e["message"] or "the test failed"})
             per_test[e["id"]] = {f: set(n) for f, n in e.get("lines", {}).items()}
         self._warm(events)
-        attributed = self._attributed(work, tests, per_test)
+        if prints is not None:
+            self._fingerprint(prints, events, tests, failures, per_test)
+        attributed = self._attributed(work, graph, tests, per_test)
         entries = coverage.invert(attributed)
         return protocol.baseline_done(
             ident,
-            int((time.monotonic() - started) * 1000),
+            _ms(started),
             tests,
             failures,
             self._spoken(entries),
             differences(work),
+            reused,
         )
 
-    def _attributed(self, work: Path, tests: list[dict], per_test: dict) -> dict:
+    def _prints(self, work: Path, graph: dependency.Graph) -> fingerprint.Prints | None:
+        try:
+            return fingerprint.Prints(work, graph, fingerprint.environment())
+        except Exception as e:
+            # Without fingerprints every test runs, and none is offered back.
+            print(f"kalku-python: the tests have no fingerprint: {e}", file=sys.stderr)
+            return None
+
+    def _reusable(
+        self, prints: fingerprint.Prints, reuse: dict[str, str]
+    ) -> tuple[list[str], list[str]]:
+        """The test files that need not run, and their tests: every test the
+        file has is offered, all with the fingerprint the file has now."""
+        by_file: dict[str, list[str]] = {}
+        for test in self.session.ids:
+            by_file.setdefault(self.session.files[test], []).append(test)
+        skip, reused = [], []
+        for file, ids in sorted(by_file.items()):
+            offered = {reuse.get(t) for t in ids}
+            if len(offered) != 1 or None in offered:
+                continue
+            (given,) = offered
+            named = fingerprint.unexplained_of(given)
+            if named is None or not all(f in prints.present for f in named):
+                continue
+            if prints.of(file, named) == given:
+                skip.append(file)
+                reused.extend(ids)
+        return skip, reused
+
+    def _fingerprint(
+        self,
+        prints: fingerprint.Prints,
+        events: list[dict],
+        tests: list[dict],
+        failures: list[dict],
+        per_test: dict,
+    ) -> None:
+        """Give each test the fingerprint of its file, unless a test of the file
+        failed or was seen to execute a source the fingerprint does not cover."""
+        done = next((e for e in events if e.get("e") == "done"), None)
+        if done is None:
+            return
+        units = set(self.session.files.values())
+        imported = set(done.get("imported", []))
+        unexplained = tuple(sorted(imported - prints.explained(units) - units))
+        if len(unexplained) > fingerprint.MAX_UNEXPLAINED:
+            return
+        failing = {f["test"] for f in failures}
+        standing: dict[str, str | None] = {}
+        for t in tests:
+            file = t["file"]
+            if file not in standing:
+                standing[file] = prints.of(file, unexplained)
+            covers = prints.covers(file, unexplained)
+            if t["test"] in failing or not set(per_test.get(t["test"], {})) <= covers:
+                standing[file] = None
+        for t in tests:
+            given = standing[t["file"]]
+            if given is not None:
+                t["fingerprint"] = given
+
+    def _attributed(
+        self, work: Path, graph: dependency.Graph, tests: list[dict], per_test: dict
+    ) -> dict:
         """What each test reached, with what ran at import credited to the tests
         that run it or depend on it by what they import."""
-        graph = dependency.build(work)
         test_files = {t["file"] for t in tests}
         sources = [f for f in dependency.python_files(work) if not project.is_test_file(f)]
         by_directory = {f: PurePosixPath(f).parent for f in test_files}

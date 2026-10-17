@@ -73,6 +73,19 @@ def test_every_simple_request_decodes():
     assert reload == protocol.Reload(files=["a.py"])
 
 
+def test_a_baseline_takes_the_tests_offered_back_with_their_fingerprints():
+    _, plain = decode('{"type":"baseline","id":1}')
+    assert plain == protocol.Baseline(reuse={})
+    line = {"type": "baseline", "id": 1, "reuse": [{"test": "t::a", "fingerprint": "f1"}]}
+    _, offered = decode(json.dumps(line))
+    assert offered == protocol.Baseline(reuse={"t::a": "f1"})
+    assert detail(json.dumps({**line, "reuse": {}})) == "reuse: must be an array"
+    assert detail(json.dumps({**line, "reuse": [5]})) == "reuse[0]: must be an object"
+    assert detail(json.dumps({**line, "reuse": [{"test": "t"}]})) == (
+        "reuse[0].fingerprint: is required"
+    )
+
+
 def test_the_fields_of_a_hello_are_read_in_their_shapes():
     hello = {
         "type": "hello",
@@ -225,6 +238,12 @@ def test_a_baseline_says_how_its_run_differed_only_when_it_is_told():
     said = reply(protocol.baseline_done(3, 1, [], [], None, ["it ran in a copy"]))
     assert said["differences"] == ["it ran in a copy"]
     assert list(said)[-2:] == ["failures", "differences"]
+
+
+def test_a_baseline_names_the_tests_it_reused_only_when_there_are_some():
+    assert "reused" not in reply(protocol.baseline_done(3, 1, [], [], None, None, []))
+    said = reply(protocol.baseline_done(3, 1, [], [], None, None, ["t::a"]))
+    assert said["reused"] == ["t::a"]
 
 
 def test_a_ready_announces_exactly_the_capabilities_it_is_given():

@@ -59,7 +59,10 @@ class Reload:
 class Prepare: ...
 
 
-class Baseline: ...
+@dataclass
+class Baseline:
+    # Test id to the fingerprint it had when it last passed.
+    reuse: dict[str, str] = field(default_factory=dict)
 
 
 class Reset: ...
@@ -151,7 +154,7 @@ def _body(kind: str, o: dict[str, Any]) -> Any:
     if kind == "prepare":
         return Prepare()
     if kind == "baseline":
-        return Baseline()
+        return Baseline(reuse=_reuse(o) if o.get("reuse") is not None else {})
     if kind == "sites":
         return Sites(
             files=_strings(o, "files", ""),
@@ -221,6 +224,18 @@ def _env(o: dict[str, Any]) -> dict[str, str]:
         if not isinstance(item, str):
             raise _bad(f"env.{k}", "must be a string")
     return dict(v)
+
+
+def _reuse(o: dict[str, Any]) -> dict[str, str]:
+    v = o["reuse"]
+    if not isinstance(v, list):
+        raise _bad("reuse", "must be an array")
+    out = {}
+    for i, item in enumerate(v):
+        if not isinstance(item, dict):
+            raise _bad(f"reuse[{i}]", "must be an object")
+        out[_string(item, "test", f"reuse[{i}]")] = _string(item, "fingerprint", f"reuse[{i}]")
+    return out
 
 
 def _spells(o: dict[str, Any]) -> list[str]:
@@ -331,9 +346,11 @@ def baseline_done(
     failures: list[dict[str, Any]],
     coverage: tuple[str, Any] | None = None,
     differences: list[str] | None = None,
+    reused: list[str] | None = None,
 ) -> str:
     """`coverage` is `("inline", entries)` or `("path", path)`; or None.
-    `differences` is how the run was unlike the project's own, a sentence each."""
+    `differences` is how the run was unlike the project's own, a sentence each;
+    `reused`, the tests offered back that were not run."""
     fields: list[tuple[str, Any]] = [
         ("status", "red" if failures else "green"),
         ("duration_ms", duration_ms),
@@ -345,6 +362,8 @@ def baseline_done(
     fields.append(("failures", failures))
     if differences is not None:
         fields.append(("differences", differences))
+    if reused:
+        fields.append(("reused", reused))
     return _line("baseline_done", ident, fields)
 
 

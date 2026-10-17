@@ -42,6 +42,17 @@ class Graph:
                     todo.append(file)
         return seen
 
+    def closure_of(self, file: str) -> set[str]:
+        """`file`, and every file it imports, directly or through others."""
+        seen = {file}
+        todo = [file]
+        while todo:
+            for target in self.imports.get(todo.pop(), ()):
+                if target not in seen:
+                    seen.add(target)
+                    todo.append(target)
+        return seen
+
     def direct_importers_of(self, target: str) -> set[str]:
         """The files that import `target` themselves."""
         return set(self._reverse().get(target, ()))
@@ -142,7 +153,24 @@ def _imports_of(work: Path, relative: str, present: set[str], roots: list[str]) 
                 add(base)
             for alias in node.names:
                 add(f"{base}.{alias.name}" if base else alias.name)
+        elif _names_plugins(node):
+            # pytest imports the modules `pytest_plugins` names by their names.
+            value = node.value
+            items = value.elts if isinstance(value, ast.List | ast.Tuple) else [value]
+            for item in items:
+                if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                    add(item.value)
     return found
+
+
+def _names_plugins(node: ast.AST) -> bool:
+    if isinstance(node, ast.Assign):
+        targets = node.targets
+    elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        targets = [node.target]
+    else:
+        return False
+    return any(isinstance(t, ast.Name) and t.id == "pytest_plugins" for t in targets)
 
 
 def _resolve(node: ast.ImportFrom, package: list[str]) -> str | None:

@@ -22,7 +22,7 @@ def test_it_greets_and_leaves(kalku, make_project):
     ready = k.hello()
 
     assert ready["language"] == "python"
-    assert ready["capabilities"] == ["cast", "abort", "per_test_coverage"]
+    assert ready["capabilities"] == ["cast", "abort", "per_test_coverage", "partial_baseline"]
     assert "pytest" in ready["runtime"]
     assert k.leave() == 0
 
@@ -409,3 +409,121 @@ def test_a_constant_a_test_only_reads_is_judged_against_that_test(kalku, make_pr
     ]
     done = k.cast(k.site("config.py", "literal", "9", "10"), ["tests/test_config.py::test_limit"])
     assert done["outcome"] == "killed"
+
+
+INCREMENTAL = {
+    "pkg/__init__.py": "",
+    "pkg/a.py": "def one():\n    return 1\n",
+    "pkg/b.py": "def two():\n    return 2\n",
+    "pkg/hidden.py": "def three():\n    return 3\n",
+    "tests/test_a.py": "from pkg.a import one\n\n\ndef test_one():\n    assert one() == 1\n",
+    "tests/test_b.py": (
+        "from pkg.b import two\n\n\ndef test_two():\n    assert two() == 2\n\n\n"
+        "def test_again():\n    assert two() + 0 == 2\n"
+    ),
+    # A module imported by a name the syntax does not show.
+    "tests/test_dyn.py": (
+        "import importlib\n\n\ndef test_three():\n"
+        "    assert importlib.import_module('pkg.hidden').three() == 3\n"
+    ),
+    # A module another file imports, run by one that does not import it.
+    "tests/test_peek.py": (
+        "import importlib\n\n\ndef test_peek():\n"
+        "    assert importlib.import_module('pkg.a').one() == 1\n"
+    ),
+}
+
+
+def baseline_of(kalku, root, reuse=None):
+    """A baseline the way a run asks for one: a kalku summoned for it."""
+    k = kalku(root)
+    assert k.hello()["type"] == "ready"
+    assert k.ask({"type": "prepare"})["type"] == "prepared"
+    request = {"type": "baseline"}
+    if reuse is not None:
+        request["reuse"] = [{"test": t, "fingerprint": f} for t, f in reuse.items()]
+    done = k.ask(request)
+    k.leave()
+    return done
+
+
+def offer(done) -> dict:
+    return {t["test"]: t["fingerprint"] for t in done["tests"] if "fingerprint" in t}
+
+
+def ran(done) -> list[str]:
+    return sorted({t["file"] for t in done["tests"]})
+
+
+def test_a_baseline_runs_only_the_test_files_whose_fingerprint_changed(kalku, make_project):
+    root = make_project(INCREMENTAL)
+
+    first = baseline_of(kalku, root)
+
+    assert first["status"] == "green" and "reused" not in first
+    prints = offer(first)
+    # A test that ran a module its file does not import has no fingerprint.
+    assert "tests/test_peek.py::test_peek" not in prints
+    assert len(prints) == 4
+    # The module no import names is named in every fingerprint, and covered.
+    assert all(f.endswith('|["pkg/hidden.py"]') for f in prints.values())
+
+    again = baseline_of(kalku, root, prints)
+
+    assert sorted(again["reused"]) == sorted(prints)
+    assert ran(again) == ["tests/test_peek.py"]
+    assert {e["file"] for e in again["coverage"]} == {"pkg/a.py"}
+
+    (root / "pkg/b.py").write_text("def two():\n    return 1 + 1\n")
+    changed = baseline_of(kalku, root, {**prints, **offer(again)})
+
+    assert ran(changed) == ["tests/test_b.py", "tests/test_peek.py"]
+    assert sorted(changed["reused"]) == [
+        "tests/test_a.py::test_one",
+        "tests/test_dyn.py::test_three",
+    ]
+
+    (root / "pkg/hidden.py").write_text("def three():\n    return 2 + 1\n")
+    hidden = baseline_of(kalku, root, {**prints, **offer(changed)})
+
+    # What named it is run again; `test_b` was last run where nothing imported it.
+    assert "|" not in offer(changed)["tests/test_b.py::test_two"]
+    assert ran(hidden) == ["tests/test_a.py", "tests/test_dyn.py", "tests/test_peek.py"]
+    assert sorted(hidden["reused"]) == ["tests/test_b.py::test_again", "tests/test_b.py::test_two"]
+
+
+def test_a_file_runs_whole_unless_every_test_of_it_is_offered_with_its_fingerprint(
+    kalku, make_project
+):
+    root = make_project(INCREMENTAL)
+    prints = offer(baseline_of(kalku, root))
+
+    one_of_two = {t: f for t, f in prints.items() if t != "tests/test_b.py::test_again"}
+    stale = {**prints, "tests/test_a.py::test_one": "0" * 24}
+    forged = {t: f.replace("pkg/hidden.py", "../../outside.py") for t, f in prints.items()}
+
+    assert "tests/test_b.py" in ran(baseline_of(kalku, root, one_of_two))
+    assert "tests/test_a.py" in ran(baseline_of(kalku, root, stale))
+    assert "reused" not in baseline_of(kalku, root, forged)
+
+
+def test_every_test_offered_back_needs_no_run_at_all(kalku, make_project):
+    files = {k: v for k, v in INCREMENTAL.items() if k != "tests/test_peek.py"}
+    root = make_project(files)
+    prints = offer(baseline_of(kalku, root))
+
+    done = baseline_of(kalku, root, prints)
+
+    assert done["status"] == "green" and done["tests"] == [] and done["coverage"] == []
+    assert sorted(done["reused"]) == sorted(prints)
+
+
+def test_a_file_with_a_test_that_failed_has_no_fingerprint(kalku, make_project):
+    wrong = "\n\ndef test_wrong():\n    assert one() == 2\n"
+    root = make_project({**INCREMENTAL, "tests/test_a.py": INCREMENTAL["tests/test_a.py"] + wrong})
+
+    done = baseline_of(kalku, root)
+
+    assert done["status"] == "red"
+    assert not any("fingerprint" in t for t in done["tests"] if t["file"] == "tests/test_a.py")
+    assert any("fingerprint" in t for t in done["tests"] if t["file"] == "tests/test_b.py")

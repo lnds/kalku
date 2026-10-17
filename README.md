@@ -272,7 +272,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **Go kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `go/parser`; `prepare`, `baseline` and `cast` in the reni through `-overlay`, `abort`, `kalku init` for Go modules, shipped in the release | done |
 | **TypeScript kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from the TypeScript parser, in TypeScript and JavaScript; `prepare`, `baseline` and `cast` through the project's own Vitest or Jest with the wekufe served in memory, `abort`, `kalku init` for projects with a `tsconfig.json`, shipped in the release | done |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java, Go, TypeScript, kaikai |
-| **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go, Elixir, TypeScript |
+| **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go, Elixir, TypeScript, Python |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | `--watch` and `--ci` | not yet |

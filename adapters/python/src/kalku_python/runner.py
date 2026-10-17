@@ -66,6 +66,8 @@ class Spec:
     mode: str
     tests: list[str] = field(default_factory=list)
     mutation: Mutation | None = None
+    # Test files a baseline collects and does not run.
+    skip: list[str] = field(default_factory=list)
 
 
 # ---- the parent's side ------------------------------------------------------
@@ -193,7 +195,7 @@ def _child(spec: Spec, write_fd: int) -> None:  # pragma: no cover
             _install_mutation(work, spec.mutation)
         import pytest
 
-        recorder = _Recorder(out, work, measuring=spec.mode == "baseline")
+        recorder = _Recorder(out, work, measuring=spec.mode == "baseline", skip=set(spec.skip))
         addopts = project.sanitized_addopts(project.read_addopts(work))
         args = [*_BASE_ARGS, "-o", f"addopts={addopts}", f"--rootdir={work}"]
         args.extend(shlex.split(os.environ.get("KALKU_PYTEST_ARGS", "")))
@@ -202,7 +204,10 @@ def _child(spec: Spec, write_fd: int) -> None:  # pragma: no cover
         elif spec.mode == "cast":
             args.extend(["-x", *spec.tests])
         code = pytest.main(args, plugins=[recorder])
-        out.send({"e": "done", "exit": int(code), "warm": _warm_modules(work)})
+        done = {"e": "done", "exit": int(code), "warm": _warm_modules(work)}
+        if spec.mode == "baseline":
+            done["imported"] = _project_modules(work)
+        out.send(done)
     except BaseException as e:  # a crash of ours is a message, not silence
         with contextlib.suppress(Exception):
             out.send({"e": "crashed", "message": f"{type(e).__name__}: {e}"})
@@ -266,6 +271,22 @@ def _warm_modules(work: Path) -> list[str]:  # pragma: no cover
     return keep
 
 
+def _project_modules(work: Path) -> list[str]:  # pragma: no cover
+    """The files of the project this run imported, relative to the copy."""
+    root = str(work) + os.sep
+    found = set()
+    for module in list(sys.modules.values()):
+        where = getattr(module, "__file__", None)
+        if not where:
+            continue
+        real = os.path.realpath(where)
+        if real.startswith(root):
+            relative = real[len(root) :].replace(os.sep, "/")
+            if not any(project.is_ignored(p) for p in relative.split("/")[:-1]):
+                found.add(relative)
+    return sorted(found)
+
+
 class _MutatedLoader(importlib.machinery.SourceFileLoader):
     def __init__(self, fullname: str, path: str, source: str):
         super().__init__(fullname, path)
@@ -302,10 +323,11 @@ def _install_mutation(work: Path, mutation: Mutation) -> None:  # pragma: no cov
 class _Recorder:  # pragma: no cover - exercised through a real pytest in a child
     """A pytest plugin that says, as it goes, what the suite is doing."""
 
-    def __init__(self, out: _Out, work: Path, measuring: bool):
+    def __init__(self, out: _Out, work: Path, measuring: bool, skip: set[str]):
         self.out = out
         self.work = str(work)
         self.measuring = measuring
+        self.skip = skip
         self.outcome: dict[str, dict[str, Any]] = {}
         self.current: dict[str, set[int]] = {}
         self.tracked: dict[str, bool] = {}
@@ -343,8 +365,14 @@ class _Recorder:  # pragma: no cover - exercised through a real pytest in a chil
 
     # ---- pytest hooks -------------------------------------------------------
 
-    def pytest_collection_modifyitems(self, items):
+    def pytest_collection_modifyitems(self, config, items):
         self.out.send({"e": "collected", "ids": [item.nodeid for item in items]})
+        if self.skip:
+            # Collected all the same, so that what the run imports is what a
+            # whole run would: only running them is left out.
+            left = [i for i in items if i.nodeid.partition("::")[0] in self.skip]
+            items[:] = [i for i in items if i.nodeid.partition("::")[0] not in self.skip]
+            config.hook.pytest_deselected(items=left)
 
     def pytest_collectreport(self, report):
         if report.failed:
