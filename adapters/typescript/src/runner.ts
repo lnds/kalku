@@ -48,6 +48,14 @@ export interface Counting {
   out: string;
 }
 
+/** What a run serves to the runner, and what it leaves out. */
+export interface RunOptions {
+  wekufe?: Wekufe;
+  counting?: Counting;
+  /** Test files to leave out of a run of the whole suite, as absolute paths. */
+  skip?: string[];
+}
+
 export interface RunResult {
   files: FileResult[];
   /** Set when the runner itself failed and wrote no report. */
@@ -60,12 +68,9 @@ export interface Runner {
   readonly name: "vitest" | "jest";
   readonly version: string;
   prepare(signal?: AbortSignal): Promise<void>;
-  run(
-    selection: Selection | "all",
-    wekufe: Wekufe | undefined,
-    signal?: AbortSignal,
-    counting?: Counting,
-  ): Promise<RunResult>;
+  run(selection: Selection | "all", opts?: RunOptions, signal?: AbortSignal): Promise<RunResult>;
+  /** The files the runner loads around the tests, as absolute paths: setup files, global setup. */
+  setups(): string[];
   differences(): string[];
 }
 
