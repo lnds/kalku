@@ -108,7 +108,7 @@ test("a test is credited with its own counts and with what its file ran outside 
         ],
       },
     ],
-    (_file, names) => `test/a.test.ts:${[names].flat().join(" › ")}`,
+    (_file, names) => [`test/a.test.ts:${[names].flat().join(" › ")}`],
   );
   assert.deepEqual(entries(byFile), [
     { file: "src/a.ts", line: 1, tests: ["test/a.test.ts:one", "test/a.test.ts:two"] },
@@ -122,5 +122,18 @@ test("a test is credited with its own counts and with what its file ran outside 
     { file: "src/a.ts", lines: [1], tests: [0, 1] },
     { file: "src/a.ts", lines: [2, 3], tests: [0] },
     { file: "src/b.ts", lines: [7], tests: [1] },
+  ]);
+});
+
+// A runner names a test by its titles, so two tests that share them cannot
+// be told apart; both are credited with what either ran.
+test("tests that share their titles are credited with what either ran", () => {
+  const byFile = credited(
+    [["src/a.ts", [4]]],
+    [{ file: "/r/test/a.test.ts", shared: [], tests: [{ names: "same name", hits: [0] }] }],
+    () => ["test/a.test.ts:same name", "test/a.test.ts:same name (2)"],
+  );
+  assert.deepEqual(entries(byFile), [
+    { file: "src/a.ts", line: 4, tests: ["test/a.test.ts:same name", "test/a.test.ts:same name (2)"] },
   ]);
 });

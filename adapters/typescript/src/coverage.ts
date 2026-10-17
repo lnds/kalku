@@ -245,19 +245,19 @@ export function records(dir: string): Counted[] {
 
 /**
  * The lines each test is credited with: its own counts and its file's
- * shared ones, turned into lines. `idOf` names a test from its file and
+ * shared ones, turned into lines. `idsOf` names the tests a record means from its file and
  * titles, or says it is not a test the baseline knows.
  */
 export function credited(
   counters: [string, number[]][],
   found: Counted[],
-  idOf: (file: string, names: string[] | string) => string | undefined,
+  idsOf: (file: string, names: string[] | string) => string[],
 ): Map<string, Map<number, Set<string>>> {
   const byFile = new Map<string, Map<number, Set<string>>>();
   for (const r of found) {
     for (const t of r.tests) {
-      const id = idOf(r.file, t.names);
-      if (id === undefined) continue;
+      const ids = idsOf(r.file, t.names);
+      if (ids.length === 0) continue;
       for (const n of new Set([...r.shared, ...t.hits])) {
         const counter = counters[n];
         if (counter === undefined) continue;
@@ -267,7 +267,7 @@ export function credited(
         for (const l of lines) {
           let tests = reached.get(l);
           if (tests === undefined) reached.set(l, (tests = new Set()));
-          tests.add(id);
+          for (const id of ids) tests.add(id);
         }
       }
     }

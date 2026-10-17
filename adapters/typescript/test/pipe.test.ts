@@ -187,6 +187,7 @@ function alive(pids: number[]): number[] {
 const TESTS = {
   above: "test/calc.test.ts:above › is true at the floor and below it is false",
   total: "test/calc.test.ts:total adds",
+  totalAgain: "test/calc.test.ts:total adds (2)",
   clamp: "test/calc.test.ts:clamp keeps a positive number",
   wrap: "test/bounds.test.ts:wrapping stays inside the range",
   settle: "test/settle.test.ts:settle reaches zero",
@@ -296,7 +297,7 @@ for (const { dir, runner, runtime, node } of PROJECTS) {
       const after = await started(copy);
       const some = await after.ask({ type: "baseline", id: 3, reuse });
       const ran = (some["tests"] as { test: string }[]).map((t) => t.test).sort();
-      assert.deepEqual(ran, [TESTS.wrap, TESTS.above, TESTS.clamp, TESTS.total].sort());
+      assert.deepEqual(ran, [TESTS.wrap, TESTS.above, TESTS.clamp, TESTS.total, TESTS.totalAgain].sort());
       assert.deepEqual([...(some["reused"] as string[])].sort(), [TESTS.mode, TESTS.settle].sort());
       await after.ask({ type: "shutdown", id: 9 });
     });
