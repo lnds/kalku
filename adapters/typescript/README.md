@@ -54,6 +54,13 @@ runner = "vitest"
   its file. A test that passes in the first run and not in the counting one
   makes the coverage doubted, and every wekufe it might reach asks the rest of
   the suite too.
+- **A baseline runs only the test files something changed under.** A test
+  file is fingerprinted by itself, every module it imports as TypeScript
+  resolves them, and the snapshots beside it, with what every file shares: the
+  manifest and lockfile, the tools' configuration, `.env` files, the runner's
+  setup files, the files kept with the suite, and the versions of Node, the
+  runner and the kalku. A file whose tests executed a source the fingerprint
+  does not cover is not fingerprinted, and always runs.
 - **Runs** only the tests it was asked for, by file and by an exact name
   pattern, and counts each test's own verdict from the runner's JSON report.
 - **`abort`** ends the run's process group, workers included, and the kalku
@@ -71,6 +78,10 @@ runner = "vitest"
   browser, does not load the wekufe: such a cast is `no_coverage`.
 - Code a tool loads before the runner's transform (a config file, a global
   setup) cannot be cast in memory, and is not proposed.
+- A test that reads a file it does not import, outside the directories kept
+  with the suite, is not run again when only that file changes; `kalku run
+  --all` runs every test. A test file whose titles are not all literals, or
+  that holds a table of cases or a `.only`, always runs.
 
 ## Developing it
 

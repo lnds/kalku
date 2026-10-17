@@ -5,6 +5,7 @@
 // transformer's cache is keyed by that text. `--ci` keeps snapshots from
 // being written, and the cache is the reni's.
 
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { run } from "./process";
 import {
@@ -14,12 +15,23 @@ import {
   namePattern,
   reported,
   type Context,
-  type Counting,
+  type RunOptions,
   type RunResult,
   type Runner,
   type Selection,
-  type Wekufe,
 } from "./runner";
+
+function real(file: string): string {
+  try {
+    return realpathSync(file);
+  } catch {
+    return file;
+  }
+}
+
+function escape(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 // The wrapper Jest loads as a transformer. It is CommonJS, which every
 // Jest loads, and it delegates to the transformer it wraps.
@@ -69,8 +81,13 @@ module.exports = {
 `;
 
 interface Resolved {
+  rootDir: string;
   transform: [string, string, unknown][];
+  setupFiles: string[];
   setupFilesAfterEnv: string[];
+  globalSetup?: string | null;
+  globalTeardown?: string | null;
+  testPathIgnorePatterns: string[];
 }
 
 // The setup file a counting run loads before the project's own. It credits
@@ -108,7 +125,7 @@ afterAll(() => {
 export class Jest implements Runner {
   readonly name = "jest" as const;
   private transform = "";
-  private setups: string[] = [];
+  private config: Resolved | undefined;
 
   constructor(
     private readonly ctx: Context,
@@ -153,15 +170,18 @@ export class Jest implements Runner {
       transform[pattern] = [wrapper, { inner, options }];
     }
     this.transform = JSON.stringify(transform);
-    this.setups = configs[0]!.setupFilesAfterEnv;
+    this.config = configs[0]!;
   }
 
-  async run(
-    selection: Selection | "all",
-    wekufe: Wekufe | undefined,
-    signal?: AbortSignal,
-    counting?: Counting,
-  ): Promise<RunResult> {
+  setups(): string[] {
+    const c = this.config;
+    if (c === undefined) return [];
+    const loaded = [...c.setupFiles, ...c.setupFilesAfterEnv, c.globalSetup, c.globalTeardown];
+    return loaded.filter((f): f is string => typeof f === "string" && f.startsWith(this.ctx.root));
+  }
+
+  async run(selection: Selection | "all", opts: RunOptions = {}, signal?: AbortSignal): Promise<RunResult> {
+    const { wekufe, counting } = opts;
     const out = path.join(this.ctx.work, "jest-report.json");
     const args = [
       this.bin,
@@ -179,10 +199,18 @@ export class Jest implements Runner {
       if (selection.names !== undefined) args.push(`--testNamePattern=${namePattern(selection.names)}`);
       args.push("--runTestsByPath", ...selection.files);
     }
+    // The command line's lists replace the configuration's, so the
+    // project's own entries are named beside the kalku's.
     if (counting !== undefined) {
-      // The command line's list replaces the configuration's, so the
-      // project's own setup files are named after the kalku's.
-      args.push("--setupFilesAfterEnv", asset(this.ctx, "jest-counting.cjs", COUNTING), ...this.setups);
+      const theirs = this.config?.setupFilesAfterEnv ?? [];
+      args.push("--setupFilesAfterEnv", asset(this.ctx, "jest-counting.cjs", COUNTING), ...theirs);
+    }
+    if (opts.skip !== undefined && opts.skip.length > 0) {
+      const theirs = this.config?.testPathIgnorePatterns ?? ["/node_modules/"];
+      // Jest matches a test file by its real path, which may be another
+      // spelling of the one the kalku was given.
+      const spellings = opts.skip.flatMap((f) => [...new Set([f, real(f)])]);
+      args.push("--testPathIgnorePatterns", ...theirs, ...spellings.map((f) => `^${escape(f)}$`));
     }
     const env: NodeJS.ProcessEnv = { ...this.ctx.env };
     if (counting !== undefined) {

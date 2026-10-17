@@ -4,7 +4,9 @@
 // cache is the reni's, and CI is set so that no snapshot is written.
 
 import { availableParallelism } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+import { relative } from "./project";
 import {
   PrepareError,
   asset,
@@ -12,12 +14,16 @@ import {
   namePattern,
   reported,
   type Context,
-  type Counting,
+  type RunOptions,
   type RunResult,
   type Runner,
   type Selection,
-  type Wekufe,
 } from "./runner";
+
+// A path as a glob that matches only itself.
+function glob(file: string): string {
+  return file.replace(/[*?[\]{}()!]/g, "\\$&");
+}
 
 // The driver runs in the project's Node as an ES module, because Vitest
 // is one. It takes one argument, a JSON request, and writes the report
@@ -32,15 +38,22 @@ const counting = request.counting;
 const manifest = counting ? JSON.parse(readFileSync(counting.manifest, "utf8")) : {};
 const required = createRequire(request.root + "/package.json");
 const { startVitest } = await import(pathToFileURL(required.resolve("vitest/node")).href);
+const { configDefaults } = await import(pathToFileURL(required.resolve("vitest/config")).href);
 
 const plugin = {
   name: "kalku",
   enforce: "pre",
   config(config) {
-    if (counting === undefined) return;
     config.test = config.test || {};
+    if (request.skip.length > 0) config.test.exclude = [...(config.test.exclude ?? configDefaults.exclude), ...request.skip];
+    if (counting === undefined) return;
     const theirs = config.test.setupFiles;
     config.test.setupFiles = [counting.setup, ...(theirs === undefined ? [] : [theirs].flat())];
+  },
+  configResolved(config) {
+    const listed = (v) => [v].flat().filter((f) => typeof f === "string" && f !== (counting && counting.setup));
+    const test = config.test || {};
+    writeFileSync(request.resolved, JSON.stringify({ root: config.root, setups: [...listed(test.setupFiles), ...listed(test.globalSetup)] }));
   },
   load(id) {
     const file = id.split("?")[0];
@@ -142,17 +155,15 @@ export class Vitest implements Runner {
     this.driver = asset(this.ctx, "vitest-driver.mjs", DRIVER);
   }
 
-  async run(
-    selection: Selection | "all",
-    wekufe: Wekufe | undefined,
-    signal?: AbortSignal,
-    counting?: Counting,
-  ): Promise<RunResult> {
+  async run(selection: Selection | "all", opts: RunOptions = {}, signal?: AbortSignal): Promise<RunResult> {
+    const { wekufe, counting } = opts;
     const out = path.join(this.ctx.work, "vitest-report.json");
     const request: Record<string, unknown> = {
       root: this.ctx.root,
       out,
       filters: selection === "all" ? [] : selection.files,
+      skip: (opts.skip ?? []).map((f: string) => glob(relative(this.ctx.root, f))),
+      resolved: this.resolved,
       cacheDir: path.join(this.ctx.work, "vite-cache"),
     };
     if (selection !== "all") {
@@ -168,6 +179,21 @@ export class Vitest implements Runner {
     }
     const file = asset(this.ctx, "vitest-request.json", JSON.stringify(request));
     return reported(this.ctx, [this.driver, file], out, env, signal);
+  }
+
+  // What the configuration Vitest last resolved names for it to load
+  // around the tests: its setup files and global setup.
+  setups(): string[] {
+    try {
+      const said = JSON.parse(readFileSync(this.resolved, "utf8")) as { root: string; setups: string[] };
+      return said.setups.map((f) => path.resolve(said.root, f));
+    } catch {
+      return [];
+    }
+  }
+
+  private get resolved(): string {
+    return path.join(this.ctx.work, "vitest-resolved.json");
   }
 
   differences(): string[] {

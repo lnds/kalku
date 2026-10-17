@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -209,7 +218,13 @@ for (const { dir, runner, runtime, node } of PROJECTS) {
       const k = await started(root);
       const ready = JSON.parse(k.said[0]!) as Record<string, unknown>;
       assert.match(String(ready["runtime"]), runtime);
-      assert.deepEqual(ready["capabilities"], ["cast", "per_test_coverage", "abort", "cast_after_baseline"]);
+      assert.deepEqual(ready["capabilities"], [
+        "cast",
+        "per_test_coverage",
+        "abort",
+        "cast_after_baseline",
+        "partial_baseline",
+      ]);
       const done = await k.ask({ type: "baseline", id: 3 });
       assert.equal(done["status"], "green");
       await k.ask({ type: "shutdown", id: 9 });
@@ -255,6 +270,35 @@ for (const { dir, runner, runtime, node } of PROJECTS) {
       const above = packed.tests.indexOf(TESTS.above);
       assert.ok(packed.reached.some((r) => r.file === "src/calc.ts" && r.lines.includes(5) && r.tests.includes(above)));
       await k.ask({ type: "shutdown", id: 9 });
+    });
+
+    test("a baseline offered what it may reuse leaves out the files nothing changed under, and runs the one that did", async () => {
+      // A copy, so that a file can be changed; its packages are the fixture's.
+      const copy = mkdtempSync(path.join(tmpdir(), "kalku-ts-project-"));
+      cpSync(root, copy, { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
+      symlinkSync(path.join(root, "node_modules"), path.join(copy, "node_modules"));
+      const first = await started(copy);
+      const done = await first.ask({ type: "baseline", id: 3 });
+      const timed = done["tests"] as { test: string; fingerprint?: string }[];
+      for (const t of timed) assert.ok(t.fingerprint, `${t.test} has no fingerprint`);
+      await first.ask({ type: "shutdown", id: 9 });
+      const reuse = timed.map((t) => ({ test: t.test, fingerprint: t.fingerprint }));
+
+      const again = await started(copy);
+      const all = await again.ask({ type: "baseline", id: 3, reuse });
+      assert.deepEqual(all["tests"], []);
+      assert.deepEqual([...(all["reused"] as string[])].sort(), Object.values(TESTS).sort());
+      await again.ask({ type: "shutdown", id: 9 });
+
+      // bounds.ts is imported by calc.ts and by the bounds test; nothing else.
+      const bounds = path.join(copy, "src/bounds.ts");
+      writeFileSync(bounds, readFileSync(bounds, "utf8") + "\nexport const SPARE = 1;\n");
+      const after = await started(copy);
+      const some = await after.ask({ type: "baseline", id: 3, reuse });
+      const ran = (some["tests"] as { test: string }[]).map((t) => t.test).sort();
+      assert.deepEqual(ran, [TESTS.wrap, TESTS.above, TESTS.clamp, TESTS.total].sort());
+      assert.deepEqual([...(some["reused"] as string[])].sort(), [TESTS.mode, TESTS.settle].sort());
+      await after.ask({ type: "shutdown", id: 9 });
     });
 
     test("a wekufe a test notices is killed by it, and one none notices survives", async () => {
