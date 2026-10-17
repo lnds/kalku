@@ -55,7 +55,7 @@ Outcomes (`killed`, `survived`, `timeout`, …) keep plain technical names: they
 
 ### One binary, two lifetimes
 
-The CLI and the server are the same code. `kalku run` connects to a running server, or starts one. `kalku run --ci` runs the orchestrator in-process for exactly one run and exits. A CLI run is a server whose lifetime is one run, so nothing is written twice.
+The CLI and the server are the same code. `kalku run` runs the orchestrator in-process for exactly one run and exits: no server, no socket. `kalku serve` keeps it running for clients and agents, with the kalku a run leaves warm. A CLI run is a server whose lifetime is one run, so nothing is written twice.
 
 ## Kinds of kalku
 
@@ -509,7 +509,7 @@ timeout_floor_ms = 500
 memory_limit_mb = 8192   # per kalku; 0 for none. Default: a quarter of the machine shared between the workers, at least 2048
 
 [score]
-threshold = 0.80        # global floor; --ci exits 1 below it
+threshold = 0.80        # global floor; a run exits 1 below it
 ratchet = true          # the score of the whole project may not drop below the stored baseline
 
 [elixir]
@@ -530,16 +530,16 @@ Any change to a key component invalidates it. Keys never use timestamps.
 
 ## Running in CI
 
-This section is the design. Of it, `--since`, `--all`, `--shard` and the exit codes exist; `--ci` and `kalku merge` do not yet, and the README's status table is where to look for what does. Today a pull request is gated with `kalku run --since origin/<base>`, and the global score is `kalku run --all`. A shard reports the score of its part, says so first, and is not held to `score.threshold`: until `kalku merge` exists, the floor is held by a run that is not a shard.
+This section is the design. Of it, `--since`, `--all`, `--shard` and the exit codes exist; `kalku merge` does not yet, and the README's status table is where to look for what does. A shard reports the score of its part, says so first, and is not held to `score.threshold`: until `kalku merge` exists, the floor is held by a run that is not a shard.
 
-`kalku run --ci` runs the orchestrator in-process for one run: no server, no socket.
+`kalku run` is already the form CI wants: it runs the orchestrator in-process for one run, with no server and no socket, and says what it found in its exit code. There is no separate CI mode, so a run on a laptop and a run in CI are held to the same policy.
 
 ### Two cadences
 
 | When | Command | Purpose |
 |---|---|---|
-| every PR | `kalku run --ci --since origin/<base>` | block the merge if the change introduces holes |
-| nightly | `kalku run --ci --all --shard i/n`, then `kalku merge` | track the global score |
+| every PR | `kalku run --since origin/<base>` | block the merge if the change introduces holes |
+| nightly | `kalku run --all --shard i/n`, then `kalku merge` | track the global score |
 
 A full run on every PR does not scale: a medium Elixir project yields thousands of wekufe.
 
@@ -590,7 +590,7 @@ Kalku run in parallel, so each needs its own external state. For Elixir with Pos
     path: ~/.cache/kalku
     key: kalku-${{ hashFiles('mix.lock') }}-${{ github.sha }}
     restore-keys: kalku-${{ hashFiles('mix.lock') }}-
-- run: kalku run --ci --since origin/${{ github.base_ref }} --format github
+- run: kalku run --since origin/${{ github.base_ref }} --format github
 ```
 
 ## Distribution

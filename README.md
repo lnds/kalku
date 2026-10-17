@@ -275,7 +275,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go, Elixir, TypeScript, Python, Rust, kaikai, Java |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
-| `--watch` and `--ci` | not yet |
+| `--watch` | not yet |
 | **`[score] ratchet`** — the score of the whole project may not drop below the baseline stored with `--store-baseline` | done |
 | `merge` — combining sharded reports | not yet |
 | **`--all` and `--shard i/n`** — the whole project, in parts, for a nightly run | done: a shard says it is one and is not held to the threshold |
