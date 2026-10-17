@@ -168,6 +168,28 @@ def test_a_name_next_to_a_deeply_nested_file_is_found_in_every_directory_above_i
     }
 
 
+def test_the_modules_pytest_plugins_names_are_imports(tmp_path):
+    files = {
+        "tests/__init__.py": "",
+        "tests/plugins/__init__.py": "",
+        "tests/plugins/db.py": "",
+        "tests/plugins/web.py": "",
+        "tests/conftest.py": 'pytest_plugins = ["tests.plugins.db", "tests.plugins.web"]\n',
+        "other/conftest.py": 'pytest_plugins: str = "tests.plugins.db"\n',
+    }
+    assert importers(tmp_path, files, "tests/plugins/web.py") == {"tests/conftest.py"}
+    assert importers(tmp_path, files, "tests/plugins/db.py") == {
+        "tests/conftest.py",
+        "other/conftest.py",
+    }
+
+
+def test_a_file_s_closure_is_itself_and_everything_it_imports(tmp_path):
+    files = {"pkg/__init__.py": "", "pkg/a.py": "from pkg import b\n", "pkg/b.py": "", "c.py": ""}
+    graph = dependency.build(make(tmp_path, files))
+    assert graph.closure_of("pkg/a.py") == {"pkg/a.py", "pkg/__init__.py", "pkg/b.py"}
+
+
 def test_two_graphs_with_the_same_imports_are_equal_whatever_they_have_computed():
     a = dependency.Graph({"x.py": {"y.py"}})
     b = dependency.Graph({"x.py": {"y.py"}})

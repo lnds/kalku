@@ -37,6 +37,16 @@ Linux: every run of the suite is a `fork`.
   the tests that reach it. What runs at import is credited to the tests that
   run what it belongs to, and a module's constants and class attributes to the
   tests that depend on the module by what they import.
+- **A baseline runs only the test files something changed under.** A test
+  file is fingerprinted by itself, the `conftest.py` files on its path, the
+  packages it is in, everything they import as the syntax reads it, and the
+  data kept beside that code; and, for every file, the configuration and
+  lock files, what the suite's directories keep that is not Python, and the
+  versions of the interpreter, pytest, the kalku and everything installed. A
+  module the run imported that no file's imports explain goes into every
+  fingerprint, and a file whose tests executed a source the fingerprint does
+  not cover, or one of whose tests failed, is not fingerprinted, and always
+  runs.
 - **pytest configured by the project.** Its `addopts` are kept, minus `-n`,
   `--dist` and `--cov*`, which cannot run here.
 
@@ -57,7 +67,12 @@ Linux: every run of the suite is a `fork`.
   be the size of the suite times the module's lines. A wekufe there may be
   judged against fewer tests than depend on it.
 - An import that is not written as one (a name given to `importlib`) is not
-  seen by the dependency graph.
+  seen by the dependency graph. A baseline sees the module it imports and
+  puts it in every fingerprint; a test that only reads a constant of a module
+  another file imports this way is not seen to depend on it.
+- What sits at the project's top level is an input to a fingerprint only
+  through the configuration and lock files: a data file there that a test
+  reads is not in it.
 - A library that keeps global state across the runs of one process may see it
   differently in a forked child; each run starts from the parent's state, so
   nothing leaks from one wekufe to the next, but the first run is the parent's.
