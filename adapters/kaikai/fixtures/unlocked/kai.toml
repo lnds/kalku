@@ -1,0 +1,5 @@
+name = "unlocked"
+version = "0.0.0"
+
+[dependencies]
+remote = { git = "https://example.com/remote.git" }

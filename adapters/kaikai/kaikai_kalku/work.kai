@@ -125,13 +125,17 @@ fn fill(w: Work) : Result[Work, String] / Process + File {
 }
 
 fn copy_worth_having(root: String, copy: String) : Result[Came, String] / Process + File {
-  let entries = filter(dir.list_dir(root), worth_copying)
+  let entries = package_entries(root)
   if is_empty(entries) {
     Err("#{root} holds nothing to copy")
   } else {
     run(["/bin/cp", "-R", ...entries | (e => "#{root}/#{e}"), copy])
   }
 }
+
+#[doc("The entries at the top of the package that are the package's own, in order: what is copied into the reni.")]
+pub fn package_entries(root: String) : [String] / File =
+  sort(filter(dir.list_dir(root), worth_copying))
 
 # A dotted entry is tooling's, not the package's — and one of them is the
 # reni itself, which would nest the tree inside itself.
@@ -240,11 +244,11 @@ pub fn source_of(w: Work, which: String) : String / File = file.read("#{w.copy}/
 fn run_in(w: Work, argv: [String]) : Result[Came, String] / Process =
   run(["/bin/sh", "-c", "cd #{quoted(w.copy)} && #{join(argv | quoted, " ")} 2>&1"])
 
-# Single quotes hold everything except a single quote, which is closed,
-# escaped and reopened.
-fn quoted(word: String) : String = "'#{replace(word, "'", "'\\''")}'"
+#[doc("A word for `/bin/sh`: single quotes hold everything except a single quote, which is closed, escaped and reopened.")]
+pub fn quoted(word: String) : String = "'#{replace(word, "'", "'\\''")}'"
 
-fn run(argv: [String]) : Result[Came, String] / Process = match argv {
+#[doc("Run a command where the kalku stands, in a process group that ends with it, and keep what it wrote to stdout.")]
+pub fn run(argv: [String]) : Result[Came, String] / Process = match argv {
   [] -> Err("nothing to run")
   [cmd, ...args] -> in_a_group(cmd, args)
 }

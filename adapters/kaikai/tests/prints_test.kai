@@ -1,0 +1,70 @@
+import os.process as proc
+import fs.file
+import kaikai_kalku.work
+import kaikai_kalku.prints
+import kalku.wire.kalku_msg.{Reuse}
+
+fn at(root: String) : Work = Work { root: root, copy: "", oracle: None }
+
+test "a package is digested as the same text every time" {
+  let once = prints.of_package(at("fixtures/tiny"))
+
+  assert is_some(once)
+  assert once == prints.of_package(at("fixtures/tiny"))
+  assert once != prints.of_package(at("fixtures/wide"))
+}
+
+# Every file of the package is in it, its tests and their data included,
+# since kaikai does not say which of them a test is built from.
+test "a change to any file of the package changes its digest" {
+  let root = "fixtures/reni/grown"
+  let _ = proc.wait(proc.start("/bin/rm", ["-rf", root]))
+  let _ = proc.wait(proc.start("/bin/mkdir", ["-p", "#{root}/tests"]))
+  file.write("#{root}/kai.toml", "name = \"grown\"\nversion = \"0.0.0\"\n")
+  file.write("#{root}/tests/data.txt", "one")
+  let before = prints.of_package(at(root))
+  file.write("#{root}/tests/data.txt", "two")
+
+  assert is_some(before)
+  assert prints.of_package(at(root)) != before
+}
+
+# What a path dependency holds is outside the tree, and a dependency with
+# no lock is whatever its source holds today.
+test "a package whose dependencies are not pinned by its tree has no digest" {
+  assert prints.of_package(at("fixtures/pathdep")) == None
+  assert prints.of_package(at("fixtures/unlocked")) == None
+}
+
+fn offer(ids: [String], print: String) : [Reuse] =
+  ids | (id => Reuse { test_id: id, fingerprint: print })
+
+test "the suite is reused when it is offered whole with the fingerprint it has now" {
+  let print = prints.of_suite("pkg", ["a", "b"])
+
+  assert prints.reusable(offer(["b", "a"], print), Some("pkg")) == ["a", "b"]
+  assert prints.reusable(offer(["a", "b"], print), Some("changed")) == []
+  assert prints.reusable(offer(["a", "b"], print), None) == []
+  assert prints.reusable([], Some("pkg")) == []
+}
+
+# A test that failed has no fingerprint and is not offered; without it the
+# rest make another fingerprint, so the whole suite runs, that test with it.
+test "a suite offered in part is not reused" {
+  assert prints.reusable(offer(["a"], prints.of_suite("pkg", ["a", "b"])), Some("pkg")) == []
+}
+
+test "an offer made with an old fingerprint reuses nothing" {
+  let print = prints.of_suite("pkg", ["a", "b"])
+  let offered =
+    [Reuse { test_id: "a", fingerprint: "old" }, Reuse { test_id: "b", fingerprint: print }]
+
+  assert prints.reusable(offered, Some("pkg")) == []
+}
+
+test "a suite is fingerprinted by its tests whatever their order" {
+  assert prints.of_suite("pkg", ["a", "b"]) == prints.of_suite("pkg", ["b", "a"])
+  assert prints.of_suite("pkg", ["a", "b"]) != prints.of_suite("pkg", ["a"])
+  assert prints.of_suite("pkg", ["a"]) != prints.of_suite("other", ["a"])
+  assert length(prints.of_suite("pkg", ["a"])) == 24
+}

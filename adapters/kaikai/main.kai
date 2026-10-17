@@ -27,6 +27,7 @@ import kalku.wire.kalku_msg
 import kalku.wire.kalku_codec
 import kalku.wire.version
 import kaikai_kalku.work
+import kaikai_kalku.prints
 
 type Serving = {
   root: String,
@@ -110,8 +111,8 @@ fn answer(
     })
   }
   Prepare -> prepared(id, state)
-  Baseline(_) -> {
-    say(encode_reply(id, baseline_of(state)))
+  Baseline(m) -> {
+    say(encode_reply(id, baseline_of(state, m.reuse.unwrap_or([]))))
     serve(state)
   }
   Sites(m) -> {
@@ -152,7 +153,7 @@ fn greeting(m: HelloMsg) : KalkuReply = if not compatible(m.version) {
       capabilities: if is_some(oracle) {
         [CastCap, AbortCap, CastAfterBaseline]
       } else {
-        [CastCap, PerTestCoverage, AbortCap, CastAfterBaseline]
+        [CastCap, PerTestCoverage, AbortCap, CastAfterBaseline, PartialBaseline]
       }
     })
   }
@@ -211,16 +212,49 @@ fn prepared(
 const IN_A_COPY : String =
   "it ran in a copy of the package kept in the reni: what the copy leaves out, `.git` for one, is not there"
 
-fn baseline_of(state: Serving) : KalkuReply / Process + File = match state.work {
+# Under an oracle there is nothing to fingerprint by: it is a command, and
+# what it reads is not known to be inside the package.
+fn baseline_of(state: Serving, reuse: [Reuse]) : KalkuReply / Process + File = match state.work {
   None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
-  Some(w) -> {
-    let r = test_all(w)
-    match r.mishap {
-      Some(_) -> report_of(r, (None, None))
-      None -> report_of(r, spoken(covered(r), state))
+  Some(w) -> if is_some(state.oracle) {
+    measured(test_all(w), None, state)
+  } else {
+    let package = prints.of_package(w)
+    match prints.reusable(reuse, package) {
+      [] -> measured(test_all(w), package, state)
+      reused -> all_reused(reused)
     }
   }
 }
+
+# Only a suite that ran green is fingerprinted, all of it or none: the
+# next baseline reuses the whole suite or nothing, and a test that failed
+# has to run again.
+fn measured(r: Ran, package: Option[String], state: Serving) : KalkuReply / File = match r.mishap {
+  Some(_) -> report_of(r, (None, None))
+  None -> {
+    let print =
+      if r.failed == 0 { package.map(p => prints.of_suite(p, r.tests | .test_id)) } else { None }
+    report_of(
+      Ran { ...r, tests: r.tests | (t => TestTiming { ...t, fingerprint: print }) },
+      spoken(covered(r), state)
+    )
+  }
+}
+
+fn all_reused(reused: [String]) : KalkuReply = BaselineDone(BaselineDoneMsg {
+  status: Green,
+  duration_ms: 0,
+  tests: [],
+  coverage: Some([]),
+  coverage_path: None,
+  coverage_packed_path: None,
+  coverage_withheld: None,
+  coverage_doubted: None,
+  failures: [],
+  differences: Some([IN_A_COPY]),
+  reused: Some(reused)
+})
 
 # Which tests ran each line, one entry a line. Only the tests the run
 # reported count: a record about anything else names nothing a cast can

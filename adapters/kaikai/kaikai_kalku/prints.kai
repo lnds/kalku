@@ -1,0 +1,109 @@
+#[doc("""
+What the tests of a package run, as one fingerprint for the whole suite.
+
+kaikai does not say which files a test's program is built from, so every
+test is taken to depend on everything the package holds: every file the
+copy in the reni is made of, the kaikai that builds it, and this kalku.
+The fingerprint is the same for every test, and a baseline either reuses
+the whole suite or runs it all.
+
+The suite cannot be listed without running it, so the fingerprint is also
+taken over the ids of every test in it. An offer is the whole suite only
+when the fingerprint its tests share is the one their ids and the package
+make together: a test missing from it, one that failed last time, makes
+another.
+
+A package whose dependencies could change without its tree changing has
+no fingerprint: one that names a path outside itself, or names any
+dependency with no `kai.lock` to pin it.
+""")]
+
+import fs.file
+import encoding.toml
+import encoding.hex
+import crypto.hash
+import kalku.version
+import kalku.wire.kalku_msg.{Reuse}
+import kaikai_kalku.work
+
+#[doc("""
+What the package is made of, as one digest, or `None` when the package
+cannot be fingerprinted.
+""")]
+pub fn of_package(w: Work) : Option[String] / Process + File = if not pinned(w.root) {
+  None
+} else {
+  match (kaikai_version(w), tree_print(w)) {
+    (Some(kaikai), Some(tree)) -> Some(digest("#{kaikai}\nkalku #{version.VERSION}\n#{tree}"))
+    _ -> None
+  }
+}
+
+#[doc("The fingerprint of every test of a suite with these ids, in a package with this digest.")]
+pub fn of_suite(package: String, ids: [String]) : String =
+  slice(digest("#{package}\n#{join(uniq(sort(ids)), "\n")}"), 0, 24)
+
+fn digest(text: String) : String = hex.encode(hash.sha256(bytes(text) | byte_to_int))
+
+# A path dependency lives outside the tree and is not in the fingerprint;
+# a dependency without a lock is whatever its source holds today.
+fn pinned(root: String) : Bool / File = match read_file("#{root}/kai.toml") {
+  Err(_) -> true
+  Ok(text) -> match toml.decode(text) {
+    None -> false
+    Some(TTbl(top)) -> match toml.pairs_get(top, "dependencies") {
+      None -> true
+      Some(TTbl([])) -> true
+      Some(TTbl(deps)) -> (not any(deps, d => by_path(d.snd))) and file.exists("#{root}/kai.lock")
+      Some(_) -> false
+    }
+    Some(_) -> false
+  }
+}
+
+fn by_path(dep: TomlValue) : Bool = match dep {
+  TTbl(fields) -> is_some(toml.pairs_get(fields, "path"))
+  _ -> false
+}
+
+fn kaikai_version(w: Work) : Option[String] / Process = match work.run(["kai", "--version"]) {
+  Ok(came) -> match came.exit {
+    Exited(0) -> head(lines(came.said))
+    _ -> None
+  }
+  Err(_) -> None
+}
+
+# Hashed by `sha256sum` rather than in kaikai: a package with a build
+# directory in it is gigabytes, and the copy holds all of it. A file that
+# cannot be read fails the run, and the package has no fingerprint.
+fn tree_print(w: Work) : Option[String] / Process + File {
+  let entries = work.package_entries(w.root)
+  let script =
+    "set -e; cd #{work.quoted(w.root)}; sums=$(find #{join(entries | work.quoted, " ")} \\( -type f -o -type l \\) -print0 | LC_ALL=C sort -z | xargs -0 sha256sum); printf '%s' \"$sums\" | sha256sum"
+  if is_empty(entries) {
+    None
+  } else {
+    match work.run(["/bin/sh", "-c", script]) {
+      Ok(came) -> match came.exit {
+        Exited(0) -> head(lines(came.said)).map(l => slice(l, 0, 64))
+        _ -> None
+      }
+      Err(_) -> None
+    }
+  }
+}
+
+#[doc("""
+The tests to leave out of a baseline: every test offered, when the offer
+is the whole suite of a package with the digest it has now. Any other
+offer runs the whole suite.
+""")]
+pub fn reusable(offered: [Reuse], package: Option[String]) : [String] = match package {
+  None -> []
+  Some(p) -> {
+    let ids = uniq(sort(offered | .test_id))
+    let print = of_suite(p, ids)
+    if (not is_empty(ids)) and all(offered, o => o.fingerprint == print) { ids } else { [] }
+  }
+}

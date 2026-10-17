@@ -1,0 +1,5 @@
+name = "pathdep"
+version = "0.0.0"
+
+[dependencies]
+tiny = { path = "../tiny" }
