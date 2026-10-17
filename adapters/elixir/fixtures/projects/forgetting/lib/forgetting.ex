@@ -4,6 +4,6 @@ defmodule Forgetting do
   """
 
   def tidy(done) do
-    if done > 10, do: Application.delete_env(:ex_unit, :repeat_until_failure), else: :ok
+    if done > 10, do: Application.delete_env(:ex_unit, :timeout), else: :ok
   end
 end
