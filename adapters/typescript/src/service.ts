@@ -246,10 +246,10 @@ export class Service {
     const found = records(out);
     const reached = new Set<string>();
     const byFile = credited(counted.counters, found, (file, said) => {
-      const id = names.get(relative(root, file))?.get(Array.isArray(said) ? said.join(" ") : said);
-      if (id === undefined || !passed.has(id)) return undefined;
-      reached.add(id);
-      return id;
+      const ids = names.get(relative(root, file))?.get(Array.isArray(said) ? said.join(" ") : said) ?? [];
+      const judging = ids.filter((id) => passed.has(id));
+      for (const id of judging) reached.add(id);
+      return judging;
     });
     const second = new Set<string>();
     for (const f of ran.files)
@@ -446,17 +446,21 @@ class Prints {
 
 // For each test file, its tests by their titles joined with spaces: the
 // name Jest gives the test that is running, and how the list of titles a
-// Vitest record carries is joined to be looked up.
-function namesByFile(root: string, ran: RunResult): Map<string, Map<string, string>> {
-  const out = new Map<string, Map<string, string>>();
+// Vitest record carries is joined to be looked up. Tests that share their
+// titles share a name the runner cannot tell apart, so what one of them ran
+// is credited to all of them: too much costs a cast time, too little would
+// make a survivor.
+function namesByFile(root: string, ran: RunResult): Map<string, Map<string, string[]>> {
+  const out = new Map<string, Map<string, string[]>>();
   for (const f of ran.files) {
-    const file = relative(root, f.file);
-    const byName = new Map<string, string>();
-    for (const t of unique(f.tests)) {
-      const id = testId(root, f.file, t.names);
-      if (!byName.has(t.names.join(" "))) byName.set(t.names.join(" "), id);
-    }
-    out.set(file, byName);
+    const byName = new Map<string, string[]>();
+    const named = unique(f.tests);
+    f.tests.forEach((t, i) => {
+      const id = testId(root, f.file, named[i]!.names);
+      const name = t.names.join(" ");
+      byName.set(name, [...(byName.get(name) ?? []), id]);
+    });
+    out.set(relative(root, f.file), byName);
   }
   return out;
 }

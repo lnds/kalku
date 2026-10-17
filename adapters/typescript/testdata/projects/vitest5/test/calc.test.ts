@@ -17,3 +17,8 @@ it("total adds", () => {
 it("clamp keeps a positive number", () => {
   expect(clamp(5)).toBe(5);
 });
+
+// Two tests with one name, as suites written by copy and paste have.
+it("total adds", () => {
+  expect(total([2, 2])).toBe(4);
+});
