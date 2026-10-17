@@ -11,3 +11,7 @@ export function start(enabled = true): { count: number; label: string; done: boo
   const tpl = `no ${label} here`;
   return { count: 0 + LIMIT + HEX + BIG + RATE + LARGE + Number(BIGINT), label: label + empty + tpl, done: !enabled || false };
 }
+
+export function kind(x: unknown): string {
+  return typeof x === "string" ? "text" : typeof x !== 'number' ? "other" : "number";
+}
