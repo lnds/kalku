@@ -186,7 +186,7 @@ pub fn catalogue() : [Known] = [
     summon: typescript_summoner(),
     outside: typescript_summoner(),
     sources: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
-    tests: ["__tests__", "__mocks__"],
+    tests: ["test", "tests", "__tests__", "__mocks__", "__fixtures__"],
     test_prefixes: [],
     test_suffixes: [
       ".test.ts",

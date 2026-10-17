@@ -75,7 +75,7 @@ class Kalku {
   }
 }
 
-function hello(root: string, options?: Record<string, unknown>): Record<string, unknown> {
+function hello(root: string, options?: Record<string, unknown>, limit = 65536): Record<string, unknown> {
   const reni = mkdtempSync(path.join(tmpdir(), "kalku-ts-"));
   return {
     type: "hello",
@@ -84,15 +84,15 @@ function hello(root: string, options?: Record<string, unknown>): Record<string, 
     root,
     reni,
     worker: 0,
-    inline_limit_bytes: 65536,
+    inline_limit_bytes: limit,
     env: {},
     ...(options ? { options } : {}),
   };
 }
 
-async function started(root: string): Promise<Kalku> {
+async function started(root: string, limit = 65536): Promise<Kalku> {
   const k = new Kalku();
-  const greeting = hello(root);
+  const greeting = hello(root, undefined, limit);
   k.reni = greeting["reni"] as string;
   const ready = await k.ask(greeting);
   assert.equal(ready["type"], "ready", JSON.stringify(ready));
@@ -209,7 +209,7 @@ for (const { dir, runner, runtime, node } of PROJECTS) {
       const k = await started(root);
       const ready = JSON.parse(k.said[0]!) as Record<string, unknown>;
       assert.match(String(ready["runtime"]), runtime);
-      assert.deepEqual(ready["capabilities"], ["cast", "abort", "cast_after_baseline"]);
+      assert.deepEqual(ready["capabilities"], ["cast", "per_test_coverage", "abort", "cast_after_baseline"]);
       const done = await k.ask({ type: "baseline", id: 3 });
       assert.equal(done["status"], "green");
       await k.ask({ type: "shutdown", id: 9 });
@@ -224,6 +224,36 @@ for (const { dir, runner, runtime, node } of PROJECTS) {
       assert.deepEqual(names, Object.values(TESTS).sort());
       assert.deepEqual(done["failures"], []);
       assert.ok((done["differences"] as string[]).some((d) => d.includes("not through the project's test script")));
+      await k.ask({ type: "shutdown", id: 9 });
+    });
+
+    test("a baseline credits each line with the tests that run it, and no others", async () => {
+      const k = await started(root);
+      const done = await k.ask({ type: "baseline", id: 3 });
+      assert.equal(done["coverage_doubted"], undefined);
+      const coverage = done["coverage"] as { file: string; line: number; tests: string[] }[];
+      const at = (file: string, line: number): string[] | undefined =>
+        coverage.find((e) => e.file === file && e.line === line)?.tests;
+      assert.deepEqual(at("src/calc.ts", 5), [TESTS.above]);
+      assert.deepEqual(at("src/bounds.ts", 2), [TESTS.clamp]);
+      assert.deepEqual(at("src/settle.ts", 4), [TESTS.settle]);
+      assert.equal(at("src/calc.ts", 1), undefined, "an import runs nothing a test is credited with");
+      assert.ok(!coverage.some((e) => e.file.startsWith("test/")), "the suite is not its own coverage");
+      await k.ask({ type: "shutdown", id: 9 });
+    });
+
+    test("coverage past the inline limit is packed into a file in the reni", async () => {
+      const k = await started(root, 10);
+      const done = await k.ask({ type: "baseline", id: 3 });
+      assert.equal(done["coverage"], undefined);
+      const file = done["coverage_packed_path"] as string;
+      assert.ok(file.startsWith(k.reni), file);
+      const packed = JSON.parse(readFileSync(file, "utf8")) as {
+        tests: string[];
+        reached: { file: string; lines: number[]; tests: number[] }[];
+      };
+      const above = packed.tests.indexOf(TESTS.above);
+      assert.ok(packed.reached.some((r) => r.file === "src/calc.ts" && r.lines.includes(5) && r.tests.includes(above)));
       await k.ask({ type: "shutdown", id: 9 });
     });
 

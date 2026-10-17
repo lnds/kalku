@@ -377,8 +377,9 @@ test "a TypeScript project is told by its tsconfig.json, and summoned with nothi
   assert plan.dependency == None
 }
 
-# A test file is known by its suffix or by the directory Jest looks in, and
-# node_modules and what a build leaves are someone else's.
+# A test file is known by its suffix or by the directory it is kept in, with
+# the helpers beside it, and node_modules and what a build leaves are someone
+# else's.
 test "TypeScript and JavaScript sources are the files outside the suite, node_modules and a build" {
   let ts = of("typescript")
   assert is_source_of(ts, "src/parser.ts")
@@ -388,6 +389,8 @@ test "TypeScript and JavaScript sources are the files outside the suite, node_mo
   assert not is_source_of(ts, "src/parser.test.ts")
   assert not is_source_of(ts, "src/view.spec.tsx")
   assert not is_source_of(ts, "src/__tests__/parser.ts")
+  assert not is_source_of(ts, "test/helpers.ts")
+  assert not is_source_of(ts, "tests/fixtures/input.ts")
   assert not is_source_of(ts, "node_modules/vitest/index.js")
   assert not is_source_of(ts, "dist/index.js")
   assert not is_source_of(ts, "package.json")

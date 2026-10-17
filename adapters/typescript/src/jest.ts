@@ -14,6 +14,7 @@ import {
   namePattern,
   reported,
   type Context,
+  type Counting,
   type RunResult,
   type Runner,
   type Selection,
@@ -27,10 +28,12 @@ const { createHash } = require("node:crypto");
 const { readFileSync, writeFileSync } = require("node:fs");
 
 const wekufe = process.env.KALKU_WEKUFE ? JSON.parse(readFileSync(process.env.KALKU_WEKUFE, "utf8")) : undefined;
+const manifest = process.env.KALKU_COVERAGE_MANIFEST ? JSON.parse(readFileSync(process.env.KALKU_COVERAGE_MANIFEST, "utf8")) : {};
 
 // Asked for its cache key, the wrapper is asked for the file whether or not
 // the transform is cached: that is where the wekufe is known to be loaded.
 function served(text, file) {
+  if (manifest[file] !== undefined) return readFileSync(manifest[file], "utf8");
   if (wekufe === undefined || !wekufe.files.includes(file)) return text;
   writeFileSync(wekufe.served, "");
   return wekufe.text;
@@ -67,11 +70,45 @@ module.exports = {
 
 interface Resolved {
   transform: [string, string, unknown][];
+  setupFilesAfterEnv: string[];
 }
+
+// The setup file a counting run loads before the project's own. It credits
+// each count to the test running when it happened, and what ran outside any
+// test to the file, and writes one record a file.
+const COUNTING = `"use strict";
+const { appendFileSync } = require("node:fs");
+const { join } = require("node:path");
+
+const shared = new Set();
+const tests = [];
+let current;
+
+globalThis.__kalku = {
+  h(n) {
+    (current ?? shared).add(n);
+  },
+};
+
+beforeEach(() => {
+  current = new Set();
+});
+
+afterEach(() => {
+  tests.push({ names: expect.getState().currentTestName, hits: [...(current ?? [])] });
+  current = undefined;
+});
+
+afterAll(() => {
+  const line = JSON.stringify({ file: expect.getState().testPath, shared: [...shared], tests });
+  appendFileSync(join(process.env.KALKU_COVERAGE_OUT, process.pid + ".ndjson"), line + "\\n");
+});
+`;
 
 export class Jest implements Runner {
   readonly name = "jest" as const;
   private transform = "";
+  private setups: string[] = [];
 
   constructor(
     private readonly ctx: Context,
@@ -116,9 +153,15 @@ export class Jest implements Runner {
       transform[pattern] = [wrapper, { inner, options }];
     }
     this.transform = JSON.stringify(transform);
+    this.setups = configs[0]!.setupFilesAfterEnv;
   }
 
-  async run(selection: Selection | "all", wekufe: Wekufe | undefined, signal?: AbortSignal): Promise<RunResult> {
+  async run(
+    selection: Selection | "all",
+    wekufe: Wekufe | undefined,
+    signal?: AbortSignal,
+    counting?: Counting,
+  ): Promise<RunResult> {
     const out = path.join(this.ctx.work, "jest-report.json");
     const args = [
       this.bin,
@@ -136,7 +179,16 @@ export class Jest implements Runner {
       if (selection.names !== undefined) args.push(`--testNamePattern=${namePattern(selection.names)}`);
       args.push("--runTestsByPath", ...selection.files);
     }
-    const env = { ...this.ctx.env };
+    if (counting !== undefined) {
+      // The command line's list replaces the configuration's, so the
+      // project's own setup files are named after the kalku's.
+      args.push("--setupFilesAfterEnv", asset(this.ctx, "jest-counting.cjs", COUNTING), ...this.setups);
+    }
+    const env: NodeJS.ProcessEnv = { ...this.ctx.env };
+    if (counting !== undefined) {
+      env["KALKU_COVERAGE_MANIFEST"] = counting.manifest;
+      env["KALKU_COVERAGE_OUT"] = counting.out;
+    }
     if (wekufe !== undefined) env["KALKU_WEKUFE"] = asset(this.ctx, "wekufe.json", JSON.stringify(wekufe));
     return reported(this.ctx, args, out, env, signal);
   }

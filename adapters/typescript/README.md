@@ -47,6 +47,13 @@ runner = "vitest"
   coverage is not collected.
 - **A wekufe that was never loaded met no test**, and is `no_coverage`, never a
   survivor: the runner leaves a mark in the reni when it loads it.
+- **Coverage per test** from counters the kalku puts in every statement, served
+  to the runner in memory in a second run of the suite, with a setup file that
+  credits each count to the test running when it happened. What runs outside
+  any test, a module as it loads or a `beforeAll`, is credited to every test of
+  its file. A test that passes in the first run and not in the counting one
+  makes the coverage doubted, and every wekufe it might reach asks the rest of
+  the suite too.
 - **Runs** only the tests it was asked for, by file and by an exact name
   pattern, and counts each test's own verdict from the runner's JSON report.
 - **`abort`** ends the run's process group, workers included, and the kalku
@@ -54,7 +61,8 @@ runner = "vitest"
 
 ## Limits worth knowing
 
-- Every wekufe faces the whole suite: coverage per test is not measured yet.
+- Code a test reaches only in a worker thread or a process it starts is not
+  counted, and the test is not credited with it.
 - One package, from its root. A Jest configuration with several `projects` is
   refused. A Vitest configuration with several projects has not been tried: a
   wekufe that does not reach a project's tests is `no_coverage` there, not a
