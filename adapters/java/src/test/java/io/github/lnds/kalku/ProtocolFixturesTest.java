@@ -51,6 +51,24 @@ class ProtocolFixturesTest {
   }
 
   @Test
+  void aBaselineCarriesTheTestsItMayReuse() throws Exception {
+    String line = lines(FIXTURES.resolve("kalku").resolve("requests").resolve("baseline.ndjson")).stream()
+        .filter(l -> l.contains("reuse"))
+        .findFirst()
+        .get();
+    assertEquals(
+        Collections.singletonMap("test/my_app/parser_test.exs:18", "9f2c41d07a6e"),
+        Protocol.decode(line).reuse);
+    assertEquals(Collections.emptyMap(), Protocol.decode("{\"type\":\"baseline\",\"id\":3}").reuse);
+    Protocol.DecodeError refused =
+        assertThrows(
+            Protocol.DecodeError.class,
+            () -> Protocol.decode("{\"type\":\"baseline\",\"id\":3,\"reuse\":[{\"test\":\"a\"}]}"));
+    assertEquals(Protocol.BAD_FIELD, refused.kind);
+    assertTrue(refused.detail.startsWith("reuse[0].fingerprint"), refused.detail);
+  }
+
+  @Test
   void everyInvalidRequestIsRefusedWithItsKind() throws Exception {
     for (String entry : lines(FIXTURES.resolve("invalid").resolve("kalku_requests.ndjson"))) {
       Map<?, ?> v = (Map<?, ?>) Json.decode(entry);

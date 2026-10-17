@@ -130,7 +130,9 @@ class ServiceTest {
     assertEquals("java", ready.get("language"));
     assertEquals("test", ready.get("adapter"));
     assertTrue(((String) ready.get("runtime")).startsWith("Java "));
-    assertEquals(Arrays.asList("cast", "per_test_coverage", "recompile_dependents", "abort"), ready.get("capabilities"));
+    assertEquals(
+        Arrays.asList("cast", "per_test_coverage", "recompile_dependents", "abort", "partial_baseline"),
+        ready.get("capabilities"));
   }
 
   @Test

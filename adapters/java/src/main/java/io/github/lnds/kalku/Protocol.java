@@ -50,6 +50,8 @@ final class Protocol {
     List<String> tests;
     // `abort`
     long cast;
+    // `baseline`: the tests the kaikai side may answer for, with the fingerprint each had
+    Map<String, String> reuse = new LinkedHashMap<>();
 
     Request(long id, String type) {
       this.id = id;
@@ -151,6 +153,11 @@ final class Protocol {
       case "abort":
         r.cast = integer(o, "cast", "");
         break;
+      case "baseline":
+        if (o.get("reuse") != null) {
+          r.reuse = reuse(o);
+        }
+        break;
       case "reload":
         strings(o, "files", "");
         break;
@@ -158,7 +165,7 @@ final class Protocol {
         scope(required(o, "scope", ""));
         break;
       default:
-        // `prepare`, `baseline`, `reset` and `shutdown` carry nothing.
+        // `prepare`, `reset` and `shutdown` carry nothing.
         break;
     }
   }
@@ -237,6 +244,24 @@ final class Protocol {
         throw bad("env." + entry.getKey(), "must be a string");
       }
       out.put((String) entry.getKey(), (String) entry.getValue());
+    }
+    return out;
+  }
+
+  private static Map<String, String> reuse(Map<?, ?> o) throws DecodeError {
+    Object v = o.get("reuse");
+    if (!(v instanceof List)) {
+      throw bad("reuse", "must be an array");
+    }
+    Map<String, String> out = new LinkedHashMap<>();
+    int i = 0;
+    for (Object item : (List<?>) v) {
+      String at = "reuse[" + i + "]";
+      if (!(item instanceof Map)) {
+        throw bad(at, "must be an object");
+      }
+      out.put(string((Map<?, ?>) item, "test", at), string((Map<?, ?>) item, "fingerprint", at));
+      i++;
     }
     return out;
   }
@@ -382,7 +407,8 @@ final class Protocol {
   }
 
   // At most one of `coverage` and `coveragePath` is given; neither when coverage is withheld.
-  // `differences` is how the run was unlike the build's own, a sentence each.
+  // `differences` is how the run was unlike the build's own, a sentence each; `reused`, the
+  // tests offered that did not run, left out when there are none.
   static String baselineDone(
       long id,
       long durationMs,
@@ -390,7 +416,8 @@ final class Protocol {
       List<?> failures,
       List<?> coverage,
       String coveragePath,
-      List<String> differences) {
+      List<String> differences,
+      List<String> reused) {
     Map<String, Object> out = message("baseline_done", id);
     out.put("status", failures.isEmpty() ? "green" : "red");
     out.put("duration_ms", durationMs);
@@ -402,6 +429,9 @@ final class Protocol {
     }
     out.put("failures", failures);
     out.put("differences", differences);
+    if (!reused.isEmpty()) {
+      out.put("reused", reused);
+    }
     return Json.encode(out);
   }
 

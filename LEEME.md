@@ -275,7 +275,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **kalku de Go** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde `go/parser`; `prepare`, `baseline` y `cast` en el reni a través de `-overlay`, `abort`, `kalku init` para módulos Go, incluido en el release | hecho |
 | **kalku de TypeScript** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde el parser de TypeScript, en TypeScript y JavaScript; `prepare`, `baseline` y `cast` con el Vitest o Jest del propio proyecto y el wekufe servido en memoria, `abort`, `kalku init` para proyectos con `tsconfig.json`, incluido en el release | hecho |
 | **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python, Java, Go, TypeScript, kaikai |
-| **Un baseline que corre solo lo que cambió**: los tests que su kalku identifica, por su huella, como sin cambios se reusan de un almacén que se guarda por repositorio, fuera del proyecto | hecho: Go, Elixir, TypeScript, Python, Rust, kaikai |
+| **Un baseline que corre solo lo que cambió**: los tests que su kalku identifica, por su huella, como sin cambios se reusan de un almacén que se guarda por repositorio, fuera del proyecto | hecho: Go, Elixir, TypeScript, Python, Rust, kaikai, Java |
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
 | `--watch` y `--ci` | todavía no |

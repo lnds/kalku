@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import org.jacoco.core.analysis.Analyzer;
 import org.jacoco.core.analysis.CoverageBuilder;
+import org.jacoco.core.analysis.IClassCoverage;
 import org.jacoco.core.analysis.ICounter;
 import org.jacoco.core.analysis.ISourceFileCoverage;
 import org.jacoco.core.data.ExecutionData;
@@ -37,6 +38,11 @@ import org.jacoco.core.tools.ExecFileLoader;
  * code — a constant, which it copies into the classes that use it — or where the code ran
  * outside any one test, every test is named: a place wrongly left without tests would never be
  * cast and would drop out of the measure, and a place with too many only costs time.
+ *
+ * <p>Given two more arguments, a list of class directories and a file, it also writes which
+ * classes of those directories each test ran, and which every test may depend on: what ran
+ * outside any one test, and the classes with no code to run, which a test uses without anything
+ * being counted. A fingerprint of what a test runs is taken over these.
  */
 public final class KalkuCoverage {
   private KalkuCoverage() {}
@@ -118,6 +124,10 @@ public final class KalkuCoverage {
       }
     }
 
+    if (args.length > 5) {
+      ran(dumps, Paths.get(args[2]), Paths.get(args[4]), Paths.get(args[5]));
+    }
+
     try (Writer out = Files.newBufferedWriter(Paths.get(args[3]), StandardCharsets.UTF_8)) {
       // First, in how many places something was counted. A place with no code names every
       // test without anything having been counted, so an agent that counted nothing would
@@ -139,6 +149,86 @@ public final class KalkuCoverage {
         out.write("\n");
       }
     }
+  }
+
+  // Lines of `test`, a class directory, and the name of a class in it the test ran; `*` for
+  // the test when every test may depend on the class.
+  private static void ran(Path dumps, Path tests, Path listed, Path out) throws IOException {
+    List<String> directories = Files.readAllLines(listed, StandardCharsets.UTF_8);
+    try (Writer w = Files.newBufferedWriter(out, StandardCharsets.UTF_8)) {
+      for (String directory : directories) {
+        for (String name : codeless(new File(directory))) {
+          w.write(ALL + "\t" + directory + "\t" + name + "\n");
+        }
+      }
+      for (String shared : new String[] {"init.exec", "outside.exec"}) {
+        Path file = dumps.resolve(shared);
+        if (Files.isRegularFile(file)) {
+          written(w, ALL, hits(file), directories);
+        }
+      }
+      for (String line : Files.readAllLines(tests, StandardCharsets.UTF_8)) {
+        String[] part = line.split("\t", 2);
+        if (part.length == 2 && !part[1].isEmpty()) {
+          written(w, part[1], hits(dumps.resolve(part[0])), directories);
+        }
+      }
+    }
+  }
+
+  private static void written(Writer w, String test, Set<String> names, List<String> directories)
+      throws IOException {
+    for (String name : names) {
+      for (String directory : directories) {
+        if (new File(directory, name + ".class").isFile()) {
+          w.write(test + "\t" + directory + "\t" + name + "\n");
+        }
+      }
+    }
+  }
+
+  // The classes something ran in, by their names in the counts.
+  private static Set<String> hits(Path counted) throws IOException {
+    ExecFileLoader loader = new ExecFileLoader();
+    loader.load(counted.toFile());
+    Set<String> out = new LinkedHashSet<>();
+    for (ExecutionData data : loader.getExecutionDataStore().getContents()) {
+      if (data.hasHits()) {
+        out.add(data.getName());
+      }
+    }
+    return out;
+  }
+
+  // The classes of a directory that have no code: an interface or an annotation with nothing
+  // but declarations, and what the analysis passes over, such as a class the compiler made up.
+  private static Set<String> codeless(File directory) throws IOException {
+    Set<String> out = new java.util.TreeSet<>();
+    Path root = directory.toPath();
+    if (!Files.isDirectory(root)) {
+      return out;
+    }
+    Set<String> coded = new java.util.HashSet<>();
+    new Analyzer(
+            new ExecutionDataStore(),
+            (IClassCoverage c) -> {
+              if (c.getInstructionCounter().getTotalCount() > 0) {
+                coded.add(c.getName());
+              }
+            })
+        .analyzeAll(directory);
+    try (java.util.stream.Stream<Path> all = Files.walk(root)) {
+      for (Path p : (Iterable<Path>) all::iterator) {
+        String name = root.relativize(p).toString().replace('\\', '/');
+        if (name.endsWith(".class")) {
+          name = name.substring(0, name.length() - 6);
+          if (!coded.contains(name)) {
+            out.add(name);
+          }
+        }
+      }
+    }
+    return out;
   }
 
   // The lines of each source file that ran in what one file of counts holds.
