@@ -1,0 +1,5 @@
+import wide
+
+test "every step is taken" {
+  assert stepped(0) == 3000
+}
