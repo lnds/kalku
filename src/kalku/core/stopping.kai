@@ -5,8 +5,16 @@ A pool that runs out of kalku ends the run, and the wekufe it had not cast
 are not measured. The ones it did cast were, and they are reported — but a
 report of them alone carries a score and a clean exit, so a CI job or an
 agent reads a finished run. Saying where it stopped, and why, in the
-report and in the exit code, is the only honest answer.
+report and in the exit code, is the only honest answer. An interrupt is
+the same answer: the wekufe it kept from being cast were not measured.
 """)]
+
+#[doc("""
+What ended a casting early, if anything: what the pool said, or else the
+interrupt that cancelled it.
+""")]
+pub fn what_ended(failure: Option[String], cancelled: Bool) : Option[String] =
+  failure.or_else(() => if cancelled { Some("it was interrupted") } else { None })
 
 #[doc("""
 Why a run is not a measurement, when it stopped before casting everything:
