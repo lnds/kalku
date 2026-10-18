@@ -29,6 +29,9 @@ struct SiteSearch {
   std::string directory;
   // A header: parsed on its own, and a wekufe in it recompiles its includers.
   bool header = false;
+  // Read as C rather than C++: what a header is read as, which its name
+  // does not say.
+  bool c = false;
   std::vector<std::string> spells;
   std::vector<std::string> exclude_calls;
 };

@@ -398,9 +398,11 @@ test "TypeScript and JavaScript sources are the files outside the suite, node_mo
   assert not is_test_of(ts, "src/calc.ts")
 }
 
-test "a CMake project is C++, and summoned with nothing built on the way up" {
-  assert detect(["CMakeLists.txt", "src", "include"]).map(.language) == Ok("cpp")
-  assert detect(["CMakeLists.txt", "pyproject.toml"]) == Err(Ambiguous(["python", "cpp"]))
+test "a CMake project that asks for C++ is C++, and summoned with nothing built on the way up" {
+  let markers = ["CMakeLists.txt", "src", "include"]
+  assert detect_cmake(markers, "project(calc CXX)", []).map(.language) == Ok("cpp")
+  assert detect_cmake(["CMakeLists.txt", "pyproject.toml"], "project(calc CXX)", [])
+    == Err(Ambiguous(["python", "cpp"]))
   let plan = plan_for(of("cpp"), "/r")
   assert has(plan.config, "language = \"cpp\"")
   assert has(plan.summoner, "exec kalku-cpp \"$@\"")
@@ -426,10 +428,45 @@ test "C++ sources and headers are the files outside the suite, a build tree and 
   assert not is_source_of(cpp, "src/test_parser.cpp")
   assert not is_source_of(cpp, "build/generated/version.hpp")
   assert not is_source_of(cpp, "third_party/fmt/format.h")
-  assert not is_source_of(cpp, "src/legacy.c")
   assert not is_source_of(cpp, "CMakeLists.txt")
   assert is_test_of(cpp, "tests/parser_test.cpp")
   assert not is_test_of(cpp, "src/parser.cpp")
+}
+
+# A CMakeLists.txt marks both languages, so what it asks for decides, and
+# the same kalku is summoned either way.
+test "a CMake project that asks for C alone is C, measured by the C and C++ kalku" {
+  let markers = ["CMakeLists.txt", "src", "include"]
+  assert detect_cmake(markers, "project(calc C)", []).map(.language) == Ok("c")
+  assert detect_cmake(markers, "project(calc)", ["./src/calc.c"]).map(.language) == Ok("c")
+  assert detect_cmake(markers, "project(calc)", ["./src/calc.cc"]).map(.language) == Ok("cpp")
+  assert detect_cmake(markers, "project(kernels CUDA)", []) == Err(Undetected)
+  assert detect(["CMakeLists.txt"]) == Err(Ambiguous(["cpp", "c"]))
+  let plan = plan_for(of("c"), "/r")
+  assert has(plan.config, "language = \"c\"")
+  assert has(plan.summoner, "exec kalku-cpp \"$@\"")
+  assert summon_is_current(plan.summoner)
+  assert has(explain(Undetected), "or CMakeLists.txt")
+  assert not has(explain(Undetected), "CMakeLists.txt or CMakeLists.txt")
+}
+
+# A C++ project with C in it has its C measured too: each file is read with
+# its own compile command.
+test "C sources are the .c files outside the suite, in a C project and in a C++ one" {
+  let c = of("c")
+  assert is_source_of(c, "src/calc.c")
+  assert is_source_of(c, "include/calc.h")
+  assert not is_source_of(c, "src/calc.cpp")
+  assert not is_source_of(c, "tests/calc.c")
+  assert not is_source_of(c, "test/test_ring.c")
+  assert not is_source_of(c, "src/calc_test.c")
+  assert not is_source_of(c, "vendor/unity/unity.c")
+  assert not is_source_of(c, "build/CMakeFiles/feature.c")
+  assert is_test_of(c, "test/test_ring.c")
+  assert is_test_of(c, "test.c")
+  assert not is_source_of(c, "fuzzing/afl.c")
+  assert is_source_of(c, "src/attest.c")
+  assert is_source_of(of("cpp"), "src/legacy.c")
 }
 
 # Maven keeps the suite apart by directory, and a test class is known by its name too.

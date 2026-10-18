@@ -637,7 +637,7 @@ std::vector<std::string> command_for(const SiteSearch& s) {
     if (i > 0 && (x == "-c" || x == "-MD" || x == "-MMD" || x == "-Werror" || x.rfind("-Werror=", 0) == 0)) continue;
     out.push_back(x);
   }
-  if (out.empty()) out.emplace_back("clang++");
+  if (out.empty()) out.emplace_back(s.c ? "clang" : "clang++");
 #if defined(__APPLE__)
   // libclang finds no SDK of its own; a command that names none is given
   // the one the compiler would use.
@@ -659,7 +659,7 @@ std::vector<std::string> command_for(const SiteSearch& s) {
   out.emplace_back("-Wno-pragma-once-outside-header");
   if (s.header) {
     out.emplace_back("-x");
-    out.emplace_back("c++");
+    out.emplace_back(s.c ? "c" : "c++");
   }
   out.push_back(s.path);
   return out;
@@ -718,6 +718,75 @@ std::vector<Site> number(const SiteSearch& s, std::vector<Candidate> kept) {
 
 }  // namespace
 
+bool is_zero(const std::string& t) {
+  std::size_t digits = 0;
+  while (digits < t.size() && t[digits] == '0') digits++;
+  return digits > 0 && t.find_first_of("123456789") == std::string::npos;
+}
+
+// Where in the main file a diagnostic points, and the spans it marks.
+std::vector<std::pair<long, long>> marked(const cx::Api& api, cx::Diagnostic d, cx::File main) {
+  std::vector<std::pair<long, long>> out;
+  auto offset = [&](cx::SourceLocation l) {
+    cx::File f = nullptr;
+    unsigned line, col, at = 0;
+    api.getSpellingLocation(l, &f, &line, &col, &at);
+    return f == main ? static_cast<long>(at) : -1L;
+  };
+  long at = offset(api.getDiagnosticLocation(d));
+  if (at >= 0) out.emplace_back(at, at + 1);
+  for (unsigned i = 0, n = api.getDiagnosticNumRanges(d); i < n; i++) {
+    cx::SourceRange r = api.getDiagnosticRange(d, i);
+    long b = offset(api.getRangeStart(r)), e = offset(api.getRangeEnd(r));
+    if (b >= 0 && e >= b) out.emplace_back(b, e + 1);
+  }
+  return out;
+}
+
+// A `0` the code converts to a pointer is a null pointer, not a number, and
+// a `1` there is an integer made a pointer, which a compiler refuses or warns
+// of. libclang does not show the conversion, so the file is parsed once more
+// with every `0` that is a site made a `1`, and those a new diagnostic marks
+// are not sites.
+std::vector<Candidate> without_null_pointers(const cx::Api& api, cx::Index index, std::vector<const char*> argv,
+                                             const SiteSearch& s, const std::set<std::string>& before,
+                                             std::vector<Candidate> found) {
+  std::string text = s.text;
+  std::set<long> zeros;
+  for (const auto& c : found) {
+    std::string t = s.text.substr(static_cast<std::size_t>(c.from), static_cast<std::size_t>(c.to - c.from));
+    if (c.spell == "literal" && is_zero(t)) zeros.insert(c.from);
+  }
+  if (zeros.empty()) return found;
+  for (long at : zeros) text[static_cast<std::size_t>(at)] = '1';
+  argv.insert(argv.end() - 1, "-ferror-limit=0");
+  cx::UnsavedFile unsaved{s.path.c_str(), text.data(), static_cast<unsigned long>(text.size())};
+  cx::TranslationUnit tu = nullptr;
+  if (api.parseTranslationUnit2FullArgv(index, nullptr, argv.data(), static_cast<int>(argv.size()), &unsaved, 1, 0x200,
+                                        &tu) != 0 ||
+      !tu) {
+    return found;
+  }
+  cx::File main = api.getFile(tu, s.path.c_str());
+  std::set<long> refused;
+  for (unsigned i = 0, n = api.getNumDiagnostics(tu); i < n; i++) {
+    cx::Diagnostic d = api.getDiagnostic(tu, i);
+    if (api.getDiagnosticSeverity(d) >= 2 && !before.count(cx::text(api, api.formatDiagnostic(d, 0x1 | 0x2)))) {
+      for (const auto& span : marked(api, d, main)) {
+        for (auto z = zeros.lower_bound(span.first); z != zeros.end() && *z < span.second; ++z) refused.insert(*z);
+      }
+    }
+    api.disposeDiagnostic(d);
+  }
+  api.disposeTranslationUnit(tu);
+  std::vector<Candidate> kept;
+  for (auto& c : found) {
+    if (c.spell == "literal" && refused.count(c.from)) continue;
+    kept.push_back(std::move(c));
+  }
+  return kept;
+}
+
 Searched find_sites(const cx::Api& api, const SiteSearch& s) {
   Searched out;
   auto skip = [&](const std::string& reason, const std::string& message) {
@@ -739,8 +808,10 @@ Searched find_sites(const cx::Api& api, const SiteSearch& s) {
     return skip("parse_error", "Clang could not parse `" + s.file + "` (error " + std::to_string(err) + ")");
   }
   std::string errors;
+  std::set<std::string> diagnosed;
   for (unsigned i = 0, n = api.getNumDiagnostics(tu); i < n; i++) {
     cx::Diagnostic d = api.getDiagnostic(tu, i);
+    if (api.getDiagnosticSeverity(d) >= 2) diagnosed.insert(cx::text(api, api.formatDiagnostic(d, 0x1 | 0x2)));
     if (api.getDiagnosticSeverity(d) >= 3 && errors.size() < 2000) {
       errors += (errors.empty() ? "" : "\n") + cx::text(api, api.formatDiagnostic(d, 0x1 | 0x2 | 0x4));
     }
@@ -757,8 +828,9 @@ Searched find_sites(const cx::Api& api, const SiteSearch& s) {
   Walker w(s.text, tokens(api, tu, main, s.text.size()), b.macros, s.spells, s.exclude_calls);
   for (const auto& c : root.children) w.walk(c);
   api.disposeTranslationUnit(tu);
+  std::vector<Candidate> found = without_null_pointers(api, index, cargv, s, diagnosed, std::move(w.found));
   api.disposeIndex(index);
-  out.sites = number(s, w.found);
+  out.sites = number(s, found);
   return out;
 }
 

@@ -17,7 +17,9 @@ import fs.dir
 import path as paths
 import os.process as proc
 import kalku.core.setting_up
+import kalku.core.cmake
 import kalku.core.config
+import kalku.sources
 
 #[doc("Set a project up, asking before anything is written.")]
 pub fn settle(
@@ -45,7 +47,21 @@ pub fn settle(
 fn which_language(root: String, language: Option[String]) : Result[Known, Puzzle] / File =
   match language {
     Some(name) -> named(name)
-    None -> detect(dir.list_dir(root))
+    None -> detect_here(root, dir.list_dir(root))
+  }
+
+# A `CMakeLists.txt` is C or C++, which only reading it tells; and when it
+# does not say, the project's files are walked to find out.
+fn detect_here(root: String, markers: [String]) : Result[Known, Puzzle] / File =
+  if contains(markers, "CMakeLists.txt") {
+    let cmake = file.read("#{root}/CMakeLists.txt")
+    let files = match (languages_of(cmake), named("cpp")) {
+      (None, Ok(cpp)) -> every_source(root, cpp)
+      _ -> []
+    }
+    detect_cmake(markers, cmake, files)
+  } else {
+    detect(markers)
   }
 
 #[doc("""

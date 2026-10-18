@@ -41,6 +41,8 @@ struct TestRun {
 struct Compile {
   std::string directory;
   std::vector<std::string> args;
+  // The command compiles C, so a header read with it is read as C.
+  bool c = false;
 };
 
 class Project {
@@ -95,8 +97,10 @@ class Project {
   long last_build_ = 0;
 };
 
-// True for a file kalku reads as C++ source or header.
-bool is_cpp_file(const std::string& file);
+// True for a file kalku reads as C or C++ source, or as a header of either.
+bool is_source_file(const std::string& file);
+// True for a C source file; `.C` is C++.
+bool is_c_file(const std::string& file);
 bool is_header(const std::string& file);
 // True for a file that is part of a suite, which is the oracle.
 bool is_test_file(const std::string& file);

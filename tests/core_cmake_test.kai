@@ -1,0 +1,38 @@
+import kalku.core.cmake
+
+test "a project that names C alone is a C project" {
+  assert c_or_cpp("cmake_minimum_required(VERSION 3.21)\nproject(calc C)\n", []) == Some("c")
+  assert c_or_cpp("project(ring LANGUAGES C)", []) == Some("c")
+  assert c_or_cpp("PROJECT(ring VERSION 1.2 LANGUAGES C)", []) == Some("c")
+}
+
+test "a project that names C++ is a C++ project, with C beside it or not" {
+  assert c_or_cpp("project(calc CXX)", []) == Some("cpp")
+  assert c_or_cpp("project(mixed C CXX)", ["a.c"]) == Some("cpp")
+  assert c_or_cpp("project(x LANGUAGES C)\nenable_language(CXX)\n", []) == Some("cpp")
+}
+
+# CMake enables C and C++ when a project names neither, so only its files
+# can say which it is.
+test "a project that names no language is told by its files" {
+  assert c_or_cpp("project(calc)", ["src/calc.c", "include/calc.h"]) == Some("c")
+  assert c_or_cpp("project(calc)", ["src/calc.c", "src/view.cpp"]) == Some("cpp")
+  assert c_or_cpp("project(calc VERSION 2.0)", ["src/calc.cc"]) == Some("cpp")
+  assert c_or_cpp("project(calc)", ["README.md"]) == None
+}
+
+test "a language named in a comment or in a description is not asked for" {
+  assert languages_of("# project(old CXX)\nproject(calc C) # not CXX\n") == Some(["C"])
+  assert languages_of("project(calc DESCRIPTION \"C CXX helpers\" LANGUAGES C)") == Some(["C"])
+  assert languages_of("project(calc DESCRIPTION \"a C library\")") == None
+}
+
+test "a project that asks for languages other than C and C++ is neither" {
+  assert c_or_cpp("project(kernels CUDA)", ["a.cu", "b.c"]) == None
+}
+
+# `NONE` defers the choice to a later `enable_language`, or to nothing.
+test "a project that asks for no language yet is told by what it enables, or its files" {
+  assert c_or_cpp("project(tools NONE)\nenable_language(C)\n", ["a.cpp"]) == Some("c")
+  assert c_or_cpp("project(tools NONE)", ["a.c"]) == Some("c")
+}

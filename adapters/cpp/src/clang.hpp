@@ -128,6 +128,9 @@ struct Api {
   Diagnostic (*getDiagnostic)(TranslationUnit, unsigned);
   int (*getDiagnosticSeverity)(Diagnostic);
   String (*formatDiagnostic)(Diagnostic, unsigned);
+  SourceLocation (*getDiagnosticLocation)(Diagnostic);
+  unsigned (*getDiagnosticNumRanges)(Diagnostic);
+  SourceRange (*getDiagnosticRange)(Diagnostic, unsigned);
   void (*disposeDiagnostic)(Diagnostic);
   Cursor (*getTranslationUnitCursor)(TranslationUnit);
   unsigned (*visitChildren)(Cursor, Visitor, ClientData);

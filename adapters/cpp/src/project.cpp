@@ -337,8 +337,10 @@ bool is_header(const std::string& file) {
   return false;
 }
 
-bool is_cpp_file(const std::string& file) {
-  if (is_header(file)) return true;
+bool is_c_file(const std::string& file) { return ends_with(file, ".c"); }
+
+bool is_source_file(const std::string& file) {
+  if (is_header(file) || is_c_file(file)) return true;
   for (const char* e : {".cpp", ".cc", ".cxx", ".c++", ".cp", ".C"}) {
     if (ends_with(file, e)) return true;
   }
@@ -353,7 +355,7 @@ bool is_test_file(const std::string& file) {
   std::string name = base(file);
   std::string stem = name.substr(0, name.find('.'));
   std::string l = lower(stem);
-  return l.rfind("test_", 0) == 0 || ends_with(l, "_test") || ends_with(l, "_tests") || ends_with(l, "_unittest") ||
+  return l == "test" || l == "tests" || l.rfind("test_", 0) == 0 || ends_with(l, "_test") || ends_with(l, "_tests") || ends_with(l, "_unittest") ||
          ends_with(stem, "Test") || ends_with(stem, "Tests") || ends_with(l, ".test") || ends_with(l, "-test");
 }
 
@@ -636,6 +638,10 @@ std::optional<Compile> Project::compile_of(const std::string& file) const {
   }
   std::string compiled = chosen->get("file")->text;
   std::string compiled_abs = compiled.empty() || compiled[0] == '/' ? compiled : c.directory + "/" + compiled;
+  c.c = is_c_file(compiled);
+  for (std::size_t i = 0; i + 1 < args.size(); i++) {
+    if (args[i] == "-x") c.c = args[i + 1] == "c" || args[i + 1] == "c-header";
+  }
   for (std::size_t i = 0; i < args.size(); i++) {
     if (i > 0 && (args[i] == compiled || args[i] == compiled_abs || resolved(args[i]) == resolved(compiled_abs))) {
       continue;
