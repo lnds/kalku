@@ -1,0 +1,2 @@
+#[doc("The number after n.")]
+pub fn next(n: Int) : Int = n + 1

@@ -1,17 +1,17 @@
 #[doc("""
-What the tests of a package run, as one fingerprint for the whole suite.
+What each test module of a package runs, as one fingerprint per module.
 
-kaikai does not say which files a test's program is built from, so every
-test is taken to depend on everything the package holds: every file the
-copy in the reni is made of, the kaikai that builds it, and this kalku.
-The fingerprint is the same for every test, and a baseline either reuses
-the whole suite or runs it all.
+`kai test --json --list --deps` says, without building anything, which
+tests each test file holds and which package files its build reads. A
+module's fingerprint is taken over those files, over every file of the
+package that no module builds from — the data a test reads as it runs,
+`kai.lock` among them — and over the module's own test ids, with the
+kaikai that builds it and this kalku. A change to a source re-runs the
+modules that build from it, and a change to anything else re-runs them all.
 
-The suite cannot be listed without running it, so the fingerprint is also
-taken over the ids of every test in it. An offer is the whole suite only
-when the fingerprint its tests share is the one their ids and the package
-make together: a test missing from it, one that failed last time, makes
-another.
+A module is reused only when every test it holds is offered with the
+fingerprint it has now: one that failed last time is not offered, and the
+whole module runs again.
 
 A package whose dependencies could change without its tree changing has
 no fingerprint: one that names a path outside itself, or names any
@@ -21,29 +21,117 @@ dependency with no `kai.lock` to pin it.
 import fs.file
 import encoding.toml
 import encoding.hex
+import encoding.json
+import encoding.json_bind
 import crypto.hash
 import kalku.version
 import kalku.wire.kalku_msg.{Reuse}
 import kaikai_kalku.work
 
+#[doc("One test file: the package files its build reads, and the ids of its tests.")]
+#[derive(Eq, Show)]
+pub type Module = { file: String, sources: [String], ids: [String] }
+
+#[doc("A test module's tests, and the fingerprint they share.")]
+#[derive(Eq, Show)]
+pub type Print = { ids: [String], print: String }
+
 #[doc("""
-What the package is made of, as one digest, or `None` when the package
-cannot be fingerprinted.
+The fingerprint of every test module of the package, or `None` when the
+package cannot be fingerprinted.
 """)]
-pub fn of_package(w: Work) : Option[String] / Process + File = if not pinned(w.root) {
+pub fn of_package(w: Work) : Option[[Print]] / Process + File = if not pinned(w.root) {
   None
 } else {
-  match (kaikai_version(w), tree_print(w)) {
-    (Some(kaikai), Some(tree)) -> Some(digest("#{kaikai}\nkalku #{version.VERSION}\n#{tree}"))
+  match (kaikai_version(), modules_of(w), sums_of(w.root)) {
+    (Some(kaikai), Some(modules), Some(sums)) ->
+      Some(printed("#{kaikai}\nkalku #{version.VERSION}", sums, modules))
     _ -> None
   }
 }
 
-#[doc("The fingerprint of every test of a suite with these ids, in a package with this digest.")]
-pub fn of_suite(package: String, ids: [String]) : String =
-  slice(digest("#{package}\n#{join(uniq(sort(ids)), "\n")}"), 0, 24)
+#[doc("""
+Each module's fingerprint, from what builds the tests (`head`), the digest
+of every file of the package by its path, and the modules. A module that
+names a file the package does not hold has none.
+""")]
+pub fn printed(head: String, sums: [(String, String)], modules: [Module]) : [Print] {
+  let built = uniq(sort(flat_map(modules, m => m.sources)))
+  let shared = digest(join(sums |? (s => not contains(built, s.fst)) | (s => "#{s.fst} #{s.snd}"), "\n"))
+  flat_map(modules, m => print_of(head, shared, sums, m))
+}
+
+fn print_of(head: String, shared: String, sums: [(String, String)], m: Module) : [Print] {
+  let found = flat_map(m.sources, f => (sums |? (s => s.fst == f)))
+  if is_empty(m.ids) or length(found) != length(uniq(m.sources)) {
+    []
+  } else {
+    let sources = join(found | (s => "#{s.fst} #{s.snd}"), "\n")
+    let ids = join(uniq(sort(m.ids)), "\n")
+    [Print { ids: m.ids, print: slice(digest("#{head}\n#{shared}\n#{sources}\n#{ids}"), 0, 24) }]
+  }
+}
 
 fn digest(text: String) : String = hex.encode(hash.sha256(bytes(text) | byte_to_int))
+
+#[doc("""
+The tests to leave out of a baseline: those of every module offered whole
+with the fingerprint it has now.
+""")]
+pub fn reusable(offered: [Reuse], prints: Option[[Print]]) : [String] = match prints {
+  None -> []
+  Some(ps) -> uniq(sort(flat_map(ps, p => if whole(offered, p) { p.ids } else { [] })))
+}
+
+fn whole(offered: [Reuse], p: Print) : Bool =
+  all(p.ids, id => any(offered, o => o.test_id == id and o.fingerprint == p.print))
+
+#[doc("The fingerprint a test gets, when its module has one and none of the module's tests failed.")]
+pub fn print_for(id: String, prints: Option[[Print]], failed: [String]) : Option[String] =
+  match prints.and_then(ps => find(ps, p => contains(p.ids, id))) {
+    None -> None
+    Some(p) -> if any(p.ids, i => contains(failed, i)) { None } else { Some(p.print) }
+  }
+
+# ---- what kaikai says ---------------------------------------------------
+
+# Asked of the copy: `kai` keeps a cache where it runs, and the user's tree
+# is not the place for one.
+fn modules_of(w: Work) : Option[[Module]] / Process =
+  match work.run(["/bin/sh", "-c", "cd #{work.quoted(w.copy)} && kai test --json --list --deps . 2>/dev/null"]) {
+    Ok(came) -> match came.exit {
+      Exited(0) -> Some(modules_in(lines(came.said)))
+      _ -> None
+    }
+    Err(_) -> None
+  }
+
+#[doc("The test modules `kai test --json --list --deps` describes, in its order.")]
+pub fn modules_in(said: [String]) : [Module] {
+  let records = flat_map(said, l => json_decode(l).map(v => [v]).unwrap_or([]))
+  let tests = records |? (v => as_string(get(v, "type")) == Some("test"))
+  flat_map(
+    records |? (v => as_string(get(v, "type")) == Some("deps")),
+    v => match as_string(get(v, "file")) {
+      None -> []
+      Some(f) -> [
+        Module {
+          file: f,
+          sources: strings_of(get(v, "sources")),
+          ids: flat_map(
+            tests |? (t => as_string(get(t, "file")) == Some(f)),
+            t => as_string(get(t, "id")).map(id => [id]).unwrap_or([])
+          )
+        }
+      ]
+    }
+  )
+}
+
+fn strings_of(v: JsonValue) : [String] = match v {
+  JArr(items) -> flat_map(items, i => as_string(i).map(s => [s]).unwrap_or([]))
+  _ -> []
+}
 
 # A path dependency lives outside the tree and is not in the fingerprint;
 # a dependency without a lock is whatever its source holds today.
@@ -66,7 +154,7 @@ fn by_path(dep: TomlValue) : Bool = match dep {
   _ -> false
 }
 
-fn kaikai_version(w: Work) : Option[String] / Process = match work.run(["kai", "--version"]) {
+fn kaikai_version() : Option[String] / Process = match work.run(["kai", "--version"]) {
   Ok(came) -> match came.exit {
     Exited(0) -> head(lines(came.said))
     _ -> None
@@ -75,18 +163,18 @@ fn kaikai_version(w: Work) : Option[String] / Process = match work.run(["kai", "
 }
 
 # Hashed by `sha256sum` rather than in kaikai: a package with a build
-# directory in it is gigabytes, and the copy holds all of it. A file that
-# cannot be read fails the run, and the package has no fingerprint.
-fn tree_print(w: Work) : Option[String] / Process + File {
-  let entries = work.package_entries(w.root)
+# directory in it is gigabytes. A file that cannot be read fails the run,
+# and the package has no fingerprint.
+fn sums_of(root: String) : Option[[(String, String)]] / Process + File {
+  let entries = work.package_entries(root)
   let script =
-    "set -e; cd #{work.quoted(w.root)}; sums=$(find #{join(entries | work.quoted, " ")} \\( -type f -o -type l \\) -print0 | LC_ALL=C sort -z | xargs -0 sha256sum); printf '%s' \"$sums\" | sha256sum"
+    "set -e; cd #{work.quoted(root)}; find #{join(entries | work.quoted, " ")} \\( -type f -o -type l \\) -print0 | LC_ALL=C sort -z | xargs -0 sha256sum"
   if is_empty(entries) {
     None
   } else {
     match work.run(["/bin/sh", "-c", script]) {
       Ok(came) -> match came.exit {
-        Exited(0) -> head(lines(came.said)).map(l => slice(l, 0, 64))
+        Exited(0) -> Some(flat_map(lines(came.said), sum_of))
         _ -> None
       }
       Err(_) -> None
@@ -94,16 +182,9 @@ fn tree_print(w: Work) : Option[String] / Process + File {
   }
 }
 
-#[doc("""
-The tests to leave out of a baseline: every test offered, when the offer
-is the whole suite of a package with the digest it has now. Any other
-offer runs the whole suite.
-""")]
-pub fn reusable(offered: [Reuse], package: Option[String]) : [String] = match package {
-  None -> []
-  Some(p) -> {
-    let ids = uniq(sort(offered | .test_id))
-    let print = of_suite(p, ids)
-    if (not is_empty(ids)) and all(offered, o => o.fingerprint == print) { ids } else { [] }
-  }
+# `<64 hex>  <path>`, the path as `find` named it.
+fn sum_of(line: String) : [(String, String)] = if length(line) > 66 {
+  [(slice(line, 66, length(line)), slice(line, 0, 64))]
+} else {
+  []
 }
