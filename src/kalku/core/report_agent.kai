@@ -269,7 +269,7 @@ fn counted(name: String, n: Int) : [(String, JsonValue)] =
   if n > 0 { [(name, JNum(n))] } else { [] }
 
 fn strings(name: String, values: [String]) : [(String, JsonValue)] =
-  if is_empty(values) { [] } else { [(name, JArr(values | (v => JStr(v))))] }
+  if is_empty(values) { [] } else { [(name, JArr(values | JStr))] }
 
 fn window(lines: [String], from: Int, to: Int) : [String] =
   enumerate(lines) |? (l => l.fst + 1 >= from and l.fst + 1 <= to) | .snd

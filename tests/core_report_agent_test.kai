@@ -260,7 +260,7 @@ test "an agent gets the first few covering tests and how many there are in all" 
     first_line(agent(report_of([survivor("lib/parser.ex", 2, Compare, many)], one()), lines_of))
 
   assert field(line, "covering_tests")
-    == JArr(take(many, COVERING_SHOWN) | (t => JStr(t)))
+    == JArr(take(many, COVERING_SHOWN) | JStr)
   assert field(line, "covering_count") == JNum(1200)
   assert length(line) < 2000
 }

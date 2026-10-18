@@ -120,13 +120,13 @@ impl Json for Scope {
   fn to_json(self: Scope) : JsonValue = match self {
     All -> JObj([("all", JBool(true))])
     Since(r) -> JObj([("since", JStr(r))])
-    Files(fs) -> JObj([("files", JArr(fs | (f => JStr(f))))])
+    Files(fs) -> JObj([("files", JArr(fs | JStr))])
   }
   fn of_json(v: JsonValue, path: String) : Result[Scope, JsonError] = match v {
     JObj([("all", JBool(true))]) -> Ok(All)
     JObj([("since", JStr(r))]) -> Ok(Since(r))
     JObj([("files", fs)]) ->
-      json_bind_list(fs, json_path_field(path, "files"), json_bind_string).map(xs => Files(xs))
+      json_bind_list(fs, json_path_field(path, "files"), json_bind_string).map(Files)
     _ -> Err(JsonError {
       path: path,
       expected: "exactly one of all: true, since, files",
