@@ -2,6 +2,7 @@ import fs.dir
 import fs.file
 import os.process as proc
 import kalku.sources
+import kalku.core.cache
 import kalku.core.setting_up
 
 # A real tree on disk, because what is under test is what is read from it:
@@ -158,4 +159,21 @@ test "a Python project's code is found in packages and under src, and its suite 
     == ["pkg/__init__.py", "pkg/core.py", "setup.py", "src/other/mod.py"]
   assert relative(root, every_test(root, of("python")))
     == ["pkg/test_inline.py", "tests/conftest.py", "tests/test_core.py"]
+}
+
+# A watch compares one read with the next, so a file that went away has to
+# read as a change rather than stop the read.
+test "a file is read as the hash of what it holds, and a missing one as empty" {
+  let root = scratch("hashes")
+  make(root, ["lib/a.ex"])
+  assert read_hashes(["#{root}/lib/a.ex", "#{root}/lib/gone.ex"])
+    == [
+      FileHash { file: "#{root}/lib/a.ex", hash: hash_of("x\n") },
+      FileHash { file: "#{root}/lib/gone.ex", hash: hash_of("") }
+    ]
+}
+
+test "a file a walk from here named is named as a person would" {
+  assert without_dot("./lib/a.ex") == "lib/a.ex"
+  assert without_dot("lib/a.ex") == "lib/a.ex"
 }

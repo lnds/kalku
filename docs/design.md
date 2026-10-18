@@ -374,7 +374,9 @@ The human report leads with **survivors** — file, line, spell, diff, covering 
 
 ### 9. Stay warm
 
-After the run the session stays in `ready`. On the next run, the server hashes the source files, tells each kalku to reload only what changed, reuses coverage for untouched tests, and re-casts only the wekufe whose cache key changed. `kalku run --watch` does this on every save.
+After the run the session stays in `ready`. On the next run, the server hashes the source files, tells each kalku to reload only what changed, reuses coverage for untouched tests, and re-casts only the wekufe whose cache key changed.
+
+Of that, a warm session is kept today only while the project is exactly what its kalku were compiled from: the moment a file differs, `kalku serve` replaces the pool rather than asking it to `reload`. `kalku run --watch` runs again on every save, and since a save is a change, each of its runs summons its kalku afresh; what keeps the run short is the incremental baseline, which runs only the tests the change can reach, and the outcome cache. The watch reads the project's sources, its suite, `.kalku.toml` and `.kalku/equivalent` once a second, and runs again once two reads in a row agree, so the burst of writes one save makes is one run. A signal ends the run that is going, if one is, and then the watch, with the last run's exit code; `--store-baseline`, `--shard` and the `json` and `github` formats are refused with it, since each is about one report.
 
 If a file changes during a run, outcomes for wekufe in that file or covered by tests that read it are discarded, not reported.
 

@@ -1,0 +1,42 @@
+import kalku.core.cache
+import kalku.core.watching
+
+fn h(file: String, hash: String) : FileHash = FileHash { file: file, hash: hash }
+
+test "a project that reads the same keeps waiting" {
+  let seen = [h("lib/a.ex", "1")]
+  assert after_reading(Settled(seen), seen) == KeepWaiting(Settled(seen))
+}
+
+# The first write of a save is not the save: one more read has to agree.
+test "a change waits for a second read that agrees" {
+  let seen = [h("lib/a.ex", "1")]
+  let now = [h("lib/a.ex", "2")]
+  assert after_reading(Settled(seen), now) == KeepWaiting(Settling(seen, now))
+  assert after_reading(Settling(seen, now), now) == RunAgain(["lib/a.ex"], now)
+}
+
+test "a project still being written keeps settling on the latest read" {
+  let seen = [h("lib/a.ex", "1")]
+  let first = [h("lib/a.ex", "2")]
+  let second = [h("lib/a.ex", "3")]
+  assert after_reading(Settling(seen, first), second) == KeepWaiting(Settling(seen, second))
+}
+
+test "a change undone before it settled runs nothing" {
+  let seen = [h("lib/a.ex", "1")]
+  assert after_reading(Settling(seen, seen), seen) == KeepWaiting(Settled(seen))
+}
+
+test "what changed is what was edited, added, or removed, in order" {
+  let before = [h("lib/b.ex", "1"), h("lib/a.ex", "1"), h("lib/gone.ex", "1")]
+  let after = [h("lib/b.ex", "2"), h("lib/a.ex", "1"), h("lib/new.ex", "1")]
+  assert differing(before, after) == ["lib/b.ex", "lib/gone.ex", "lib/new.ex"]
+  assert differing(before, before) == []
+}
+
+test "the separator names the change" {
+  assert separator(["lib/a.ex"]) == "── lib/a.ex changed; running again ──"
+  assert separator(["lib/a.ex", "lib/b.ex", "lib/c.ex"])
+    == "── lib/a.ex and 2 more changed; running again ──"
+}
