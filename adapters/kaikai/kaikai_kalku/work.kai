@@ -32,6 +32,7 @@ pub type Ran = {
   passed: Int,
   failed: Int,
   first_failure: Option[String],
+  failing: [String],
   mishap: Option[Mishap],
   tests: [TestTiming],
   reached: [Reach]
@@ -161,6 +162,12 @@ pub fn test_all(w: Work) : Ran / Process = match w.oracle {
   Some(command) -> by_oracle(w, command)
   None -> read_run(run_in(w, ["kai", "test", "--json", "--coverage", "."]), 0)
 }
+
+#[doc("Run these tests in the copy, for a baseline that reuses the rest, with the lines each runs.")]
+pub fn test_some(w: Work, ids: [String]) : Ran / Process = read_run(
+  run_in(w, ["kai", "test", "--json", "--coverage", ...flat_map(ids, id => ["--only", id]), "."]),
+  length(ids)
+)
 
 # The whole suite, without the coverage a cast has no use for.
 fn every_test(w: Work) : Ran / Process = read_run(run_in(w, ["kai", "test", "--json", "."]), 0)
@@ -345,12 +352,21 @@ fn ended(exit: Exit) : String = match exit {
 }
 
 fn broken(why: Mishap) : Ran =
-  Ran { passed: 0, failed: 0, first_failure: None, mishap: Some(why), tests: [], reached: [] }
+  Ran {
+    passed: 0,
+    failed: 0,
+    first_failure: None,
+    failing: [],
+    mishap: Some(why),
+    tests: [],
+    reached: []
+  }
 
 fn tallied(judged: [Judged]) : Ran = Ran {
   passed: length(judged |? (j => not j.failed)),
   failed: length(judged |? .failed),
   first_failure: first_failed(judged),
+  failing: judged |? .failed | .timing.test_id,
   mishap: None,
   tests: judged | .timing,
   reached: []

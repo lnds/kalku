@@ -1,0 +1,9 @@
+import split.beta
+
+test "twice doubles" {
+  assert beta.twice(2) == 4
+}
+
+test "twice keeps zero" {
+  assert beta.twice(0) == 0
+}

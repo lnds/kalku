@@ -2,69 +2,130 @@ import os.process as proc
 import fs.file
 import kaikai_kalku.work
 import kaikai_kalku.prints
+import kaikai_kalku.prints.{Module, Print}
 import kalku.wire.kalku_msg.{Reuse}
 
-fn at(root: String) : Work = Work { root: root, copy: "", oracle: None }
+fn at(root: String) : Work = Work { root: root, copy: root, oracle: None }
 
-test "a package is digested as the same text every time" {
-  let once = prints.of_package(at("fixtures/tiny"))
-
-  assert is_some(once)
-  assert once == prints.of_package(at("fixtures/tiny"))
-  assert once != prints.of_package(at("fixtures/wide"))
+fn copied(name: String) : String / Process {
+  let root = "fixtures/reni/#{name}"
+  let _ = proc.wait(proc.start("/bin/rm", ["-rf", root]))
+  let _ = proc.wait(proc.start("/bin/mkdir", ["-p", "fixtures/reni"]))
+  let _ = proc.wait(proc.start("/bin/cp", ["-R", "fixtures/split", root]))
+  root
 }
 
-# Every file of the package is in it, its tests and their data included,
-# since kaikai does not say which of them a test is built from.
-test "a change to any file of the package changes its digest" {
-  let root = "fixtures/reni/grown"
-  let _ = proc.wait(proc.start("/bin/rm", ["-rf", root]))
-  let _ = proc.wait(proc.start("/bin/mkdir", ["-p", "#{root}/tests"]))
-  file.write("#{root}/kai.toml", "name = \"grown\"\nversion = \"0.0.0\"\n")
+fn print_of(found: Option[[Print]], id: String) : Option[String] = prints.print_for(id, found, [])
+
+const ALPHA : String = "tests/alpha_test.kai:next counts up"
+
+const BETA : String = "tests/beta_test.kai:twice doubles"
+
+test "what kai test lists is read into one module per test file" {
+  let said = [
+    "{\"type\":\"deps\",\"file\":\"tests/a_test.kai\",\"sources\":[\"kai.toml\",\"a.kai\",\"tests/a_test.kai\"],\"external\":[]}",
+    "{\"type\":\"test\",\"id\":\"tests/a_test.kai:one\",\"file\":\"tests/a_test.kai\",\"line\":3}",
+    "{\"type\":\"test\",\"id\":\"tests/a_test.kai:two\",\"file\":\"tests/a_test.kai\",\"line\":7}",
+    "not json"
+  ]
+
+  assert prints.modules_in(said) == [
+    Module {
+      file: "tests/a_test.kai",
+      sources: ["kai.toml", "a.kai", "tests/a_test.kai"],
+      ids: ["tests/a_test.kai:one", "tests/a_test.kai:two"]
+    }
+  ]
+}
+
+# Asked of a copy, as the kalku asks: `kai test --list` keeps a cache where
+# it runs.
+test "each test module of a package has a fingerprint of its own" {
+  let root = copied("split_each")
+  let found = prints.of_package(at(root))
+
+  assert (found.unwrap_or([]) | .ids) == [[ALPHA], [BETA, "tests/beta_test.kai:twice keeps zero"]]
+  assert is_some(print_of(found, ALPHA))
+  assert print_of(found, ALPHA) != print_of(found, BETA)
+  assert found == prints.of_package(at(root))
+}
+
+# A source belongs to the modules that build from it, and only theirs
+# re-run when it changes.
+test "a change to a source changes the fingerprint of the modules built from it alone" {
+  let root = copied("split_source")
+  let before = prints.of_package(at(root))
+  file.write("#{root}/split/alpha.kai", "pub fn next(n: Int) : Int = n + 2\n")
+  let after = prints.of_package(at(root))
+
+  assert print_of(after, ALPHA) != print_of(before, ALPHA)
+  assert print_of(after, BETA) == print_of(before, BETA)
+}
+
+# What a test reads as it runs is not something its build says, so a file
+# no module builds from belongs to every module.
+test "a change to a file no module builds from changes every fingerprint" {
+  let root = copied("split_data")
   file.write("#{root}/tests/data.txt", "one")
   let before = prints.of_package(at(root))
   file.write("#{root}/tests/data.txt", "two")
+  let after = prints.of_package(at(root))
 
-  assert is_some(before)
-  assert prints.of_package(at(root)) != before
+  assert print_of(after, ALPHA) != print_of(before, ALPHA)
+  assert print_of(after, BETA) != print_of(before, BETA)
 }
 
 # What a path dependency holds is outside the tree, and a dependency with
 # no lock is whatever its source holds today.
-test "a package whose dependencies are not pinned by its tree has no digest" {
+test "a package whose dependencies are not pinned by its tree has no fingerprint" {
   assert prints.of_package(at("fixtures/pathdep")) == None
   assert prints.of_package(at("fixtures/unlocked")) == None
+}
+
+fn module(ids: [String], sources: [String]) : Module =
+  Module { file: "", sources: sources, ids: ids }
+
+const SUMS : [(String, String)] = [("a.kai", "1"), ("b.kai", "2"), ("data.txt", "3")]
+
+test "a module that builds from a file the package does not hold has no fingerprint" {
+  assert prints.printed("kai", SUMS, [module(["t"], ["a.kai", "gone.kai"])]) == []
+}
+
+test "a module is fingerprinted by its tests whatever their order" {
+  let one = prints.printed("kai", SUMS, [module(["x", "y"], ["a.kai"])])
+  let two = prints.printed("kai", SUMS, [module(["y", "x"], ["a.kai"])])
+  let fewer = prints.printed("kai", SUMS, [module(["x"], ["a.kai"])])
+  let other_kai = prints.printed("kai 2", SUMS, [module(["x", "y"], ["a.kai"])])
+
+  assert (one | .print) == (two | .print)
+  assert (one | .print) != (fewer | .print)
+  assert (one | .print) != (other_kai | .print)
+  assert length(head(one).map(p => p.print).unwrap_or("")) == 24
 }
 
 fn offer(ids: [String], print: String) : [Reuse] =
   ids | (id => Reuse { test_id: id, fingerprint: print })
 
-test "the suite is reused when it is offered whole with the fingerprint it has now" {
-  let print = prints.of_suite("pkg", ["a", "b"])
+const PRINTS : [Print] = [Print { ids: ["a1", "a2"], print: "pa" }, Print { ids: ["b1"], print: "pb" }]
 
-  assert prints.reusable(offer(["b", "a"], print), Some("pkg")) == ["a", "b"]
-  assert prints.reusable(offer(["a", "b"], print), Some("changed")) == []
-  assert prints.reusable(offer(["a", "b"], print), None) == []
-  assert prints.reusable([], Some("pkg")) == []
+test "a module offered whole with the fingerprint it has now is reused" {
+  assert prints.reusable(offer(["a2", "a1"], "pa") ++ offer(["b1"], "old"), Some(PRINTS))
+    == ["a1", "a2"]
+  assert prints.reusable(offer(["a1", "a2"], "pa") ++ offer(["b1"], "pb"), Some(PRINTS))
+    == ["a1", "a2", "b1"]
+  assert prints.reusable(offer(["a1", "a2"], "pa"), None) == []
 }
 
-# A test that failed has no fingerprint and is not offered; without it the
-# rest make another fingerprint, so the whole suite runs, that test with it.
-test "a suite offered in part is not reused" {
-  assert prints.reusable(offer(["a"], prints.of_suite("pkg", ["a", "b"])), Some("pkg")) == []
+# A test that failed has no fingerprint and is not offered; its module runs
+# again whole, that test with it.
+test "a module offered in part is not reused" {
+  assert prints.reusable(offer(["a1"], "pa"), Some(PRINTS)) == []
 }
 
-test "an offer made with an old fingerprint reuses nothing" {
-  let print = prints.of_suite("pkg", ["a", "b"])
-  let offered =
-    [Reuse { test_id: "a", fingerprint: "old" }, Reuse { test_id: "b", fingerprint: print }]
-
-  assert prints.reusable(offered, Some("pkg")) == []
-}
-
-test "a suite is fingerprinted by its tests whatever their order" {
-  assert prints.of_suite("pkg", ["a", "b"]) == prints.of_suite("pkg", ["b", "a"])
-  assert prints.of_suite("pkg", ["a", "b"]) != prints.of_suite("pkg", ["a"])
-  assert prints.of_suite("pkg", ["a"]) != prints.of_suite("other", ["a"])
-  assert length(prints.of_suite("pkg", ["a"])) == 24
+test "a test of a module in which one failed has no fingerprint" {
+  assert prints.print_for("a1", Some(PRINTS), []) == Some("pa")
+  assert prints.print_for("a1", Some(PRINTS), ["a2"]) == None
+  assert prints.print_for("b1", Some(PRINTS), ["a2"]) == Some("pb")
+  assert prints.print_for("c1", Some(PRINTS), []) == None
+  assert prints.print_for("a1", None, []) == None
 }

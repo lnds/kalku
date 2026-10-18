@@ -1,0 +1,7 @@
+#[doc("Two modules, each tested by a test module of its own, so a change to one reaches one test module.")]
+
+import split.alpha
+import split.beta
+
+#[doc("Both, together.")]
+pub fn both(n: Int) : Int = alpha.next(n) + beta.twice(n)
