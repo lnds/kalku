@@ -355,8 +355,9 @@ bool is_test_file(const std::string& file) {
   std::string name = base(file);
   std::string stem = name.substr(0, name.find('.'));
   std::string l = lower(stem);
-  return l == "test" || l == "tests" || l.rfind("test_", 0) == 0 || ends_with(l, "_test") || ends_with(l, "_tests") || ends_with(l, "_unittest") ||
-         ends_with(stem, "Test") || ends_with(stem, "Tests") || ends_with(l, ".test") || ends_with(l, "-test");
+  return l == "test" || l == "tests" || l.rfind("test_", 0) == 0 || ends_with(l, "_test") || ends_with(l, "_tests") ||
+         ends_with(l, "_unittest") || ends_with(stem, "Test") || ends_with(stem, "Tests") || ends_with(l, ".test") ||
+         ends_with(l, "-test");
 }
 
 Project::Project(const Hello& h, std::vector<std::string> cmake_args)
