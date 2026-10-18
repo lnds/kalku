@@ -1,3 +1,14 @@
+## v0.21.0 (2026-10-18)
+
+### Added
+
+- **cli**: kalku merge combines sharded reports into one (#408)
+- **cli**: kalku run --watch re-runs on every save (#404)
+
+### Fixed
+
+- **orchestrator**: a run an interrupt cut short exits 2, not 0 (#407)
+
 ## v0.20.0 (2026-10-17)
 
 ### Added
