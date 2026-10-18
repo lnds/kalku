@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "cases.hpp"
+#include "json.hpp"
 #include "process.hpp"
 #include "protocol.hpp"
 
@@ -21,6 +23,21 @@ struct Test {
   std::string file;
   // Its number in CTest's list, which is how a run selects it.
   int number = 0;
+  // For a case of an executable the kalku runs itself: its name there, and
+  // the executable, among the project's suites.
+  std::string test_case;
+  int suite = -1;
+};
+
+// A CTest test that runs a Catch2 or doctest executable whole, whose cases
+// the kalku lists and runs by name.
+struct Suite {
+  std::string name;
+  Framework framework = Framework::None;
+  std::string executable;
+  std::string directory;
+  std::vector<std::string> env;
+  std::size_t cases = 0;
 };
 
 struct TestResult {
@@ -31,7 +48,7 @@ struct TestResult {
 };
 
 struct TestRun {
-  std::map<std::string, TestResult> by_name;
+  std::map<std::string, TestResult> by_id;
   bool cancelled = false;
   // Why there is no report to read, when there is none.
   std::string broken;
@@ -79,6 +96,9 @@ class Project {
   // Says a message about the copy with the project's own paths.
   std::string named(const std::string& message) const;
   std::vector<std::string> differences() const;
+  // What became of each test executable the kalku asked for its cases, one
+  // sentence each.
+  const std::vector<std::string>& listed() const { return listed_; }
 
  private:
   std::string root_;
@@ -86,12 +106,24 @@ class Project {
   std::string work_;
   std::string build_;
   std::string junit_;
+  // Where a framework writes its list of cases, or its report of a run.
+  std::string cases_xml_;
   std::vector<std::string> env_;
   std::vector<std::string> cmake_args_;
   // The build tree dates its outputs finer than to the second.
   bool precise() const;
 
+  // The cases of a test that runs one executable of a framework the kalku
+  // lists; none, with why, when it cannot list them.
+  std::vector<Test> cases_of(const Test& test, const Json& entry, std::string* why);
+  void run_ctest(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out);
+  void run_cases(int suite, const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out);
+
   std::vector<Test> tests_;
+  std::vector<Suite> suites_;
+  std::vector<std::string> listed_;
+  // What each executable answered when asked what it is.
+  std::map<std::string, Framework> probed_;
   std::map<std::string, std::size_t> by_id_;
   long stamp_ = 0;
   long last_build_ = 0;

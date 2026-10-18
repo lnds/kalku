@@ -209,11 +209,11 @@ std::string Service::baseline(std::int64_t id) {
   std::vector<Timed> timed;
   std::vector<Failure> failures;
   for (const auto* t : all) {
-    auto it = ran.by_name.find(t->name);
-    long ms = it == ran.by_name.end() ? 0 : it->second.duration_ms;
+    auto it = ran.by_id.find(t->id);
+    long ms = it == ran.by_id.end() ? 0 : it->second.duration_ms;
     timed.push_back(Timed{t->id, t->file, ms});
-    if (it == ran.by_name.end()) {
-      failures.push_back(Failure{t->id, "CTest did not report it"});
+    if (it == ran.by_id.end()) {
+      failures.push_back(Failure{t->id, "no verdict was reported for it"});
     } else if (it->second.status != TestResult::Status::Passed) {
       failures.push_back(Failure{t->id, it->second.message});
     }
@@ -322,14 +322,14 @@ Reply Service::cast(std::int64_t id, const CastRequest& c, const std::atomic<boo
   }
   TestRun ran = project_->run_tests(tests, &cancel);
   bool failed = false;
-  for (const auto& kv : ran.by_name) failed = failed || kv.second.status == TestResult::Status::Failed;
+  for (const auto& kv : ran.by_id) failed = failed || kv.second.status == TestResult::Status::Failed;
   // The rest is asked only when none of the tests the coverage chose
   // noticed the wekufe.
   if (!ran.cancelled && ran.broken.empty() && !failed && !rest.empty()) {
     TestRun more = project_->run_tests(rest, &cancel);
     ran.cancelled = more.cancelled;
     ran.broken = more.broken;
-    for (const auto& kv : more.by_name) ran.by_name[kv.first] = kv.second;
+    for (const auto& kv : more.by_id) ran.by_id[kv.first] = kv.second;
     tests.insert(tests.end(), rest.begin(), rest.end());
   }
   bool restored = restore();
@@ -342,21 +342,21 @@ Reply Service::cast(std::int64_t id, const CastRequest& c, const std::atomic<boo
   // own timeout said nothing about the wekufe, so it is not one; a test
   // asked for that never ran is not one either.
   for (const auto* t : tests) {
-    auto it = ran.by_name.find(t->name);
-    if (it != ran.by_name.end() && it->second.status == TestResult::Status::Failed) {
+    auto it = ran.by_id.find(t->id);
+    if (it != ran.by_id.end() && it->second.status == TestResult::Status::Failed) {
       return say(cast_done(id, c.wekufe, Outcome{"killed", t->id, ""}, since(started)));
     }
   }
   for (const auto* t : tests) {
-    auto it = ran.by_name.find(t->name);
-    if (it != ran.by_name.end() && it->second.status == TestResult::Status::Crashed) {
+    auto it = ran.by_id.find(t->id);
+    if (it != ran.by_id.end() && it->second.status == TestResult::Status::Crashed) {
       return say(cast_done(id, c.wekufe, Outcome{"crashed", "", t->id + ": " + it->second.message}, since(started)));
     }
   }
   int missing = 0;
   for (const auto* t : tests) {
-    auto it = ran.by_name.find(t->name);
-    if (it == ran.by_name.end() || it->second.status != TestResult::Status::Passed) missing++;
+    auto it = ran.by_id.find(t->id);
+    if (it == ran.by_id.end() || it->second.status != TestResult::Status::Passed) missing++;
   }
   if (missing > 0) {
     return say(cast_done(id, c.wekufe,

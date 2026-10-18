@@ -7,13 +7,16 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <climits>
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <thread>
 
+#include "cases.hpp"
 #include "json.hpp"
 
 namespace kalku {
@@ -243,51 +246,6 @@ std::vector<std::string> words(const std::string& line) {
   return out;
 }
 
-std::string decode_xml(const std::string& s) {
-  std::string out;
-  for (std::size_t i = 0; i < s.size(); i++) {
-    if (s[i] != '&') {
-      out += s[i];
-      continue;
-    }
-    std::size_t semi = s.find(';', i);
-    if (semi == std::string::npos) {
-      out += s[i];
-      continue;
-    }
-    std::string ent = s.substr(i + 1, semi - i - 1);
-    if (ent == "amp") {
-      out += '&';
-    } else if (ent == "lt") {
-      out += '<';
-    } else if (ent == "gt") {
-      out += '>';
-    } else if (ent == "quot") {
-      out += '"';
-    } else if (ent == "apos") {
-      out += '\'';
-    } else if (!ent.empty() && ent[0] == '#') {
-      long cp = ent.size() > 1 && (ent[1] == 'x' || ent[1] == 'X') ? std::strtol(ent.c_str() + 2, nullptr, 16)
-                                                                   : std::strtol(ent.c_str() + 1, nullptr, 10);
-      if (cp > 0 && cp < 0x80) out += static_cast<char>(cp);
-    } else {
-      out += s.substr(i, semi - i + 1);
-    }
-    i = semi;
-  }
-  return out;
-}
-
-// The value of an attribute in the text of one XML element.
-std::string attribute(const std::string& element, const std::string& name) {
-  std::string key = " " + name + "=\"";
-  auto at = element.find(key);
-  if (at == std::string::npos) return "";
-  at += key.size();
-  auto end = element.find('"', at);
-  return end == std::string::npos ? "" : decode_xml(element.substr(at, end - at));
-}
-
 // What a test printed, as the report keeps it.
 std::string system_out(const std::string& body) {
   auto open = body.find("<system-out>");
@@ -325,6 +283,37 @@ bool test_said_it(const std::string& message) {
   return message == "Failed" || message.rfind("Required regular expression", 0) == 0 ||
          message.rfind("Regular expression", 0) == 0 || message.rfind("Fail Regular", 0) == 0 ||
          message.rfind("Error regular expression", 0) == 0;
+}
+
+// A command that is given `seconds` to answer, and ended when it does not.
+Ran within(const std::vector<std::string>& argv, const std::string& dir, const std::vector<std::string>& env,
+           int seconds) {
+  std::atomic<bool> late{false};
+  std::atomic<bool> done{false};
+  std::thread watch([&] {
+    auto until = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+    while (!done.load() && std::chrono::steady_clock::now() < until) usleep(20 * 1000);
+    if (!done.load()) late = true;
+  });
+  Ran r = run(argv, dir, env, &late);
+  done = true;
+  watch.join();
+  return r;
+}
+
+// The test properties that leave a test's verdict its exit code, and that
+// a case the kalku runs itself can do without.
+bool harmless(const std::string& property) {
+  for (const char* p : {"LABELS", "COST", "PROCESSORS", "RUN_SERIAL", "RESOURCE_LOCK", "RESOURCE_GROUPS", "DEPENDS",
+                        "TIMEOUT", "ATTACHED_FILES", "ATTACHED_FILES_ON_FAIL", "MEASUREMENT", "DISABLED"}) {
+    if (property == p) return true;
+  }
+  return false;
+}
+
+std::string how_it_ended(const Ran& r) {
+  if (r.signal) return "ended by signal " + std::to_string(r.signal);
+  return "exited with " + std::to_string(r.exit_code);
 }
 
 }  // namespace
@@ -366,6 +355,7 @@ Project::Project(const Hello& h, std::vector<std::string> cmake_args)
   work_ = reni_ + "/work/" + worker;
   build_ = reni_ + "/build/" + worker;
   junit_ = reni_ + "/junit-" + worker + ".xml";
+  cases_xml_ = reni_ + "/cases-" + worker + ".xml";
   for (const char* k : INHERITED) {
     if (const char* v = std::getenv(k)) env_.push_back(std::string(k) + "=" + v);
   }
@@ -478,6 +468,9 @@ bool Project::list_tests(std::string* why) {
   }
   tests_.clear();
   by_id_.clear();
+  suites_.clear();
+  listed_.clear();
+  probed_.clear();
   std::map<std::string, int> names;
   const Json* list = doc->get("tests");
   if (!list) return true;
@@ -512,10 +505,115 @@ bool Project::list_tests(std::string* why) {
     test.file = file;
     test.id = test.name;
     if (names[test.name]++ > 0) test.id = test.name + " (" + file + ":" + std::to_string(line) + ")";
-    by_id_[test.id] = tests_.size();
-    tests_.push_back(test);
+    std::string not_listed;
+    std::vector<Test> cases = cases_of(test, t, &not_listed);
+    if (cases.empty()) cases.push_back(test);
+    if (!not_listed.empty()) {
+      listed_.push_back("`" + test.name + "` ran whole, as one test: " + not_listed);
+      std::cerr << "kalku-cpp: " << listed_.back() << "\n";
+    }
+    for (const auto& c : cases) {
+      if (by_id_.count(c.id)) continue;
+      by_id_[c.id] = tests_.size();
+      tests_.push_back(c);
+    }
   }
   return true;
+}
+
+std::vector<Test> Project::cases_of(const Test& test, const Json& entry, std::string* why) {
+  // Only a test that runs one executable as it is: arguments are how a
+  // project, or a framework's own discovery, chooses what a test runs.
+  const Json* command = entry.get("command");
+  if (!command || !command->is_array() || command->items.size() != 1) return {};
+  std::string exe = resolved(command->items[0].text);
+  struct stat st;
+  if (exe.rfind(build_ + "/", 0) != 0 || stat(exe.c_str(), &st) != 0 || !S_ISREG(st.st_mode) ||
+      access(exe.c_str(), X_OK) != 0) {
+    return {};
+  }
+  std::string dir = build_;
+  std::vector<std::string> env = env_;
+  std::string unapplied;
+  if (const Json* props = entry.get("properties")) {
+    for (const auto& p : props->items) {
+      const Json* pn = p.get("name");
+      const Json* pv = p.get("value");
+      if (!pn || !pv) continue;
+      if (pn->text == "WORKING_DIRECTORY" && pv->is_string()) {
+        dir = pv->text;
+      } else if (pn->text == "ENVIRONMENT") {
+        std::vector<std::string> set;
+        if (pv->is_string()) set.push_back(pv->text);
+        for (const auto& v : pv->items) set.push_back(v.text);
+        for (const auto& kv : set) {
+          if (kv.find('=') == std::string::npos) continue;
+          std::string key = kv.substr(0, kv.find('=') + 1);
+          env.erase(std::remove_if(env.begin(), env.end(), [&](const std::string& e) { return e.rfind(key, 0) == 0; }),
+                    env.end());
+          env.push_back(kv);
+        }
+      } else if (!harmless(pn->text)) {
+        unapplied += (unapplied.empty() ? "" : ", ") + pn->text;
+      }
+    }
+  }
+  // What the executable is, asked of it: doctest answers `--version` with
+  // its banner, and Catch2 refuses it and answers `--libidentify`. An
+  // executable that is neither runs its own tests, so only one that refused
+  // the first question is asked the second.
+  auto known = probed_.find(exe);
+  if (known == probed_.end()) {
+    Framework f = Framework::None;
+    Ran v = within({exe, "--version"}, dir, env, 10);
+    if (says_doctest(v.output)) {
+      f = Framework::Doctest;
+    } else if (!v.cancelled && !v.unstarted && v.signal == 0 && v.exit_code != 0) {
+      f = says_catch2(within({exe, "--libidentify"}, dir, env, 10).output);
+    }
+    known = probed_.emplace(exe, f).first;
+  }
+  Framework f = known->second;
+  if (f == Framework::None) return {};
+  std::string framework = framework_name(f);
+  if (!unapplied.empty()) {
+    *why = "it is a " + framework + " executable, and the kalku does not run its cases with what " + unapplied +
+           " asks of a test";
+    return {};
+  }
+  unlink(cases_xml_.c_str());
+  std::vector<std::string> argv = {exe};
+  for (const auto& a : listing_args(f, cases_xml_)) argv.push_back(a);
+  Ran r = within(argv, dir, env, 30);
+  if (r.cancelled || r.signal != 0 || r.unstarted) {
+    *why = "it is a " + framework + " executable, and listing its cases " +
+           (r.cancelled   ? std::string("took longer than 30 s")
+            : r.unstarted ? "could not start"
+                          : how_it_ended(r));
+    return {};
+  }
+  std::string text = f == Framework::Catch2Legacy ? r.output : read_file(cases_xml_);
+  std::vector<Listed> listed;
+  std::string reason;
+  if (!read_listing(f, text, &listed, &reason)) {
+    *why = "it is a " + framework + " executable, and " + reason;
+    return {};
+  }
+  std::sort(listed.begin(), listed.end(), [](const Listed& a, const Listed& b) { return a.name < b.name; });
+  int index = static_cast<int>(suites_.size());
+  suites_.push_back(Suite{test.name, f, exe, dir, env, listed.size()});
+  std::vector<Test> out;
+  for (const auto& l : listed) {
+    Test c = test;
+    c.test_case = l.name;
+    c.suite = index;
+    c.id = test.id + "/" + l.name;
+    if (l.file.rfind(work_ + "/", 0) == 0) c.file = l.file.substr(work_.size() + 1);
+    out.push_back(c);
+  }
+  listed_.push_back("the " + std::to_string(out.size()) + " " + framework + " cases of `" + test.name +
+                    "` ran from its executable, chosen by name, and not through `ctest`");
+  return out;
 }
 
 const Test* Project::lookup(const std::string& id) const {
@@ -525,7 +623,98 @@ const Test* Project::lookup(const std::string& id) const {
 
 TestRun Project::run_tests(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel) {
   TestRun out;
-  if (tests.empty()) return out;
+  std::vector<const Test*> whole;
+  std::map<int, std::vector<const Test*>> by_suite;
+  for (const auto* t : tests) (t->suite < 0 ? whole : by_suite[t->suite]).push_back(t);
+  if (!whole.empty()) run_ctest(whole, cancel, out);
+  for (const auto& kv : by_suite) {
+    if (out.cancelled || !out.broken.empty()) break;
+    run_cases(kv.first, kv.second, cancel, out);
+  }
+  return out;
+}
+
+void Project::run_cases(int index, const std::vector<const Test*>& tests, const std::atomic<bool>* cancel,
+                        TestRun& out) {
+  const Suite& s = suites_[static_cast<std::size_t>(index)];
+  Ran ran;
+  bool reported = false;
+  auto once = [&](const std::vector<std::string>& names) {
+    unlink(cases_xml_.c_str());
+    std::vector<std::string> argv = {s.executable};
+    for (const auto& a : run_args(s.framework, names, cases_xml_)) argv.push_back(a);
+    ran = run(argv, s.directory, s.env, cancel);
+    bool ok = false;
+    std::string xml = read_file(cases_xml_, &ok);
+    reported = ok && !xml.empty();
+    return read_report(s.framework, xml);
+  };
+  // Every case asked for is the executable run whole, as CTest runs it.
+  bool all = tests.size() >= s.cases;
+  std::vector<std::string> names;
+  if (!all) {
+    for (const auto* t : tests) names.push_back(t->test_case);
+  }
+  auto got = once(names);
+  if (!all && !ran.cancelled) {
+    bool failed = false;
+    for (const auto* t : tests) {
+      auto it = got.find(t->test_case);
+      failed = failed || (it != got.end() && it->second.status == CaseResult::Status::Failed);
+    }
+    // A case can fail when run apart from the cases the suite runs before
+    // it, and that is no verdict on the wekufe: the run of the whole suite
+    // is the one that judges.
+    if (failed) got = once({});
+  }
+  if (ran.cancelled) {
+    out.cancelled = true;
+    return;
+  }
+  if (!reported) {
+    out.broken = ran.unstarted ? "`" + s.name + "` could not be started"
+                               : "`" + s.name + "` wrote no report: it " + how_it_ended(ran) + ": " +
+                                     named(last_lines(ran.output, 10));
+    return;
+  }
+  bool blamed = false;
+  for (const auto* t : tests) {
+    TestResult res;
+    auto it = got.find(t->test_case);
+    if (it == got.end()) {
+      res.message = "it did not run";
+    } else {
+      res.duration_ms = it->second.duration_ms;
+      res.message = named(it->second.message);
+      switch (it->second.status) {
+        case CaseResult::Status::Passed:
+          res.status = TestResult::Status::Passed;
+          break;
+        case CaseResult::Status::Failed:
+          res.status = TestResult::Status::Failed;
+          blamed = true;
+          break;
+        case CaseResult::Status::Crashed:
+          res.status = TestResult::Status::Crashed;
+          blamed = true;
+          break;
+      }
+    }
+    out.by_id[t->id] = res;
+  }
+  // An executable that failed when no case did failed outside them, as a
+  // static destructor can: that is no case's verdict, and no case passed.
+  if (!ran.ok() && !blamed) {
+    for (const auto* t : tests) {
+      TestResult& res = out.by_id[t->id];
+      if (res.status != TestResult::Status::Passed) continue;
+      res.status = TestResult::Status::Crashed;
+      res.message = "its cases passed, and `" + s.name + "` then " + how_it_ended(ran);
+    }
+  }
+}
+
+void Project::run_ctest(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out) {
   std::string numbers = "0,0,0";
   for (const auto* t : tests) numbers += "," + std::to_string(t->number);
   unlink(junit_.c_str());
@@ -533,14 +722,15 @@ TestRun Project::run_tests(const std::vector<const Test*>& tests, const std::ato
               env_, cancel);
   if (r.cancelled) {
     out.cancelled = true;
-    return out;
+    return;
   }
   bool ok = false;
   std::string xml = read_file(junit_, &ok);
   if (!ok || xml.empty()) {
     out.broken = r.unstarted ? "ctest could not be started" : "ctest wrote no report: " + named(r.output);
-    return out;
+    return;
   }
+  std::map<std::string, TestResult> by_name;
   std::size_t at = 0;
   while ((at = xml.find("<testcase ", at)) != std::string::npos) {
     std::size_t open_end = xml.find('>', at);
@@ -571,10 +761,13 @@ TestRun Project::run_tests(const std::vector<const Test*>& tests, const std::ato
       res.status = TestResult::Status::NotRun;
       res.message = "it did not run";
     }
-    out.by_name[attribute(element, "name")] = res;
+    by_name[attribute(element, "name")] = res;
     at = open_end;
   }
-  return out;
+  for (const auto* t : tests) {
+    auto it = by_name.find(t->name);
+    if (it != by_name.end()) out.by_id[t->id] = it->second;
+  }
 }
 
 std::optional<std::string> Project::read(const std::string& file) const {
@@ -671,7 +864,7 @@ std::string Project::named(const std::string& message) const {
 std::vector<std::string> Project::differences() const {
   std::string passed;
   for (const auto& kv : env_) passed += (passed.empty() ? "" : ", ") + kv.substr(0, kv.find('='));
-  return {
+  std::vector<std::string> out = {
       "it ran in a copy of the project kept in the reni, " + work_ +
           ": what the copy leaves out is not there, `.git` and any directory CMake built into",
       "it was configured afresh into a build tree of its own, " + build_ +
@@ -681,6 +874,8 @@ std::vector<std::string> Project::differences() const {
       "the tests see none of your environment but " + passed +
           ": any other variable set for them in your shell is not there",
   };
+  out.insert(out.end(), listed_.begin(), listed_.end());
+  return out;
 }
 
 }  // namespace kalku

@@ -60,8 +60,15 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
 - No coverage per test yet: every wekufe is judged by the whole suite.
 - No baseline that runs only what changed yet: every baseline runs every test.
 - A CTest test is the unit: a test executable registered as one test is run
-  whole. GoogleTest's `gtest_discover_tests` registers each case, and then a
-  case is the unit.
+  whole. GoogleTest's `gtest_discover_tests`, Catch2's `catch_discover_tests`
+  and doctest's `doctest_discover_tests` register each case, and then a case
+  is the unit.
+- A Catch2 (v2 or v3) or doctest executable that CTest runs whole, with no
+  arguments, is asked for its cases, and each case is a test, named
+  `<ctest test>/<case>`: the kalku runs the cases it is asked for by name,
+  from the executable, and reads each one's verdict from the framework's XML
+  report. When it cannot list them it runs the executable whole and says why
+  in the baseline's differences.
 - Each worker builds the whole project in `prepare`, in its own build tree.
 - A build that turns warnings into errors (`-Werror`) makes a wekufe that
   leaves a variable unused a compile error, not a measurement.
