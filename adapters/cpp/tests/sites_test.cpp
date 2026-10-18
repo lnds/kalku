@@ -28,7 +28,7 @@ std::vector<std::string> fixtures() {
     if (!inner) continue;
     while (dirent* f = readdir(inner)) {
       std::string name = f->d_name;
-      if (is_cpp_file(name)) out.push_back(spell + "/" + name);
+      if (is_source_file(name)) out.push_back(spell + "/" + name);
     }
     closedir(inner);
   }
@@ -54,7 +54,9 @@ Searched search(const cx::Api& api, const std::string& name, const std::string& 
   s.file = name;
   s.path = here("testdata/sites/" + name);
   s.text = text;
-  s.args = {"clang++", "-std=c++17"};
+  // A `.h` fixture is a C header, as a `.hpp` one is a C++ header.
+  s.c = is_c_file(name) || name.substr(name.size() - 2) == ".h";
+  s.args = s.c ? std::vector<std::string>{"clang", "-std=c11"} : std::vector<std::string>{"clang++", "-std=c++17"};
   s.directory = here("testdata/sites");
   s.header = is_header(name);
   s.spells = SPELLS;
@@ -71,7 +73,7 @@ TEST("every fixture's sites are its golden's") {
   const cx::Api* api = clang_or_skip();
   if (!api) return;
   auto all = fixtures();
-  CHECK(all.size() >= 9);
+  CHECK(all.size() >= 18);
   for (const auto& name : all) {
     std::string path = here("testdata/sites/" + name);
     Searched got = search(*api, name, read(path));
@@ -126,7 +128,11 @@ TEST("test files are the suite, and are known by their names and places") {
   CHECK(is_test_file("test_math.cc"));
   CHECK(!is_test_file("src/math.cpp"));
   CHECK(!is_test_file("src/attestation.cpp"));
+  CHECK(is_test_file("test.c"));
   CHECK(is_header("include/ring.hpp"));
-  CHECK(is_cpp_file("src/a.cc"));
-  CHECK(!is_cpp_file("src/a.c"));
+  CHECK(is_source_file("src/a.cc"));
+  CHECK(is_source_file("src/a.c"));
+  CHECK(is_c_file("src/a.c"));
+  CHECK(!is_c_file("src/a.C"));
+  CHECK(!is_source_file("src/a.py"));
 }

@@ -149,6 +149,72 @@ std::string cast_of(int id, const std::string& site, const std::string& tests) {
          ",\"site\":" + site + ",\"tests\":" + tests + "}";
 }
 
+// Each site of a `sites_found`, exactly as the kalku wrote it, by
+// "file:line spell original".
+std::map<std::string, std::string> by_place(const std::string& found) {
+  std::map<std::string, std::string> by;
+  auto doc = parse_json(found);
+  if (!doc || !doc->get("sites")) return by;
+  for (const auto& s : doc->get("sites")->items) {
+    std::string line = std::to_string(s.get("span")->get("start")->get("line")->integer);
+    std::string key = s.get("file")->text + ":" + line + " " + s.get("spell")->text + " " + s.get("original")->text;
+    std::string json;
+    auto at = found.find("{\"site_id\":\"" + s.get("site_id")->text + "\"");
+    int depth = 0;
+    for (std::size_t i = at; i < found.size(); i++) {
+      json += found[i];
+      if (found[i] == '{') depth++;
+      if (found[i] == '}' && --depth == 0) break;
+    }
+    by[key] = json;
+  }
+  return by;
+}
+
+bool have_cmake() {
+  if (std::system("command -v cmake >/dev/null 2>&1") == 0) return true;
+  if (std::getenv("CI")) kalku::testing::failed("cmake", "no cmake on the PATH");
+  std::cerr << "  skipped: no cmake on the PATH\n";
+  return false;
+}
+
+// `hello` and `prepare`, each answered as it should be.
+bool started(Kalku& k, const std::string& root, const std::string& reni) {
+  k.send("{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":" + kalku::quote(root) +
+         ",\"reni\":" + kalku::quote(reni) + ",\"worker\":0,\"inline_limit_bytes\":65536,\"env\":{}}");
+  std::string ready = k.next();
+  CHECK_EQ(field(ready, "type"), std::string("ready"));
+  if (field(ready, "type") != "ready") {
+    std::cerr << ready << "\n";
+    return false;
+  }
+  k.send("{\"type\":\"prepare\",\"id\":2}");
+  std::string prepared = k.next();
+  CHECK_EQ(field(prepared, "type"), std::string("prepared"));
+  return field(prepared, "type") == "prepared";
+}
+
+struct Expect {
+  std::string site;
+  std::string outcome;
+  std::string killed_by;
+};
+
+// Casts each wekufe against both tests and checks what came of it.
+void judge(Kalku& k, const std::map<std::string, std::string>& by, const std::vector<Expect>& expected, int& id) {
+  for (const auto& e : expected) {
+    auto it = by.find(e.site);
+    if (it == by.end()) {
+      kalku::testing::failed("sites", "no site " + e.site);
+      continue;
+    }
+    k.send(cast_of(id++, it->second, "[\"basics\",\"edges\"]"));
+    std::string done = k.next();
+    CHECK_EQ(field(done, "outcome") + " " + e.site, e.outcome + " " + e.site);
+    CHECK_EQ(field(done, "killed_by") + " " + e.site, e.killed_by + " " + e.site);
+  }
+}
+
 }  // namespace
 
 TEST("the kalku measures a CMake project over a pipe, and leaves it as it was") {
@@ -183,21 +249,7 @@ TEST("the kalku measures a CMake project over a pipe, and leaves it as it was") 
   std::string found = k.next();
   CHECK_EQ(field(found, "type"), std::string("sites_found"));
   auto doc = parse_json(found);
-  std::map<std::string, std::string> by;  // "line spell original" → site
-  for (const auto& s : doc->get("sites")->items) {
-    std::string line = std::to_string(s.get("span")->get("start")->get("line")->integer);
-    std::string key = s.get("file")->text + ":" + line + " " + s.get("spell")->text + " " + s.get("original")->text;
-    std::string json;
-    // The site exactly as the kalku wrote it, cut out of the reply.
-    auto at = found.find("{\"site_id\":\"" + s.get("site_id")->text + "\"");
-    int depth = 0;
-    for (std::size_t i = at; i < found.size(); i++) {
-      json += found[i];
-      if (found[i] == '{') depth++;
-      if (found[i] == '}' && --depth == 0) break;
-    }
-    by[key] = json;
-  }
+  auto by = by_place(found);
   const auto& skipped = doc->get("skipped")->items;
   CHECK_EQ(skipped.size(), static_cast<std::size_t>(1));
   if (!skipped.empty()) CHECK_EQ(skipped[0].get("reason")->text, std::string("test_file"));
@@ -278,6 +330,120 @@ TEST("the kalku measures a CMake project over a pipe, and leaves it as it was") 
   std::map<std::string, std::string> after;
   snapshot(root, "", after);
   CHECK(before == after);
+  remove_tree(reni);
+}
+
+TEST("the kalku measures a C project over a pipe, and leaves it as it was") {
+  if (!have_cmake()) return;
+  std::string root = here("testdata/projects/c_ctest");
+  std::map<std::string, std::string> before;
+  snapshot(root, "", before);
+  std::string reni = temp_reni();
+  Kalku k(KALKU_CPP_BIN);
+  if (!started(k, root, reni)) {
+    remove_tree(reni);
+    return;
+  }
+
+  k.send(
+      "{\"type\":\"sites\",\"id\":3,\"files\":[\"src/calc.c\",\"include/calc.h\",\"tests/edges_test.c\"],"
+      "\"spells\":[\"arm\",\"compare\",\"connect\",\"negate\",\"literal\",\"call\"],\"exclude_calls\":[]}");
+  std::string found = k.next();
+  CHECK_EQ(field(found, "type"), std::string("sites_found"));
+  auto by = by_place(found);
+  auto doc = parse_json(found);
+  const auto& skipped = doc->get("skipped")->items;
+  CHECK_EQ(skipped.size(), static_cast<std::size_t>(1));
+  if (!skipped.empty()) CHECK_EQ(skipped[0].get("reason")->text, std::string("test_file"));
+  // What a macro writes is not a site, wherever it is used.
+  for (const auto& kv : by) CHECK(kv.first.rfind("src/calc.c:52 ", 0) != 0);
+  CHECK(by.count("src/calc.c:33 arm case 9:\n      return \"A\";\n    ") == 1);
+  CHECK(by.count("src/calc.c:23 call count();") == 1);
+
+  k.send("{\"type\":\"baseline\",\"id\":4}");
+  std::string baseline = k.next();
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+
+  int id = 10;
+  judge(k, by,
+        {
+            // A header's wekufe is compiled into every test that includes it.
+            {"include/calc.h:16 compare >", "killed", "edges"},
+            {"src/calc.c:12 negate v < lo", "killed", "basics"},
+            {"src/calc.c:18 compare ==", "crashed", ""},
+            {"src/calc.c:13 compare >", "survived", ""},
+        },
+        id);
+
+  auto lt = by.find("src/calc.c:12 compare <");
+  CHECK(lt != by.end());
+  if (lt != by.end()) {
+    std::string broken = lt->second;
+    auto r = broken.find("\"replacement\":\"<=\"");
+    CHECK(r != std::string::npos);
+    if (r != std::string::npos) broken.replace(r, 18, "\"replacement\":\"<@\"");
+    k.send(cast_of(id++, broken, "[\"basics\",\"edges\"]"));
+    std::string done = k.next();
+    CHECK_EQ(field(done, "outcome"), std::string("compile_error"));
+    CHECK(field(done, "message").find("calc.c") != std::string::npos);
+  }
+
+  // A wekufe that loops for good is stopped where it is.
+  auto loops = by.find("src/calc.c:44 negate n >= 10");
+  CHECK(loops != by.end());
+  if (loops != by.end()) {
+    int cast_id = id++;
+    k.send(cast_of(cast_id, loops->second, "[\"basics\",\"edges\"]"));
+    usleep(1500 * 1000);
+    k.send("{\"type\":\"abort\",\"id\":" + std::to_string(id++) + ",\"cast\":" + std::to_string(cast_id) + "}");
+    std::string aborted = k.next();
+    CHECK_EQ(field(aborted, "type"), std::string("aborted"));
+    CHECK_EQ(field(aborted, "restored"), std::string("true"));
+  }
+
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
+
+  std::map<std::string, std::string> after;
+  snapshot(root, "", after);
+  CHECK(before == after);
+  remove_tree(reni);
+}
+
+TEST("a C project tested with Unity is measured one test executable at a time") {
+  if (!have_cmake()) return;
+  std::string root = here("testdata/projects/c_unity");
+  std::string reni = temp_reni();
+  Kalku k(KALKU_CPP_BIN);
+  if (!started(k, root, reni)) {
+    remove_tree(reni);
+    return;
+  }
+  k.send(
+      "{\"type\":\"sites\",\"id\":3,\"files\":[\"src/ring.c\"],"
+      "\"spells\":[\"arm\",\"compare\",\"connect\",\"negate\",\"literal\",\"call\"],\"exclude_calls\":[]}");
+  auto by = by_place(k.next());
+  k.send("{\"type\":\"baseline\",\"id\":4}");
+  std::string baseline = k.next();
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+  CHECK(baseline.find("\"test\":\"basics\"") != std::string::npos);
+  CHECK(baseline.find("\"test\":\"edges\"") != std::string::npos);
+
+  // The second wekufe is killed by the second executable, after one that
+  // passes with it.
+  int id = 10;
+  judge(k, by,
+        {
+            {"src/ring.c:8 compare ==", "killed", "basics"},
+            {"src/ring.c:20 literal 1", "killed", "edges"},
+        },
+        id);
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
   remove_tree(reni);
 }
 

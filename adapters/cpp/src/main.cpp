@@ -1,4 +1,4 @@
-// kalku-cpp is the C++ kalku: it speaks the kalku protocol on stdio, finds
+// kalku-cpp is the C and C++ kalku: it speaks the kalku protocol on stdio, finds
 // sites with Clang's own parser, and judges each wekufe with the project's
 // own build and CTest, in a copy of the project kept in the reni.
 

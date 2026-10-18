@@ -129,13 +129,14 @@ Reply Service::greet(const Request& r) {
       }
     }
     if (!bad.empty()) {
-      return say(
-          error(r.id, "bad_options", bad + ": the C++ kalku takes `cmake_args`, a list of options for cmake", true));
+      return say(error(r.id, "bad_options",
+                       bad + ": the C and C++ kalku takes `cmake_args`, a list of options for cmake", true));
     }
   }
   if (!file_exists(h.root + "/CMakeLists.txt")) {
     return say(error(r.id, "not_a_cmake_project",
-                     h.root + " has no CMakeLists.txt: the C++ kalku measures a CMake project, from its root", true));
+                     h.root + " has no CMakeLists.txt: the C and C++ kalku measures a CMake project, from its root",
+                     true));
   }
   auto project = std::make_unique<Project>(h, cmake_args);
   std::string cmake = first_line(output_of({"cmake", "--version"}, h.root, project->env()));
@@ -229,8 +230,8 @@ std::string Service::sites(std::int64_t id, const SitesRequest& r) {
     auto skip = [&](const std::string& reason, const std::string& message) {
       skipped.push_back(Skipped{file, reason, message});
     };
-    if (!is_cpp_file(file)) {
-      skip("not_cpp", "`" + file + "` is not a C++ source file");
+    if (!is_source_file(file)) {
+      skip("not_source", "`" + file + "` is not a C or C++ source file");
       continue;
     }
     if (is_test_file(file)) {
@@ -263,6 +264,7 @@ std::string Service::sites(std::int64_t id, const SitesRequest& r) {
     s.args = compile->args;
     s.directory = compile->directory;
     s.header = is_header(file);
+    s.c = compile->c;
     s.spells = r.spells;
     s.exclude_calls = r.exclude_calls;
     Searched got = find_sites(*clang_, s);

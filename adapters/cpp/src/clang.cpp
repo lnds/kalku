@@ -91,6 +91,9 @@ bool bind_all(void* lib, std::string& missing) {
          bind(lib, api.getDiagnostic, "clang_getDiagnostic", missing) &&
          bind(lib, api.getDiagnosticSeverity, "clang_getDiagnosticSeverity", missing) &&
          bind(lib, api.formatDiagnostic, "clang_formatDiagnostic", missing) &&
+         bind(lib, api.getDiagnosticLocation, "clang_getDiagnosticLocation", missing) &&
+         bind(lib, api.getDiagnosticNumRanges, "clang_getDiagnosticNumRanges", missing) &&
+         bind(lib, api.getDiagnosticRange, "clang_getDiagnosticRange", missing) &&
          bind(lib, api.disposeDiagnostic, "clang_disposeDiagnostic", missing) &&
          bind(lib, api.getTranslationUnitCursor, "clang_getTranslationUnitCursor", missing) &&
          bind(lib, api.visitChildren, "clang_visitChildren", missing) &&
@@ -155,7 +158,7 @@ const Api* load(std::string* why) {
     where = path;
     return &api;
   }
-  failure = "no libclang to read C++ with; looked for ";
+  failure = "no libclang to read C or C++ with; looked for ";
   for (std::size_t i = 0; i < looked.size(); i++) failure += (i ? ", " : "") + looked[i];
   failure += ". Install Clang, or name one with KALKU_LIBCLANG";
   if (why) *why = failure;

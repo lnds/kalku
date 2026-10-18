@@ -15,6 +15,7 @@ owner can read and change.
 """)]
 
 import crypto.hash
+import kalku.core.cmake
 import encoding.hex
 import kalku.version
 
@@ -217,9 +218,9 @@ pub fn catalogue() : [Known] = [
     also: [],
     summon: cpp_summoner(),
     outside: cpp_summoner(),
-    sources: [".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h"],
+    sources: [".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h", ".c"],
     tests: ["test", "tests", "unittest", "unittests", "testing"],
-    test_prefixes: ["test_"],
+    test_prefixes: ["test_", "test.", "tests."],
     test_suffixes: [
       "_test.cpp",
       "_test.cc",
@@ -229,21 +230,32 @@ pub fn catalogue() : [Known] = [
       "_unittest.cpp",
       "_unittest.cc",
       "Test.cpp",
-      "Tests.cpp"
+      "Tests.cpp",
+      "_test.c",
+      "_tests.c"
     ],
-    ignored: [
-      "build",
-      "out",
-      "_deps",
-      "third_party",
-      "third-party",
-      "external",
-      "extern",
-      "vendor",
-      ".cache",
-      ".git"
-    ]
+    ignored: c_family_ignored()
+  },
+  Known {
+    language: "c",
+    marker: "CMakeLists.txt",
+    also: [],
+    summon: cpp_summoner(),
+    outside: cpp_summoner(),
+    sources: [".c", ".h"],
+    tests: ["test", "tests", "unittest", "unittests", "testing"],
+    test_prefixes: ["test_", "test.", "tests."],
+    test_suffixes: ["_test.c", "_tests.c", "_unittest.c"],
+    ignored: c_family_ignored()
   }
+]
+
+# What a C or C++ build leaves, the code a project keeps of others, and
+# its fuzzing harnesses, which no test runs.
+fn c_family_ignored() : [String] = [
+  "build", "out", "_deps", "third_party", "third-party", "external", "extern", "vendor", "fuzz",
+  "fuzzing",
+  ".cache", ".git"
 ]
 
 #[doc("""
@@ -253,11 +265,25 @@ told.
 Two markers mean two possible answers and no way to choose between them,
 which is a question for the owner rather than a coin to flip.
 """)]
-pub fn detect(markers: [String]) : Result[Known, Puzzle] = match found_in(markers) {
+pub fn detect(markers: [String]) : Result[Known, Puzzle] = decided(found_in(markers))
+
+#[doc("""
+As `detect`, for a project with a `CMakeLists.txt`, which marks C and C++
+alike: what the file asks CMake for tells them apart, and when it asks for
+neither, the names of the project's files do.
+""")]
+pub fn detect_cmake(markers: [String], cmake: String, files: [String]) : Result[Known, Puzzle] {
+  let said = c_or_cpp(cmake, files)
+  decided(filter(found_in(markers), k => (not c_family(k)) or Some(k.language) == said))
+}
+
+fn decided(found: [Known]) : Result[Known, Puzzle] = match found {
   [] -> Err(Undetected)
   [only] -> Ok(only)
   several -> Err(Ambiguous(several | .language))
 }
+
+fn c_family(k: Known) : Bool = k.language == "c" or k.language == "cpp"
 
 fn found_in(markers: [String]) : [Known] =
   filter(catalogue(), k => contains(markers, k.marker) or any(k.also, m => contains(markers, m)))
@@ -282,7 +308,7 @@ pub fn explain(p: Puzzle) : String {
 
 fn languages() : String = join(catalogue() | .language, ", ")
 
-fn markers() : String = join(catalogue() | .marker, " or ")
+fn markers() : String = join(uniq(catalogue() | .marker), " or ")
 
 #[doc("Everything init would write, given the language and where the reni goes.")]
 pub fn plan_for(known: Known, reni: String) : Plan = Plan {
@@ -558,7 +584,7 @@ exec kalku-typescript "$@"
 fn cpp_summoner() : String = """
 #!/bin/sh
 # kalku-summon-contract: 1
-# Summons the C++ kalku for this project. Written by `kalku init`.
+# Summons the C and C++ kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. Nothing is built here: cmake configures
 # and builds inside `prepare`, in a copy of this project in the reni, with

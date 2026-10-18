@@ -1,0 +1,2 @@
+{"site_id":"bc31969fb8f1","file":"silent/preprocessor.c","enclosing":"pick(int,int)","ordinal":1,"span":{"start":{"line":12,"col":22,"byte":356},"end":{"line":12,"col":29,"byte":363}},"spell":"literal","original":"\"a < b\"","replacement":"\"\"","reload":"module"}
+{"site_id":"7e188c213ce3","file":"silent/preprocessor.c","enclosing":"small(int)","ordinal":1,"span":{"start":{"line":19,"col":29,"byte":524},"end":{"line":19,"col":30,"byte":525}},"spell":"compare","original":"<","replacement":"<=","reload":"module"}

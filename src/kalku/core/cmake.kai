@@ -1,0 +1,110 @@
+#[doc("""
+Which of C and C++ a CMake project is written in.
+
+`CMakeLists.txt` marks both, so the marker alone is two answers. What the
+file asks CMake to enable settles it: `project(name C)`, or `LANGUAGES C`,
+or a later `enable_language(CXX)`. A project that names no language gets
+CMake's default, which is both, and then the sources settle it instead.
+Command names are read in any case, as CMake reads them; language names
+only as written, as CMake does too.
+""")]
+
+const KEYWORDS : [String] = ["VERSION", "DESCRIPTION", "HOMEPAGE_URL", "LANGUAGES"]
+
+const CPP_ONLY : [String] = [".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx"]
+
+#[doc("""
+The language a CMake project is written in, `"c"` or `"cpp"`, from its
+`CMakeLists.txt` and the names of its files. `None` when neither fits, such
+as a project with no C or C++ at all.
+""")]
+pub fn c_or_cpp(cmake: String, files: [String]) : Option[String] = match languages_of(cmake) {
+  Some(named) -> by_name(named)
+  None -> by_files(files)
+}
+
+#[doc("The languages a CMake file enables, or `None` when it leaves them to CMake's default.")]
+pub fn languages_of(text: String) : Option[[String]] {
+  let calls = calls_in(words(uncommented(text)))
+  let asked = flat_map(calls, c => asked_by(c.fst, c.snd))
+  if is_empty(asked) { None } else { Some(asked) }
+}
+
+# C++ wins a project that enables both: the kalku reads each file's own
+# compile command, so one that is mostly C still gets its C measured.
+fn by_name(named: [String]) : Option[String] = if contains(named, "CXX") {
+  Some("cpp")
+} else if contains(named, "C") {
+  Some("c")
+} else {
+  None
+}
+
+fn by_files(files: [String]) : Option[String] = if any(
+  files,
+  f => any(CPP_ONLY, e => ends_with(f, e))
+) {
+  Some("cpp")
+} else if any(files, f => ends_with(f, ".c")) {
+  Some("c")
+} else {
+  None
+}
+
+# A `#` starts a comment to the end of its line.
+fn uncommented(text: String) : String =
+  join(lines(text) | (l => (split(l, "#") |> head).unwrap_or("")), "\n")
+
+fn words(text: String) : [String] = split(
+  replace(replace(replace(replace(text, "(", " ( "), ")", " ) "), "\t", " "), "\n", " "),
+  " "
+)
+  |? (w => w != "")
+
+# Each `project(...)` and `enable_language(...)`, with what is between its
+# parentheses.
+fn calls_in(ws: [String]) : [(String, [String])] = match ws {
+  [] -> []
+  [name, "(", ...rest] -> match to_lower(name) {
+    "project" -> [("project", inside(rest))] ++ calls_in(rest)
+    "enable_language" -> [("enable_language", inside(rest))] ++ calls_in(rest)
+    _ -> calls_in(rest)
+  }
+  [_, ...rest] -> calls_in(rest)
+}
+
+fn inside(ws: [String]) : [String] = match ws {
+  [] -> []
+  [")", ..._] -> []
+  [w, ...rest] -> [w] ++ inside(rest)
+}
+
+fn asked_by(command: String, args: [String]) : [String] = match command {
+  "enable_language" -> args |? (a => not starts_with(a, "OPTIONAL"))
+  _ -> project_languages(args)
+}
+
+# `project(name [lang...])`, or `project(name ... LANGUAGES lang...)` among
+# other keywords; `NONE` asks for none.
+fn project_languages(args: [String]) : [String] = match args {
+  [] -> []
+  [_name, ...rest] -> named_in(rest) |? (l => l != "NONE")
+}
+
+fn named_in(rest: [String]) : [String] = if contains(rest, "LANGUAGES") {
+  until_keyword(after(rest, "LANGUAGES"))
+} else if any(rest, w => contains(KEYWORDS, w)) {
+  []
+} else {
+  rest
+}
+
+fn after(ws: [String], word: String) : [String] = match ws {
+  [] -> []
+  [w, ...rest] -> if w == word { rest } else { after(rest, word) }
+}
+
+fn until_keyword(ws: [String]) : [String] = match ws {
+  [] -> []
+  [w, ...rest] -> if contains(KEYWORDS, w) { [] } else { [w] ++ until_keyword(rest) }
+}
