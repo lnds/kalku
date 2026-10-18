@@ -1,3 +1,9 @@
+## v0.23.0 (2026-10-18)
+
+### Added
+
+- **c**: measure C projects with the C and C++ kalku (#421)
+
 ## v0.22.0 (2026-10-18)
 
 ### Added
