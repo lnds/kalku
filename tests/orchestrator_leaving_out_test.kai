@@ -10,6 +10,7 @@ import kalku.orchestrator.telling
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.measure
 import kalku.core.report
+import kalku.core.gate.{exit_code}
 
 const FAKE : String = "./tests/fake_kalku/fake_kalku"
 
@@ -156,6 +157,28 @@ test "where coverage is doubted, each wekufe takes the rest of the suite to face
       assert (doubted.to_cast | (c => (c.tests, c.rest)))
         == [(["test/a_test.exs:3"], ["test/b_test.exs:2"])]
       assert all(zip(doubted.to_cast, ready.to_cast), p => p.fst.timeout_ms >= p.snd.timeout_ms)
+    }
+  }
+}
+
+# The report of a run an interrupt cut short is the report of what was cast,
+# and it blocks: the rest of the plan was never measured.
+test "a casting an interrupt cancelled reports why it stopped, and blocks" {
+  match learnt("red_some_pass.ndjson") {
+    Err(why) -> {
+      assert why == "a suite with a test that passes should be measured"
+    }
+    Ok(known) -> {
+      let ready = plan(inputs_for(asking_of("red_some_pass.ndjson"), known), nothing_cached)
+      let r = report_after(
+        ready,
+        ready.to_cast,
+        Casting { verdicts: [], failure: None, cancelled: true },
+        known
+      )
+
+      assert r.stopped == Some("the run stopped after 0 of 1 wekufe: it was interrupted")
+      assert exit_code(r.blockers) == 2
     }
   }
 }

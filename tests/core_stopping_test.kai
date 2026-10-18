@@ -16,3 +16,15 @@ test "a run that cast everything is not stopped by what its pool said last" {
 test "a pool that said nothing stopped nothing" {
   assert stopped_short(None, 6, 152) == None
 }
+
+# An interrupted run used to report what it had cast with a zero exit, which
+# a CI job whose step was cancelled reads as a clean pass.
+test "an interrupt that cut the plan short stops the run" {
+  assert stopped_short(what_ended(None, true), 6, 152)
+    == Some("the run stopped after 6 of 152 wekufe: it was interrupted")
+}
+
+test "what the pool said is why a run stopped, before an interrupt" {
+  assert what_ended(Some("worker 0: closed its pipe"), true) == Some("worker 0: closed its pipe")
+  assert what_ended(None, false) == None
+}

@@ -566,7 +566,7 @@ With `[score] ratchet = true`, a run of the whole project (`kalku run --all`) is
 |---|---|
 | `0` | measured; nothing to report |
 | `1` | measured; survivors on changed lines, sites on changed lines that no test reaches, or the score is below threshold or baseline |
-| `2` | could not measure: tests that fail before anything is cast, failed prepare, orphan equivalent entry, config error |
+| `2` | could not measure: tests that fail before anything is cast, failed prepare, orphan equivalent entry, config error, a run that stopped before casting its plan (an interrupt, a pool left with no kalku) |
 
 "Your tests have holes" and "kalku could not run" are different failures and CI must be able to tell them apart.
 

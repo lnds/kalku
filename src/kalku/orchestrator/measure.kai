@@ -691,7 +691,7 @@ stopped travels in the report, and blocks it.
 """)]
 pub fn report_after(ready: Plan, casts: [Wekufe], casting: Casting, known: Known) : Report {
   let stopped = stopped_short(
-    casting.failure,
+    what_ended(casting.failure, casting.cancelled),
     length(uniq(casting.verdicts | .wekufe)),
     length(uniq(casts | .site.site_id))
   )
