@@ -27,7 +27,7 @@ pub fn held_to(policy: Policy, wanted: Wanted) : Policy / Stderr = match wanted.
   Some(s) -> {
     if is_some(policy.threshold) {
       Stderr.eprint(
-        "kalku: shard #{s.index} of #{s.count} is not held to `score.threshold`: its score is of a part. Nothing merges shards yet, so the floor is held only by a run that is not one"
+        "kalku: shard #{s.index} of #{s.count} is not held to `score.threshold`: its score is of a part. `kalku merge` over every shard's report holds the whole project to it"
       )
     } else {
       ()

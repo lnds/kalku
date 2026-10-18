@@ -7,6 +7,9 @@ and trend, never as the headline, and what a change suppressed is listed
 where nobody can miss it.
 """)]
 
+import crypto.hash
+import encoding.hex
+import encoding.json_bind
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.verdict
@@ -77,11 +80,30 @@ pub type Report = {
   doubted: Option[String],
   reused: Int,
   shard: Option[Shard],
-  stopped: Option[String]
+  stopped: Option[String],
+  plan: Option[PlanMark],
+  commit: Option[String],
+  whole: Bool
+}
+
+#[doc("""
+What a run planned from, told apart from any other plan: how many sites the
+kalku found, and a digest of their ids.
+
+Shards that agree on it searched the same files at the same commit with
+the same kalku and settings, so between them they cast one plan.
+""")]
+#[derive(Json, Eq, Show)]
+pub type PlanMark = { sites: Int, digest: String }
+
+#[doc("The mark of a plan made from these sites, whatever order they were found in.")]
+pub fn marked(sites: [Site]) : PlanMark = PlanMark {
+  sites: length(sites),
+  digest: hex.encode(sha256(bytes(join(sort(sites | .site_id), "\n")) | byte_to_int))
 }
 
 #[doc("A wekufe that produced nothing to score, and what the kalku said about it.")]
-#[derive(Eq, Show)]
+#[derive(Json, Eq, Show)]
 pub type Trouble = { wekufe: String, at: Option[Site], outcome: Outcome, said: Option[String] }
 
 #[doc("The whole report as a person reads it: survivors, then the summary, then what was suppressed.")]

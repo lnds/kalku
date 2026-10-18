@@ -45,10 +45,27 @@ test "help of something that is not a command is the whole help" {
   assert cli.parse_args(["nope", "--help"]) == Unknown("nope")
 }
 
-test "commands still to come are pending, others unknown" {
-  assert cli.parse_args(["merge"]) == Pending("merge")
+test "a command kalku does not have is unknown" {
   assert cli.parse_args(["nope"]) == Unknown("nope")
   assert cli.parse_args(["serve"]) == Serve
+}
+
+test "merge takes the shards' reports, a format, and whether to store the score" {
+  assert cli.parse_args(["merge", "a.json", "b.json", "--format", "json", "--store-baseline"])
+    == Merge(Merging { reports: ["a.json", "b.json"], shape: AsJson, store: true })
+  assert cli.parse_args(["merge", "a.json"])
+    == Merge(Merging { reports: ["a.json"], shape: AsHuman, store: false })
+}
+
+test "merge refuses to start without a report, or with what it does not take" {
+  assert cli.parse_args(["merge"])
+    == Misused(
+      "`kalku merge` needs the reports of the shards, as `kalku run --all --shard i/n --format json` wrote them"
+    )
+  assert cli.parse_args(["merge", "a.json", "--all"])
+    == Misused("`kalku merge` does not take --all")
+  assert cli.parse_args(["merge", "a.json", "--format", "xml"])
+    == Misused("`--format` takes human, agent, json or github, not `xml`")
 }
 
 test "the version line carries VERSION" {

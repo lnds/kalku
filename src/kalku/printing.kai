@@ -1,0 +1,40 @@
+#[doc("A report as each of its readers takes it.")]
+
+import fs.file
+import kalku.cli
+import kalku.core.gate
+import kalku.core.report
+import kalku.core.report_agent
+import kalku.core.report_json
+import kalku.core.report_github
+
+#[doc("""
+The report in the shape asked for. Each format is a different reader: a
+person, an agent, a program, a pull request. The survivors are the same in
+all of them.
+""")]
+pub fn printed(r: Report, shape: Shape) : String / File {
+  case r, AsHuman -> human(r)
+  case r, AsAgent -> agent(r, of_files(sources_of(r)))
+  case r, AsJson -> json(r, exit_code(r.blockers))
+  case r, AsGithub -> "#{annotations(r)}\n#{step_summary(r)}"
+}
+
+#[doc("""
+The lines of every file a survivor is in. They travel with it in the agent
+format, so an agent does not have to open a file to see what it is looking
+at; the files are read here and looked up purely, which is what makes the
+format testable without a filesystem.
+""")]
+pub fn sources_of(r: Report) : [(String, [String])] / File =
+  uniq(r.survivors | .site.file) | (path => (path, read_lines(path)))
+
+fn read_lines(path: String) : [String] / File =
+  if file.exists(path) { lines(file.read(path)) } else { [] }
+
+#[doc("A lookup of a file's lines among those read; none for a file that was not.")]
+pub fn of_files(sources: [(String, [String])]) : (String) -> [String] =
+  path => match find(sources, s => s.fst == path) {
+    Some(s) -> s.snd
+    None -> []
+  }
