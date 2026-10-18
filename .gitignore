@@ -26,6 +26,10 @@ adapters/typescript/bin/
 adapters/typescript/build/
 adapters/typescript/node_modules/
 adapters/typescript/testdata/projects/*/node_modules/
+
+# built by `make adapters/cpp/bin/kalku-cpp` and its tests
+adapters/cpp/bin/
+adapters/cpp/build/
 /dist/
 
 # Local environment files can hold secrets

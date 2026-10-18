@@ -20,7 +20,7 @@ Los agentes de código escriben tests rápido, pero un test puede ejecutar una l
 
 Apunta primero a Elixir. Está escrito en [kaikai](https://kaikai-lang.org/) y usa kalku para probar su propio código.
 
-> **Estado: beta.** Los kalku para Elixir, Rust, Python, Java, Go, TypeScript y kaikai vienen en el binario de Homebrew, y el de Elixir también está en [Hex](https://hex.pm/packages/kalku_elixir). Todo lo que sigue funciona hoy; [qué está hecho y qué no](#qué-funciona-hoy) está al final.
+> **Estado: beta.** Los kalku para Elixir, Rust, Python, Java, Go, TypeScript, C++ y kaikai vienen en el binario de Homebrew, y el de Elixir también está en [Hex](https://hex.pm/packages/kalku_elixir). Todo lo que sigue funciona hoy; [qué está hecho y qué no](#qué-funciona-hoy) está al final.
 
 ## Instalación
 
@@ -32,7 +32,7 @@ macOS en Apple Silicon y Linux en x86_64 con GLIBC 2.38 o más nuevo: las
 plataformas para las que [kaikai](https://kaikai-lang.org/) publica
 un toolchain, y su piso es el piso de kalku. Los mismos tarballs están en
 cada [release](https://github.com/lnds/kalku/releases): descomprímelo y deja
-`kalku`, `kalku-kaikai`, `kalku-rust`, `kalku-python`, `kalku-java`, `kalku-go` y `kalku-typescript` en tu `PATH`.
+`kalku`, `kalku-kaikai`, `kalku-rust`, `kalku-python`, `kalku-java`, `kalku-go`, `kalku-typescript` y `kalku-cpp` en tu `PATH`.
 
 Desde el código fuente, con kaikai instalado (la versión de `.kaikai-version`):
 
@@ -240,6 +240,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | Java | nativo | los sites vienen de `javac`, el compilador del propio proyecto, a través de su API pública de árboles; corre en el **JDK del propio proyecto** (11 o posterior) sin dependencias. Construye el proyecto con Maven en el reni, compila cada wekufe en memoria y corre los tests en una JVM propia: JUnit 5 o posterior, JUnit 4 o TestNG. Maven o Gradle, uno o varios módulos |
 | Go | nativo | los sites vienen de `go/parser`, el parser propio de Go; corre el **`go` del propio módulo** (1.21 o posterior) y es un solo binario estático de la biblioteca estándar. Un wekufe llega a `go test` por `-overlay` y nunca se escribe en un archivo; la cobertura por test viene de la herramienta de cobertura de Go, acreditada por función; solo vuelven a correr los paquetes cuyos tests se construyen con el mutado, y `abort` termina el grupo de procesos del cast |
 | TypeScript | nativo | los sites vienen del parser propio del compilador de TypeScript, que va dentro del kalku y también lee JavaScript; corre en el **Node del propio proyecto** (20 o posterior) con su propio **Vitest** (3 o posterior) o **Jest** (29 o posterior). El wekufe le llega al runner en memoria, por un plugin de Vite o envolviendo el transformer de Jest del proyecto, así que nada se escribe en el proyecto; la cobertura por test viene de contadores que el kalku pone en cada sentencia y sirve de la misma forma; `abort` termina el grupo de procesos de la corrida |
+| C++ | nativo | los sites vienen del **parser propio de Clang**, a través del libclang que tenga la máquina, con las opciones de cada archivo tomadas del `compile_commands.json` del build; un proyecto **CMake** (3.21 o posterior) se configura y se compila con su propia toolchain en una copia en el reni, y lo juzga **CTest**. Un cast recompila lo que el archivo mutado alcanza, incluido un header; un test que falla es el kill, uno que termina por una señal es `crashed`; `abort` termina el grupo de procesos del build o de la corrida |
 | otros | driver | envuelve un framework existente (Stryker, …), normaliza sus resultados y recalcula el puntaje |
 
 ## Qué funciona hoy
@@ -274,6 +275,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | kalku de Java: proyectos que prueban con JUnit 4 o con TestNG, a través de sus motores para JUnit Platform | hecho |
 | **kalku de Go** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde `go/parser`; `prepare`, `baseline` y `cast` en el reni a través de `-overlay`, `abort`, `kalku init` para módulos Go, incluido en el release | hecho |
 | **kalku de TypeScript** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde el parser de TypeScript, en TypeScript y JavaScript; `prepare`, `baseline` y `cast` con el Vitest o Jest del propio proyecto y el wekufe servido en memoria, `abort`, `kalku init` para proyectos con `tsconfig.json`, incluido en el release | hecho |
+| **kalku de C++** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde el parser de Clang, en fuentes y headers; `prepare`, `baseline` y `cast` con el build CMake y el CTest del propio proyecto en el reni, `abort`, `kalku init` para proyectos con `CMakeLists.txt`, incluido en el release | hecho; la cobertura por test y un baseline que corre solo lo que cambió todavía no |
 | **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python, Java, Go, TypeScript, kaikai |
 | **Un baseline que corre solo lo que cambió**: los tests que su kalku identifica, por su huella, como sin cambios se reusan de un almacén que se guarda por repositorio, fuera del proyecto | hecho: Go, Elixir, TypeScript, Python, Rust, kaikai, Java |
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |

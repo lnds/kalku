@@ -398,6 +398,40 @@ test "TypeScript and JavaScript sources are the files outside the suite, node_mo
   assert not is_test_of(ts, "src/calc.ts")
 }
 
+test "a CMake project is C++, and summoned with nothing built on the way up" {
+  assert detect(["CMakeLists.txt", "src", "include"]).map(.language) == Ok("cpp")
+  assert detect(["CMakeLists.txt", "pyproject.toml"]) == Err(Ambiguous(["python", "cpp"]))
+  let plan = plan_for(of("cpp"), "/r")
+  assert has(plan.config, "language = \"cpp\"")
+  assert has(plan.summoner, "exec kalku-cpp \"$@\"")
+  assert has(plan.summoner, "kalku-cpp is not on PATH")
+  assert not has(plan.summoner, "cmake --build")
+  assert summon_is_current(plan.summoner)
+  assert starts_with(plan.summoner, "#!/bin/sh")
+  assert plan.dependency == None
+}
+
+# C++ keeps its suite in a directory of its own or names a test after its
+# code; a build tree and other people's code are neither.
+test "C++ sources and headers are the files outside the suite, a build tree and vendored code" {
+  let cpp = of("cpp")
+  assert is_source_of(cpp, "src/parser.cpp")
+  assert is_source_of(cpp, "include/acme/parser.hpp")
+  assert is_source_of(cpp, "lib/ring.h")
+  assert is_source_of(cpp, "src/testing.cc")
+  assert not is_source_of(cpp, "src/parser_test.cpp")
+  assert not is_source_of(cpp, "src/ParserTest.cpp")
+  assert not is_source_of(cpp, "tests/parser.cpp")
+  assert not is_source_of(cpp, "test/helpers.hpp")
+  assert not is_source_of(cpp, "src/test_parser.cpp")
+  assert not is_source_of(cpp, "build/generated/version.hpp")
+  assert not is_source_of(cpp, "third_party/fmt/format.h")
+  assert not is_source_of(cpp, "src/legacy.c")
+  assert not is_source_of(cpp, "CMakeLists.txt")
+  assert is_test_of(cpp, "tests/parser_test.cpp")
+  assert not is_test_of(cpp, "src/parser.cpp")
+}
+
 # Maven keeps the suite apart by directory, and a test class is known by its name too.
 test "Java sources are .java files outside the suite, which is named by directory or by suffix" {
   let java = of("java")

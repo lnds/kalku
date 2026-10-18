@@ -55,11 +55,16 @@ GKALKU_SRC := $(shell find adapters/go/kalku adapters/go/cmd -name '*.go' -not -
 TSKALKU     := adapters/typescript/bin/kalku-typescript
 TSKALKU_SRC := $(wildcard adapters/typescript/src/*.ts) adapters/typescript/build.mjs adapters/typescript/package-lock.json
 
+# The C++ kalku: one binary of C++17 that links nothing of LLVM and opens the
+# machine's libclang when it runs.
+CPPKALKU     := adapters/cpp/bin/kalku-cpp
+CPPKALKU_SRC := $(wildcard adapters/cpp/src/*) adapters/cpp/CMakeLists.txt
+
 # The scripted kalku the orchestrator tests talk to, built as its own package.
 FAKE     := tests/fake_kalku/fake_kalku
 FAKE_SRC := $(wildcard tests/fake_kalku/*.kai) tests/fake_kalku/kai.toml
 
-.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java test-go test-typescript fmt fmt-check lint km ci check properties bench clean self-mutate field dist install uninstall
+.PHONY: all build test test-kaikai test-elixir test-rust test-python test-java test-go test-typescript test-cpp fmt fmt-check lint km ci check properties bench clean self-mutate field dist install uninstall
 
 all: build
 
@@ -69,7 +74,7 @@ $(BUILD)/kalku: kai.toml $(KAI_SRC)
 	@mkdir -p $(BUILD)
 	$(KAI) build . -o $@
 
-test: test-kaikai test-elixir test-rust test-python test-java test-go test-typescript
+test: test-kaikai test-elixir test-rust test-python test-java test-go test-typescript test-cpp
 
 # Under the stack limit a shell gives, not the one make runs with: GNU Make
 # 3.81 raises it to 64 MB for its children, and a loop that keeps a frame
@@ -120,6 +125,11 @@ $(GKALKU): $(GKALKU_SRC)
 
 $(TSKALKU): $(TSKALKU_SRC)
 	cd adapters/typescript && npm ci --no-audit --no-fund && node build.mjs
+
+$(CPPKALKU): $(CPPKALKU_SRC)
+	cmake -S adapters/cpp -B adapters/cpp/build -DCMAKE_BUILD_TYPE=Release
+	cmake --build adapters/cpp/build --target kalku-cpp --parallel
+	@mkdir -p adapters/cpp/bin && cp adapters/cpp/build/kalku-cpp $@
 
 $(JKALKU): $(JKALKU_SRC)
 	cd adapters/java && $(MVN) -B -q -DskipTests package
@@ -174,6 +184,18 @@ test-typescript:
 	  npm run format:check && npm run check && npm test; \
 	else echo "test-typescript: skipped (no adapters/typescript/package.json, or no npm)"; fi
 
+# The C++ kalku, built with every warning an error, and its own tests: the
+# sites of each fixture against its golden, the protocol fixtures, and the
+# real kalku over a pipe against a CMake project. A machine without cmake
+# skips it.
+test-cpp:
+	@if [ -f adapters/cpp/CMakeLists.txt ] && command -v cmake >/dev/null 2>&1; then \
+	  cmake -S adapters/cpp -B adapters/cpp/build -DCMAKE_BUILD_TYPE=Release && \
+	  cmake --build adapters/cpp/build --parallel && \
+	  mkdir -p adapters/cpp/bin && cp adapters/cpp/build/kalku-cpp $(CPPKALKU) && \
+	  adapters/cpp/build/kalku-cpp-tests; \
+	else echo "test-cpp: skipped (no adapters/cpp/CMakeLists.txt, or no cmake)"; fi
+
 fmt:
 	$(KAI) fmt .
 
@@ -191,7 +213,7 @@ km:
 # without waiting for the tests.
 ci: fmt-check lint build test-kaikai km
 
-check: ci test-elixir test-rust test-python test-java test-go test-typescript
+check: ci test-elixir test-rust test-python test-java test-go test-typescript test-cpp
 
 # kalku on its own sources, through its own kalku: the project's claim,
 # run rather than asserted. Measured by the last release, pinned in
@@ -217,21 +239,21 @@ field: build
 # What a release ships: both binaries a user summons, side by side with
 # the licences they are shipped under. Flat, so a package manager can
 # install the tarball's contents without knowing this layout.
-dist: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU)
+dist: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) $(CPPKALKU)
 	@rm -rf $(DIST) && mkdir -p $(DIST)
-	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
-	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python kalku-java kalku-go kalku-typescript LICENSE-MIT LICENSE-APACHE README.md
-	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/kalku-java $(DIST)/kalku-go $(DIST)/kalku-typescript $(DIST)/LICENSE-* $(DIST)/README.md
+	@cp $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) $(CPPKALKU) LICENSE-MIT LICENSE-APACHE README.md $(DIST)/
+	tar -czf $(TARBALL) -C $(DIST) kalku kalku-kaikai kalku-rust kalku-python kalku-java kalku-go kalku-typescript kalku-cpp LICENSE-MIT LICENSE-APACHE README.md
+	@rm -f $(DIST)/kalku $(DIST)/kalku-kaikai $(DIST)/kalku-rust $(DIST)/kalku-python $(DIST)/kalku-java $(DIST)/kalku-go $(DIST)/kalku-typescript $(DIST)/kalku-cpp $(DIST)/LICENSE-* $(DIST)/README.md
 	@cd $(DIST) && (command -v sha256sum >/dev/null && sha256sum $(notdir $(TARBALL)) \
 	  || shasum -a 256 $(notdir $(TARBALL))) > $(notdir $(TARBALL)).sha256
 	@echo "built $(TARBALL)"
 
-install: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU)
+install: build $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) $(CPPKALKU)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILD)/kalku $(KKALKU) $(RKALKU) $(PYKALKU) $(JKALKU) $(GKALKU) $(TSKALKU) $(CPPKALKU) $(DESTDIR)$(PREFIX)/bin/
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python $(DESTDIR)$(PREFIX)/bin/kalku-java $(DESTDIR)$(PREFIX)/bin/kalku-go $(DESTDIR)$(PREFIX)/bin/kalku-typescript
+	rm -f $(DESTDIR)$(PREFIX)/bin/kalku $(DESTDIR)$(PREFIX)/bin/kalku-kaikai $(DESTDIR)$(PREFIX)/bin/kalku-rust $(DESTDIR)$(PREFIX)/bin/kalku-python $(DESTDIR)$(PREFIX)/bin/kalku-java $(DESTDIR)$(PREFIX)/bin/kalku-go $(DESTDIR)$(PREFIX)/bin/kalku-typescript $(DESTDIR)$(PREFIX)/bin/kalku-cpp
 
 clean:
 	rm -rf $(BUILD) $(DIST) .kai-cache
@@ -240,3 +262,4 @@ clean:
 	rm -rf adapters/java/dist adapters/java/target
 	rm -rf adapters/go/bin
 	rm -rf adapters/typescript/bin adapters/typescript/build
+	rm -rf adapters/cpp/bin adapters/cpp/build

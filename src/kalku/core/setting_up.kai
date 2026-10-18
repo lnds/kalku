@@ -2,8 +2,9 @@
 What `kalku init` decides, worked out without touching a thing.
 
 A project says what it is written in — `mix.exs` means Elixir, `Cargo.toml`
-means Rust, `go.mod` means Go, `tsconfig.json` means TypeScript, `kai.toml`
-means kaikai — so being told is only needed when the guess would be wrong. Everything here is a decision about files: what to look
+means Rust, `go.mod` means Go, `tsconfig.json` means TypeScript,
+`CMakeLists.txt` means C++, `kai.toml` means kaikai — so being told is only
+needed when the guess would be wrong. Everything here is a decision about files: what to look
 for, what to write, and what to say. `main` performs it, and asks first.
 
 The catalogue below is the one place the kaikai side knows a language by
@@ -208,6 +209,39 @@ pub fn catalogue() : [Known] = [
     ],
     ignored: [
       "node_modules", "dist", "build", "coverage", "out", ".next", ".turbo", ".cache", ".git"
+    ]
+  },
+  Known {
+    language: "cpp",
+    marker: "CMakeLists.txt",
+    also: [],
+    summon: cpp_summoner(),
+    outside: cpp_summoner(),
+    sources: [".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h"],
+    tests: ["test", "tests", "unittest", "unittests", "testing"],
+    test_prefixes: ["test_"],
+    test_suffixes: [
+      "_test.cpp",
+      "_test.cc",
+      "_test.cxx",
+      "_tests.cpp",
+      "_tests.cc",
+      "_unittest.cpp",
+      "_unittest.cc",
+      "Test.cpp",
+      "Tests.cpp"
+    ],
+    ignored: [
+      "build",
+      "out",
+      "_deps",
+      "third_party",
+      "third-party",
+      "external",
+      "extern",
+      "vendor",
+      ".cache",
+      ".git"
     ]
   }
 ]
@@ -516,6 +550,28 @@ command -v kalku-typescript >/dev/null || {
   exit 127
 }
 exec kalku-typescript "$@"
+"""
+
+# The C++ kalku configures and builds a copy of the project in the reni with
+# the `cmake` on the PATH, and reads C++ with the machine's libclang.
+# Nothing is built here: `prepare` is where cmake runs.
+fn cpp_summoner() : String = """
+#!/bin/sh
+# kalku-summon-contract: 1
+# Summons the C++ kalku for this project. Written by `kalku init`.
+#
+# stdout carries the kalku protocol. Nothing is built here: cmake configures
+# and builds inside `prepare`, in a copy of this project in the reni, with
+# its output on stderr. It uses the `cmake` and `ctest` on the PATH, and the
+# libclang beside the `clang` on the PATH (KALKU_LIBCLANG names another).
+set -eu
+#{reni_off()}
+
+command -v kalku-cpp >/dev/null || {
+  echo "kalku: kalku-cpp is not on PATH; put it beside kalku, as the release does" >&2
+  exit 127
+}
+exec kalku-cpp "$@"
 """
 
 # A kalku runs inside the project's own runtime, so the project has to
