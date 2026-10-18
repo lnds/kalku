@@ -254,6 +254,6 @@ impl Json for Status {
   }
   fn of_json(v: JsonValue, path: String) : Result[Status, JsonError] = match v {
     JStr("gone") -> Ok(Gone)
-    _ -> value_of(outcomes(), v, path, "Outcome or gone").map(o => Is(o))
+    _ -> value_of(outcomes(), v, path, "Outcome or gone").map(Is)
   }
 }

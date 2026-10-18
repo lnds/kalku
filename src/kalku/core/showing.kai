@@ -43,7 +43,7 @@ pub fn as_json(r: Remembered, before: [Outcome]) : String = json_encode(
     ("line", JNum(r.site.span.start.line)),
     ("spell", JStr(spell_name(r.site.spell))),
     ("outcome", JStr(outcome_name(r.outcome))),
-    ("tests", JArr(r.tests | (t => JStr(t)))),
+    ("tests", JArr(r.tests | JStr)),
     ("history", JArr(before | (o => JStr(outcome_name(o))))),
     ("hint", JStr(hint_for(r.site)))
   ])

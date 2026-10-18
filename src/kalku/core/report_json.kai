@@ -25,7 +25,7 @@ pub fn json(r: Report, exit: Int) : String {
   encode_value(
     JObj(
       [
-        ...optional("score", score(r.counts).map(s => JReal(s))),
+        ...optional("score", score(r.counts).map(JReal)),
         ("counts", to_json(r.counts)),
         ("survivors", JArr(r.survivors | (s => survivor(s, suite)))),
         ("skipped", JArr(r.skipped | skipped_file)),
@@ -34,22 +34,22 @@ pub fn json(r: Report, exit: Int) : String {
         ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
         ("exit", JNum(exit)),
         ...left_out(r),
-        ...optional("coverage_withheld", r.withheld.map(w => JStr(w))),
-        ...optional("coverage_doubted", r.doubted.map(w => JStr(w))),
+        ...optional("coverage_withheld", r.withheld.map(JStr)),
+        ...optional("coverage_doubted", r.doubted.map(JStr)),
         ...optional("baseline_reused", if r.reused > 0 { Some(JNum(r.reused)) } else { None }),
         ...optional(
           "shard",
           r.shard.map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
         ),
-        ...optional("stopped", r.stopped.map(w => JStr(w))),
+        ...optional("stopped", r.stopped.map(JStr)),
         ("kalku", JStr(version.VERSION)),
         ("planned", JNum(r.planned)),
         ...optional("plan", r.plan.map(p => to_json(p))),
-        ...optional("commit", r.commit.map(c => JStr(c))),
+        ...optional("commit", r.commit.map(JStr)),
         ...optional("whole", if r.whole { Some(JBool(true)) } else { None }),
         ("uncovered", JArr(r.uncovered | (s => to_json(s)))),
         ("troubles", JArr(r.troubles | (t => to_json(t)))),
-        ...optional("suite", suite.map(ts => JArr(ts | (t => JStr(t)))))
+        ...optional("suite", suite.map(strings))
       ]
     )
   )
@@ -67,7 +67,7 @@ fn left_out(r: Report) : [(String, JsonValue)] = if is_empty(r.left_out.tests) {
         r.left_out.tests | (f => JObj([("test", JStr(f.test_id)), ("message", JStr(f.message))]))
       )
     ),
-    ("differences", JArr(r.left_out.differences | (d => JStr(d)))),
+    ("differences", JArr(r.left_out.differences | JStr)),
     ("reached_only_by_left_out", JArr(r.left_out.sites | (s => JStr(s.site_id)))),
     ("left_out_sites", JArr(r.left_out.sites | (s => to_json(s))))
   ]
@@ -87,19 +87,19 @@ fn survivor(s: Survivor, suite: Option[[String]]) : JsonValue = JObj(
   [
     ("wekufe", JStr(s.site.site_id)),
     ("file", JStr(s.site.file)),
-    ...optional("enclosing", s.site.enclosing.map(e => JStr(e))),
+    ...optional("enclosing", s.site.enclosing.map(JStr)),
     ("line", JNum(s.site.span.start.line)),
     ("spell", JStr(spell_name(s.site.spell))),
-    ...optional("original", s.site.original.map(o => JStr(o))),
+    ...optional("original", s.site.original.map(JStr)),
     ("replacement", JStr(s.site.replacement)),
-    ("covering_tests", JArr(if s.chosen { s.tests | (t => JStr(t)) } else { [] })),
+    ("covering_tests", JArr(if s.chosen { s.tests | JStr } else { [] })),
     ...if s.chosen { [] } else { [("judged_by_whole_suite", JNum(length(s.tests)))] },
     ...if s.chosen or suite == Some(s.tests) { [] } else { [("tests", strings(s.tests))] },
     ("site", to_json(s.site))
   ]
 )
 
-fn strings(xs: [String]) : JsonValue = JArr(xs | (x => JStr(x)))
+fn strings(xs: [String]) : JsonValue = JArr(xs | JStr)
 
 fn optional(key: String, value: Option[JsonValue]) : [(String, JsonValue)] = match value {
   Some(v) -> [(key, v)]
