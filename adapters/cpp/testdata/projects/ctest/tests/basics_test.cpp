@@ -17,5 +17,9 @@ int main() {
     std::puts("sign(7) should be 1");
     failed++;
   }
+  if (calc::halvings(8) != 3) {
+    std::puts("halvings(8) should be 3");
+    failed++;
+  }
   return failed == 0 ? 0 : 1;
 }

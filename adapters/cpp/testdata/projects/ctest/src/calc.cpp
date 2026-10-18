@@ -18,4 +18,14 @@ int sign(int x) {
   return x > 0 ? 1 : 0;
 }
 
+// A wekufe that divides by 3 never reaches 1 from 8, and loops for good.
+int halvings(int n) {
+  int steps = 0;
+  while (n != 1) {
+    n /= 2;
+    steps++;
+  }
+  return steps;
+}
+
 }  // namespace calc

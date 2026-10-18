@@ -215,7 +215,7 @@ TEST("the kalku measures a CMake project over a pipe, and leaves it as it was") 
     std::string killed_by;
   };
   std::vector<Expect> expected = {
-      {"include/calc.hpp:10 compare >", "killed", "edges"},
+      {"include/calc.hpp:11 compare >", "killed", "edges"},
       {"src/calc.cpp:17 literal 1", "killed", "edges"},
       {"src/calc.cpp:12 compare ==", "crashed", ""},
       {"src/calc.cpp:7 compare >", "survived", ""},
@@ -251,13 +251,15 @@ TEST("the kalku measures a CMake project over a pipe, and leaves it as it was") 
 
   // An abort stops the cast where it is, and the next cast finds the copy
   // as it was.
+  // A wekufe that loops for good is still running when the abort comes.
+  auto loops = by.find("src/calc.cpp:25 literal 2");
   auto neg = by.find("src/calc.cpp:6 negate v < lo");
+  CHECK(loops != by.end());
   CHECK(neg != by.end());
-  if (neg != by.end()) {
+  if (loops != by.end() && neg != by.end()) {
     int cast_id = id++;
-    k.send(cast_of(cast_id, neg->second, both));
-    // As the kaikai side does, the abort comes while the cast is under way.
-    usleep(300 * 1000);
+    k.send(cast_of(cast_id, loops->second, both));
+    usleep(1500 * 1000);
     k.send("{\"type\":\"abort\",\"id\":" + std::to_string(id++) + ",\"cast\":" + std::to_string(cast_id) + "}");
     std::string aborted = k.next();
     CHECK_EQ(field(aborted, "type"), std::string("aborted"));
