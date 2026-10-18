@@ -9,6 +9,7 @@ produce the same bytes.
 
 import encoding.json
 import encoding.json_bind
+import kalku.version
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.wire.envelope
@@ -16,31 +17,43 @@ import kalku.core.score
 import kalku.core.gate
 import kalku.core.report
 import kalku.core.shard
+import kalku.core.blaming
 
 #[doc("The whole report as one canonical JSON object.")]
-pub fn json(r: Report, exit: Int) : String = encode_value(
-  JObj(
-    [
-      ...optional("score", score(r.counts).map(s => JReal(s))),
-      ("counts", to_json(r.counts)),
-      ("survivors", JArr(r.survivors | survivor)),
-      ("skipped", JArr(r.skipped | skipped_file)),
-      ("survivors_on_changed_lines", JNum(r.on_changed_lines)),
-      ("suppression_changes", to_json(r.suppressions)),
-      ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
-      ("exit", JNum(exit)),
-      ...left_out(r),
-      ...optional("coverage_withheld", r.withheld.map(w => JStr(w))),
-      ...optional("coverage_doubted", r.doubted.map(w => JStr(w))),
-      ...optional("baseline_reused", if r.reused > 0 { Some(JNum(r.reused)) } else { None }),
-      ...optional(
-        "shard",
-        r.shard.map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
-      ),
-      ...optional("stopped", r.stopped.map(w => JStr(w)))
-    ]
+pub fn json(r: Report, exit: Int) : String {
+  let suite = suite_of(r.survivors)
+  encode_value(
+    JObj(
+      [
+        ...optional("score", score(r.counts).map(s => JReal(s))),
+        ("counts", to_json(r.counts)),
+        ("survivors", JArr(r.survivors | (s => survivor(s, suite)))),
+        ("skipped", JArr(r.skipped | skipped_file)),
+        ("survivors_on_changed_lines", JNum(r.on_changed_lines)),
+        ("suppression_changes", to_json(r.suppressions)),
+        ("blocked_by", JArr(r.blockers | (b => JStr(explain(b))))),
+        ("exit", JNum(exit)),
+        ...left_out(r),
+        ...optional("coverage_withheld", r.withheld.map(w => JStr(w))),
+        ...optional("coverage_doubted", r.doubted.map(w => JStr(w))),
+        ...optional("baseline_reused", if r.reused > 0 { Some(JNum(r.reused)) } else { None }),
+        ...optional(
+          "shard",
+          r.shard.map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
+        ),
+        ...optional("stopped", r.stopped.map(w => JStr(w))),
+        ("kalku", JStr(version.VERSION)),
+        ("planned", JNum(r.planned)),
+        ...optional("plan", r.plan.map(p => to_json(p))),
+        ...optional("commit", r.commit.map(c => JStr(c))),
+        ...optional("whole", if r.whole { Some(JBool(true)) } else { None }),
+        ("uncovered", JArr(r.uncovered | (s => to_json(s)))),
+        ("troubles", JArr(r.troubles | (t => to_json(t)))),
+        ...optional("suite", suite.map(ts => JArr(ts | (t => JStr(t)))))
+      ]
+    )
   )
-)
+}
 
 # Present only when a run went on without some tests, so a run in which
 # every test judged writes the bytes it always wrote.
@@ -55,7 +68,8 @@ fn left_out(r: Report) : [(String, JsonValue)] = if is_empty(r.left_out.tests) {
       )
     ),
     ("differences", JArr(r.left_out.differences | (d => JStr(d)))),
-    ("reached_only_by_left_out", JArr(r.left_out.sites | (s => JStr(s.site_id))))
+    ("reached_only_by_left_out", JArr(r.left_out.sites | (s => JStr(s.site_id)))),
+    ("left_out_sites", JArr(r.left_out.sites | (s => to_json(s))))
   ]
 }
 
@@ -63,7 +77,13 @@ fn skipped_file(s: Skipped) : JsonValue = JObj(
   [("file", JStr(s.file)), ("reason", JStr(s.reason)), ("message", JStr(s.message))]
 )
 
-fn survivor(s: Survivor) : JsonValue = JObj(
+# A survivor no coverage chose was judged by the whole suite, which is the
+# same list for every one of them: written once, beside the survivors, and
+# again on a survivor only where its list is another.
+fn suite_of(survivors: [Survivor]) : Option[[String]] =
+  find(survivors, s => not s.chosen).map(.tests)
+
+fn survivor(s: Survivor, suite: Option[[String]]) : JsonValue = JObj(
   [
     ("wekufe", JStr(s.site.site_id)),
     ("file", JStr(s.site.file)),
@@ -73,11 +93,130 @@ fn survivor(s: Survivor) : JsonValue = JObj(
     ...optional("original", s.site.original.map(o => JStr(o))),
     ("replacement", JStr(s.site.replacement)),
     ("covering_tests", JArr(if s.chosen { s.tests | (t => JStr(t)) } else { [] })),
-    ...if s.chosen { [] } else { [("judged_by_whole_suite", JNum(length(s.tests)))] }
+    ...if s.chosen { [] } else { [("judged_by_whole_suite", JNum(length(s.tests)))] },
+    ...if s.chosen or suite == Some(s.tests) { [] } else { [("tests", strings(s.tests))] },
+    ("site", to_json(s.site))
   ]
 )
+
+fn strings(xs: [String]) : JsonValue = JArr(xs | (x => JStr(x)))
 
 fn optional(key: String, value: Option[JsonValue]) : [(String, JsonValue)] = match value {
   Some(v) -> [(key, v)]
   None -> []
 }
+
+#[doc("""
+A report read back: what was measured, the exit code its run returned, and
+the kalku that wrote it.
+
+The blockers are not read back. They are an opinion about the counts, and
+whoever reads a report judges it again by the policy it answers to.
+""")]
+#[derive(Eq, Show)]
+pub type Written = { report: Report, exit: Int, kalku: Option[String] }
+
+#[doc("Reads a report `--format json` wrote; an error says what it lacks.")]
+pub fn read_report(text: String) : Result[Written, String] = match json_decode(trim(text)) {
+  None -> Err("it is not JSON")
+  Some(v) -> written_from(v)
+}
+
+fn written_from(v: JsonValue) : Result[Written, String] {
+  let suite = json_bind_opt_list(get(v, "suite"), "suite", json_bind_string).map_err(said)!
+  Ok(
+    Written {
+      report: Report {
+        counts: counts_of_json(get(v, "counts"), "counts").map_err(said)!,
+        planned: int_at(v, "planned")!,
+        survivors: each(v, "survivors", (e, at) => survivor_from(e, at, suite))!,
+        on_changed_lines: int_at(v, "survivors_on_changed_lines")!,
+        suppressions: suppressionchanges_of_json(
+          get(v, "suppression_changes"),
+          "suppression_changes"
+        ).map_err(said)!,
+        troubles: each(v, "troubles", (e, at) => trouble_of_json(e, at).map_err(said))!,
+        skipped: each(v, "skipped", (e, at) => skipped_of_json(e, at).map_err(said))!,
+        uncovered: each(v, "uncovered", (e, at) => site_of_json(e, at).map_err(said))!,
+        blockers: [],
+        left_out: left_out_from(v)!,
+        withheld: json_bind_opt_string(get(v, "coverage_withheld"), "coverage_withheld").map_err(
+          said
+        )!,
+        doubted: json_bind_opt_string(get(v, "coverage_doubted"), "coverage_doubted").map_err(
+          said
+        )!,
+        reused: (json_bind_opt_int(get(v, "baseline_reused"), "baseline_reused").map_err(said)!).unwrap_or(
+          0
+        ),
+        shard: json_bind_opt(get(v, "shard"), "shard", shard_of_json).map_err(said)!,
+        stopped: json_bind_opt_string(get(v, "stopped"), "stopped").map_err(said)!,
+        plan: json_bind_opt(get(v, "plan"), "plan", planmark_of_json).map_err(said)!,
+        commit: json_bind_opt_string(get(v, "commit"), "commit").map_err(said)!,
+        whole: (json_bind_opt_bool(get(v, "whole"), "whole").map_err(said)!).unwrap_or(false)
+      },
+      exit: int_at(v, "exit")!,
+      kalku: json_bind_opt_string(get(v, "kalku"), "kalku").map_err(said)!
+    }
+  )
+}
+
+# The tests that judged a survivor are the ones coverage chose, or the
+# whole suite; a survivor that says it faced the suite and names a list of
+# another size was written by something else.
+fn survivor_from(e: JsonValue, at: String, suite: Option[[String]]) : Result[Survivor, String] {
+  let site = site_of_json(get(e, "site"), "#{at}.site").map_err(said)!
+  let covering =
+    json_bind_list(get(e, "covering_tests"), "#{at}.covering_tests", json_bind_string).map_err(said)!
+  match json_bind_opt_int(get(e, "judged_by_whole_suite"), "#{at}.judged_by_whole_suite").map_err(
+    said
+  )! {
+    None -> Ok(Survivor { site: site, tests: covering, chosen: true })
+    Some(n) -> {
+      let own = json_bind_opt_list(get(e, "tests"), "#{at}.tests", json_bind_string).map_err(said)!
+      let tests = own.or_else(() => suite).unwrap_or([])
+      if length(tests) == n {
+        Ok(Survivor { site: site, tests: tests, chosen: false })
+      } else {
+        Err("#{at}: judged by #{n} test(s), and the report names #{length(tests)}")
+      }
+    }
+  }
+}
+
+fn left_out_from(v: JsonValue) : Result[LeftOut, String] = match get(v, "left_out") {
+  JNull -> Ok(nobody_left_out())
+  _ -> Ok(
+    LeftOut {
+      tests: each(v, "left_out", (e, at) => failure_of_json(e, at).map_err(said))!,
+      differences: json_bind_list(get(v, "differences"), "differences", json_bind_string).map_err(
+        said
+      )!,
+      sites: each(v, "left_out_sites", (e, at) => site_of_json(e, at).map_err(said))!
+    }
+  )
+}
+
+fn int_at(v: JsonValue, key: String) : Result[Int, String] =
+  json_bind_int(get(v, key), key).map_err(said)
+
+# Every element of the array under `key`, read by `f`; the first that will
+# not read is the answer.
+fn each[a](
+  v: JsonValue,
+  key: String,
+  f: (JsonValue, String) -> Result[a, String]
+) : Result[[a], String] = match get(v, key) {
+  JArr(xs) -> foldl(
+    enumerate(xs),
+    Ok([]),
+    (acc, ix) => match acc {
+      Err(e) -> Err(e)
+      Ok(done) -> f(ix.snd, "#{key}[#{ix.fst}]").map(x => done ++ [x])
+    }
+  )
+  JNull -> Err("`#{key}` is missing")
+  _ -> Err("`#{key}` is not a list")
+}
+
+fn said(e: JsonError) : String = json_error_show(e)

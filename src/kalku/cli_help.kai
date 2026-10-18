@@ -12,6 +12,7 @@ pub fn explained() : [String] = [
   "run",
   "cast",
   "show",
+  "merge",
   "propose-equivalent",
   "accept",
   "reject",
@@ -35,6 +36,7 @@ pub fn help_of(cmd: String) : String = match cmd {
   "run" -> RUN
   "cast" -> CAST
   "show" -> SHOW
+  "merge" -> MERGE
   "propose-equivalent" -> PROPOSE
   "accept" -> ACCEPT
   "reject" -> REJECT
@@ -102,6 +104,27 @@ as a run named it. What comes back is what a run reports, for these alone.
 options:
   --format <name>  human (the default), agent, json, or github
   -v, --verbose    say what the run is doing while it does it
+"""
+
+const MERGE : String = """
+usage: kalku merge <report.json>... [--format <name>] [--store-baseline]
+
+Combine the reports of a run split across jobs into the report of the
+whole project. Each report is what `kalku run --all --shard i/n --format
+json` wrote; the merge is held to `score.threshold` and to the ratchet's
+baseline as a run of the whole project is.
+
+A merge is refused, with exit 2, unless the reports are every part of one
+plan exactly once: shards of the same count, written by this kalku, from
+the same sites at the same commit, each having measured what it owned.
+
+exit code: 0 when nothing blocks, 1 when the score is under what the
+project holds it to, 2 when the reports do not make the whole project.
+
+options:
+  --format <name>  human (the default), agent, json, or github
+  --store-baseline store the merged score as the baseline `ratchet = true`
+                   holds later runs of the whole project to
 """
 
 const SHOW : String = """

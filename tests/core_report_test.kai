@@ -50,7 +50,10 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     reused: 0,
     doubted: None,
     shard: None,
-    stopped: None
+    stopped: None,
+    plan: None,
+    commit: None,
+    whole: false
   }
 
 fn plain() : Report =
@@ -189,7 +192,7 @@ test "the json report carries the score, the counts, and every survivor" {
   assert has(text, "\"score\":0.5")
   assert has(
     text,
-    "\"survivors\":[{\"wekufe\":\"id-lib/a.ex-42\",\"file\":\"lib/a.ex\",\"enclosing\":\"A.f/1\",\"line\":42,\"spell\":\"compare\",\"original\":\">=\",\"replacement\":\">\",\"covering_tests\":[\"test/a_test.exs:18\"]}]"
+    "\"survivors\":[{\"wekufe\":\"id-lib/a.ex-42\",\"file\":\"lib/a.ex\",\"enclosing\":\"A.f/1\",\"line\":42,\"spell\":\"compare\",\"original\":\">=\",\"replacement\":\">\",\"covering_tests\":[\"test/a_test.exs:18\"],\"site\":{\"site_id\":\"id-lib/a.ex-42\""
   )
   assert has(text, "\"exit\":1")
 }

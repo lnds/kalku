@@ -1,0 +1,63 @@
+#[doc("""
+`kalku merge`: the reports a sharded run wrote, read back and made the
+report of the whole project, or refused.
+""")]
+
+import fs.file
+import kalku.cli
+import kalku.version
+import kalku.holding
+import kalku.printing
+import kalku.core.config
+import kalku.core.gate
+import kalku.core.report
+import kalku.core.report_json
+import kalku.core.merging
+import kalku.orchestrator.measure
+
+#[doc("""
+Merges the reports named and prints the whole, returning the exit code.
+The whole is held to what a run of the whole project is held to.
+""")]
+pub fn merged_here(c: Config, asked: Merging) : Int / Stdout + Stderr + File {
+  let refused = (why: String) => {
+    Stderr.eprint("kalku: could not merge: #{why}")
+    2
+  }
+  match given_reports(asked.reports) {
+    Err(why) -> refused(why)
+    Ok(given) -> match merged(given, version.VERSION) {
+      Err(why) -> refused(why)
+      Ok(whole) ->
+        match ratcheted(c, Wanted { ...nothing_wanted(), all: true, store: asked.store }) {
+          Err(why) -> {
+            Stderr.eprint("kalku: could not measure: #{why}")
+            2
+          }
+          Ok(policy) -> {
+            let r = judged_by(whole, policy, None)
+            Stdout.print(printed(r, asked.shape))
+            let code = exit_code(r.blockers)
+            if asked.store { keep_baseline(r, code) } else { () }
+            code
+          }
+        }
+    }
+  }
+}
+
+#[doc("The reports at these paths, each with its path; why not, for the first that is not one.")]
+pub fn given_reports(paths: [String]) : Result[[(String, Written)], String] / File = foldl(
+  paths,
+  Ok([]),
+  (acc, path) => match acc {
+    Err(e) -> Err(e)
+    Ok(done) -> given_report(path).map(w => done ++ [(path, w)])
+  }
+)
+
+fn given_report(path: String) : Result[Written, String] / File = if file.exists(path) {
+  read_report(file.read(path)).map_err(why => "#{path} is not a report kalku wrote: #{why}")
+} else {
+  Err("#{path} does not exist")
+}

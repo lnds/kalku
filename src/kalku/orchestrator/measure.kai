@@ -578,7 +578,7 @@ fn casting_them(
     if is_some(whole.stopped) and is_empty(casting.verdicts) {
       None
     } else {
-      Some(Report { ...whole, shard: asking.shard })
+      Some(Report { ...whole, shard: asking.shard, plan: Some(marked(known.sites)) })
     },
     failure: whole.stopped,
     cast: written_down(casting, known)
@@ -739,7 +739,10 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     doubted: known.doubted,
     reused: known.reused,
     shard: None,
-    stopped: None
+    stopped: None,
+    plan: None,
+    commit: None,
+    whole: false
   }
 }
 

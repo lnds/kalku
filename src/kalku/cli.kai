@@ -18,12 +18,12 @@ pub type Command
   | Measure(Wanted)
   | Inform(Asked)
   | Recast(Wanted)
+  | Merge(Merging)
   | Display(String, Shape)
   | Propose(String, String)
   | Answer(String, Bool, String)
   | Serve
   | Mcp
-  | Pending(String)
   | Unknown(String)
   | Misused(String)
 
@@ -49,12 +49,13 @@ pub type Wanted = {
 #[derive(Eq, Show)]
 pub type Shape = AsHuman | AsAgent | AsJson | AsGithub
 
+#[doc("What `merge` was asked to combine: the shards' reports, how to print the whole, and whether to store its score.")]
+#[derive(Eq, Show)]
+pub type Merging = { reports: [String], shape: Shape, store: Bool }
+
 #[doc("What `info` was asked for: a topic, and how to print it.")]
 #[derive(Eq, Show)]
 pub type Asked = { topic: Option[String], as_json: Bool, snippet_only: Bool }
-
-# Commands that are part of the design but not built yet.
-const PENDING : [String] = ["serve", "cast", "show", "merge"]
 
 #[doc("""
 Read the arguments (program name excluded) into a `Command`.
@@ -74,17 +75,22 @@ fn read_command(argv: [String]) : Command {
   case ["--help", ...] -> ShowHelp
   case ["--version", ...] -> ShowVersion
   case ["-V", ...] -> ShowVersion
-  case ["init", ...rest] -> initialising(rest)
-  case ["run", ...rest] -> measuring(rest)
-  case ["info", ...rest] -> informing(rest)
-  case ["cast", ...rest] -> recasting(rest)
-  case ["show", ...rest] -> displaying(rest)
-  case ["propose-equivalent", ...rest] -> proposing(rest, "", "")
-  case ["accept", ...rest] -> answering(rest, "accept", true, "", "")
-  case ["reject", ...rest] -> answering(rest, "reject", false, "", "")
-  case ["serve", ...rest] -> bare("serve", Serve, rest)
-  case ["mcp", ...rest] -> bare("mcp", Mcp, rest)
-  case [cmd, ...] -> if contains(PENDING, cmd) { Pending(cmd) } else { Unknown(cmd) }
+  case [cmd, ...rest] -> command_named(cmd, rest)
+}
+
+fn command_named(cmd: String, rest: [String]) : Command = match cmd {
+  "init" -> initialising(rest)
+  "run" -> measuring(rest)
+  "info" -> informing(rest)
+  "cast" -> recasting(rest)
+  "show" -> displaying(rest)
+  "merge" -> merging(rest, Merging { reports: [], shape: AsHuman, store: false })
+  "propose-equivalent" -> proposing(rest, "", "")
+  "accept" -> answering(rest, "accept", true, "", "")
+  "reject" -> answering(rest, "reject", false, "", "")
+  "serve" -> bare("serve", Serve, rest)
+  "mcp" -> bare("mcp", Mcp, rest)
+  _ -> Unknown(cmd)
 }
 
 # A server takes nothing on its line: something it does not know is refused
@@ -226,6 +232,29 @@ fn recasting(args: [String]) : Command = match read_wanted(
   other -> other
 }
 
+# ---- merge --------------------------------------------------------------
+
+fn merging(args: [String], so_far: Merging) : Command = match args {
+  [] -> if is_empty(so_far.reports) {
+    Misused(
+      "`kalku merge` needs the reports of the shards, as `kalku run --all --shard i/n --format json` wrote them"
+    )
+  } else {
+    Merge(so_far)
+  }
+  ["--store-baseline", ...rest] -> merging(rest, Merging { ...so_far, store: true })
+  ["--format"] -> Misused("`--format` needs a name: human, agent, json or github")
+  ["--format", name, ...rest] -> match shape_of(name) {
+    None -> Misused("`--format` takes human, agent, json or github, not `#{name}`")
+    Some(shape) -> merging(rest, Merging { ...so_far, shape: shape })
+  }
+  [other, ...rest] -> if starts_with(other, "-") {
+    Misused("`kalku merge` does not take #{other}")
+  } else {
+    merging(rest, Merging { ...so_far, reports: so_far.reports ++ [other] })
+  }
+}
+
 fn displaying(args: [String]) : Command = read_shown(args, "", AsHuman)
 
 fn read_shown(args: [String], wekufe: String, shape: Shape) : Command = match args {
@@ -341,12 +370,10 @@ commands:
   accept <wekufe> [--reason <why>]   take a proposed equivalent into `.kalku/equivalent`
   reject <wekufe> [--reason <why>]   turn one down; the wekufe wants a test again
   info [topic]     what kalku knows about spells, outcomes, formats, agents
+  merge <report.json>...  combine the reports of shards into the whole project's
 
   serve            answer the client protocol on a local socket
   mcp              serve the agent tools to an MCP host, over stdio
-
-not implemented yet:
-  merge    combine sharded reports
 
 options:
   --lang <name>    the project's language, when init should not guess
@@ -358,8 +385,8 @@ options:
   --all            measure every source file of the project, all of its wekufe
   --shard <i/n>    cast only part i of n: the same part on every machine, so
                    n jobs cover a project between them
-  --store-baseline store this run's score as the baseline `ratchet = true`
-                   holds later runs of the whole project to
+  --store-baseline store this run's score, or a merge's, as the baseline
+                   `ratchet = true` holds later runs of the whole project to
   --watch          run again every time a source or test file changes
   --format <name>  human (the default), agent, json, or github
   --json           print an info topic as JSON

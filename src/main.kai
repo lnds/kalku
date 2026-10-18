@@ -15,7 +15,6 @@ import kalku.orchestrator.attending
 import kalku.orchestrator.attending_to
 import kalku.core.report_agent
 import kalku.core.report_json
-import kalku.core.report_github
 import kalku.core.config
 import kalku.core.equivalent
 import kalku.core.answering
@@ -40,6 +39,8 @@ import kalku.hosting
 import kalku.keeping_watch
 import kalku.orchestrator.server
 import kalku.cli
+import kalku.combining
+import kalku.printing
 import kalku.cli_help
 import kalku.core.gate
 import kalku.wire.client_msg
@@ -69,12 +70,9 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     Serve -> serving_here()
     Mcp -> tooling((id, c) => tool_ran(id, c))
     Measure(wanted) -> run_here(wanted)
+    Merge(asked) -> with_settings(c => merged_here(c, asked))
     Misused(why) -> {
       Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
-      2
-    }
-    Pending(cmd) -> {
-      Stderr.eprint("kalku: `#{cmd}` is not implemented yet")
       2
     }
     Unknown(cmd) -> {
@@ -245,7 +243,7 @@ fn measured[e](
   wanted: Wanted,
   policy: Policy,
   measure_it: (Asking) -> Found / Telling + e
-) : Int / Stdout + Stderr + Env + File + e {
+) : Int / Stdout + Stderr + Env + File + Process + e {
   let shape = wanted.shape
   let found = telling(wanted.aloud, () => measure_it(asking))
   remember(found.cast)
@@ -254,7 +252,10 @@ fn measured[e](
       Stderr.eprint("kalku: #{found.failure.unwrap_or("nothing measured")}")
       2
     }
-    Some(whole) -> {
+    Some(measured_only) -> {
+      # Which commit was measured, and whether it was the whole project, is
+      # what a merge of shards checks before it adds them up.
+      let whole = Report { ...measured_only, commit: diffing.commit_of("."), whole: wanted.all }
       # The report is what was measured; the blockers are what the
       # project asked to be held to. Judging here rather than in the run
       # keeps the same measurement answerable to a different policy in
@@ -274,31 +275,6 @@ fn measured[e](
     }
   }
 }
-
-# Each format is a different reader: a person, an agent, a program, a
-# pull request. The survivors are the same in all of them.
-fn printed(r: Report, shape: Shape) : String / File {
-  case r, AsHuman -> human(r)
-  case r, AsAgent -> agent(r, of_files(sources_of(r)))
-  case r, AsJson -> json(r, exit_code(r.blockers))
-  case r, AsGithub -> "#{annotations(r)}\n#{step_summary(r)}"
-}
-
-# The lines around a survivor travel with it in the agent format, so an
-# agent does not have to open a file to see what it is looking at. The
-# files are read here and looked up purely, because the format reads
-# nothing itself — which is what makes it testable without a filesystem.
-fn sources_of(r: Report) : [(String, [String])] / File =
-  uniq(r.survivors | .site.file) | (path => (path, read_lines(path)))
-
-fn read_lines(path: String) : [String] / File =
-  if file.exists(path) { lines(file.read(path)) } else { [] }
-
-fn of_files(sources: [(String, [String])]) : (String) -> [String] =
-  path => match find(sources, s => s.fst == path) {
-    Some(s) -> s.snd
-    None -> []
-  }
 
 # ---- what a run was asked for -------------------------------------------
 

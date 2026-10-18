@@ -532,7 +532,7 @@ Any change to a key component invalidates it. Keys never use timestamps.
 
 ## Running in CI
 
-This section is the design. Of it, `--since`, `--all`, `--shard` and the exit codes exist; `kalku merge` does not yet, and the README's status table is where to look for what does. A shard reports the score of its part, says so first, and is not held to `score.threshold`: until `kalku merge` exists, the floor is held by a run that is not a shard.
+A shard reports the score of its part, says so first, and is not held to `score.threshold`; `kalku merge` over every shard's report is held to it, and to the ratchet, as a run of the whole project is.
 
 `kalku run` is already the form CI wants: it runs the orchestrator in-process for one run, with no server and no socket, and says what it found in its exit code. There is no separate CI mode, so a run on a laptop and a run in CI are held to the same policy.
 
@@ -574,13 +574,21 @@ With `[score] ratchet = true`, a run of the whole project (`kalku run --all`) is
 
 `--shard i/n` takes a deterministic partition of the planned wekufe (by `site_id`), so shards never overlap and reruns pick the same work. Each shard writes a JSON report; `kalku merge` combines them into one score and one report.
 
+```sh
+kalku run --all --shard 1/2 --format json > shard-1.json   # one job
+kalku run --all --shard 2/2 --format json > shard-2.json   # another
+kalku merge shard-1.json shard-2.json --format github      # after both
+```
+
+A merge is a claim about the whole project, so it is refused, with exit 2, unless the reports provably make one: every part `1..n` of the same `n` exactly once; each written by this version of kalku, over the whole project (`--all`), from the same plan (`plan`: the number of sites and a digest of their ids) at the same `commit`; each having measured what it owned, with no `stopped` and no exit 2; and every wekufe a report names owned by its shard. What is missing from a report is a refusal, never a guess. The merged report adds up what each shard cast and says once what every shard saw for the whole project (files no kalku would search, tests left out). `kalku merge --store-baseline` stores the merged score as the ratchet's baseline, by the same rules as a run.
+
 ### Cache
 
 The kept baseline is saved between builds with `actions/cache` on `~/.cache/kalku/repos`, keyed by the commit and restored by prefix, so a pull request starts from what `main` measured and its baseline runs only the tests the change can reach. Nothing is written to the repository.
 
 ### Output
 
-`--format github` emits an annotation on each survivor's line with the wekufe's diff, and a summary to `$GITHUB_STEP_SUMMARY`. `--format json` is the stable machine-readable report used by `kalku merge`.
+`--format github` emits an annotation on each survivor's line with the wekufe's diff, and a summary to `$GITHUB_STEP_SUMMARY`. `--format json` is the stable machine-readable report used by `kalku merge`. Besides what a reader wants (score, counts, survivors, what blocks), it carries what a merge checks and rebuilds the report from: `kalku` (the version that wrote it), `planned`, `plan`, `commit` (when the tree is a commit with no tracked file changed), `whole` (a run of `--all`), each survivor's full `site`, `uncovered` and `troubles` (sites and the wekufe outside the score, in full), `left_out_sites`, and `suite`, the tests a survivor judged by the whole suite faced, written once.
 
 ### External resources
 

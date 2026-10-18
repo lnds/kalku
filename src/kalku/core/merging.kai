@@ -1,0 +1,242 @@
+#[doc("""
+Combining the reports of a sharded run into the report of the whole.
+
+A merge is a claim about the whole project, so it is made only from shards
+that are provably the parts of one plan: shards of the same count, each
+part exactly once, written by this kalku, from the same sites at the same
+commit, and each having measured what it owned. Whatever cannot be shown
+is a refusal, never a guess: a score over shards that do not add up is the
+score of nothing.
+""")]
+
+import kalku.wire.shapes
+import kalku.core.report
+import kalku.core.report_json
+import kalku.core.shard
+import kalku.core.blaming
+import kalku.core.verdict
+
+#[doc("""
+The report of the whole project, from the reports its shards wrote, each
+with the name it was given by; why not, when they do not make one.
+""")]
+pub fn merged(given: [(String, Written)], kalku: String) : Result[Report, String] {
+  let parts = each_part(given, kalku)!
+  match sort_by(parts, (a, b) => index_of(a) - index_of(b)) {
+    [] -> Err("there is no report to merge")
+    [first, ...rest] -> {
+      let ordered = [first, ...rest]
+      let n = shard_given(first).count
+      one_count(ordered, n)!
+      every_part_once(ordered, n)!
+      one_plan(ordered)!
+      one_commit(ordered)!
+      owned(ordered, n)!
+      one_suppression(ordered)!
+      Ok(combined(first.snd.report, rest | .snd.report))
+    }
+  }
+}
+
+# A part is a report that is a shard of the whole project, measured to the
+# end by this kalku.
+fn each_part(given: [(String, Written)], kalku: String) : Result[[(String, Written)], String] =
+  foldl(
+    given,
+    Ok([]),
+    (acc, g) => match acc {
+      Err(e) -> Err(e)
+      Ok(done) -> part(g, kalku).map(p => done ++ [p])
+    }
+  )
+
+fn part(g: (String, Written), kalku: String) : Result[(String, Written), String] {
+  let s = sharded(g)!
+  by_this_kalku(g, kalku)!
+  of_the_whole(g)!
+  measured_to_the_end(g, s)!
+  Ok(g)
+}
+
+fn sharded(g: (String, Written)) : Result[Shard, String] = match g.snd.report.shard {
+  Some(s) -> Ok(s)
+  None -> Err(
+    "#{g.fst} is not a shard's report: `kalku merge` combines what `kalku run --all --shard i/n` wrote"
+  )
+}
+
+fn by_this_kalku(g: (String, Written), kalku: String) : Result[Unit, String] = match g.snd.kalku {
+  None -> Err("#{g.fst} does not say which kalku wrote it")
+  Some(v) -> if v == kalku {
+    Ok(())
+  } else {
+    Err(
+      "#{g.fst} was written by kalku #{v}, and this is kalku #{kalku}: merge shards with the kalku that measured them"
+    )
+  }
+}
+
+fn of_the_whole(g: (String, Written)) : Result[Unit, String] = if g.snd.report.whole {
+  Ok(())
+} else {
+  Err(
+    "#{g.fst} is a shard of named files, not of the whole project: merge combines shards of `kalku run --all`"
+  )
+}
+
+fn measured_to_the_end(g: (String, Written), s: Shard) : Result[Unit, String] =
+  match g.snd.report.stopped {
+    Some(why) -> Err("shard #{s.index} of #{s.count} (#{g.fst}) could not measure: #{why}")
+    None -> if g.snd.exit == 2 {
+      Err("shard #{s.index} of #{s.count} (#{g.fst}) could not measure: its run ended with exit 2")
+    } else {
+      Ok(())
+    }
+  }
+
+fn shard_given(p: (String, Written)) : Shard =
+  p.snd.report.shard.unwrap_or(Shard { index: 0, count: 0 })
+
+fn index_of(p: (String, Written)) : Int = shard_given(p).index
+
+fn one_count(parts: [(String, Written)], n: Int) : Result[Unit, String] = match find(
+  parts,
+  p => shard_given(p).count != n
+) {
+  None -> Ok(())
+  Some(p) -> Err(
+    "#{p.fst} is a shard of #{shard_given(p).count}, and the others are shards of #{n}"
+  )
+}
+
+fn every_part_once(parts: [(String, Written)], n: Int) : Result[Unit, String] {
+  let twice = filter(zip(parts, drop(parts, 1)), ab => index_of(ab.fst) == index_of(ab.snd))
+  let missing = filter(enumerate_from(1, n), i => not any(parts, p => index_of(p) == i))
+  match twice {
+    [ab, ..._] ->
+      Err("shard #{index_of(ab.fst)} of #{n} is given twice: #{ab.fst.fst} and #{ab.snd.fst}")
+    [] -> if is_empty(missing) {
+      Ok(())
+    } else {
+      Err(
+        "shard(s) #{join(missing | (i => "#{i}"), ", ")} of #{n} are missing: the score of part of a project is not the score of the project"
+      )
+    }
+  }
+}
+
+fn one_plan(parts: [(String, Written)]) : Result[Unit, String] = match find(
+  parts,
+  p => is_none(p.snd.report.plan)
+) {
+  Some(p) -> Err("#{p.fst} does not say which sites it planned from")
+  None -> agreeing(
+    parts,
+    p => p.snd.report.plan,
+    (a, b) => "#{a} and #{b} planned from different sites: they searched different files, or a different commit, or with different settings"
+  )
+}
+
+fn one_commit(parts: [(String, Written)]) : Result[Unit, String] = agreeing(
+  parts,
+  p => p.snd.report.commit,
+  (a, b) => "#{a} and #{b} measured different commits"
+)
+
+fn one_suppression(parts: [(String, Written)]) : Result[Unit, String] = agreeing(
+  parts,
+  p => p.snd.report.suppressions,
+  (a, b) => "#{a} and #{b} disagree about the suppressions the change adds, so they measured different trees"
+)
+
+# Every part says the same as the first, or the first one that does not is
+# named beside it.
+fn agreeing[k](
+  parts: [(String, Written)],
+  key: ((String, Written)) -> k,
+  differ: (String, String) -> String
+) : Result[Unit, String] = match parts {
+  [] -> Ok(())
+  [first, ...rest] -> match find(rest, p => key(p) != key(first)) {
+    None -> Ok(())
+    Some(p) -> Err(differ(first.fst, p.fst))
+  }
+}
+
+# Every wekufe a shard names is one that shard owns. Two shards cannot then
+# name the same wekufe, and a report of another partition cannot pass for
+# a part of this one.
+fn owned(parts: [(String, Written)], n: Int) : Result[Unit, String] = match first_some(
+  parts | (p => stray(p, n))
+) {
+  None -> Ok(())
+  Some(why) -> Err(why)
+}
+
+fn stray(p: (String, Written), n: Int) : Option[String] {
+  let i = index_of(p)
+  find(named(p.snd.report), id => shard_of(id, n) != i).map(
+    id => "#{p.fst} names wekufe #{id}, which shard #{i} of #{n} does not own"
+  )
+}
+
+fn named(r: Report) : [String] = (r.survivors | .site.site_id)
+  ++ (r.troubles | .wekufe)
+  ++ (r.uncovered | .site_id)
+  ++ (r.left_out.sites | .site_id)
+
+#[doc("""
+The parts, in shard order, as one report of the whole project.
+
+What every shard measured on its own adds up; what every shard measured
+once for the whole project (the suite, the files no kalku would search,
+the tests left out) is said once.
+""")]
+pub fn combined(first: Report, rest: [Report]) : Report {
+  let parts = [first, ...rest]
+  Report {
+    counts: foldl(parts | .counts, empty(), added),
+    planned: sum(parts | .planned),
+    survivors: parts || .survivors,
+    on_changed_lines: 0,
+    suppressions: first.suppressions,
+    troubles: parts || .troubles,
+    skipped: uniq(parts || .skipped),
+    uncovered: parts || .uncovered,
+    blockers: [],
+    left_out: LeftOut {
+      tests: uniq(parts || .left_out.tests),
+      differences: uniq(parts || .left_out.differences),
+      sites: parts || .left_out.sites
+    },
+    withheld: first_some(parts | .withheld),
+    doubted: first_some(parts | .doubted),
+    reused: 
+    # Each shard ran its own baseline; the most any of them reused is what
+    # a reader of the merged report can be told without adding up tests
+    # that are the same tests.
+    max(parts | .reused).unwrap_or(0),
+    shard: None,
+    stopped: None,
+    plan: first.plan,
+    commit: first.commit,
+    whole: true
+  }
+}
+
+fn added(a: Counts, b: Counts) : Counts = Counts {
+  killed: a.killed + b.killed,
+  survived: a.survived + b.survived,
+  timeout: a.timeout + b.timeout,
+  no_coverage: a.no_coverage + b.no_coverage,
+  compile_error: a.compile_error + b.compile_error,
+  crashed: a.crashed + b.crashed,
+  nondeterministic: a.nondeterministic + b.nondeterministic,
+  equivalent: EquivalentCounts {
+    bytecode: a.equivalent.bytecode + b.equivalent.bytecode,
+    declared: a.equivalent.declared + b.equivalent.declared
+  }
+}
+
+fn enumerate_from(lo: Int, hi: Int) : [Int] =
+  if lo > hi { [] } else { [lo, ...enumerate_from(lo + 1, hi)] }

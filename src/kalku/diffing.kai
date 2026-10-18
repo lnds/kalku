@@ -115,3 +115,14 @@ fn drain_errors(child: Child, so_far: String) : String / Process = match proc.re
   Err(_) -> so_far
   Ok(chunk) -> if is_empty(chunk) { so_far } else { drain_errors(child, so_far ++ chunk) }
 }
+
+#[doc("""
+The commit the tree in `root` is, when it is one: `None` outside a
+repository, or when tracked files differ from it and no commit names what
+is there.
+""")]
+pub fn commit_of(root: String) : Option[String] / Process {
+  let head = git(root, ["rev-parse", "--verify", "--quiet", "HEAD"], "").ok()!
+  let changed = git(root, ["status", "--porcelain", "--untracked-files=no"], "").ok()!
+  if is_empty(trim(changed)) { Some(trim(head)) } else { None }
+}

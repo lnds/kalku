@@ -1,0 +1,221 @@
+import kalku.version
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.verdict
+import kalku.core.report
+import kalku.core.report_json
+import kalku.core.blaming
+import kalku.core.shard
+import kalku.core.merging
+
+# A wekufe id that shard `i` of `n` owns, found by asking the partition.
+fn owned_by(i: Int, n: Int, k: Int) : String = match find(
+  enumerate_ids(k * 50, k * 50 + 200),
+  id => shard_of(id, n) == i
+) {
+  Some(id) -> id
+  None -> "none"
+}
+
+fn enumerate_ids(lo: Int, hi: Int) : [String] =
+  if lo >= hi { [] } else { ["w#{lo}", ...enumerate_ids(lo + 1, hi)] }
+
+fn site_at(id: String, line: Int) : Site = Site {
+  site_id: id,
+  file: "lib/a.ex",
+  enclosing: Some("A.f/1"),
+  ordinal: Some(1),
+  span: Span {
+    start: Position { line: line, col: 7, byte: 90 },
+    end: Some(Position { line: line, col: 9, byte: 92 })
+  },
+  spell: Compare,
+  original: Some(">="),
+  replacement: ">",
+  reload: ModuleOnly
+}
+
+fn plan() : PlanMark = PlanMark { sites: 10, digest: "abc" }
+
+fn shard_report(i: Int, n: Int, killed: Int) : Report {
+  let id = owned_by(i, n, i)
+  Report {
+    counts: tally(repeat(Cast(Killed), killed) ++ [Cast(Survived)]),
+    planned: killed + 1,
+    survivors: [Survivor { site: site_at(id, 10 + i), tests: ["t#{i}"], chosen: true }],
+    on_changed_lines: 0,
+    suppressions: SuppressionChanges {
+      equivalent_added: 0,
+      exclude_added: [],
+      exclude_calls_added: []
+    },
+    troubles: [],
+    skipped: [Skipped { file: "lib/b.ex", reason: "parse_error", message: "no" }],
+    uncovered: [],
+    blockers: [],
+    left_out: nobody_left_out(),
+    withheld: None,
+    doubted: None,
+    reused: i,
+    shard: Some(Shard { index: i, count: n }),
+    stopped: None,
+    plan: Some(plan()),
+    commit: Some("c0ffee"),
+    whole: true
+  }
+}
+
+fn given(r: Report, exit: Int) : (String, Written) = (
+  "shard-#{r.shard.map(s => s.index).unwrap_or(0)}.json",
+  Written { report: r, exit: exit, kalku: Some(version.VERSION) }
+)
+
+fn both() : [(String, Written)] = [given(shard_report(2, 2, 3), 0), given(shard_report(1, 2, 5), 0)]
+
+fn refusal(parts: [(String, Written)]) : String = match merged(parts, version.VERSION) {
+  Ok(_) -> "merged"
+  Err(why) -> why
+}
+
+test "two shards make the report of the whole project, in shard order" {
+  match merged(both(), version.VERSION) {
+    Err(why) -> {
+      assert why == ""
+    }
+    Ok(r) -> {
+      assert r.counts.killed == 8
+      assert r.counts.survived == 2
+      assert r.planned == 10
+      assert (r.survivors | (s => s.tests)) == [["t1"], ["t2"]]
+      assert r.shard == None
+      assert r.whole
+      assert r.commit == Some("c0ffee")
+      # What every shard measured once for the whole project is said once.
+      assert length(r.skipped) == 1
+      assert r.reused == 2
+    }
+  }
+}
+
+test "a report that is not a shard is refused" {
+  let whole = given(Report { ...shard_report(1, 2, 1), shard: None }, 0)
+  assert has(refusal([whole]), "is not a shard's report")
+}
+
+test "a part missing is refused, and so is a part given twice" {
+  assert has(refusal([given(shard_report(1, 2, 1), 0)]), "shard(s) 2 of 2 are missing")
+  let twice = [given(shard_report(1, 2, 1), 0), given(shard_report(1, 2, 2), 0)]
+  assert has(refusal(twice), "shard 1 of 2 is given twice")
+}
+
+test "shards of different counts are refused" {
+  let mixed = [given(shard_report(1, 2, 1), 0), given(shard_report(2, 3, 1), 0)]
+  assert has(refusal(mixed), "is a shard of 3, and the others are shards of 2")
+}
+
+test "a report from another kalku, or from one that does not say, is refused" {
+  let r = shard_report(1, 2, 1)
+  let other = ("old.json", Written { report: r, exit: 0, kalku: Some("0.0.1") })
+  assert has(refusal([other]), "was written by kalku 0.0.1")
+  let silent = ("silent.json", Written { report: r, exit: 0, kalku: None })
+  assert has(refusal([silent]), "does not say which kalku wrote it")
+}
+
+test "shards of different plans or commits are refused" {
+  let other_plan =
+    Report { ...shard_report(2, 2, 1), plan: Some(PlanMark { sites: 11, digest: "abd" }) }
+  assert has(
+    refusal([given(shard_report(1, 2, 1), 0), given(other_plan, 0)]),
+    "planned from different sites"
+  )
+  let no_plan = Report { ...shard_report(2, 2, 1), plan: None }
+  assert has(
+    refusal([given(shard_report(1, 2, 1), 0), given(no_plan, 0)]),
+    "does not say which sites it planned from"
+  )
+  let elsewhere = Report { ...shard_report(2, 2, 1), commit: Some("bad") }
+  assert has(
+    refusal([given(shard_report(1, 2, 1), 0), given(elsewhere, 0)]),
+    "measured different commits"
+  )
+}
+
+test "a shard that could not measure is refused with its reason" {
+  let stopped = Report { ...shard_report(2, 2, 1), stopped: Some("the kalku died") }
+  assert has(
+    refusal([given(shard_report(1, 2, 1), 0), given(stopped, 2)]),
+    "could not measure: the kalku died"
+  )
+  assert has(
+    refusal([given(shard_report(1, 2, 1), 0), given(shard_report(2, 2, 1), 2)]),
+    "ended with exit 2"
+  )
+}
+
+test "a shard of named files is not a part of the whole project" {
+  let named = Report { ...shard_report(2, 2, 1), whole: false }
+  assert has(
+    refusal([given(shard_report(1, 2, 1), 0), given(named, 0)]),
+    "not of the whole project"
+  )
+}
+
+test "a shard that names a wekufe it does not own is refused" {
+  let r = shard_report(2, 2, 1)
+  let theirs = owned_by(1, 2, 7)
+  let stray = Report { ...r, uncovered: [site_at(theirs, 3)] }
+  assert has(
+    refusal([given(shard_report(1, 2, 1), 0), given(stray, 0)]),
+    "names wekufe #{theirs}, which shard 2 of 2 does not own"
+  )
+}
+
+# The report merge reads is the one `--format json` writes: everything a
+# merged report prints comes back, and what is judged is judged again.
+test "a report read back is the report that was written, less its blockers" {
+  let r = shard_report(1, 2, 2)
+  let judged = Report {
+    ...r,
+    survivors: r.survivors
+      ++ [
+        Survivor { site: site_at("u1", 30), tests: ["a", "b"], chosen: false },
+        Survivor { site: site_at("u2", 31), tests: ["a", "b"], chosen: false },
+        Survivor { site: site_at("u3", 32), tests: ["a"], chosen: false }
+      ],
+    troubles: [
+      Trouble { wekufe: "x", at: Some(site_at("x", 4)), outcome: CompileError, said: Some("boom") }
+    ],
+    uncovered: [site_at("y", 5)],
+    left_out: LeftOut {
+      tests: [Failure { test_id: "t9", message: "red" }],
+      differences: ["d"],
+      sites: [site_at("z", 6)]
+    },
+    withheld: Some("why"),
+    stopped: Some("cut")
+  }
+  match read_report(json(judged, 2)) {
+    Err(why) -> {
+      assert why == ""
+    }
+    Ok(w) -> {
+      assert w.report == judged
+      assert w.exit == 2
+      assert w.kalku == Some(version.VERSION)
+    }
+  }
+}
+
+test "a report that lacks what merge needs says what" {
+  assert read_report("[") == Err("it is not JSON")
+  match read_report("{\"counts\":{}}") {
+    Ok(_) -> {
+      assert false
+    }
+    Err(why) -> {
+      assert has(why, "counts")
+    }
+  }
+}
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))

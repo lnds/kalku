@@ -277,7 +277,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | **`--watch`** — run again on every save, until interrupted; each run summons its kalku afresh, and the incremental baseline and the outcome cache keep it short | done |
 | **`[score] ratchet`** — the score of the whole project may not drop below the baseline stored with `--store-baseline` | done |
-| `merge` — combining sharded reports | not yet |
+| **`kalku merge`** — the reports of `--shard` jobs combined into the whole project's, held to the threshold and the ratchet, refused unless they are every part of one plan | done |
 | **`--all` and `--shard i/n`** — the whole project, in parts, for a nightly run | done: a shard says it is one and is not held to the threshold |
 | **`kalku_elixir` on Hex** — the Elixir kalku installs like any dependency | done |
 | **Release binaries** — `brew install`, or a tarball per platform, built and checksummed by CI | done |

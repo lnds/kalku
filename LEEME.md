@@ -280,7 +280,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
 | **`--watch`** — vuelve a correr en cada guardado, hasta que se interrumpe; cada corrida invoca sus kalku de nuevo, y el baseline incremental y el caché de resultados la mantienen corta | hecho |
 | **`[score] ratchet`** — el score del proyecto completo no puede bajar de la línea base guardada con `--store-baseline` | listo |
-| `merge` — combinar reportes de shards | todavía no |
+| **`kalku merge`** — los reportes de los jobs con `--shard` combinados en el del proyecto completo, sujeto al umbral y al ratchet, y rechazado si no son todas las partes de un mismo plan | hecho |
 | **`--all` y `--shard i/n`** — el proyecto completo, por partes, para una corrida nocturna | listo: un shard dice que lo es y no se le exige el umbral |
 | **`kalku_elixir` en Hex** — el kalku de Elixir se instala como cualquier dependencia | hecho |
 | **Binarios de release** — `brew install`, o un tarball por plataforma, construidos y con checksum por CI | hecho |
