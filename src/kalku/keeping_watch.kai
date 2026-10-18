@@ -1,0 +1,92 @@
+#[doc("""
+`kalku run --watch`: a run, and another every time the project changes,
+until a signal says stop.
+
+Every run is a whole run: it summons its kalku, measures, and banishes them
+before the watch waits again, so nothing is left running between saves and
+an interrupt between runs has nothing to clean up. A warm pool is only worth
+keeping while the project is exactly what it was compiled from, and a watch
+runs again precisely because it is not; the incremental baseline and the
+outcome cache are what make the next run cheap.
+
+The signal is trapped once, for the whole watch, and heard the way a host's
+words are heard: as a message to this fiber. In a run it ends the run as an
+interrupt does, and then the watch; between runs it ends the watch.
+""")]
+
+import actor
+import time
+import kalku.core.cache
+import kalku.core.watching
+import kalku.orchestrator.attending
+import kalku.orchestrator.interrupting
+import kalku.orchestrator.kalku_proc
+
+#[doc("""
+Run `once`, and again whenever what `look` reads has changed and settled,
+until a signal that means stop arrives.
+
+The exit code is the last run's: a watch interrupted after a run that held
+ends with 0, and one interrupted mid-run ends with what that run, cut
+short, says of itself.
+""")]
+pub fn keeping_watch[e](
+  look: () -> [FileHash] / e,
+  once: () -> Int / Attending + Actor[OrchMsg] + e
+) : Int / Stdout + Clock + Spawn + Signal + Actor[OrchMsg] + e {
+  let me = Actor.self()
+  trap()
+  # A watch has no clients, so any aside is the signal.
+  let _waiting = spawn_actor(() => told_to_stop(me, Aside(0, me, "")))
+  let code = watched(look, once, look())
+  release()
+  code
+}
+
+# What is read before a run is what the run measured, so a save made while
+# it was going is a change the next read sees.
+fn watched[e](
+  look: () -> [FileHash] / e,
+  once: () -> Int / Attending + Actor[OrchMsg] + e,
+  seen: [FileHash]
+) : Int / Stdout + Clock + Actor[OrchMsg] + e {
+  var stopped := false
+  let code = attended(
+    m => match m {
+      Aside(_who, _back, _line) -> {
+        stopped := true
+        Actor.send(Actor.self(), Cancel)
+      }
+      _ -> ()
+    },
+    once
+  )
+  if stopped {
+    code
+  } else {
+    match waited(look, Settled(seen)) {
+      None -> code
+      Some(next) -> {
+        Stdout.print(separator(next.fst))
+        watched(look, once, next.snd)
+      }
+    }
+  }
+}
+
+# The files that changed and what the project reads as now, once it has
+# settled; nothing when the signal came first.
+fn waited[e](
+  look: () -> [FileHash] / e,
+  w: Watch
+) : Option[([String], [FileHash])] / Clock + Actor[OrchMsg] + e = match receive_timeout(
+  millis(POLL_MS)
+) {
+  Some(Aside(_who, _back, _line)) -> None
+  # A kalku of the run that is over, saying so late.
+  Some(_) -> waited(look, w)
+  None -> match after_reading(w, look()) {
+    KeepWaiting(next) -> waited(look, next)
+    RunAgain(files, now) -> Some((files, now))
+  }
+}

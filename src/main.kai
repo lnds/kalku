@@ -37,6 +37,7 @@ import kalku.diffing
 import kalku.core.changed_lines
 import kalku.serving
 import kalku.hosting
+import kalku.keeping_watch
 import kalku.orchestrator.server
 import kalku.cli
 import kalku.cli_help
@@ -126,7 +127,35 @@ fn with_settings[e](
 
 fn run_here(
   wanted: Wanted
-) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_settings(
+) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_mailbox {
+  if wanted.watch {
+    let look = watched_files()
+    keeping_watch(
+      () => look(),
+      () => run_once(wanted, asking => measuring(asking))
+    )
+  } else {
+    alone(() => run_once(wanted, asking => measure(asking)))
+  }
+}
+
+# The language is read once, when the watch starts; a project that has
+# none yet is watched for its settings, and the first run says what is
+# missing.
+fn watched_files() : (() -> [FileHash] / File) / Stderr + Env + File + Process {
+  let known = match settings() {
+    Ok(c) -> language_of(c).ok()
+    Err(_) -> None
+  }
+  () => read_hashes(watched_here(known, [CONFIG_PATH, EQUIVALENT_PATH]))
+}
+
+# One run, measured by `measure_it`: alone, it traps the signals itself; in a
+# watch, the watch has trapped them for every run.
+fn run_once[e](
+  wanted: Wanted,
+  measure_it: (Asking) -> Found / Telling + e
+) : Int / Stdout + Stderr + Env + File + Process + e = with_settings(
   c => match changes_asked(wanted) {
     Err(why) -> {
       Stderr.eprint("kalku: could not measure: #{why}")
@@ -163,7 +192,8 @@ fn run_here(
             Ok(policy) -> measured(
               asking_for(c, wanted, files, touched, declared),
               wanted,
-              held_to(policy, wanted)
+              held_to(policy, wanted),
+              measure_it
             )
           }
         )
@@ -200,14 +230,6 @@ fn files_for(
     }
   }
 
-# A walk from `.` names every file `./lib/a.ex`; a run names it as a person
-# would, and as every report then shows it.
-fn without_dot(path: String) : String = if starts_with(path, "./") {
-  byte_slice(path, 2, length(path) - 2).unwrap_or(path)
-} else {
-  path
-}
-
 # The language a project says it is written in, which is what tells its sources
 # from its tests and from what a build leaves.
 fn language_of(c: Config) : Result[setting_up.Known, String] = match c.language {
@@ -218,13 +240,14 @@ fn language_of(c: Config) : Result[setting_up.Known, String] = match c.language 
   }
 }
 
-fn measured(
+fn measured[e](
   asking: Asking,
   wanted: Wanted,
-  policy: Policy
-) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_mailbox {
+  policy: Policy,
+  measure_it: (Asking) -> Found / Telling + e
+) : Int / Stdout + Stderr + Env + File + e {
   let shape = wanted.shape
-  let found = alone(() => telling(wanted.aloud, () => measure(asking)))
+  let found = telling(wanted.aloud, () => measure_it(asking))
   remember(found.cast)
   match found.report {
     None -> {
@@ -483,11 +506,16 @@ fn recast_here(
     } else {
       with_declared(
         ".",
-        declared => measured(
-          asking_again(c, sites_for(all, wanted.files), wanted, declared),
-          wanted,
-          c.policy
-        )
+        declared => with_mailbox {
+          alone(
+            () => measured(
+              asking_again(c, sites_for(all, wanted.files), wanted, declared),
+              wanted,
+              c.policy,
+              asking => measure(asking)
+            )
+          )
+        }
       )
     }
   }
@@ -1021,13 +1049,3 @@ fn warm_pool(
       Project { ...p, slots: open_pool(pool_at(c, p.root)), fingerprint: now, next_id: 1 }
     }
   }
-
-# The paths a walk gives back are absolute, and joining them to the root
-# again names a file that does not exist — which hashes to the same
-# nothing every time, and a fingerprint that never changes is a warm pool
-# that is never renewed.
-fn read_hashes(files: [String]) : [FileHash] / File =
-  files | (f => FileHash { file: f, hash: hash_of(read_or_empty(f)) })
-
-fn read_or_empty(path: String) : String / File =
-  if file.exists(path) { file.read(path) } else { "" }

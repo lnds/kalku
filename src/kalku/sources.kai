@@ -10,6 +10,7 @@ one whose code is under `lib/`.
 
 import fs.dir
 import fs.file
+import kalku.core.cache
 import kalku.core.setting_up
 
 #[doc("Every source file the project has, which is what `scope: all` means.")]
@@ -35,3 +36,38 @@ fn files_at(path: String) : [String] / File = match dir.walk(path) {
   [] -> if file.exists(path) { [path] } else { [] }
   inside -> inside
 }
+
+#[doc("""
+What a watch reads for a change, named from the project's root: the files a
+run reads its settings from, where they exist, and the sources and suite of
+the language the project is written in.
+""")]
+pub fn watched_here(known: Option[Known], settings: [String]) : [String] / File =
+  filter(settings, f => file.exists(f))
+    ++ (match known {
+      Some(k) -> (every_source(".", k) ++ every_test(".", k)) | (f => without_dot(f))
+      None -> []
+    })
+
+#[doc("A file a walk from `.` named, as a person names it: `lib/a.ex` for `./lib/a.ex`.")]
+pub fn without_dot(path: String) : String = if starts_with(path, "./") {
+  byte_slice(path, 2, length(path) - 2).unwrap_or(path)
+} else {
+  path
+}
+
+#[doc("""
+Each file with the hash of what is in it now; a file that is gone hashes as
+empty.
+
+The paths are used as given. A walk gives them back already joined to the
+root, and joining them again names a file that does not exist, which hashes
+to the same nothing every time: a fingerprint that never changes is a warm
+pool that is never renewed.
+""")]
+pub fn read_hashes(files: [String]) : [FileHash] / File =
+  files | (f => FileHash { file: f, hash: hash_of(read_or_empty(f)) })
+
+#[doc("What a file holds, or nothing when there is no such file.")]
+pub fn read_or_empty(path: String) : String / File =
+  if file.exists(path) { file.read(path) } else { "" }

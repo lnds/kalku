@@ -1,0 +1,75 @@
+#[doc("""
+What `kalku run --watch` decides between runs: whether the project changed,
+whether it has stopped changing, and what to say before it runs again.
+
+A save is rarely one write. An editor writes a temporary file and renames
+it, a formatter rewrites what was just saved, a branch switch touches
+hundreds of files over a second. A run started on the first write measures
+a project that is still being written, and the next write cancels nothing:
+it only queues a second run behind a wrong one. So a change is acted on
+once the project has read the same twice in a row.
+""")]
+
+import kalku.core.cache
+
+#[doc("""
+How often a watched project is read again, in milliseconds.
+
+A second is short next to how long a person takes to look up from the
+editor, and long next to the burst of writes one save makes, so a save is
+seen within a second or two and run once. Reading the sources again costs
+far less than the run it starts.
+""")]
+pub const POLL_MS : Int = 1000
+
+#[doc("""
+Where a watch stands between runs.
+
+`Settled` holds what the last run measured. `Settling` holds that, and what
+the latest read saw, while the project is still changing.
+""")]
+#[derive(Eq, Show)]
+pub type Watch = Settled([FileHash]) | Settling([FileHash], [FileHash])
+
+#[doc("What to do after reading the project: wait some more, or run again over these changes.")]
+#[derive(Eq, Show)]
+pub type Next = KeepWaiting(Watch) | RunAgain([String], [FileHash])
+
+#[doc("""
+The next step, given what the project reads as now.
+
+A change runs again only once a second read agrees with the first, and a
+project that went back to what was measured, such as a save that was
+undone, runs nothing.
+""")]
+pub fn after_reading(w: Watch, now: [FileHash]) : Next = match w {
+  Settled(seen) -> if now == seen {
+    KeepWaiting(w)
+  } else {
+    KeepWaiting(Settling(seen, now))
+  }
+  Settling(seen, last) -> if now != last {
+    KeepWaiting(Settling(seen, now))
+  } else {
+    match differing(seen, now) {
+      [] -> KeepWaiting(Settled(seen))
+      files -> RunAgain(files, now)
+    }
+  }
+}
+
+#[doc("""
+The files that differ between two reads: changed, added, or gone, in path
+order.
+""")]
+pub fn differing(before: [FileHash], after: [FileHash]) : [String] {
+  let gone = before |? (f => not any(after, a => a.file == f.file)) | .file
+  sort(uniq(changed(before, after) ++ gone))
+}
+
+#[doc("The line printed before a run that a change started, naming the change.")]
+pub fn separator(files: [String]) : String = match files {
+  [] -> "── running again ──"
+  [one] -> "── #{one} changed; running again ──"
+  [first, ...rest] -> "── #{first} and #{length(rest)} more changed; running again ──"
+}

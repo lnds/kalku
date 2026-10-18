@@ -68,7 +68,7 @@ options:
 """
 
 const RUN : String = """
-usage: kalku run [files...] [--since <ref>] [--all] [options]
+usage: kalku run [files...] [--since <ref>] [--all] [--watch] [options]
 
 Cast wekufe over those files and report the ones that survived, each with
 its file, line, spell, diff and a hint. Nothing is written in the project's
@@ -87,6 +87,8 @@ options:
   --shard <i/n>    cast only part i of n: the same part on every machine
   --store-baseline store this run's score as the baseline `ratchet = true`
                    holds later runs of the whole project to
+  --watch          run again every time a source or test file changes, until
+                   interrupted; the exit code is the last run's
   --format <name>  human (the default), agent, json, or github
   -v, --verbose    say what the run is doing while it does it
 """
