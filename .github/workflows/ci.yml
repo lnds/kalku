@@ -30,6 +30,8 @@ jobs:
       go_project: ${{ steps.project.outputs.go_project }}
       typescript: ${{ steps.filter.outputs.typescript }}
       typescript_project: ${{ steps.project.outputs.typescript_project }}
+      cpp: ${{ steps.filter.outputs.cpp }}
+      cpp_project: ${{ steps.project.outputs.cpp_project }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -54,6 +56,8 @@ jobs:
               - '{adapters/go/**,docs/protocol/fixtures/**}'
             typescript:
               - '{adapters/typescript/**,docs/protocol/fixtures/**,Makefile}'
+            cpp:
+              - '{adapters/cpp/**,docs/protocol/fixtures/**,Makefile}'
       - id: project
         run: |
           echo "elixir_project=$([ -f adapters/elixir/mix.exs ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
@@ -62,6 +66,7 @@ jobs:
           echo "java_project=$([ -f adapters/java/pom.xml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "go_project=$([ -f adapters/go/go.mod ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "typescript_project=$([ -f adapters/typescript/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "cpp_project=$([ -f adapters/cpp/CMakeLists.txt ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   # Format, lint and the quality gate: seconds of work, in a job of their
   # own so a slip in any of them is a red cross in a minute rather than
@@ -265,13 +270,35 @@ jobs:
       - name: The shipped file answers
         run: printf '{"type":"shutdown","id":1}\n' | bin/kalku-typescript | grep -q '"type":"bye"'
 
+  # The C++ kalku on Linux and on macOS, which differ where it matters: the
+  # libclang it finds, and how finely the build dates what it builds.
+  cpp-kalku:
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true' && needs.changes.outputs.cpp_project == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libclang1-18
+      # One clang-format, pinned, because each release formats a little
+      # differently.
+      - if: runner.os == 'Linux'
+        run: pipx run clang-format==18.1.8 --dry-run --Werror adapters/cpp/src/*.cpp adapters/cpp/src/*.hpp adapters/cpp/tests/*.cpp adapters/cpp/tests/*.hpp
+      - run: make test-cpp
+      - name: The shipped binary answers
+        run: printf '{"type":"shutdown","id":1}\n' | adapters/cpp/bin/kalku-cpp | grep -q '"type":"bye"'
+
   # The one required check: green when every job that ran passed or was skipped.
   ci-ok:
     if: always()
-    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku, rust-kalku, python-kalku, java-kalku, go-kalku, typescript-kalku]
+    needs: [changes, kaikai-checks, kaikai-side, elixir-kalku, rust-kalku, python-kalku, java-kalku, go-kalku, typescript-kalku, cpp-kalku]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}" "${{ needs.rust-kalku.result }}" "${{ needs.python-kalku.result }}" "${{ needs.java-kalku.result }}" "${{ needs.go-kalku.result }}" "${{ needs.typescript-kalku.result }}"; do
+          for r in "${{ needs.changes.result }}" "${{ needs.kaikai-checks.result }}" "${{ needs.kaikai-side.result }}" "${{ needs.elixir-kalku.result }}" "${{ needs.rust-kalku.result }}" "${{ needs.python-kalku.result }}" "${{ needs.java-kalku.result }}" "${{ needs.go-kalku.result }}" "${{ needs.typescript-kalku.result }}" "${{ needs.cpp-kalku.result }}"; do
             case "$r" in success|skipped) ;; *) echo "a job ended in: $r"; exit 1 ;; esac
           done

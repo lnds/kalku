@@ -258,6 +258,32 @@ Not claimed yet: `hot_load`, since each cast starts the runner; `code_hash`.
 | `literal` | `n`→`n+1` for plain decimals, `true`↔`false`, a non-empty string → `""` |
 | `call` | a call that is a whole statement, awaited or not, becomes an empty block, `{}`, which stands wherever a statement does |
 
+### The C++ kalku
+
+C++ has mutation tools, Mull and Dextool, and neither is widely used; Mull mutates LLVM's intermediate code, so its sites do not always map to a span of source a person can read. That is the case kalku is native for. The C++ kalku is written in C++17, with the standard library and nothing else, and ships as one binary, `kalku-cpp`.
+
+- **It reads C++ with the machine's libclang, opened when it runs.** The binary links nothing of LLVM: it opens the libclang beside the `clang` on the PATH, Xcode's, or a distribution's, and calls its C interface, which is stable across releases, so one binary works with whatever Clang is installed and a release is built against none. `KALKU_LIBCLANG` names another. A machine with no libclang is refused by name in answer to `hello`, and so is one with no `cmake`, or a CMake older than 3.21, the first whose CTest writes a JUnit report.
+- **Sites come from Clang's parse of each file**, with the flags the build's `compile_commands.json` gives that file, never from a scan of the text. A header is parsed on its own with the flags of a file beside it, of the project's own code, or for a library of headers alone of one of its tests; its sites say `reload: "dependents"`. What a macro writes, or is handed, is not a site: the parse records where the file invokes macros, and no span inside an invocation, or across one, is proposed. Positions are libclang's byte offsets; columns are counted in characters from the file's text.
+- **`prepare` copies the project into the reni** — everything but `.git` and any directory CMake built into, a `CMakeCache.txt` being the mark — configures it into a build tree of its own with `CMAKE_EXPORT_COMPILE_COMMANDS` and `BUILD_TESTING` on, and the options `cmake_args` under `[cpp]` adds, builds it with the project's own toolchain, and asks CTest for its tests. Ninja is the generator when it is on the PATH and nobody chose one. A test is a CTest test, named as CTest names it; one declared twice is told apart by where.
+- **A wekufe is written into the copy**, never into the tree, the copy is rebuilt, the selected tests run, and the file is put back before the cast is answered — on every path out, an abort included. Make dates what it builds to the second, and an object built in the second the library was last archived in is taken for older than it: under make a cast starts its build in a second after the last one ended, and a file it writes is dated after every build so far. A build that fails is `compile_error`, with the compiler's lines under the file's own name.
+- **The verdict is counted from the tests.** Each selected test's own result is read from CTest's JUnit report, never the run's summary. A test that fails is the kill. One that ends by a signal or by its own `TIMEOUT` said nothing about the wekufe: if no other test failed, the cast is `crashed`, naming the test and the signal, and so is a run in which a test asked for did not run.
+- **`abort` ends the process group** of the build or of CTest, puts the file back, and the next request is served by the same kalku. Input that ends with no `shutdown` ends every group under way, and then the kalku.
+
+Measured on the fixture project (2 test executables, 22 sites, make): `kalku run --all --limit 0` took 83 s, of which one wekufe that loops for good waited out the 60 s floor and was aborted in place; it gave 11 killed, 8 survived and 2 `crashed` by a null pointer the wekufe read through. On a real one, `jarro2783/cxxopts` v3.2.0, its one header gave 446 wekufe in 6 min 18 s with four workers, each cast rebuilding the files that include it: 193 killed, 180 survived, 44 compile errors (the tests build with `-Werror`), 28 crashed and 1 timeout. Two of its tests configure projects of their own and fail under CMake 4 wherever they run; they are left out and named.
+
+Not claimed yet: `per_test_coverage`, so every wekufe is judged by the whole suite; `partial_baseline`; `hot_load`, since each cast rebuilds; `code_hash`.
+
+| Spell | C++ forms |
+|---|---|
+| `arm` | delete a clause of a `switch`, from its label to the next — never `default`, and never the last clause |
+| `compare` | `<`↔`<=`, `>`↔`>=`, `==`↔`!=`, on built-in operands; an overloaded operator is a call |
+| `connect` | `&&`↔`\|\|`; the spelled `and` and `or` are left alone |
+| `negate` | the condition `c` of an `if`, a loop or a conditional expression becomes `!(c)`, and a `!` is dropped |
+| `literal` | `n`→`n+1` for plain decimals, keeping a suffix, `true`↔`false`, a non-empty plain string → `""` |
+| `call` | a call that is a whole statement, with its `;`, becomes an empty block, `{}`, which stands wherever a statement does |
+
+Not proposed: test files; what a macro writes or is handed; what is never evaluated — `sizeof`, `alignof`, `static_assert`, a `requires`, a concept, the condition of `if constexpr`, an attribute; an enum's values, a template's arguments and its parameters' defaults; a literal in a `case` label, or one that sizes an array or a bit-field in a declaration; a condition that declares a variable; a call to an operator, a constructor or a destructor, and one to a function that ends a path (`exit`, `abort`, `std::terminate`); hexadecimal, octal, binary and digit-separated numbers; and anything in a call `exclude_calls` names, which matches a function's qualified name, its name alone, or a namespace or class with `::*`.
+
 ### The kaikai kalku
 
 kaikai already has `kai mutate`, split the same way the protocol is: `kaic2 --mutate-list-json` catalogues sites from the AST, `kaic2 --mutate-apply <i>` writes the spliced source, and a shell driver owns the run loop. The kaikai kalku is a thin native kalku over those flags:

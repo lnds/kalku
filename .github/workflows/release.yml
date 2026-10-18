@@ -65,6 +65,8 @@ jobs:
         with:
           node-version: '22'
 
+      # The C++ kalku is built by the runner's own cmake and C++ compiler,
+      # and links nothing of LLVM: it opens the user's libclang when it runs.
       - run: make dist
 
       # A binary that only runs on the machine that built it is not a
@@ -79,6 +81,7 @@ jobs:
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-java" | grep -q '"type":"bye"'
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-go" | grep -q '"type":"bye"'
           printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-typescript" | grep -q '"type":"bye"'
+          printf '{"type":"shutdown","id":1}\n' | "$RUNNER_TEMP/kalku-cpp" | grep -q '"type":"bye"'
 
       - name: Check the tarball is named for this platform
         run: ls dist/kalku-*-${{ matrix.platform }}.tar.gz
