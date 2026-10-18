@@ -1,3 +1,14 @@
+## v0.22.0 (2026-10-18)
+
+### Added
+
+- **cpp**: a C++ kalku (#415)
+- **kaikai**: a baseline re-runs only the test modules that read what changed (#414)
+
+### Changed
+
+- pass constructors as functions instead of wrapping them in lambdas (#412)
+
 ## v0.21.0 (2026-10-18)
 
 ### Added
