@@ -49,18 +49,9 @@ import kalku.orchestrator.ward
 
 fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix + Signal {
   match cli.parse_args(args.argv()) {
-    ShowVersion -> {
-      Stdout.print(cli.version_line())
-      0
-    }
-    ShowHelp -> {
-      Stdout.print(cli.help_text())
-      0
-    }
-    ShowHelpOf(cmd) -> {
-      Stdout.print(help_of(cmd))
-      0
-    }
+    ShowVersion -> says(cli.version_line())
+    ShowHelp -> says(cli.help_text())
+    ShowHelpOf(cmd) -> says(help_of(cmd))
     Initialise(setup) -> settle(setup.root, setup.language, setup.assume_yes)
     Inform(asked) -> told_about(asked)
     Display(wekufe, shape) -> shown(wekufe, shape)
@@ -71,39 +62,33 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
     Mcp -> tooling((id, c) => tool_ran(id, c))
     Measure(wanted) -> run_here(wanted)
     Merge(asked) -> with_settings(c => merged_here(c, asked))
-    Misused(why) -> {
-      Stderr.eprint("kalku: #{why}\n#{cli.usage_line()}")
-      2
-    }
-    Unknown(cmd) -> {
-      Stderr.eprint("kalku: unknown command `#{cmd}`\n#{cli.usage_line()}")
-      2
-    }
+    Misused(why) -> fails("#{why}\n#{cli.usage_line()}")
+    Unknown(cmd) -> fails("unknown command `#{cmd}`\n#{cli.usage_line()}")
   }
 }
 
 # What kalku knows about itself, for whoever asks: a person who wonders
 # what `survived` means, or an agent that would otherwise guess.
 fn told_about(asked: Asked) : Int / Stdout + Stderr = if asked.snippet_only {
-  printed(snippet())
+  says(snippet())
 } else {
   asked.topic
     |> map(name => told_page(name, asked.as_json))
-    |> unwrap_or_else(() => printed(listing()))
+    |> unwrap_or_else(() => says(listing()))
 }
 
 fn told_page(name: String, json: Bool) : Int / Stdout + Stderr = match page(name) {
-  None -> refused("no such topic `#{name}`\n#{listing()}")
-  Some(t) -> printed(if json { as_json(t) } else { as_text(t) })
+  None -> fails("no such topic `#{name}`\n#{listing()}")
+  Some(t) -> says(if json { as_json(t) } else { as_text(t) })
 }
 
-fn printed(text: String) : Int / Stdout {
+fn says(text: String) : Int / Stdout {
   Stdout.print(text)
   0
 }
 
 # What every command says when it cannot do what it was asked: why, and 2.
-fn refused(why: String) : Int / Stderr {
+fn fails(why: String) : Int / Stderr {
   Stderr.eprint("kalku: #{why}")
   2
 }
@@ -116,7 +101,7 @@ fn refused(why: String) : Int / Stderr {
 fn with_settings[e](
   body: (Config) -> Int / Stderr + e
 ) : Int / Stderr + Env + File + Process + e = match settings() {
-  Err(why) -> refused(why)
+  Err(why) -> fails(why)
   Ok(c) -> body(c)
 }
 
@@ -140,7 +125,7 @@ fn nothing_named(changed: Bool) : Int / Stderr = if changed {
   Stderr.eprint("kalku: this change touches no source file, so there is nothing to measure")
   0
 } else {
-  refused("name the files to measure, as in `kalku run lib/thing.ex`, or say `--all`")
+  fails("name the files to measure, as in `kalku run lib/thing.ex`, or say `--all`")
 }
 
 # The language is read once, when the watch starts; a project that has
@@ -161,15 +146,15 @@ fn run_once[e](
   measure_it: (Asking) -> Found / Telling + e
 ) : Int / Stdout + Stderr + Env + File + Process + e = with_settings(
   c => match changes_asked(wanted) {
-    Err(why) -> refused("could not measure: #{why}")
+    Err(why) -> fails("could not measure: #{why}")
     Ok(touched) -> match language_of(c) {
-      Err(why) -> refused(why)
+      Err(why) -> fails(why)
       Ok(known) -> match files_for(wanted, touched, known) {
         [] -> nothing_named(is_some(touched))
         files -> with_declared(
           ".",
           declared => match ratcheted(c, wanted) {
-            Err(why) -> refused("could not measure: #{why}")
+            Err(why) -> fails("could not measure: #{why}")
             Ok(policy) -> measured(
               asking_for(c, wanted, files, touched, declared),
               wanted,
@@ -187,10 +172,7 @@ fn run_once[e](
 # that cannot be read stops the run. Treating "git could not tell me" as
 # "nothing changed" would pass every pull request it could not read.
 fn changes_asked(wanted: Wanted) : Result[Option[[FileChange]], String] / Process =
-  match wanted.since {
-    None -> Ok(None)
-    Some(ref) -> Ok(Some(diffing.since(".", ref)!))
-  }
+  changes_since(".", wanted.since)
 
 # The files a run is about: the ones named, or — when a change was asked
 # about and none were named — the source files that change touched.
@@ -231,10 +213,7 @@ fn measured[e](
   let found = telling(wanted.aloud, () => measure_it(asking))
   remember(found.cast)
   match found.report {
-    None -> {
-      Stderr.eprint("kalku: #{found.failure |> unwrap_or("nothing measured")}")
-      2
-    }
+    None -> fails(found.failure |> unwrap_or("nothing measured"))
     Some(measured_only) -> {
       # Which commit was measured, and whether it was the whole project, is
       # what a merge of shards checks before it adds them up.
@@ -391,7 +370,7 @@ fn with_declared[e](
   root: String,
   go: ([equivalent.Entry]) -> Int / e
 ) : Int / Stderr + File + e = match declared_equivalents(root) {
-  Err(why) -> refused(why)
+  Err(why) -> fails(why)
   Ok(declared) -> go(declared)
 }
 
@@ -415,19 +394,13 @@ fn declared_equivalents(root: String) : Result[[equivalent.Entry], String] / Fil
 
 # ---- the agent loop -----------------------------------------------------
 
-# One wekufe in full: what it is, what came of it, and what came of it
-# before. A wekufe nobody has cast is not a wekufe kalku knows.
-fn not_kept(root: String) : Int / Stderr {
-  Stderr.eprint("kalku: #{why_not_kept(root)}")
-  2
-}
-
 # A wekufe nobody has cast is a name kalku cannot place, and saying so is
 # the only honest answer to a question about it.
-fn unheard_of(wekufe: String) : Int / Stderr {
-  Stderr.eprint("kalku: nothing known about `#{wekufe}`; run `kalku run <files>` first")
-  2
-}
+fn unheard_of(wekufe: String) : Int / Stderr =
+  fails("nothing known about `#{wekufe}`; run `kalku run <files>` first")
+
+# One wekufe in full: what it is, what came of it, and what came of it
+# before.
 
 fn shown(wekufe: String, shape: Shape) : Int / Stdout + Stderr + File + Env {
   let all = ledger()
@@ -455,10 +428,7 @@ fn recast_here(
     let all = ledger()
     let unknown = strangers(all, wanted.files)
     if not is_empty(unknown) {
-      {
-        Stderr.eprint("kalku: never cast: #{join(unknown, ", ")}")
-        2
-      }
+      fails("never cast: #{join(unknown, ", ")}")
     } else {
       with_declared(
         ".",
@@ -496,20 +466,12 @@ fn proposed(wekufe: String, reason: String) : Int / Stdout + Stderr + File + Env
   let all = ledger()
   match latest(all, wekufe) {
     None -> unheard_of(wekufe)
-    Some(_) if not set_up(".") -> not_kept(".")
+    Some(_) if not set_up(".") -> fails(why_not_kept("."))
     Some(r) -> if r.outcome != Survived {
-      {
-        Stderr.eprint(
-          "kalku: `#{wekufe}` is #{outcome_name(r.outcome)}, not survived; only a survivor can be equivalent"
-        )
-        2
-      }
+      fails(not_a_survivor(wekufe, r))
     } else {
-      {
-        append_proposal(r, reason)
-        Stdout.print("kalku: proposed, for review in #{PROPOSED_PATH}")
-        0
-      }
+      append_proposal_in(".", r, reason)
+      says("kalku: proposed, for review in #{PROPOSED_PATH}")
     }
   }
 }
@@ -522,7 +484,7 @@ fn answered_by_hand(wekufe: String, yes: Bool, why: String) : Int / Stdout + Std
   let all = ledger()
   match latest(all, wekufe) {
     None -> unheard_of(wekufe)
-    Some(_) if not set_up(".") -> not_kept(".")
+    Some(_) if not set_up(".") -> fails(why_not_kept("."))
     Some(r) -> {
       let queue = read_or_empty(PROPOSED_PATH)
       if yes {
@@ -548,15 +510,11 @@ fn settled(
   said: String
 ) : Int / Stdout + Stderr + File =
   match answer {
-    Err(u) -> {
-      Stderr.eprint("kalku: #{why_not(u)}")
-      2
-    }
+    Err(u) -> fails(why_not(u))
     Ok(a) -> {
       file.write(PROPOSED_PATH, a.queue)
       append_line(into, a.moved)
-      Stdout.print(said)
-      0
+      says(said)
     }
   }
 
@@ -564,12 +522,6 @@ fn append_line(path: String, line: String) : Unit / File {
   let was = read_or_empty(path)
   let sep = if is_empty(trim(was)) { "" } else { "\n" }
   file.write(path, "#{trim_right(was)}#{sep}#{line}\n")
-}
-
-fn trim_right(s: String) : String = if ends_with(s, "\n") {
-  trim_right(slice(s, 0, length(s) - 1))
-} else {
-  s
 }
 
 #[doc("Where proposals wait for a person. Never `.kalku/equivalent` itself.")]
@@ -584,10 +536,13 @@ something anyone can see.
 """)]
 const REJECTED_PATH : String = ".kalku/equivalent.rejected"
 
-fn append_proposal(r: Remembered, reason: String) : Unit / File {
-  let was = if file.exists(PROPOSED_PATH) { file.read(PROPOSED_PATH) } else { "" }
-  file.write(PROPOSED_PATH, was ++ proposal_of(r, reason))
+fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File {
+  let path = "#{root}/#{PROPOSED_PATH}"
+  file.write(path, read_or_empty(path) ++ proposal_of(r, reason))
 }
+
+fn not_a_survivor(wekufe: String, r: Remembered) : String =
+  "`#{wekufe}` is #{outcome_name(r.outcome)}, not survived; only a survivor can be equivalent"
 
 # The syntax `.kalku/equivalent` uses, so accepting one is a move between
 # files: the key, then the reason.
@@ -615,7 +570,7 @@ fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock
     }
   )
   match ending {
-    Err(why) -> refused(why)
+    Err(why) -> fails(why)
     Ok(_) -> 0
   }
 }
@@ -640,7 +595,6 @@ fn run_for(
 
 fn asked_temp() : String / Env = Env.get("TMPDIR") |> unwrap_or("/tmp")
 
-# What a client gets back for a `run`. The events arrive together rather
 # The run says what it is doing as it does it, and a client hears it then
 # rather than at the end: the notes the orchestrator already makes become
 # the events the protocol has for them.
@@ -890,15 +844,10 @@ fn proposal_written(
     None -> refused(id, "nothing known about `#{wekufe}`; run `kalku_run` first")
     Some(_) if not set_up(root) -> refused(id, why_not_kept(root))
     Some(r) -> if r.outcome != Survived {
-      refused(
-        id,
-        "`#{wekufe}` is #{outcome_name(r.outcome)}, not survived; only a survivor can be equivalent"
-      )
+      refused(id, not_a_survivor(wekufe, r))
     } else {
-      {
-        append_proposal_in(root, r, reason)
-        answered(id, "proposed, for review in #{root}/#{PROPOSED_PATH}:\n#{proposal_of(r, reason)}")
-      }
+      append_proposal_in(root, r, reason)
+      answered(id, "proposed, for review in #{root}/#{PROPOSED_PATH}:\n#{proposal_of(r, reason)}")
     }
   }
 }
@@ -923,16 +872,8 @@ fn narrowed(
   only: sites | .site_id
 }
 
-fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File {
-  let path = "#{root}/#{PROPOSED_PATH}"
-  let was = if file.exists(path) { file.read(path) } else { "" }
-  file.write(path, was ++ proposal_of(r, reason))
-}
-
 # ---- measuring over a warm pool -----------------------------------------
 
-# The kalku a project keeps are only worth keeping while they hold a copy
-# of exactly that project. The fingerprint is what says so, and it covers
 # A client that speaks while this project is being measured. Status is
 # answered from what this fiber knows, a cancellation is left for the run
 # itself, and a second run is refused: one set of warm kalku measures one
@@ -946,6 +887,8 @@ fn answered_mid_run(p: Project, m: OrchMsg) : Unit / Actor[OrchMsg] = match m {
   _ -> ()
 }
 
+# The kalku a project keeps are only worth keeping while they hold a copy
+# of exactly that project. The fingerprint is what says so, and it covers
 # what a measurement depends on: the sources and the tests.
 fn measured_over(
   p: Project,
@@ -1003,15 +946,10 @@ fn warm_pool(
   now: String,
   say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : Project / Stderr + Process + Spawn + Clock + Env + Actor[OrchMsg] + Ward + NetUnix =
-  if still_warm(
-    p,
-    now
-  ) {
+  if still_warm(p, now) {
     p
   } else {
-    {
-      each(p.slots, s => banish(s))
-      say(PhaseEv(PhaseMsg { phase: PhasePreparing }))
-      Project { ...p, slots: open_pool(pool_at(c, p.root)), fingerprint: now, next_id: 1 }
-    }
+    each(p.slots, s => banish(s))
+    say(PhaseEv(PhaseMsg { phase: PhasePreparing }))
+    Project { ...p, slots: open_pool(pool_at(c, p.root)), fingerprint: now, next_id: 1 }
   }
