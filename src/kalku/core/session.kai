@@ -58,21 +58,17 @@ pub fn step(s: Session, e: Event) : Session {
   case s, Shut -> Session { ...s, state: SessionClosed, queued: 0 }
   case s, Broke(why) -> Session { ...s, state: SessionFailed(why), queued: 0 }
   case s, Asked -> asked(s)
-  case s, Prepared ->
-    if s.state == SessionPreparing { Session { ...s, state: SessionBaselining } } else { s }
-  case s, BaselineGreen ->
-    if s.state == SessionBaselining { Session { ...s, state: SessionRunning } } else { s }
-  case s, BaselineRed(why) -> if s.state == SessionBaselining {
-    Session { ...s, state: SessionFailed(why), queued: 0 }
-  } else {
-    s
-  }
+  case s, Prepared -> only_from(s, SessionPreparing, SessionBaselining, s.queued)
+  case s, BaselineGreen -> only_from(s, SessionBaselining, SessionRunning, s.queued)
+  case s, BaselineRed(why) -> only_from(s, SessionBaselining, SessionFailed(why), 0)
   case s, Finished -> finished(s)
-  case s, Cancelled ->
-    if s.state == SessionRunning { Session { ...s, state: SessionReady, queued: 0 } } else { s }
-  case s, WentIdle ->
-    if s.state == SessionReady { Session { ...s, state: SessionClosed } } else { s }
+  case s, Cancelled -> only_from(s, SessionRunning, SessionReady, 0)
+  case s, WentIdle -> only_from(s, SessionReady, SessionClosed, s.queued)
 }
+
+# An event that means something in one state only, and nothing elsewhere.
+fn only_from(s: Session, from: State, to: State, queued: Int) : Session =
+  if s.state == from { Session { ...s, state: to, queued: queued } } else { s }
 
 # A run asked of a warm session starts at once; asked of a busy one it
 # waits; asked of a failed or closed one it starts over from cold, which

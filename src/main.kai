@@ -85,27 +85,25 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
 # What kalku knows about itself, for whoever asks: a person who wonders
 # what `survived` means, or an agent that would otherwise guess.
 fn told_about(asked: Asked) : Int / Stdout + Stderr = if asked.snippet_only {
-  {
-    Stdout.print(snippet())
-    0
-  }
+  printed(snippet())
 } else {
-  match asked.topic {
-    None -> {
-      Stdout.print(listing())
-      0
-    }
-    Some(name) -> match page(name) {
-      None -> {
-        Stderr.eprint("kalku: no such topic `#{name}`\n#{listing()}")
-        2
-      }
-      Some(t) -> {
-        Stdout.print(if asked.as_json { as_json(t) } else { as_text(t) })
-        0
-      }
-    }
-  }
+  asked.topic.map(name => told_page(name, asked.as_json)).unwrap_or_else(() => printed(listing()))
+}
+
+fn told_page(name: String, json: Bool) : Int / Stdout + Stderr = match page(name) {
+  None -> refused("no such topic `#{name}`\n#{listing()}")
+  Some(t) -> printed(if json { as_json(t) } else { as_text(t) })
+}
+
+fn printed(text: String) : Int / Stdout {
+  Stdout.print(text)
+  0
+}
+
+# What every command says when it cannot do what it was asked: why, and 2.
+fn refused(why: String) : Int / Stderr {
+  Stderr.eprint("kalku: #{why}")
+  2
 }
 
 # A run measures the project one is standing in, with the kalku that
@@ -116,10 +114,7 @@ fn told_about(asked: Asked) : Int / Stdout + Stderr = if asked.snippet_only {
 fn with_settings[e](
   body: (Config) -> Int / Stderr + e
 ) : Int / Stderr + Env + File + Process + e = match settings() {
-  Err(why) -> {
-    Stderr.eprint("kalku: #{why}")
-    2
-  }
+  Err(why) -> refused(why)
   Ok(c) -> body(c)
 }
 
@@ -135,6 +130,15 @@ fn run_here(
   } else {
     alone(() => run_once(wanted, asking => measure(asking)))
   }
+}
+
+# A change that reaches no source is a clean answer; naming nothing at all
+# is a question that was never asked.
+fn nothing_named(changed: Bool) : Int / Stderr = if changed {
+  Stderr.eprint("kalku: this change touches no source file, so there is nothing to measure")
+  0
+} else {
+  refused("name the files to measure, as in `kalku run lib/thing.ex`, or say `--all`")
 }
 
 # The language is read once, when the watch starts; a project that has
@@ -155,38 +159,15 @@ fn run_once[e](
   measure_it: (Asking) -> Found / Telling + e
 ) : Int / Stdout + Stderr + Env + File + Process + e = with_settings(
   c => match changes_asked(wanted) {
-    Err(why) -> {
-      Stderr.eprint("kalku: could not measure: #{why}")
-      2
-    }
+    Err(why) -> refused("could not measure: #{why}")
     Ok(touched) -> match language_of(c) {
-      Err(why) -> {
-        Stderr.eprint("kalku: #{why}")
-        2
-      }
+      Err(why) -> refused(why)
       Ok(known) -> match files_for(wanted, touched, known) {
-        [] -> if is_some(touched) {
-          {
-            Stderr.eprint(
-              "kalku: this change touches no source file, so there is nothing to measure"
-            )
-            0
-          }
-        } else {
-          {
-            Stderr.eprint(
-              "kalku: name the files to measure, as in `kalku run lib/thing.ex`, or say `--all`"
-            )
-            2
-          }
-        }
+        [] -> nothing_named(is_some(touched))
         files -> with_declared(
           ".",
           declared => match ratcheted(c, wanted) {
-            Err(why) -> {
-              Stderr.eprint("kalku: could not measure: #{why}")
-              2
-            }
+            Err(why) -> refused("could not measure: #{why}")
             Ok(policy) -> measured(
               asking_for(c, wanted, files, touched, declared),
               wanted,
@@ -408,10 +389,7 @@ fn with_declared[e](
   root: String,
   go: ([equivalent.Entry]) -> Int / e
 ) : Int / Stderr + File + e = match declared_equivalents(root) {
-  Err(why) -> {
-    Stderr.eprint("kalku: #{why}")
-    2
-  }
+  Err(why) -> refused(why)
   Ok(declared) -> go(declared)
 }
 
@@ -545,27 +523,40 @@ fn answered_by_hand(wekufe: String, yes: Bool, why: String) : Int / Stdout + Std
     Some(_) if not set_up(".") -> not_kept(".")
     Some(r) -> {
       let queue = read_or_empty(PROPOSED_PATH)
-      match if yes { accepted(queue, r.site, why) } else { rejected(queue, r.site, why) } {
-        Err(u) -> {
-          Stderr.eprint("kalku: #{why_not(u)}")
-          2
-        }
-        Ok(a) -> {
-          file.write(PROPOSED_PATH, a.queue)
-          append_line(if yes { EQUIVALENT_PATH } else { REJECTED_PATH }, a.moved)
-          Stdout.print(
-            if yes {
-              "kalku: accepted into #{EQUIVALENT_PATH}; every run reads it from now on"
-            } else {
-              "kalku: turned down, written to #{REJECTED_PATH}; the wekufe wants a test again"
-            }
-          )
-          0
-        }
+      if yes {
+        settled(
+          accepted(queue, r.site, why),
+          EQUIVALENT_PATH,
+          "kalku: accepted into #{EQUIVALENT_PATH}; every run reads it from now on"
+        )
+      } else {
+        settled(
+          rejected(queue, r.site, why),
+          REJECTED_PATH,
+          "kalku: turned down, written to #{REJECTED_PATH}; the wekufe wants a test again"
+        )
       }
     }
   }
 }
+
+fn settled(
+  answer: Result[Answered, Unanswerable],
+  into: String,
+  said: String
+) : Int / Stdout + Stderr + File =
+  match answer {
+    Err(u) -> {
+      Stderr.eprint("kalku: #{why_not(u)}")
+      2
+    }
+    Ok(a) -> {
+      file.write(PROPOSED_PATH, a.queue)
+      append_line(into, a.moved)
+      Stdout.print(said)
+      0
+    }
+  }
 
 fn append_line(path: String, line: String) : Unit / File {
   let was = read_or_empty(path)
@@ -622,10 +613,7 @@ fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock
     }
   )
   match ending {
-    Err(why) -> {
-      Stderr.eprint("kalku: #{why}")
-      2
-    }
+    Err(why) -> refused(why)
     Ok(_) -> 0
   }
 }
