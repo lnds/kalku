@@ -1,3 +1,17 @@
+## v0.24.0 (2026-10-19)
+
+### Added
+
+- **cpp**: a baseline that runs only what changed (#432)
+- **cpp**: credit each test with the lines it ran (#430)
+- **cpp**: judge a Catch2 or doctest executable case by case where CTest runs it whole (#423)
+
+### Changed
+
+- **cpp**: share one build across workers under Ninja too (#431)
+- **cpp**: link a test again only when what it links into itself changed (#427)
+- **cpp**: build the project once and copy it to every worker under make (#426)
+
 ## v0.23.0 (2026-10-18)
 
 ### Added
