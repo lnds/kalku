@@ -1,6 +1,6 @@
 {
   "name": "kalku-typescript",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "The TypeScript kalku: finds the places where a defect can be cast in a TypeScript or JavaScript project, and casts them",
   "license": "MIT OR Apache-2.0",
   "private": true,
