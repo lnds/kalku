@@ -207,6 +207,7 @@ std::string Service::prepare(std::int64_t id) {
   }
   // What the copy of the base left out of date, if anything, is built here.
   Ran b = project_->build();
+  if (b.ok()) b = project_->settle_links();
   if (!b.ok()) {
     return error(id, "prepare_failed", "the project did not build: " + diagnostic(project_->named(b.output)), true);
   }

@@ -46,10 +46,14 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
   with `BUILD_TESTING=ON`, and built. Ninja is used when it is on the `PATH`
   and nobody chose a generator. Under make the project is built once, in a
   base no wekufe is ever written into, and each worker's copy and build tree
-  are copied from it with their dates, so no worker compiles it again.
+  are copied from it with their dates, so no worker compiles it again; what
+  the base linked that names the base's tree is linked again in the worker's.
 - **Casts** by writing the wekufe into the copy, rebuilding, running the
   selected tests through CTest, and putting the file back before it answers.
-  A build that fails is `compile_error`, with what the compiler said.
+  A build that fails is `compile_error`, with what the compiler said. A
+  wekufe in a shared library relinks the library alone: the tests load it
+  from the build tree when they run (`CMAKE_LINK_DEPENDS_NO_SHARED`), unless
+  the build puts a copy of it beside a test each time the test is linked.
 - **Counts each test's own verdict** from CTest's JUnit report. A test that
   fails is the kill. One that ends by a signal or by its own `TIMEOUT` said
   nothing about the wekufe, and is `crashed`; so is a run in which a test
@@ -78,6 +82,13 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
   leaves a variable unused a compile error, not a measurement.
 - Under make, which dates what it builds to the second, a cast waits for the
   clock to pass the second its last build ended in; Ninja does not.
+- On macOS the first run of every freshly linked executable or library
+  waits for the system's Gatekeeper scan, one file at a time across the
+  machine: about 0.15 to 0.3 s each, so a cast that relinks twenty test
+  executables spends seconds before they run, and more workers barely help.
+  A terminal listed under System Settings → Privacy & Security → Developer
+  Tools is exempt; that is the machine owner's choice, and kalku does not
+  make it.
 
 ## Developing it
 
