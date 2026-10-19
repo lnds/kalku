@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "cases.hpp"
+#include "coverage.hpp"
 #include "json.hpp"
 #include "process.hpp"
 #include "protocol.hpp"
@@ -54,6 +55,14 @@ struct TestRun {
   bool cancelled = false;
   // Why there is no report to read, when there is none.
   std::string broken;
+};
+
+// The build tree tests run from, what their environment adds, and whether
+// a case asked for runs alone whatever comes of it.
+struct Tree {
+  std::string build;
+  std::vector<std::string> env;
+  bool alone = false;
 };
 
 // How a file is compiled, as the build says it.
@@ -105,6 +114,10 @@ class Project {
   const Test* lookup(const std::string& id) const;
   TestRun run_tests(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel);
 
+  // Which lines each of these tests reaches, each run alone on a build of
+  // its own instrumented for coverage.
+  Covered cover(const std::vector<const Test*>& tests);
+
   // A file of the copy, and writing one there.
   std::optional<std::string> read(const std::string& file) const;
   bool write(const std::string& file, const std::string& text);
@@ -134,8 +147,12 @@ class Project {
   std::string cases_xml_;
   std::vector<std::string> env_;
   std::vector<std::string> cmake_args_;
+  std::string cover_build_;
+  std::string profiles_;
+  std::int64_t inline_limit_ = 0;
   std::string generator() const;
-  Ran configure_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel);
+  Ran configure_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel,
+                   bool instrumented = false);
   Ran build_in(const std::string& build, const std::atomic<bool>* cancel);
   Ran settle_links_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel);
   // The options say how a change to a shared library relinks.
@@ -146,12 +163,20 @@ class Project {
   // The cases of a test that runs one executable of a framework the kalku
   // lists; none, with why, when it cannot list them.
   std::vector<Test> cases_of(const Test& test, const Json& entry, std::string* why);
-  void run_ctest(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out);
-  void run_cases(int suite, const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out);
+  TestRun run_in(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, const Tree& tree);
+  void run_ctest(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, const Tree& tree,
+                 TestRun& out);
+  void run_cases(int suite, const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, const Tree& tree,
+                 TestRun& out);
+  // What reads this build's profiles, or why nothing does.
+  std::optional<Tools> coverage_tools(std::string* why) const;
+  std::string covered_tests(const std::vector<const Test*>& tests, const Tools& tools, Reach& reach);
 
   // The copy and its build tree came from the base.
   bool shared_ = false;
   std::vector<Test> tests_;
+  // Every CTest test's name, in CTest's order.
+  std::vector<std::string> ctest_names_;
   std::vector<Suite> suites_;
   std::vector<std::string> listed_;
   // What each executable answered when asked what it is.

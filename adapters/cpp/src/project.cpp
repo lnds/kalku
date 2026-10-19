@@ -520,6 +520,72 @@ std::string how_it_ended(const Ran& r) {
   return "exited with " + std::to_string(r.exit_code);
 }
 
+const char* const COVERAGE_FLAGS = "-fprofile-instr-generate -fcoverage-mapping";
+const char* const COVERAGE_LINK = "-fprofile-instr-generate";
+
+// The options and environment that make a build count the lines it runs,
+// added to whatever flags the project was already given.
+void instrument(std::vector<std::string>& args, std::vector<std::string>& env) {
+  auto add = [&](const std::string& key, const char* flags) {
+    for (auto& kv : env) {
+      if (kv.rfind(key + "=", 0) == 0) {
+        kv += std::string(" ") + flags;
+        return;
+      }
+    }
+    env.push_back(key + "=" + flags);
+  };
+  add("CFLAGS", COVERAGE_FLAGS);
+  add("CXXFLAGS", COVERAGE_FLAGS);
+  add("LDFLAGS", COVERAGE_LINK);
+  for (auto& a : args) {
+    auto eq = a.find('=');
+    if (a.rfind("-D", 0) != 0 || eq == std::string::npos) continue;
+    std::string name = a.substr(2, a.find_first_of(":=") - 2);
+    if (name == "CMAKE_C_FLAGS" || name == "CMAKE_CXX_FLAGS") a += std::string(" ") + COVERAGE_FLAGS;
+    if (name == "CMAKE_EXE_LINKER_FLAGS" || name == "CMAKE_SHARED_LINKER_FLAGS" ||
+        name == "CMAKE_MODULE_LINKER_FLAGS") {
+      a += std::string(" ") + COVERAGE_LINK;
+    }
+  }
+}
+
+// The files of a build that carry coverage mapping: its executables and
+// shared libraries, which is what a profile is read against.
+void instrumented_objects(const std::string& dir, std::vector<std::string>& out) {
+  for (const auto& name : entries(dir)) {
+    std::string path = dir + "/" + name;
+    struct stat st;
+    if (lstat(path.c_str(), &st) != 0) continue;
+    if (S_ISDIR(st.st_mode)) {
+      if (name != "CMakeFiles") instrumented_objects(path, out);
+      continue;
+    }
+    if (!S_ISREG(st.st_mode) || ends_with(name, ".a") || ends_with(name, ".o")) continue;
+    bool library = ends_with(name, ".dylib") || ends_with(name, ".so") || name.find(".so.") != std::string::npos;
+    if (!library && access(path.c_str(), X_OK) != 0) continue;
+    if (read_file(path).find("__llvm_covmap") != std::string::npos) out.push_back(path);
+  }
+}
+
+// The project's own sources in the copy, with how many lines each has.
+void source_lines(const std::string& dir, const std::string& rel, std::map<std::string, int>& out) {
+  for (const auto& name : entries(dir)) {
+    std::string path = dir + "/" + name;
+    struct stat st;
+    if (lstat(path.c_str(), &st) != 0) continue;
+    std::string file = rel.empty() ? name : rel + "/" + name;
+    if (S_ISDIR(st.st_mode)) {
+      source_lines(path, file, out);
+    } else if (S_ISREG(st.st_mode) && is_source_file(file) && !is_test_file(file)) {
+      std::string text = read_file(path);
+      int n = static_cast<int>(std::count(text.begin(), text.end(), '\n'));
+      if (!text.empty() && text.back() != '\n') n++;
+      out[file] = n;
+    }
+  }
+}
+
 }  // namespace
 
 bool is_header(const std::string& file) {
@@ -562,6 +628,9 @@ Project::Project(const Hello& h, std::vector<std::string> cmake_args)
   base_build_ = reni_ + "/build/base";
   junit_ = reni_ + "/junit-" + worker_ + ".xml";
   cases_xml_ = reni_ + "/cases-" + worker_ + ".xml";
+  cover_build_ = reni_ + "/cover/" + worker_;
+  profiles_ = reni_ + "/profiles/" + worker_;
+  inline_limit_ = h.inline_limit_bytes;
   for (const char* k : INHERITED) {
     if (const char* v = std::getenv(k)) env_.push_back(std::string(k) + "=" + v);
   }
@@ -682,9 +751,13 @@ Ran Project::configure(const std::atomic<bool>* cancel) { return configure_in(wo
 // Ninja when the machine has it and nobody chose a generator: it dates
 // what it builds to the nanosecond and rebuilds one file quickly, which is
 // what every cast asks of it.
-Ran Project::configure_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel) {
+Ran Project::configure_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel,
+                          bool instrumented) {
   std::vector<std::string> argv = {
       "cmake", "-S", work, "-B", build, "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", "-DBUILD_TESTING=ON"};
+  std::vector<std::string> env = env_;
+  std::vector<std::string> args = cmake_args_;
+  if (instrumented) instrument(args, env);
   bool chosen = false;
   for (const auto& a : cmake_args_) chosen = chosen || a.rfind("-G", 0) == 0;
   for (const auto& kv : env_) chosen = chosen || kv.rfind("CMAKE_GENERATOR=", 0) == 0;
@@ -698,13 +771,13 @@ Ran Project::configure_in(const std::string& work, const std::string& build, con
   if (!links_chosen()) {
     argv.push_back(std::string("-DCMAKE_LINK_DEPENDS_NO_SHARED=") + (copies_a_library(build) ? "OFF" : "ON"));
   }
-  for (const auto& a : cmake_args_) argv.push_back(a);
-  Ran r = run(argv, work, env_, cancel);
+  for (const auto& a : args) argv.push_back(a);
+  Ran r = run(argv, work, env, cancel);
   if (!r.ok() && !r.cancelled && r.output.find("Does not match the generator used previously") != std::string::npos) {
     // A build tree of another generator is started over.
     remove_all(build + "/CMakeCache.txt");
     remove_all(build + "/CMakeFiles");
-    r = run(argv, work, env_, cancel);
+    r = run(argv, work, env, cancel);
   }
   return r;
 }
@@ -773,6 +846,7 @@ bool Project::list_tests(std::string* why) {
     }
   }
   tests_.clear();
+  ctest_names_.clear();
   by_id_.clear();
   suites_.clear();
   listed_.clear();
@@ -784,6 +858,7 @@ bool Project::list_tests(std::string* why) {
   for (const auto& t : list->items) {
     number++;
     const Json* name = t.get("name");
+    ctest_names_.push_back(name ? name->text : "");
     if (!name) continue;
     bool disabled = false;
     if (const Json* props = t.get("properties")) {
@@ -928,21 +1003,33 @@ const Test* Project::lookup(const std::string& id) const {
 }
 
 TestRun Project::run_tests(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel) {
+  return run_in(tests, cancel, Tree{build_, {}, false});
+}
+
+TestRun Project::run_in(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, const Tree& tree) {
   TestRun out;
   std::vector<const Test*> whole;
   std::map<int, std::vector<const Test*>> by_suite;
   for (const auto* t : tests) (t->suite < 0 ? whole : by_suite[t->suite]).push_back(t);
-  if (!whole.empty()) run_ctest(whole, cancel, out);
+  if (!whole.empty()) run_ctest(whole, cancel, tree, out);
   for (const auto& kv : by_suite) {
     if (out.cancelled || !out.broken.empty()) break;
-    run_cases(kv.first, kv.second, cancel, out);
+    run_cases(kv.first, kv.second, cancel, tree, out);
   }
   return out;
 }
 
 void Project::run_cases(int index, const std::vector<const Test*>& tests, const std::atomic<bool>* cancel,
-                        TestRun& out) {
-  const Suite& s = suites_[static_cast<std::size_t>(index)];
+                        const Tree& tree, TestRun& out) {
+  Suite s = suites_[static_cast<std::size_t>(index)];
+  if (tree.build != build_) {
+    // The same executable, as the other build tree has it.
+    Rewrites rw = {{build_ + "/", tree.build + "/"}};
+    s.executable = rebase(s.executable, rw);
+    s.directory = s.directory == build_ ? tree.build : rebase(s.directory, rw);
+    for (auto& kv : s.env) kv = rebase(kv, rw);
+  }
+  for (const auto& kv : tree.env) s.env.push_back(kv);
   Ran ran;
   bool reported = false;
   auto once = [&](const std::vector<std::string>& names) {
@@ -962,7 +1049,7 @@ void Project::run_cases(int index, const std::vector<const Test*>& tests, const 
     for (const auto* t : tests) names.push_back(t->test_case);
   }
   auto got = once(names);
-  if (!all && !ran.cancelled) {
+  if (!all && !tree.alone && !ran.cancelled) {
     bool failed = false;
     for (const auto* t : tests) {
       auto it = got.find(t->test_case);
@@ -1020,12 +1107,15 @@ void Project::run_cases(int index, const std::vector<const Test*>& tests, const 
   }
 }
 
-void Project::run_ctest(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out) {
+void Project::run_ctest(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, const Tree& tree,
+                        TestRun& out) {
   std::string numbers = "0,0,0";
   for (const auto* t : tests) numbers += "," + std::to_string(t->number);
   unlink(junit_.c_str());
-  Ran r = run({"ctest", "--test-dir", build_, "-I", numbers, "--output-junit", junit_, "--output-on-failure"}, build_,
-              env_, cancel);
+  std::vector<std::string> env = env_;
+  env.insert(env.end(), tree.env.begin(), tree.env.end());
+  Ran r = run({"ctest", "--test-dir", tree.build, "-I", numbers, "--output-junit", junit_, "--output-on-failure"},
+              tree.build, env, cancel);
   if (r.cancelled) {
     out.cancelled = true;
     return;
@@ -1074,6 +1164,131 @@ void Project::run_ctest(const std::vector<const Test*>& tests, const std::atomic
     auto it = by_name.find(t->name);
     if (it != by_name.end()) out.by_id[t->id] = it->second;
   }
+}
+
+std::optional<Tools> Project::coverage_tools(std::string* why) const {
+  std::vector<Compiler> compilers;
+  for (const auto& dir : entries(build_ + "/CMakeFiles")) {
+    for (const char* language : {"C", "CXX"}) {
+      bool ok = false;
+      std::string text =
+          read_file(build_ + "/CMakeFiles/" + dir + "/CMake" + std::string(language) + "Compiler.cmake", &ok);
+      if (!ok) continue;
+      if (auto c = read_compiler(language, text)) compilers.push_back(*c);
+    }
+  }
+  return tools_for(compilers, env_, why);
+}
+
+// A test that fails alone is run again before anything is concluded: a
+// flaky one passes, and what it reached then is what it reaches.
+constexpr int ALONE_TRIES = 3;
+
+Covered Project::cover(const std::vector<const Test*>& tests) {
+  Covered out;
+  auto tools = coverage_tools(&out.withheld);
+  if (!tools) return out;
+  make_dirs(cover_build_);
+  cover_build_ = resolved(cover_build_);
+  Ran c = configure_in(work_, cover_build_, nullptr, true);
+  if (!c.ok()) {
+    out.withheld = "cmake could not configure the build instrumented for coverage: " + named(last_lines(c.output, 10));
+    return out;
+  }
+  Ran b = build_in(cover_build_, nullptr);
+  if (!b.ok()) {
+    out.withheld = "the project did not build instrumented for coverage: " + named(last_lines(b.output, 10));
+    return out;
+  }
+  std::vector<std::string> ids;
+  for (const auto* t : tests) ids.push_back(t->id);
+  Reach reach(ids);
+  out.withheld = covered_tests(tests, *tools, reach);
+  remove_all(profiles_);
+  if (!out.withheld.empty()) return out;
+  std::map<std::string, int> files;
+  source_lines(work_, "", files);
+  reach.close(files);
+  std::string entries = reach.entries();
+  if (static_cast<std::int64_t>(entries.size()) <= inline_limit_) {
+    out.entries = entries;
+    return out;
+  }
+  std::string path = reni_ + "/coverage/" + worker_ + ".json";
+  make_dirs(dir_of(path));
+  if (!write_file(path, reach.packed())) {
+    out.withheld = "the coverage could not be written to " + path;
+    return out;
+  }
+  out.packed_path = path;
+  return out;
+}
+
+// Runs each test alone on the instrumented build and adds what it reached;
+// why the coverage cannot be stood behind, when it cannot.
+std::string Project::covered_tests(const std::vector<const Test*>& tests, const Tools& tools, Reach& reach) {
+  Ran listed = run({"ctest", "--test-dir", cover_build_, "--show-only=json-v1"}, cover_build_, env_);
+  auto start = listed.output.find('{');
+  auto doc = listed.ok() && start != std::string::npos ? parse_json(listed.output.substr(start)) : std::nullopt;
+  std::vector<std::string> names;
+  if (doc && doc->get("tests")) {
+    for (const auto& t : doc->get("tests")->items) names.push_back(t.get("name") ? t.get("name")->text : "");
+  }
+  if (names != ctest_names_) return "the build instrumented for coverage lists other tests than the build does";
+  std::vector<std::string> objects;
+  instrumented_objects(cover_build_, objects);
+  if (objects.empty()) return "the build instrumented for coverage holds no executable that counts the lines it runs";
+  std::vector<std::string> roots = {work_};
+  if (reni_ + "/work/" + worker_ != work_) roots.push_back(reni_ + "/work/" + worker_);
+  std::atomic<bool> never{false};
+  for (std::size_t i = 0; i < tests.size(); i++) {
+    const Test* t = tests[i];
+    Tree tree{cover_build_, {"LLVM_PROFILE_FILE=" + profiles_ + "/%p.profraw"}, true};
+    TestResult res;
+    for (int attempt = 0; attempt < ALONE_TRIES; attempt++) {
+      remove_all(profiles_);
+      make_dirs(profiles_);
+      TestRun ran = run_in({t}, &never, tree);
+      if (!ran.broken.empty()) return "`" + t->id + "` could not be run alone for coverage: " + ran.broken;
+      auto it = ran.by_id.find(t->id);
+      res = it == ran.by_id.end() ? TestResult{} : it->second;
+      if (res.status == TestResult::Status::Passed) break;
+    }
+    if (res.status != TestResult::Status::Passed) {
+      return "`" + t->id + "` passes in the suite and failed each of " + std::to_string(ALONE_TRIES) +
+             " runs alone, so what it reaches alone is not what it reaches there" +
+             (res.message.empty() ? "" : ": " + res.message);
+    }
+    std::vector<std::string> raw;
+    for (const auto& name : entries(profiles_)) {
+      if (ends_with(name, ".profraw")) raw.push_back(profiles_ + "/" + name);
+    }
+    if (raw.empty()) {
+      reach.unknown(i);
+      continue;
+    }
+    std::string merged = profiles_ + "/merged.profdata";
+    std::vector<std::string> merge = {tools.profdata, "merge", "-sparse"};
+    merge.insert(merge.end(), raw.begin(), raw.end());
+    merge.push_back("-o");
+    merge.push_back(merged);
+    Ran m = run(merge, profiles_, env_);
+    if (!m.ok()) return "llvm-profdata could not merge the profile of `" + t->id + "`: " + last_lines(m.output, 5);
+    std::vector<std::string> exp = {tools.cov, "export", "-format=lcov", "-instr-profile=" + merged};
+    for (std::size_t o = 0; o < objects.size(); o++) {
+      if (o > 0) exp.push_back("-object");
+      exp.push_back(objects[o]);
+    }
+    std::string lcov = profiles_ + "/lines.lcov";
+    Ran e = run_to(exp, profiles_, env_, lcov);
+    if (!e.ok()) return "llvm-cov could not read the profile of `" + t->id + "`: " + last_lines(e.output, 5);
+    Lines lines;
+    for (auto& f : reached_lines(read_file(lcov), roots)) {
+      if (is_source_file(f.first) && !is_test_file(f.first)) lines.insert(std::move(f));
+    }
+    reach.add(i, lines);
+  }
+  return "";
 }
 
 std::optional<std::string> Project::read(const std::string& file) const {

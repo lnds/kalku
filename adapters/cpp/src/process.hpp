@@ -28,6 +28,10 @@ struct Ran {
 Ran run(const std::vector<std::string>& argv, const std::string& dir, const std::vector<std::string>& env,
         const std::atomic<bool>* cancel = nullptr);
 
+// The same, with what the command writes to stdout in `out_file` alone.
+Ran run_to(const std::vector<std::string>& argv, const std::string& dir, const std::vector<std::string>& env,
+           const std::string& out_file, const std::atomic<bool>* cancel = nullptr);
+
 // True when the PATH in env finds the program.
 bool on_path(const std::string& program, const std::vector<std::string>& env);
 

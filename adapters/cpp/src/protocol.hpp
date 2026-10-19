@@ -98,8 +98,17 @@ struct Failure {
   std::string message;
 };
 
+// What a baseline says of coverage: the entries inline, or the path of a
+// packed file, or why there are none.
+struct Covered {
+  std::string entries;
+  std::string packed_path;
+  std::string withheld;
+};
+
 std::string baseline_done(std::int64_t id, std::int64_t duration_ms, const std::vector<Timed>& tests,
-                          const std::vector<Failure>& failures, const std::vector<std::string>& differences);
+                          const std::vector<Failure>& failures, const std::vector<std::string>& differences,
+                          const Covered& covered = {});
 
 struct Skipped {
   std::string file;

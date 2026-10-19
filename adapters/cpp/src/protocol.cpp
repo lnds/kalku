@@ -332,7 +332,8 @@ std::string prepared(std::int64_t id, std::int64_t duration_ms, std::int64_t mod
 }
 
 std::string baseline_done(std::int64_t id, std::int64_t duration_ms, const std::vector<Timed>& tests,
-                          const std::vector<Failure>& failures, const std::vector<std::string>& differences) {
+                          const std::vector<Failure>& failures, const std::vector<std::string>& differences,
+                          const Covered& covered) {
   std::vector<std::string> ts;
   for (const auto& t : tests) {
     ts.push_back(Writer().str("test", t.test).str("file", t.file).integer("duration_ms", t.duration_ms).done());
@@ -341,6 +342,9 @@ std::string baseline_done(std::int64_t id, std::int64_t duration_ms, const std::
   for (const auto& f : failures) fs.push_back(Writer().str("test", f.test).str("message", f.message).done());
   Writer w = Writer::message("baseline_done", id);
   w.str("status", failures.empty() ? "green" : "red").integer("duration_ms", duration_ms).objects("tests", ts);
+  if (!covered.entries.empty()) w.raw("coverage", covered.entries);
+  if (!covered.packed_path.empty()) w.str("coverage_packed_path", covered.packed_path);
+  if (!covered.withheld.empty()) w.str("coverage_withheld", covered.withheld);
   w.objects("failures", fs);
   if (!differences.empty()) w.strs("differences", differences);
   return w.done();
