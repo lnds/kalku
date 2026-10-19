@@ -9,6 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_library(kalku_cpp STATIC
+  src/cases.cpp
   src/clang.cpp
   src/framing.cpp
   src/json.cpp
@@ -37,6 +38,7 @@ endif()
 
 add_executable(kalku-cpp-tests
   tests/main.cpp
+  tests/cases_test.cpp
   tests/protocol_test.cpp
   tests/sites_test.cpp
   tests/service_test.cpp

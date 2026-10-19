@@ -200,15 +200,16 @@ struct Expect {
   std::string killed_by;
 };
 
-// Casts each wekufe against both tests and checks what came of it.
-void judge(Kalku& k, const std::map<std::string, std::string>& by, const std::vector<Expect>& expected, int& id) {
+// Casts each wekufe against the tests and checks what came of it.
+void judge(Kalku& k, const std::map<std::string, std::string>& by, const std::vector<Expect>& expected, int& id,
+           const std::string& tests = "[\"basics\",\"edges\"]") {
   for (const auto& e : expected) {
     auto it = by.find(e.site);
     if (it == by.end()) {
       kalku::testing::failed("sites", "no site " + e.site);
       continue;
     }
-    k.send(cast_of(id++, it->second, "[\"basics\",\"edges\"]"));
+    k.send(cast_of(id++, it->second, tests));
     std::string done = k.next();
     CHECK_EQ(field(done, "outcome") + " " + e.site, e.outcome + " " + e.site);
     CHECK_EQ(field(done, "killed_by") + " " + e.site, e.killed_by + " " + e.site);
@@ -440,6 +441,116 @@ TEST("a C project tested with Unity is measured one test executable at a time") 
             {"src/ring.c:20 literal 1", "killed", "edges"},
         },
         id);
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
+  remove_tree(reni);
+}
+
+TEST("a Catch2 executable registered as one test is measured case by case") {
+  if (!have_cmake()) return;
+  std::string root = here("testdata/projects/catch2");
+  std::map<std::string, std::string> before;
+  snapshot(root, "", before);
+  std::string reni = temp_reni();
+  Kalku k(KALKU_CPP_BIN);
+  if (!started(k, root, reni)) {
+    remove_tree(reni);
+    return;
+  }
+  k.send(
+      "{\"type\":\"sites\",\"id\":3,\"files\":[\"src/range.cpp\"],"
+      "\"spells\":[\"arm\",\"compare\",\"connect\",\"negate\",\"literal\",\"call\"],\"exclude_calls\":[]}");
+  auto by = by_place(k.next());
+  k.send("{\"type\":\"baseline\",\"id\":4}");
+  std::string baseline = k.next();
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+  // Each case is a test, and the executable run whole is not one.
+  CHECK(baseline.find("\"test\":\"range/the middle of a range\"") != std::string::npos);
+  CHECK(baseline.find("\"test\":\"range/the edges of a range\"") != std::string::npos);
+  CHECK(baseline.find("\"test\":\"range/~a name, with [brackets] and a *\"") != std::string::npos);
+  CHECK(baseline.find("\"test\":\"range\"") == std::string::npos);
+  // A test CTest runs with arguments is left as CTest has it.
+  CHECK(baseline.find("\"test\":\"range edges\"") != std::string::npos);
+
+  const std::string all =
+      "[\"range/the middle of a range\",\"range/~a name, with [brackets] and a *\",\"range/the edges of a range\"]";
+  int id = 10;
+  judge(k, by,
+        {
+            {"src/range.cpp:6 negate v < lo", "killed", "range/the middle of a range"},
+            {"src/range.cpp:12 literal 1", "killed", "range/the edges of a range"},
+            {"src/range.cpp:17 compare ==", "crashed", ""},
+            {"src/range.cpp:7 compare >", "survived", ""},
+        },
+        id, all);
+  // Cases asked for alone run alone, by their exact names.
+  judge(k, by, {{"src/range.cpp:12 literal 1", "killed", "range/the edges of a range"}}, id,
+        "[\"range/the edges of a range\"]");
+  judge(k, by, {{"src/range.cpp:12 literal 1", "survived", ""}}, id, "[\"range/~a name, with [brackets] and a *\"]");
+  judge(k, by, {{"src/range.cpp:12 literal 1", "killed", "range edges"}}, id, "[\"range edges\"]");
+
+  auto null = by.find("src/range.cpp:17 compare ==");
+  if (null != by.end()) {
+    k.send(cast_of(id++, null->second, all));
+    std::string done = k.next();
+    CHECK(field(done, "message").find("range/the edges of a range") != std::string::npos);
+    CHECK(field(done, "message").find("SIGSEGV") != std::string::npos);
+  }
+
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
+  std::map<std::string, std::string> after;
+  snapshot(root, "", after);
+  CHECK(before == after);
+  remove_tree(reni);
+}
+
+TEST("a doctest executable registered as one test is measured case by case") {
+  if (!have_cmake()) return;
+  std::string root = here("testdata/projects/doctest");
+  std::string reni = temp_reni();
+  Kalku k(KALKU_CPP_BIN);
+  if (!started(k, root, reni)) {
+    remove_tree(reni);
+    return;
+  }
+  k.send(
+      "{\"type\":\"sites\",\"id\":3,\"files\":[\"src/range.cpp\"],"
+      "\"spells\":[\"arm\",\"compare\",\"connect\",\"negate\",\"literal\",\"call\"],\"exclude_calls\":[]}");
+  auto by = by_place(k.next());
+  k.send("{\"type\":\"baseline\",\"id\":4}");
+  std::string baseline = k.next();
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+  CHECK(baseline.find("\"test\":\"range/the middle of a range\"") != std::string::npos);
+  CHECK(baseline.find("\"test\":\"range/the value kept is the end\"") != std::string::npos);
+  CHECK(baseline.find("\"test\":\"range\"") == std::string::npos);
+
+  const std::string all =
+      "[\"range/the middle of a range\",\"range/the edges of a range\",\"range/a value past the end is kept\","
+      "\"range/the value kept is the end\"]";
+  int id = 10;
+  judge(k, by,
+        {
+            {"src/range.cpp:6 negate v < lo", "killed", "range/the middle of a range"},
+            {"src/range.cpp:12 literal 1", "killed", "range/the edges of a range"},
+            {"src/range.cpp:17 compare ==", "crashed", ""},
+            {"src/range.cpp:7 compare >", "survived", ""},
+        },
+        id, all);
+  // The case fails alone whatever is cast, and passes in the suite: alone,
+  // it judges nothing, and the suite says whether the wekufe was noticed.
+  const std::string alone = "[\"range/the value kept is the end\"]";
+  judge(k, by,
+        {
+            {"src/range.cpp:7 compare >", "survived", ""},
+            {"src/range.cpp:7 negate v > hi", "killed", "range/the value kept is the end"},
+        },
+        id, alone);
+
   k.send("{\"type\":\"shutdown\",\"id\":99}");
   CHECK_EQ(field(k.next(), "type"), std::string("bye"));
   k.close_input();
