@@ -94,6 +94,10 @@ class Project {
 
   Ran configure(const std::atomic<bool>* cancel = nullptr);
   Ran build(const std::atomic<bool>* cancel = nullptr);
+  // An executable is not linked again when only a shared library it loads
+  // changed, unless the tree copies that library; after the first build,
+  // one that does is configured and built again to link them all.
+  Ran settle_links(const std::atomic<bool>* cancel = nullptr);
   bool configured() const;
   bool list_tests(std::string* why);
 
@@ -133,6 +137,9 @@ class Project {
   std::string generator() const;
   Ran configure_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel);
   Ran build_in(const std::string& build, const std::atomic<bool>* cancel);
+  Ran settle_links_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel);
+  // The options say how a change to a shared library relinks.
+  bool links_chosen() const;
   // Paths of the base, as this worker's copy and build tree name them.
   std::vector<std::pair<std::string, std::string>> rebased() const;
 

@@ -289,14 +289,92 @@ bool clone_tree(const std::string& from, const std::string& to, const Rewrites& 
   return true;
 }
 
-std::string generator_of(const std::string& build) {
-  bool ok = false;
-  std::string cache = read_file(build + "/CMakeCache.txt", &ok);
-  const std::string key = "CMAKE_GENERATOR:INTERNAL=";
-  auto at = ok ? cache.find(key) : std::string::npos;
-  if (at == std::string::npos) return "";
-  at += key.size();
-  return cache.substr(at, cache.find('\n', at) - at);
+bool ends_with(const std::string& s, const std::string& tail) {
+  return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+// What a build tree's cache holds for `name`, whatever its type.
+std::string cached(const std::string& build, const std::string& name) {
+  std::stringstream lines(read_file(build + "/CMakeCache.txt"));
+  std::string line;
+  while (std::getline(lines, line)) {
+    if (line.rfind(name + ":", 0) == 0 && line.find('=') != std::string::npos) return line.substr(line.find('=') + 1);
+  }
+  return "";
+}
+
+// An executable or a shared library, as its first bytes say: a Mach-O or
+// an ELF file that a link wrote, and not an object a compiler did.
+bool linked_image(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  unsigned char h[20] = {0};
+  if (!in.read(reinterpret_cast<char*>(h), sizeof h)) return false;
+  if (h[0] == 0x7f && h[1] == 'E' && h[2] == 'L' && h[3] == 'F') {
+    unsigned type = h[5] == 2 ? (h[16] << 8 | h[17]) : (h[17] << 8 | h[16]);
+    return type == 2 || type == 3;
+  }
+  if ((h[0] == 0xcf || h[0] == 0xce) && h[1] == 0xfa && h[2] == 0xed && h[3] == 0xfe) {
+    unsigned type = h[12] | h[13] << 8;
+    return type == 2 || type == 6 || type == 8;
+  }
+  // A universal binary counts its architectures where a Java class, with
+  // the same magic, puts its version.
+  return h[0] == 0xca && h[1] == 0xfe && h[2] == 0xba && h[3] == 0xbe && h[4] == 0 && h[5] == 0 && h[6] == 0 &&
+         h[7] < 20;
+}
+
+// Removes from a copy of the base's build tree what the base linked and
+// that names the base: a linked file can find the shared libraries it loads
+// by the base's paths, and binary text cannot be rewritten to name others,
+// so the copy links it again in its own tree.
+void unlink_images(const std::string& dir, const Rewrites& rw) {
+  for (const auto& name : entries(dir)) {
+    std::string path = dir + "/" + name;
+    struct stat st;
+    if (lstat(path.c_str(), &st) != 0) continue;
+    if (S_ISDIR(st.st_mode)) {
+      unlink_images(path, rw);
+    } else if (S_ISREG(st.st_mode) && linked_image(path)) {
+      std::string data = read_file(path);
+      for (const auto& r : rw) {
+        if (data.find(r.first) == std::string::npos) continue;
+        unlink(path.c_str());
+        break;
+      }
+    }
+  }
+}
+
+std::string generator_of(const std::string& build) { return cached(build, "CMAKE_GENERATOR"); }
+
+bool shared_library(const std::string& name) {
+  if (ends_with(name, ".dylib") || ends_with(name, ".so")) return true;
+  auto at = name.find(".so.");
+  return at != std::string::npos && name.find_first_not_of("0123456789.", at + 4) == std::string::npos;
+}
+
+void libraries_in(const std::string& dir, std::map<std::string, int>& seen) {
+  for (const auto& name : entries(dir)) {
+    std::string path = dir + "/" + name;
+    struct stat st;
+    if (lstat(path.c_str(), &st) != 0) continue;
+    if (S_ISDIR(st.st_mode) && name != "CMakeFiles") {
+      libraries_in(path, seen);
+    } else if (S_ISREG(st.st_mode) && shared_library(name)) {
+      seen[name]++;
+    }
+  }
+}
+
+// A shared library the build tree holds twice: a copy a test may load in
+// place of the library, refreshed only when what copies it is linked again.
+bool copies_a_library(const std::string& build) {
+  std::map<std::string, int> seen;
+  libraries_in(build, seen);
+  for (const auto& kv : seen) {
+    if (kv.second > 1) return true;
+  }
+  return false;
 }
 
 // Held from open to close; closing the file ends it, and so does the end of
@@ -318,10 +396,6 @@ class Lock {
 std::string resolved(const std::string& path) {
   char buf[PATH_MAX];
   return realpath(path.c_str(), buf) ? std::string(buf) : path;
-}
-
-bool ends_with(const std::string& s, const std::string& tail) {
-  return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
 }
 
 std::string lower(std::string s) {
@@ -584,6 +658,7 @@ BaseStage Project::from_base(Ran* ran, std::string* why) {
     if (!ran->ok()) return BaseStage::Configure;
     if (generator_of(base_build_) != "Unix Makefiles") return BaseStage::Unshared;
     *ran = build_in(base_build_, nullptr);
+    if (ran->ok()) *ran = settle_links_in(base_work_, base_build_, nullptr);
     if (!ran->ok()) return BaseStage::Build;
     write_file(done, stamp);
   }
@@ -597,6 +672,7 @@ BaseStage Project::from_base(Ran* ran, std::string* why) {
   build_ = resolved(build_);
   auto rw = rebased();
   if (!clone_tree(base_work_, work_, rw, why) || !clone_tree(base_build_, build_, rw, why)) return BaseStage::Copy;
+  unlink_images(build_, rw);
   shared_ = true;
   return BaseStage::Done;
 }
@@ -616,6 +692,12 @@ Ran Project::configure_in(const std::string& work, const std::string& build, con
     argv.emplace_back("-G");
     argv.emplace_back("Ninja");
   }
+  // A test loads the shared libraries it links from the build tree when it
+  // runs, so one that changed needs no test linked again; a fresh executable
+  // costs a cast more to start than to link.
+  if (!links_chosen()) {
+    argv.push_back(std::string("-DCMAKE_LINK_DEPENDS_NO_SHARED=") + (copies_a_library(build) ? "OFF" : "ON"));
+  }
   for (const auto& a : cmake_args_) argv.push_back(a);
   Ran r = run(argv, work, env_, cancel);
   if (!r.ok() && !r.cancelled && r.output.find("Does not match the generator used previously") != std::string::npos) {
@@ -628,6 +710,21 @@ Ran Project::configure_in(const std::string& work, const std::string& build, con
 }
 
 Ran Project::build(const std::atomic<bool>* cancel) { return build_in(build_, cancel); }
+
+bool Project::links_chosen() const {
+  for (const auto& a : cmake_args_) {
+    if (a.find("CMAKE_LINK_DEPENDS_NO_SHARED") != std::string::npos) return true;
+  }
+  return false;
+}
+
+Ran Project::settle_links(const std::atomic<bool>* cancel) { return settle_links_in(work_, build_, cancel); }
+
+Ran Project::settle_links_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel) {
+  if (links_chosen() || cached(build, "CMAKE_LINK_DEPENDS_NO_SHARED") != "ON" || !copies_a_library(build)) return Ran{};
+  Ran r = configure_in(work, build, cancel);
+  return r.ok() ? build_in(build, cancel) : r;
+}
 
 // Make dates what it builds to the second: an object built in the second
 // the library was last archived in is taken for older than it, and the

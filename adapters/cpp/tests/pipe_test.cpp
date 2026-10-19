@@ -669,6 +669,59 @@ TEST("under make the workers copy one build, and none sees another's wekufe") {
   remove_tree(reni);
 }
 
+namespace {
+
+long long modified(const std::string& path) {
+  struct stat st;
+  if (stat(path.c_str(), &st) != 0) return -1;
+#ifdef __APPLE__
+  return static_cast<long long>(st.st_mtimespec.tv_sec) * 1000000000LL + st.st_mtimespec.tv_nsec;
+#else
+  return static_cast<long long>(st.st_mtim.tv_sec) * 1000000000LL + st.st_mtim.tv_nsec;
+#endif
+}
+
+// Casts a wekufe in a shared library against the one test that loads it,
+// and says whether the test's executable was linked again.
+bool relinked_for(const std::string& args, const std::string& exe) {
+  std::string root = here("testdata/projects/c_shared");
+  std::string reni = temp_reni();
+  Kalku k(KALKU_CPP_BIN);
+  k.send(hello_of(root, reni, 0, "{\"cmake_args\":" + args + "}"));
+  CHECK_EQ(field(k.next(), "type"), std::string("ready"));
+  k.send("{\"type\":\"prepare\",\"id\":2}");
+  CHECK_EQ(field(k.next(), "type"), std::string("prepared"));
+  k.send("{\"type\":\"sites\",\"id\":3,\"files\":[\"src/scale.c\"],\"spells\":[\"compare\"],\"exclude_calls\":[]}");
+  auto by = by_place(k.next());
+  long long before = modified(reni + "/build/0/" + exe);
+  CHECK(before > 0);
+  int id = 10;
+  judge(k, by, {{"src/scale.c:4 compare <", "killed", "scale"}}, id, "[\"scale\"]");
+  long long after = modified(reni + "/build/0/" + exe);
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
+  remove_tree(reni);
+  return after != before;
+}
+
+}  // namespace
+
+TEST("a wekufe in a shared library reaches the test that loads it, which is not linked again") {
+  if (!have_cmake()) return;
+  CHECK(!relinked_for("[\"-G\",\"Unix Makefiles\"]", "scale_test"));
+  if (std::system("command -v ninja >/dev/null 2>&1") == 0) CHECK(!relinked_for("[\"-G\",\"Ninja\"]", "scale_test"));
+}
+
+TEST("a test that loads a copy of a shared library is linked again, and the copy made again") {
+  if (!have_cmake()) return;
+  CHECK(relinked_for("[\"-G\",\"Unix Makefiles\",\"-DCOPY_LIBRARY=ON\"]", "bin/scale_test"));
+  if (std::system("command -v ninja >/dev/null 2>&1") == 0) {
+    CHECK(relinked_for("[\"-G\",\"Ninja\",\"-DCOPY_LIBRARY=ON\"]", "bin/scale_test"));
+  }
+}
+
 TEST("input that ends with no shutdown ends the kalku at once") {
   Kalku k(KALKU_CPP_BIN);
   k.close_input();
