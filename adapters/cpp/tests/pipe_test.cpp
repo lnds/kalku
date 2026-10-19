@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <map>
+#include <set>
 
 #include "json.hpp"
 #include "test.hpp"
@@ -720,6 +721,126 @@ TEST("a test that loads a copy of a shared library is linked again, and the copy
   if (std::system("command -v ninja >/dev/null 2>&1") == 0) {
     CHECK(relinked_for("[\"-G\",\"Ninja\",\"-DCOPY_LIBRARY=ON\"]", "bin/scale_test"));
   }
+}
+
+namespace {
+
+// The tests the baseline credits with each "file:line", read inline or from
+// the packed file; empty when it reported none.
+std::map<std::string, std::set<std::string>> credited(const std::string& baseline) {
+  std::map<std::string, std::set<std::string>> out;
+  auto doc = parse_json(baseline);
+  if (!doc) return out;
+  if (const Json* entries = doc->get("coverage")) {
+    for (const auto& e : entries->items) {
+      auto& tests = out[e.get("file")->text + ":" + std::to_string(e.get("line")->integer)];
+      for (const auto& t : e.get("tests")->items) tests.insert(t.text);
+    }
+  } else if (const Json* path = doc->get("coverage_packed_path")) {
+    auto packed = parse_json(read(path->text));
+    if (!packed) return out;
+    const auto& ids = packed->get("tests")->items;
+    for (const auto& g : packed->get("reached")->items) {
+      for (const auto& line : g.get("lines")->items) {
+        auto& tests = out[g.get("file")->text + ":" + std::to_string(line.integer)];
+        for (const auto& t : g.get("tests")->items) tests.insert(ids[static_cast<std::size_t>(t.integer)].text);
+      }
+    }
+  }
+  return out;
+}
+
+// Options that make the fixture build with Clang where the machine has it,
+// which is what coverage is read from.
+std::string clang_options(const std::string& language) {
+  bool c = language == "C";
+  if (std::system(c ? "command -v clang >/dev/null 2>&1" : "command -v clang++ >/dev/null 2>&1") != 0) return "{}";
+  return std::string("{\"cmake_args\":[\"-DCMAKE_") + (c ? "C" : "CXX") + "_COMPILER=" + (c ? "clang" : "clang++") +
+         "\"]}";
+}
+
+// The baseline of a fixture, built with Clang where the machine has it.
+std::string baseline_of(const std::string& root, const std::string& reni, const std::string& language) {
+  Kalku k(KALKU_CPP_BIN);
+  k.send(hello_of(root, reni, 0, clang_options(language)));
+  std::string ready = k.next();
+  CHECK(ready.find("\"per_test_coverage\"") != std::string::npos);
+  k.send("{\"type\":\"prepare\",\"id\":2}");
+  CHECK_EQ(field(k.next(), "type"), std::string("prepared"));
+  k.send("{\"type\":\"baseline\",\"id\":3}");
+  std::string baseline = k.next();
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
+  return baseline;
+}
+
+// Coverage, or a sentence saying why there is none, and never both.
+bool covered(const std::string& baseline) {
+  bool withheld = !field(baseline, "coverage_withheld").empty();
+  bool some = baseline.find("\"coverage\":") != std::string::npos ||
+              baseline.find("\"coverage_packed_path\":") != std::string::npos;
+  CHECK(withheld != some);
+  if (withheld) std::cerr << "  coverage withheld: " << field(baseline, "coverage_withheld") << "\n";
+  return some;
+}
+
+}  // namespace
+
+TEST("each test is credited with the lines it ran, and every test with the lines none ran") {
+  if (!have_cmake()) return;
+  std::string reni = temp_reni();
+  std::string baseline = baseline_of(here("testdata/projects/ctest"), reni, "CXX");
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+  if (covered(baseline)) {
+    auto by = credited(baseline);
+    const std::set<std::string> both = {"basics", "edges"};
+    // A header's inline function, run by both.
+    CHECK(by["include/calc.hpp:11"] == both);
+    // Only `edges` asks for a fallback, and only `basics` halves.
+    CHECK(by["src/calc.cpp:12"] == std::set<std::string>{"edges"});
+    CHECK(by["src/calc.cpp:25"] == std::set<std::string>{"basics"});
+    // No test passes a pointer that is not null: nothing ran that line, so
+    // every test judges it.
+    CHECK(by["src/calc.cpp:13"] == both);
+    // A test file's lines are not the project's code.
+    CHECK(by.count("tests/edges_test.cpp:7") == 0);
+  }
+  remove_tree(reni);
+}
+
+TEST("each case of a Catch2 executable is credited with the lines it ran") {
+  if (!have_cmake()) return;
+  std::string reni = temp_reni();
+  std::string baseline = baseline_of(here("testdata/projects/catch2"), reni, "CXX");
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+  if (covered(baseline)) {
+    auto by = credited(baseline);
+    CHECK(by["src/range.cpp:17"] == (std::set<std::string>{"range/the edges of a range", "range edges"}));
+    CHECK(by["src/range.cpp:12"] ==
+          (std::set<std::string>{"range/the middle of a range", "range/~a name, with [brackets] and a *",
+                                 "range/the edges of a range", "range edges"}));
+    CHECK(by["src/range.cpp:6"].count("range/~a name, with [brackets] and a *") == 0);
+  }
+  remove_tree(reni);
+}
+
+TEST("a test that passes in the suite and fails alone withholds the coverage") {
+  if (!have_cmake()) return;
+  std::string reni = temp_reni();
+  // One of its cases keeps what the case before it left.
+  std::string baseline = baseline_of(here("testdata/projects/doctest"), reni, "CXX");
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+  std::string why = field(baseline, "coverage_withheld");
+  CHECK(!why.empty());
+  CHECK(baseline.find("\"coverage\":") == std::string::npos);
+  // Where Clang and its tools are there, the reason is the case; where they
+  // are not, it is the toolchain.
+  if (why.find("Clang") == std::string::npos && why.find("LLVM") == std::string::npos) {
+    CHECK(why.find("`range/the value kept is the end` passes in the suite") != std::string::npos);
+  }
+  remove_tree(reni);
 }
 
 TEST("input that ends with no shutdown ends the kalku at once") {

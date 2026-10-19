@@ -18,7 +18,8 @@ namespace {
 // report, which is where each test's own verdict is read.
 constexpr int OLDEST[2] = {3, 21};
 
-const std::vector<std::string> CAPABILITIES = {"cast", "abort", "cast_after_baseline", "recompile_dependents"};
+const std::vector<std::string> CAPABILITIES = {"cast", "abort", "cast_after_baseline", "recompile_dependents",
+                                               "per_test_coverage"};
 
 Reply say(const std::string& line) { return Reply{line, false, false}; }
 
@@ -225,6 +226,7 @@ std::string Service::baseline(std::int64_t id) {
   if (!ran.broken.empty()) return error(id, "baseline_failed", ran.broken, true);
   std::vector<Timed> timed;
   std::vector<Failure> failures;
+  std::vector<const Test*> passed;
   for (const auto* t : all) {
     auto it = ran.by_id.find(t->id);
     long ms = it == ran.by_id.end() ? 0 : it->second.duration_ms;
@@ -233,9 +235,14 @@ std::string Service::baseline(std::int64_t id) {
       failures.push_back(Failure{t->id, "no verdict was reported for it"});
     } else if (it->second.status != TestResult::Status::Passed) {
       failures.push_back(Failure{t->id, it->second.message});
+    } else {
+      passed.push_back(t);
     }
   }
-  return baseline_done(id, since(started), timed, failures, project_->differences());
+  // A test that failed judges nothing, so only what passed is measured.
+  Covered covered =
+      passed.empty() ? Covered{"", "", "no test passed, so no test reaches a line"} : project_->cover(passed);
+  return baseline_done(id, since(started), timed, failures, project_->differences(), covered);
 }
 
 std::string Service::sites(std::int64_t id, const SitesRequest& r) {

@@ -57,6 +57,11 @@ void keep(std::string& out, const char* data, std::size_t n) {
 
 Ran run(const std::vector<std::string>& argv, const std::string& dir, const std::vector<std::string>& env,
         const std::atomic<bool>* cancel) {
+  return run_to(argv, dir, env, "", cancel);
+}
+
+Ran run_to(const std::vector<std::string>& argv, const std::string& dir, const std::vector<std::string>& env,
+           const std::string& out_file, const std::atomic<bool>* cancel) {
   Ran r;
   auto started = std::chrono::steady_clock::now();
   int fds[2];
@@ -79,7 +84,9 @@ Ran run(const std::vector<std::string>& argv, const std::string& dir, const std:
     int devnull = open("/dev/null", O_RDONLY);
     // stdin is the protocol: a command that read it would eat requests.
     dup2(devnull, 0);
-    dup2(fds[1], 1);
+    int out = out_file.empty() ? fds[1] : open(out_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (out < 0) _exit(126);
+    dup2(out, 1);
     dup2(fds[1], 2);
     close(fds[0]);
     close(fds[1]);

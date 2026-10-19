@@ -58,12 +58,19 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
   fails is the kill. One that ends by a signal or by its own `TIMEOUT` said
   nothing about the wekufe, and is `crashed`; so is a run in which a test
   asked for did not run.
+- **Coverage per test**: after the baseline, the project is built a second
+  time with Clang's source-based coverage, each test is run alone with a
+  profile of its own, and `llvm-cov` says which lines it ran, so a wekufe
+  faces only the tests that reach it. A line no test was seen to run is
+  credited to every test. Under GCC, or where no `llvm-profdata` and
+  `llvm-cov` of the compiler's own release are found, there is no coverage,
+  and the baseline says why; so does a test that passes in the suite and
+  fails alone.
 - **`abort`** ends the build's or the run's process group, puts the file
   back, and the kalku takes the next request.
 
 ## Limits worth knowing
 
-- No coverage per test yet: every wekufe is judged by the whole suite.
 - No baseline that runs only what changed yet: every baseline runs every test.
 - A CTest test is the unit: a test executable registered as one test is run
   whole. GoogleTest's `gtest_discover_tests`, Catch2's `catch_discover_tests`
