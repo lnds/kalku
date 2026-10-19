@@ -282,8 +282,12 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      # Ninja too, for the tests that share one build under it: apt's writes
+      # the older log, Homebrew's the newer, and each is hashed its own way.
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libclang1-18
+        run: sudo apt-get update && sudo apt-get install -y libclang1-18 ninja-build
+      - if: runner.os == 'macOS'
+        run: brew list ninja >/dev/null 2>&1 || brew install ninja
       # One clang-format, pinned, because each release formats a little
       # differently.
       - if: runner.os == 'Linux'

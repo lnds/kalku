@@ -590,15 +590,14 @@ std::string hello_of(const std::string& root, const std::string& reni, int worke
          ",\"inline_limit_bytes\":65536,\"env\":{},\"options\":" + options + "}";
 }
 
-}  // namespace
-
-TEST("under make the workers copy one build, and none sees another's wekufe") {
-  if (!have_cmake()) return;
+// Two workers of one generator: the second copies the first's build, and
+// casts in it while the first's wekufe sits in its own copy.
+void shared_build(const std::string& generator) {
   std::string root = here("testdata/projects/ctest");
   std::map<std::string, std::string> before;
   snapshot(root, "", before);
   std::string reni = temp_reni();
-  const std::string make = "{\"cmake_args\":[\"-G\",\"Unix Makefiles\"]}";
+  const std::string make = "{\"cmake_args\":[\"-G\"," + kalku::quote(generator) + "]}";
   const std::string both = "[\"basics\",\"edges\"]";
 
   Kalku first(KALKU_CPP_BIN);
@@ -668,6 +667,25 @@ TEST("under make the workers copy one build, and none sees another's wekufe") {
   snapshot(root, "", after);
   CHECK(before == after);
   remove_tree(reni);
+}
+
+}  // namespace
+
+TEST("under make the workers copy one build, and none sees another's wekufe") {
+  if (!have_cmake()) return;
+  shared_build("Unix Makefiles");
+}
+
+// Ninja's logs name the base's paths, and a header named by a stale one
+// would let its wekufe through: the header's wekufe must still be killed.
+TEST("under Ninja the workers copy one build, and none sees another's wekufe") {
+  if (!have_cmake()) return;
+  if (std::system("command -v ninja >/dev/null 2>&1") != 0) {
+    if (std::getenv("CI")) kalku::testing::failed("ninja", "no ninja on the PATH");
+    std::cerr << "  skipped: no ninja on the PATH\n";
+    return;
+  }
+  shared_build("Ninja");
 }
 
 namespace {
