@@ -19,17 +19,17 @@ pub type Told = { reaching: Option[Map[String, [String]]], costs: Map[String, In
 
 #[doc("Index what a baseline said: which tests reach each line, and what each test cost.")]
 pub fn told_by(coverage: Option[[CoverageEntry]], durations: [(String, Int)]) : Told = Told {
-  reaching: coverage.map(entries => list.foldl(entries, map.empty(), reached)),
+  reaching: coverage |> option.map(entries => list.foldl(entries, map.empty(), reached)),
   costs: map.from(durations)
 }
 
 #[doc("The tests that reach a line, where that was measured: none is an answer, and `None` is not knowing.")]
 pub fn reaching(told: Told, file: String, line: Int) : Option[[String]] =
-  told.reaching.map(by_line => map.get(by_line, place(file, line)).unwrap_or([]))
+  told.reaching |> option.map(by_line => unwrap_or(map.get(by_line, place(file, line)), []))
 
 #[doc("What these tests took in the baseline, in milliseconds; a test nobody timed costs nothing.")]
 pub fn cost_of(told: Told, tests: [String]) : Int =
-  sum(tests | (t => map.get(told.costs, t).unwrap_or(0)))
+  sum(tests | (t => unwrap_or(map.get(told.costs, t), 0)))
 
 fn reached(by_line: Map[String, [String]], e: CoverageEntry) : Map[String, [String]] =
   map.update(by_line, place(e.file, e.line), e.tests, before => before ++ e.tests)

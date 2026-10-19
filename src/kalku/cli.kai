@@ -185,7 +185,7 @@ fn whole_or_named(w: Wanted) : Command = if w.all and (not is_empty(w.files)) {
   Misused("`--all` measures every source file; name files or say `--all`, not both")
 } else if w.all and is_some(w.since) {
   Misused("`--all` measures the whole project and `--since` a change; say one")
-} else if w.store and ((not w.all) or is_some(w.shard) or w.limit.unwrap_or(0) != 0) {
+} else if w.store and ((not w.all) or is_some(w.shard) or unwrap_or(w.limit, 0) != 0) {
   Misused(
     "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
   )

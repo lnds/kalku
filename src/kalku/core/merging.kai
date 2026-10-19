@@ -46,7 +46,7 @@ fn each_part(given: [(String, Written)], kalku: String) : Result[[(String, Writt
     Ok([]),
     (acc, g) => match acc {
       Err(e) -> Err(e)
-      Ok(done) -> part(g, kalku).map(p => done ++ [p])
+      Ok(done) -> part(g, kalku) |> map(p => done ++ [p])
     }
   )
 
@@ -95,7 +95,7 @@ fn measured_to_the_end(g: (String, Written), s: Shard) : Result[Unit, String] =
   }
 
 fn shard_given(p: (String, Written)) : Shard =
-  p.snd.report.shard.unwrap_or(Shard { index: 0, count: 0 })
+  p.snd.report.shard |> unwrap_or(Shard { index: 0, count: 0 })
 
 fn index_of(p: (String, Written)) : Int = shard_given(p).index
 
@@ -175,9 +175,10 @@ fn owned(parts: [(String, Written)], n: Int) : Result[Unit, String] = match firs
 
 fn stray(p: (String, Written), n: Int) : Option[String] {
   let i = index_of(p)
-  find(named(p.snd.report), id => shard_of(id, n) != i).map(
-    id => "#{p.fst} names wekufe #{id}, which shard #{i} of #{n} does not own"
-  )
+  find(named(p.snd.report), id => shard_of(id, n) != i)
+    |> map(
+      id => "#{p.fst} names wekufe #{id}, which shard #{i} of #{n} does not own"
+    )
 }
 
 fn named(r: Report) : [String] = (r.survivors | .site.site_id)
@@ -215,7 +216,7 @@ pub fn combined(first: Report, rest: [Report]) : Report {
     # Each shard ran its own baseline; the most any of them reused is what
     # a reader of the merged report can be told without adding up tests
     # that are the same tests.
-    max(parts | .reused).unwrap_or(0),
+    max(parts | .reused) |> unwrap_or(0),
     shard: None,
     stopped: None,
     plan: first.plan,

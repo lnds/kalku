@@ -373,7 +373,7 @@ fn tallied(judged: [Judged]) : Ran = Ran {
 }
 
 fn first_failed(judged: [Judged]) : Option[String] =
-  find(judged, j => j.failed).map(.timing.test_id)
+  find(judged, j => j.failed) |> map(.timing.test_id)
 
 # One test as kaikai reported it: the id `--only` selects it with, and
 # whether it held.
@@ -388,11 +388,11 @@ fn judged_of(line: String) : [Judged] = if is_some(index_of(line, "\"type\":\"te
         Judged {
           timing: TestTiming {
             test_id: id,
-            file: as_string(get(v, "file")).unwrap_or(""),
-            duration_ms: as_int(get(v, "duration_ms")).unwrap_or(0),
+            file: as_string(get(v, "file")) |> unwrap_or(""),
+            duration_ms: as_int(get(v, "duration_ms")) |> unwrap_or(0),
             fingerprint: None
           },
-          failed: as_string(get(v, "status")).unwrap_or("") != "pass"
+          failed: unwrap_or(as_string(get(v, "status")), "") != "pass"
         }
       ]
     }
@@ -451,12 +451,12 @@ fn last_few(said: [String], keep: Int) : [String] {
 # is inferred, so nothing is guessed.
 fn site_of(line: String) : [Site] = match json_decode(line) {
   None -> []
-  Some(v) -> match spell_of(as_string(get(v, "operator")).unwrap_or("")) {
+  Some(v) -> match spell_of(as_string(get(v, "operator")) |> unwrap_or("")) {
     None -> []
     Some(spell) -> [
       Site {
         site_id: site_id_of(v),
-        file: as_string(get(v, "file")).unwrap_or(""),
+        file: as_string(get(v, "file")) |> unwrap_or(""),
         enclosing: as_string(get(v, "enclosing")),
         ordinal: as_int(get(v, "ordinal")),
         span: Span {
@@ -465,7 +465,7 @@ fn site_of(line: String) : [Site] = match json_decode(line) {
         },
         spell: spell,
         original: as_string(get(v, "original")),
-        replacement: as_string(get(v, "replacement")).unwrap_or(""),
+        replacement: as_string(get(v, "replacement")) |> unwrap_or(""),
         reload: ModuleOnly
       }
     ]
@@ -475,16 +475,16 @@ fn site_of(line: String) : [Site] = match json_decode(line) {
 fn position_in(v: JsonValue, field: String) : Position {
   let at = get(v, field)
   Position {
-    line: as_int(get(at, "line")).unwrap_or(0),
-    col: as_int(get(at, "col")).unwrap_or(0),
-    byte: as_int(get(at, "byte")).unwrap_or(0)
+    line: as_int(get(at, "line")) |> unwrap_or(0),
+    col: as_int(get(at, "col")) |> unwrap_or(0),
+    byte: as_int(get(at, "byte")) |> unwrap_or(0)
   }
 }
 
 fn site_id_of(v: JsonValue) : String {
-  let where_at = as_string(get(v, "file")).unwrap_or("")
-  let at = as_int(get(get(v, "start"), "byte")).unwrap_or(0)
-  let spell = as_string(get(v, "operator")).unwrap_or("")
+  let where_at = as_string(get(v, "file")) |> unwrap_or("")
+  let at = as_int(get(get(v, "start"), "byte")) |> unwrap_or(0)
+  let spell = as_string(get(v, "operator")) |> unwrap_or("")
   "#{where_at}:#{at}:#{spell}"
 }
 

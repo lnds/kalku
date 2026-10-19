@@ -67,4 +67,4 @@ pub fn covers(wide: String, narrow: String) : Bool =
 # `**` is two bytes, so two bytes come off: a pattern with an accent in it
 # would otherwise lose part of a character and match nothing.
 fn drop_end(s: String, n: Int) : String =
-  if length(s) <= n { "" } else { byte_slice(s, 0, length(s) - n).unwrap_or(s) }
+  if length(s) <= n { "" } else { byte_slice(s, 0, length(s) - n) |> unwrap_or(s) }

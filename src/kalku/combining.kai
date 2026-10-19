@@ -52,12 +52,12 @@ pub fn given_reports(paths: [String]) : Result[[(String, Written)], String] / Fi
   Ok([]),
   (acc, path) => match acc {
     Err(e) -> Err(e)
-    Ok(done) -> given_report(path).map(w => done ++ [(path, w)])
+    Ok(done) -> given_report(path) |> map(w => done ++ [(path, w)])
   }
 )
 
 fn given_report(path: String) : Result[Written, String] / File = if file.exists(path) {
-  read_report(file.read(path)).map_err(why => "#{path} is not a report kalku wrote: #{why}")
+  read_report(file.read(path)) |> map_err(why => "#{path} is not a report kalku wrote: #{why}")
 } else {
   Err("#{path} does not exist")
 }

@@ -23,19 +23,19 @@ fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $
 }
 
 fn scratch(name: String) : String / Env + Process {
-  let base = Env.get("TMPDIR").unwrap_or("/tmp")
+  let base = Env.get("TMPDIR") |> unwrap_or("/tmp")
   let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
   "#{dir}/kalku_sources_#{own_pid()}_#{name}"
 }
 
 fn make(dir: String, paths: [String]) : Unit / Process + File {
-  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]).map(c => proc.wait(c))
-  let _ = proc.pipe_errs("/bin/mkdir", ["-p", dir]).map(c => proc.wait(c))
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]) |> map(c => proc.wait(c))
+  let _ = proc.pipe_errs("/bin/mkdir", ["-p", dir]) |> map(c => proc.wait(c))
   each(
     paths,
     p => {
       let parent = join(reverse(drop(reverse(split("#{dir}/#{p}", "/")), 1)), "/")
-      let _ = proc.pipe_errs("/bin/mkdir", ["-p", parent]).map(c => proc.wait(c))
+      let _ = proc.pipe_errs("/bin/mkdir", ["-p", parent]) |> map(c => proc.wait(c))
       file.write("#{dir}/#{p}", "x\n")
     }
   )

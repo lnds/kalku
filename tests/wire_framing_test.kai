@@ -113,8 +113,8 @@ fn framed_whole(text: String) : [String] = said_of(feed(framer(4096), text).fram
 
 fn framed_in_bits(text: String, at: Int) : [String] {
   let cut = if length(text) == 0 { 0 } else { abs(at) % length(text) }
-  let first = feed(framer(4096), byte_slice(text, 0, cut).unwrap_or(""))
-  let rest = feed(first.framer, byte_slice(text, cut, length(text) - cut).unwrap_or(""))
+  let first = feed(framer(4096), byte_slice(text, 0, cut) |> unwrap_or(""))
+  let rest = feed(first.framer, byte_slice(text, cut, length(text) - cut) |> unwrap_or(""))
   said_of(first.frames ++ rest.frames)
 }
 

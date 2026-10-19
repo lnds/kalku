@@ -107,13 +107,13 @@ fn answer(
       reni: m.reni,
       worker: m.worker,
       inline_limit: m.inline_limit_bytes,
-      oracle: oracle_of(m.options).unwrap_or(None),
+      oracle: oracle_of(m.options) |> unwrap_or(None),
       work: None
     })
   }
   Prepare -> prepared(id, state)
   Baseline(m) -> {
-    say(encode_reply(id, baseline_of(state, m.reuse.unwrap_or([]))))
+    say(encode_reply(id, baseline_of(state, m.reuse |> unwrap_or([]))))
     serve(state)
   }
   Sites(m) -> {
@@ -221,7 +221,7 @@ fn baseline_of(state: Serving, reuse: [Reuse]) : KalkuReply / Process + File = m
     measured(test_all(w), None, [], state)
   } else {
     let found = prints.of_package(w)
-    let every = flat_map(found.unwrap_or([]), p => p.ids)
+    let every = flat_map(found |> unwrap_or([]), p => p.ids)
     match prints.reusable(reuse, found) {
       [] -> measured(test_all(w), found, [], state)
       reused -> match every |? (id => not contains(reused, id)) {
@@ -285,8 +285,8 @@ fn pad(n: Int) : String {
 
 fn entry_at(place: String, reached: [Reach]) : CoverageEntry {
   let parts = split(place, "\u{0}")
-  let file = head(parts).unwrap_or("")
-  let line = to_int(last(parts).unwrap_or("0")).unwrap_or(0)
+  let file = head(parts) |> unwrap_or("")
+  let line = to_int(last(parts) |> unwrap_or("0")) |> unwrap_or(0)
   CoverageEntry {
     file: file,
     line: line,

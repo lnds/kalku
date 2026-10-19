@@ -53,7 +53,7 @@ fn by_files(files: [String]) : Option[String] = if any(
 
 # A `#` starts a comment to the end of its line.
 fn uncommented(text: String) : String =
-  join(lines(text) | (l => (split(l, "#") |> head).unwrap_or("")), "\n")
+  join(lines(text) | (l => (split(l, "#") |> head |> unwrap_or(""))), "\n")
 
 fn words(text: String) : [String] = split(
   replace(replace(replace(replace(text, "(", " ( "), ")", " ) "), "\t", " "), "\n", " "),

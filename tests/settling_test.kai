@@ -29,15 +29,16 @@ fn drained(child: Child, so_far: String) : String / Process = match proc.read_st
 }
 
 fn gone(dir: String) : Unit / Process {
-  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]).map(c => {
-    let _ = drained(c, "")
-    proc.wait(c)
-  })
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir])
+    |> map(c => {
+      let _ = drained(c, "")
+      proc.wait(c)
+    })
   ()
 }
 
 fn project(name: String, marker: String) : String / Env + Process + File {
-  let base = Env.get("TMPDIR").unwrap_or("/tmp")
+  let base = Env.get("TMPDIR") |> unwrap_or("/tmp")
   let under = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
   let dir = "#{under}/kalku_settling_#{own_pid()}_#{name}"
   gone(dir)
@@ -72,9 +73,9 @@ test "a project nobody set up gets its summoning in the reni, and nothing in its
   let dir = project("stranger", "mix.exs")
   let passing = passing_through(dir)
 
-  assert passing.map(.language) == Some("elixir")
-  assert passing.map(.reni) == Some(reni_here(dir))
-  assert passing.map(.summon) == Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}")
+  assert map(passing, .language) == Some("elixir")
+  assert map(passing, .reni) == Some(reni_here(dir))
+  assert map(passing, .summon) == Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}")
   assert summon_is_current(file.read("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"))
   assert folders.list_dir(dir) == ["mix.exs"]
 
@@ -145,15 +146,16 @@ fn without_summon(c: Option[Config]) : Option[Config] = match c {
 # killed.
 test "a project nobody set up is measured with the settings init would write" {
   let dir = project("same", "mix.exs")
-  let written = find(catalogue(), k => k.language == "elixir").map(
-    k => config.parse(plan_for(k, reni_here(dir)).config).ok()
-  )
+  let written = find(catalogue(), k => k.language == "elixir")
+    |> map(
+      k => ok(config.parse(plan_for(k, reni_here(dir)).config))
+    )
   let used = unsettled(dir)
 
   assert is_some(written)
-  assert Some(without_summon(used.ok())) == written.map(without_summon)
-  assert used.map(.timeout_floor_ms) == Ok(60000)
-  assert used.map(.summon) == Ok(Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"))
+  assert Some(without_summon(used |> ok)) == map(written, without_summon)
+  assert map(used, .timeout_floor_ms) == Ok(60000)
+  assert map(used, .summon) == Ok(Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"))
 
   gone(dir)
   gone(reni_here(dir))
@@ -162,7 +164,7 @@ test "a project nobody set up is measured with the settings init would write" {
 # A project named `.` or nothing is the directory one is standing in, and
 # a trailing slash is not part of a name: none of them is a reni of its own.
 test "the reni of `.` is the reni of where one is standing" {
-  let here = Env.get("PWD").unwrap_or("/somewhere/project")
+  let here = Env.get("PWD") |> unwrap_or("/somewhere/project")
 
   assert reni_here(".") == reni_here(here)
   assert reni_here("") == reni_here(here)

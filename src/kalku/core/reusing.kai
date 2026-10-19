@@ -117,7 +117,7 @@ pub fn after(
             file: t.file,
             duration_ms: t.duration_ms,
             fingerprint: f,
-            reached: maps.get(reach, t.test_id).unwrap_or([])
+            reached: maps.get(reach, t.test_id) |> unwrap_or([])
           }
         ]
       }
@@ -166,7 +166,7 @@ fn span_text(s: (Int, Int)) : String = if s.fst == s.snd { "#{s.fst}" } else { "
 pub fn lines_of(text: String) : [Int] = flat_map(split(text, ","), lines_in)
 
 fn lines_in(part: String) : [Int] = match split(part, "-") {
-  [one] -> to_int(one).map(l => [l]).unwrap_or([])
+  [one] -> to_int(one) |> map(l => [l]) |> unwrap_or([])
   [from, to] -> match (to_int(from), to_int(to)) {
     (Some(a), Some(b)) ->
       if a <= b { enumerate(repeat(0, b - a + 1)) | (i => a + i.fst) } else { [] }

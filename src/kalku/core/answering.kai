@@ -79,7 +79,7 @@ pub fn argued_in(line: String, site: Site) : Option[String] = match eqfile.parse
 }
 
 fn argued_before(line: String, site: Site) : Option[String] {
-  let key = "#{site.file} #{site.enclosing.unwrap_or("?")} #{site.ordinal.unwrap_or(1)}"
+  let key = "#{site.file} #{site.enclosing |> unwrap_or("?")} #{site.ordinal |> unwrap_or(1)}"
     ++ " #{spell_name(site.spell)}:"
   if starts_with(trim(line), key) {
     Some(trim(slice(trim(line), length(key), length(trim(line)))))
@@ -146,7 +146,7 @@ pub fn accepted(
 ) : Result[Answered, Unanswerable] = match proposal_for(queue, site) {
   None -> if is_empty(trim(queue)) { Err(NothingProposed) } else { Err(NotProposed(site.file)) }
   Some(line) -> Ok(Answered {
-    moved: line_for(site, with_note(argued_in(line, site).unwrap_or(""), witness)),
+    moved: line_for(site, with_note(argued_in(line, site) |> unwrap_or(""), witness)),
     queue: without(queue, line),
     note: "accepted"
   })
@@ -165,7 +165,7 @@ pub fn rejected(queue: String, site: Site, why: String) : Result[Answered, Unans
       moved: line_for(
         site,
         with_note(
-          argued_in(line, site).unwrap_or(""),
+          argued_in(line, site) |> unwrap_or(""),
           if is_empty(trim(why)) { "" } else { "turned down: #{trim(why)}" }
         )
       ),

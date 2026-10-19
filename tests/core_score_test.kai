@@ -78,7 +78,7 @@ fn counted(killed: Int, survived: Int, aside: [Verdict]) : Counts =
   )
 
 fn score_of(killed: Int, survived: Int, aside: [Verdict]) : Real =
-  score(counted(killed, survived, aside)).unwrap_or(0.0 - 1.0)
+  score(counted(killed, survived, aside)) |> unwrap_or(0.0 - 1.0)
 
 check "a score is a share: between nothing and everything" with k: Int, s: Int {
   let killed = abs(k) % 50

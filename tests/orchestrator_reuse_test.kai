@@ -47,10 +47,10 @@ fn measured(script: String, store: String) : Found / Process + Spawn + Clock + F
   with_mailbox { alone(() => untold(() => measuring(asking_of(script, store)))) }
 
 fn store_at(name: String) : String / Env =
-  "#{Env.get("TMPDIR").unwrap_or("/tmp")}/kalku-reuse-test/#{name}/fake.json"
+  "#{Env.get("TMPDIR") |> unwrap_or("/tmp")}/kalku-reuse-test/#{name}/fake.json"
 
 fn gone(store: String) : Unit / Process {
-  let _ = proc.pipe_errs("/bin/rm", ["-rf", paths.dirname(store)]).map(c => proc.wait(c))
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", paths.dirname(store)]) |> map(c => proc.wait(c))
   ()
 }
 
@@ -67,7 +67,7 @@ test "a baseline keeps what it measured, and the next one reuses what did not ch
 
   let first = measured("fingerprints.ndjson", store)
   assert first.failure == None
-  assert first.report.map(.reused) == Some(0)
+  assert map(first.report, .reused) == Some(0)
   match load(store) {
     Ok(Some(kept)) -> {
       assert (kept.tests | .fingerprint) == ["f1", "f2"]
@@ -79,7 +79,7 @@ test "a baseline keeps what it measured, and the next one reuses what did not ch
 
   let second = measured("reuses_one.ndjson", store)
   assert second.failure == None
-  assert second.report.map(.reused) == Some(1)
+  assert map(second.report, .reused) == Some(1)
   assert judged_by(second, "s3") == ["test/a_test.exs:3"]
   assert judged_by(second, "s7") == ["test/a_test.exs:9"]
   match load(store) {
@@ -103,7 +103,7 @@ test "a kalku that reuses a test it was never offered stops the run" {
 
   let found = measured("reuses_unoffered.ndjson", store)
   assert found.report == None
-  assert is_some(index_of(found.failure.unwrap_or(""), "which it was never offered"))
+  assert is_some(index_of(found.failure |> unwrap_or(""), "which it was never offered"))
 
   gone(store)
 }
@@ -116,7 +116,7 @@ test "nothing kept is offered to another version of the kalku" {
   let _ = save(store, Store { setting: "another", tests: [] })
 
   let found = measured("reuses_unoffered.ndjson", store)
-  assert is_some(index_of(found.failure.unwrap_or(""), "which it was never offered"))
+  assert is_some(index_of(found.failure |> unwrap_or(""), "which it was never offered"))
 
   gone(store)
 }
@@ -127,10 +127,10 @@ test "a store nobody can read is said, and the whole suite runs" {
   let _ = save(store, Store { setting: "s", tests: [] })
   file.write(store, "not json")
 
-  assert is_some(index_of(load(store).err().unwrap_or(""), "could not be read"))
+  assert is_some(index_of(load(store) |> err |> unwrap_or(""), "could not be read"))
   let found = measured("fingerprints.ndjson", store)
   assert found.failure == None
-  assert found.report.map(.reused) == Some(0)
+  assert map(found.report, .reused) == Some(0)
 
   gone(store)
 }

@@ -169,7 +169,7 @@ test "a protocol version this side cannot speak fails the run with a readable re
   assert done.verdicts == []
   # The two halves are installed apart, so the reason names both versions
   # and which one to move; the numbers alone are not something to act on.
-  let why = done.failure.unwrap_or("")
+  let why = done.failure |> unwrap_or("")
   assert is_some(index_of(why, "worker 0 speaks protocol 99, this kalku speaks 1"))
   assert is_some(index_of(why, "brew upgrade kalku"))
 }
@@ -181,7 +181,7 @@ test "a kalku that dies at birth exhausts its summons and fails the run" {
   }
   assert done.verdicts == []
   assert is_some(done.failure)
-  assert is_some(index_of(done.failure.unwrap_or(""), "the most this run allows is 2"))
+  assert is_some(index_of(done.failure |> unwrap_or(""), "the most this run allows is 2"))
 }
 
 # The summons a run allows are for a kalku that cannot start. One that cast
@@ -249,7 +249,7 @@ test "a kalku that dies at birth is summoned exactly as often as allowed, and qu
   let done = with_mailbox {
     casting(pool_of("pool_dies_at_birth.ndjson", 1, 2), casts(1, 5000))
   }
-  let why = done.failure.unwrap_or("")
+  let why = done.failure |> unwrap_or("")
 
   assert is_some(index_of(why, "summoned 2 time(s) in a row"))
   assert is_some(index_of(why, "it wrote: fake: the project does not compile"))
@@ -275,7 +275,7 @@ fn hog_alive() : Bool / Process =
   }
 
 fn said_of(c: Casting) : String = match head(c.verdicts) {
-  Some(v) -> v.said.unwrap_or("")
+  Some(v) -> v.said |> unwrap_or("")
   None -> ""
 }
 
