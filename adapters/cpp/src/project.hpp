@@ -14,6 +14,7 @@
 #include "cases.hpp"
 #include "coverage.hpp"
 #include "json.hpp"
+#include "ninja.hpp"
 #include "process.hpp"
 #include "protocol.hpp"
 
@@ -74,8 +75,8 @@ struct Compile {
 };
 
 // How bringing the base up to date ended: done; `Unshared`, configured
-// for a generator other than make, so each worker builds for itself; or
-// stopped at the step named.
+// for a generator other than make or Ninja, so each worker builds for
+// itself; or stopped at the step named.
 enum class BaseStage { Done, Unshared, Copy, Configure, Build };
 
 class Project {
@@ -92,9 +93,9 @@ class Project {
   bool copy_files(const std::vector<std::string>& files, std::string* why);
 
   // True when the build tree can be copied from the base: make dates its
-  // outputs and nothing else, so a copy that keeps the dates is up to date.
-  // Ninja keeps the commands it ran in its own logs, and rebuilds anything
-  // moved.
+  // outputs and nothing else, so a copy that keeps the dates is up to date;
+  // Ninja also keeps logs of the commands it ran and of the headers each
+  // object read, by path, and those are rewritten for the copy.
   bool shares_build() const;
   // Brings the base up to date with the project, building it if need be,
   // and makes this worker's copy and build tree a copy of it. `ran` is the
@@ -158,7 +159,9 @@ class Project {
   // The options say how a change to a shared library relinks.
   bool links_chosen() const;
   // Paths of the base, as this worker's copy and build tree name them.
-  std::vector<std::pair<std::string, std::string>> rebased() const;
+  Rewrites rebased() const;
+  std::optional<std::vector<std::pair<std::string, std::string>>> edges_of(const std::string& build) const;
+  bool rebase_ninja(const Rewrites& rw, std::string* why);
 
   // The cases of a test that runs one executable of a framework the kalku
   // lists; none, with why, when it cannot list them.

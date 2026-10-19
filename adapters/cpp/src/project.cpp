@@ -209,8 +209,6 @@ bool date(const std::string& path, const struct timespec& t) {
   return utimensat(AT_FDCWD, path.c_str(), times, 0) == 0;
 }
 
-using Rewrites = std::vector<std::pair<std::string, std::string>>;
-
 // Text says the worker's paths where it said the base's. What holds a NUL
 // byte is an object, a library or an executable, and is left as it is: its
 // paths are only for a debugger, and make never reads them.
@@ -686,11 +684,11 @@ std::string Project::generator() const {
 
 bool Project::shares_build() const {
   std::string g = generator();
-  return g.empty() || g == "Unix Makefiles";
+  return g.empty() || g == "Unix Makefiles" || g == "Ninja";
 }
 
-std::vector<std::pair<std::string, std::string>> Project::rebased() const {
-  std::vector<std::pair<std::string, std::string>> rw = {{base_work_, work_}, {base_build_, build_}};
+Rewrites Project::rebased() const {
+  Rewrites rw = {{base_work_, work_}, {base_build_, build_}};
   // The reni as the kaikai side named it, where that is not its real path.
   std::string raw = reni_ + "/work/base";
   if (raw != base_work_) {
@@ -725,7 +723,8 @@ BaseStage Project::from_base(Ran* ran, std::string* why) {
     unlink(done.c_str());
     *ran = configure_in(base_work_, base_build_, nullptr);
     if (!ran->ok()) return BaseStage::Configure;
-    if (generator_of(base_build_) != "Unix Makefiles") return BaseStage::Unshared;
+    std::string g = generator_of(base_build_);
+    if (g != "Unix Makefiles" && g != "Ninja") return BaseStage::Unshared;
     *ran = build_in(base_build_, nullptr);
     if (ran->ok()) *ran = settle_links_in(base_work_, base_build_, nullptr);
     if (!ran->ok()) return BaseStage::Build;
@@ -742,8 +741,84 @@ BaseStage Project::from_base(Ran* ran, std::string* why) {
   auto rw = rebased();
   if (!clone_tree(base_work_, work_, rw, why) || !clone_tree(base_build_, build_, rw, why)) return BaseStage::Copy;
   unlink_images(build_, rw);
+  if (generator_of(build_) == "Ninja" && !rebase_ninja(rw, why)) {
+    // What Ninja knows of the copy cannot be told in its paths, so it knows
+    // nothing, and builds the copy whole.
+    std::cerr << "kalku-cpp: the copy of the base is built again whole: " << *why << "\n";
+    unlink((build_ + "/.ninja_log").c_str());
+    unlink((build_ + "/.ninja_deps").c_str());
+  }
   shared_ = true;
   return BaseStage::Done;
+}
+
+// Each edge of a Ninja build tree, as the output it names first and the
+// command it runs, in the order of its manifest.
+std::optional<std::vector<std::pair<std::string, std::string>>> Project::edges_of(const std::string& build) const {
+  std::string ninja = cached(build, "CMAKE_MAKE_PROGRAM");
+  if (ninja.empty()) return std::nullopt;
+  std::string text = output_of({ninja, "-C", build, "-t", "compdb"}, build, env_);
+  auto doc = parse_json(text.substr(std::min(text.find('['), text.size())));
+  if (!doc || !doc->is_array()) return std::nullopt;
+  std::vector<std::pair<std::string, std::string>> out;
+  for (const auto& e : doc->items) {
+    const Json* output = e.get("output");
+    const Json* command = e.get("command");
+    if (!output || !command) return std::nullopt;
+    out.emplace_back(output->text, command->text);
+  }
+  return out;
+}
+
+// The copy's `.ninja_log` keyed by the copy's commands, and its
+// `.ninja_deps` naming the copy's headers. An entry whose hash is not that
+// of the base's command, as one whose command reads a response file, is left
+// out and built again; a header that would still be named by the base's
+// path is no copy at all.
+bool Project::rebase_ninja(const Rewrites& rw, std::string* why) {
+  auto theirs = edges_of(base_build_);
+  auto mine = edges_of(build_);
+  if (!theirs || !mine || theirs->size() != mine->size()) {
+    *why = "Ninja could not list the commands of the base and of the copy alike";
+    return false;
+  }
+  bool ok = false;
+  std::string log = read_file(build_ + "/.ninja_log", &ok);
+  int version = ok ? ninja_log_version(log) : 0;
+  std::map<std::uint64_t, std::uint64_t> rehash;
+  for (std::size_t i = 0; i < mine->size(); i++) {
+    auto old_hash = ninja_hash(version, (*theirs)[i].second);
+    auto new_hash = ninja_hash(version, (*mine)[i].second);
+    if (!old_hash || !new_hash) {
+      *why = ok ? "its .ninja_log is version " + std::to_string(version) + ", which the kalku does not know"
+                : "the base has no .ninja_log";
+      return false;
+    }
+    if (rebase((*theirs)[i].first, rw) != (*mine)[i].first) {
+      *why = "the copy's manifest is not the base's";
+      return false;
+    }
+    rehash[*old_hash] = *new_hash;
+  }
+  int dropped = 0;
+  std::string new_log = rebase_ninja_log(log, rehash, &dropped);
+  std::vector<std::string> old_tree;
+  for (const auto& r : rw) old_tree.push_back(r.first);
+  std::string deps = read_file(build_ + "/.ninja_deps", &ok);
+  std::optional<std::string> new_deps = ok ? rebase_ninja_deps(deps, rw, old_tree) : std::string();
+  if (!new_deps) {
+    *why = "its .ninja_deps is not one the kalku can name the copy's headers in";
+    return false;
+  }
+  if (!write_file(build_ + "/.ninja_log", new_log) || (ok && !write_file(build_ + "/.ninja_deps", *new_deps))) {
+    *why = "cannot write Ninja's logs in " + build_;
+    return false;
+  }
+  if (dropped > 0) {
+    std::cerr << "kalku-cpp: " << dropped << " output(s) of the base are built again in the copy: Ninja's log "
+              << "keys them by commands the kalku cannot rewrite\n";
+  }
+  return true;
 }
 
 Ran Project::configure(const std::atomic<bool>* cancel) { return configure_in(work_, build_, cancel); }
