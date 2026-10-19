@@ -68,12 +68,30 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
   `llvm-cov` of the compiler's own release are found, there is no coverage,
   and the baseline says why; so does a test that passes in the suite and
   fails alone.
+- **A baseline runs only what changed.** Each test, or each case of a
+  Catch2 or doctest executable, is fingerprinted by what its executable is
+  built from, as CMake's file API, `compile_commands.json` and the
+  compiler's depfiles (Ninja's deps log under Ninja) say it: the source and
+  every header of each object of the executable and of every library it
+  links, the compile commands, and how each target is linked; with its CTest
+  entry, the files under its working directory the build did not write,
+  every file of the project no compile reads, the toolchain's versions and
+  the kalku's. A test offered back with the fingerprint it has now is not
+  run again. A test whose executable is not a target of the build, whose
+  working directory is outside the project, or that needs a CTest fixture
+  has no fingerprint, and always runs.
 - **`abort`** ends the build's or the run's process group, puts the file
   back, and the kalku takes the next request.
 
 ## Limits worth knowing
 
-- No baseline that runs only what changed yet: every baseline runs every test.
+- A test is not run again for a change to a file a compile reads, unless
+  its own executable is built from that file or the file is under its
+  working directory: a test that reads a source of another target at run
+  time, or runs or loads by a path of its own making a target it neither
+  links nor names in its command (a module library in its working directory
+  excepted), is not run again when only those change. `kalku run --all` runs
+  every test.
 - A CTest test is the unit: a test executable registered as one test is run
   whole. GoogleTest's `gtest_discover_tests`, Catch2's `catch_discover_tests`
   and doctest's `doctest_discover_tests` register each case, and then a case

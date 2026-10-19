@@ -19,6 +19,7 @@
 #include <thread>
 
 #include "cases.hpp"
+#include "fingerprint.hpp"
 #include "json.hpp"
 #include "version.hpp"
 
@@ -847,6 +848,7 @@ Ran Project::configure_in(const std::string& work, const std::string& build, con
     argv.push_back(std::string("-DCMAKE_LINK_DEPENDS_NO_SHARED=") + (copies_a_library(build) ? "OFF" : "ON"));
   }
   for (const auto& a : args) argv.push_back(a);
+  ask_for_codemodel(build);
   Ran r = run(argv, work, env, cancel);
   if (!r.ok() && !r.cancelled && r.output.find("Does not match the generator used previously") != std::string::npos) {
     // A build tree of another generator is started over.
@@ -922,6 +924,7 @@ bool Project::list_tests(std::string* why) {
   }
   tests_.clear();
   ctest_names_.clear();
+  ctest_entries_.clear();
   by_id_.clear();
   suites_.clear();
   listed_.clear();
@@ -934,6 +937,7 @@ bool Project::list_tests(std::string* why) {
     number++;
     const Json* name = t.get("name");
     ctest_names_.push_back(name ? name->text : "");
+    ctest_entries_.push_back(t);
     if (!name) continue;
     bool disabled = false;
     if (const Json* props = t.get("properties")) {

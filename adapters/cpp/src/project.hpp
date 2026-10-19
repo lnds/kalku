@@ -112,6 +112,10 @@ class Project {
   bool list_tests(std::string* why);
 
   const std::vector<Test>& tests() const { return tests_; }
+  // What each test runs, in the order of `tests()`, as an opaque string
+  // that changes whenever anything the test could observe does; empty for a
+  // test the kalku cannot trace.
+  std::vector<std::string> fingerprints();
   const Test* lookup(const std::string& id) const;
   TestRun run_tests(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel);
 
@@ -178,8 +182,10 @@ class Project {
   // The copy and its build tree came from the base.
   bool shared_ = false;
   std::vector<Test> tests_;
-  // Every CTest test's name, in CTest's order.
+  // Every CTest test's name, and its entry in CTest's list, in CTest's
+  // order.
   std::vector<std::string> ctest_names_;
+  std::vector<Json> ctest_entries_;
   std::vector<Suite> suites_;
   std::vector<std::string> listed_;
   // What each executable answered when asked what it is.

@@ -18,8 +18,8 @@ namespace {
 // report, which is where each test's own verdict is read.
 constexpr int OLDEST[2] = {3, 21};
 
-const std::vector<std::string> CAPABILITIES = {"cast", "abort", "cast_after_baseline", "recompile_dependents",
-                                               "per_test_coverage"};
+const std::vector<std::string> CAPABILITIES = {
+    "cast", "abort", "cast_after_baseline", "recompile_dependents", "per_test_coverage", "partial_baseline"};
 
 Reply say(const std::string& line) { return Reply{line, false, false}; }
 
@@ -96,7 +96,7 @@ Reply Service::handle(const Request& r, const std::atomic<bool>& cancel) {
   // held here for a wekufe to dirty.
   if (t == "reset") return say(reset_done(r.id, true, 0));
   if (!prepared_) return say(error(r.id, "not_ready", "`prepare` has to come first", false));
-  if (t == "baseline") return say(baseline(r.id));
+  if (t == "baseline") return say(baseline(r.id, r.reuse));
   if (t == "cast") return cast(r.id, r.cast, cancel);
   return say(error(r.id, "bad_request", "this kalku does not answer `" + t + "`", false));
 }
@@ -217,10 +217,27 @@ std::string Service::prepare(std::int64_t id) {
   return prepared(id, since(started), project_->translation_units());
 }
 
-std::string Service::baseline(std::int64_t id) {
+// Every test runs but one the kaikai side offers back with the fingerprint
+// it has now: nothing it could observe has changed since it passed.
+std::string Service::baseline(std::int64_t id, const std::map<std::string, std::string>& reuse) {
   auto started = std::chrono::steady_clock::now();
+  std::vector<std::string> prints = project_->fingerprints();
   std::vector<const Test*> all;
-  for (const auto& t : project_->tests()) all.push_back(&t);
+  std::map<std::string, std::string> print_of;
+  std::vector<std::string> reused;
+  for (std::size_t i = 0; i < project_->tests().size(); i++) {
+    const Test& t = project_->tests()[i];
+    print_of[t.id] = prints[i];
+    auto offered = reuse.find(t.id);
+    if (offered != reuse.end() && !prints[i].empty() && offered->second == prints[i]) {
+      reused.push_back(t.id);
+    } else {
+      all.push_back(&t);
+    }
+  }
+  if (all.empty()) {
+    return baseline_done(id, since(started), {}, {}, project_->differences(), Covered{"[]", "", ""}, reused);
+  }
   std::atomic<bool> never{false};
   TestRun ran = project_->run_tests(all, &never);
   if (!ran.broken.empty()) return error(id, "baseline_failed", ran.broken, true);
@@ -230,7 +247,7 @@ std::string Service::baseline(std::int64_t id) {
   for (const auto* t : all) {
     auto it = ran.by_id.find(t->id);
     long ms = it == ran.by_id.end() ? 0 : it->second.duration_ms;
-    timed.push_back(Timed{t->id, t->file, ms});
+    timed.push_back(Timed{t->id, t->file, ms, print_of[t->id]});
     if (it == ran.by_id.end()) {
       failures.push_back(Failure{t->id, "no verdict was reported for it"});
     } else if (it->second.status != TestResult::Status::Passed) {
@@ -242,7 +259,7 @@ std::string Service::baseline(std::int64_t id) {
   // A test that failed judges nothing, so only what passed is measured.
   Covered covered =
       passed.empty() ? Covered{"", "", "no test passed, so no test reaches a line"} : project_->cover(passed);
-  return baseline_done(id, since(started), timed, failures, project_->differences(), covered);
+  return baseline_done(id, since(started), timed, failures, project_->differences(), covered, reused);
 }
 
 std::string Service::sites(std::int64_t id, const SitesRequest& r) {
