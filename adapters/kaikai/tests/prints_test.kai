@@ -44,7 +44,7 @@ test "each test module of a package has a fingerprint of its own" {
   let root = copied("split_each")
   let found = prints.of_package(at(root))
 
-  assert (found.unwrap_or([]) | .ids) == [[ALPHA], [BETA, "tests/beta_test.kai:twice keeps zero"]]
+  assert (found |> unwrap_or([]) | .ids) == [[ALPHA], [BETA, "tests/beta_test.kai:twice keeps zero"]]
   assert is_some(print_of(found, ALPHA))
   assert print_of(found, ALPHA) != print_of(found, BETA)
   assert found == prints.of_package(at(root))
@@ -100,7 +100,7 @@ test "a module is fingerprinted by its tests whatever their order" {
   assert (one | .print) == (two | .print)
   assert (one | .print) != (fewer | .print)
   assert (one | .print) != (other_kai | .print)
-  assert length(head(one).map(p => p.print).unwrap_or("")) == 24
+  assert length(head(one) |> map(p => p.print) |> unwrap_or("")) == 24
 }
 
 fn offer(ids: [String], print: String) : [Reuse] =

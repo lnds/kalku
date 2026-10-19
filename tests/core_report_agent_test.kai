@@ -65,9 +65,9 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
 
 fn one() : Counts = tally([Cast(Killed), Cast(Survived)])
 
-fn first_line(text: String) : String = head(lines(text)).unwrap_or("")
+fn first_line(text: String) : String = head(lines(text)) |> unwrap_or("")
 
-fn last_line(text: String) : String = last(lines(text)).unwrap_or("")
+fn last_line(text: String) : String = last(lines(text)) |> unwrap_or("")
 
 fn field(line: String, name: String) : JsonValue = match json_decode(line) {
   Some(v) -> get(v, name)
@@ -78,7 +78,7 @@ fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
 
 fn where_of(line: String) : String = match as_string(field(line, "file")) {
   Some(file) ->
-    "#{file}:#{as_int(field(line, "line")).unwrap_or(0)}:#{as_string(field(line, "spell")).unwrap_or("")}"
+    "#{file}:#{as_int(field(line, "line")) |> unwrap_or(0)}:#{as_string(field(line, "spell")) |> unwrap_or("")}"
   None -> "summary"
 }
 
@@ -173,7 +173,7 @@ test "survivors come out in a settled order" {
 
 test "the summary closes the report, with the score and what to exit with" {
   let out = agent(report_of([survivor("lib/parser.ex", 2, Compare, [])], one()), lines_of)
-  let summary = last(lines(out)).unwrap_or("")
+  let summary = last(lines(out)) |> unwrap_or("")
 
   assert field(summary, "summary") == JBool(true)
   assert field(summary, "score") == JReal(0.5)
@@ -185,7 +185,7 @@ test "the summary closes the report, with the score and what to exit with" {
 # A score that does not exist is absent, not zero: nothing could have
 # been killed, and zero would read as everything survived.
 test "a run with nothing to kill reports no score at all" {
-  let summary = last(lines(agent(report_of([], tally([Cast(Timeout)])), lines_of))).unwrap_or("")
+  let summary = last(lines(agent(report_of([], tally([Cast(Timeout)])), lines_of))) |> unwrap_or("")
 
   assert field(summary, "score") == JNull
   assert not has(summary, "score")
@@ -193,7 +193,7 @@ test "a run with nothing to kill reports no score at all" {
 
 # A change that hid nothing costs an agent no tokens to learn it.
 test "suppressions travel only when a change made some" {
-  let quiet = last(lines(agent(report_of([], one()), lines_of))).unwrap_or("")
+  let quiet = last(lines(agent(report_of([], one()), lines_of))) |> unwrap_or("")
   assert not has(quiet, "suppression_changes")
 
   let noisy = Report {
@@ -204,7 +204,7 @@ test "suppressions travel only when a change made some" {
       exclude_calls_added: []
     }
   }
-  let loud = last(lines(agent(noisy, lines_of))).unwrap_or("")
+  let loud = last(lines(agent(noisy, lines_of))) |> unwrap_or("")
 
   assert get(field(loud, "suppression_changes"), "equivalent_added") == JNum(2)
   assert get(field(loud, "suppression_changes"), "exclude_added") == JArr([JStr("lib/gen/**")])
@@ -225,7 +225,7 @@ test "a wekufe that produced nothing to score travels with its reason" {
       }
     ]
   }
-  let line = head(lines(agent(troubled, lines_of))).unwrap_or("")
+  let line = head(lines(agent(troubled, lines_of))) |> unwrap_or("")
 
   assert field(line, "wekufe") == JStr("lib/a.ex:42:compare")
   assert field(line, "outcome") == JStr("compile_error")

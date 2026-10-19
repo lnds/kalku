@@ -80,12 +80,13 @@ fn holding(path: String) : String = match last_slash(path) {
   None -> "."
 }
 
-fn last_slash(path: String) : Option[Int] = index_of(path, "/").map(
-  i => match last_slash(slice(path, i + 1, length(path))) {
-    None -> i
-    Some(rest) -> i + 1 + rest
-  }
-)
+fn last_slash(path: String) : Option[Int] = index_of(path, "/")
+  |> map(
+    i => match last_slash(slice(path, i + 1, length(path))) {
+      None -> i
+      Some(rest) -> i + 1 + rest
+    }
+  )
 
 # Accept, hand the connection to a fiber, accept again. Nothing here
 # waits on what a client asked for, which is the whole point of it.

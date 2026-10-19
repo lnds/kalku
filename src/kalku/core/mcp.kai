@@ -51,7 +51,7 @@ pub const PROTOCOL : String = "2024-11-05"
 #[doc("Read one line from a host.")]
 pub fn asked_of(line: String) : (Option[Int], Heard) = match json_decode(line) {
   None -> (None, Garbled("not JSON"))
-  Some(v) -> (as_int(get(v, "id")), for_method(as_string(get(v, "method")).unwrap_or(""), v))
+  Some(v) -> (as_int(get(v, "id")), for_method(as_string(get(v, "method")) |> unwrap_or(""), v))
 }
 
 fn for_method(method: String, v: JsonValue) : Heard = match method {
@@ -70,10 +70,10 @@ fn for_method(method: String, v: JsonValue) : Heard = match method {
 fn call_of(params: JsonValue) : Call {
   let args = get(params, "arguments")
   Call {
-    tool: as_string(get(params, "name")).unwrap_or(""),
+    tool: as_string(get(params, "name")) |> unwrap_or(""),
     root: as_string(get(args, "root")),
     wekufe: wekufe_in(args),
-    reason: as_string(get(args, "reason")).unwrap_or(""),
+    reason: as_string(get(args, "reason")) |> unwrap_or(""),
     limit: as_int(get(args, "limit")),
     since: as_string(get(args, "since")),
     progress: token_in(get(get(params, "_meta"), "progressToken"))
@@ -272,7 +272,7 @@ pub fn progress_note(token: String, count: Int, words: String) : String = json_e
     (
       "params",
       JObj([
-        ("progressToken", json_decode(token).unwrap_or(JNull)),
+        ("progressToken", json_decode(token) |> unwrap_or(JNull)),
         ("progress", JNum(count)),
         ("message", JStr(words))
       ])

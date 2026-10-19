@@ -122,7 +122,7 @@ repository, or when tracked files differ from it and no commit names what
 is there.
 """)]
 pub fn commit_of(root: String) : Option[String] / Process {
-  let head = git(root, ["rev-parse", "--verify", "--quiet", "HEAD"], "").ok()!
-  let changed = git(root, ["status", "--porcelain", "--untracked-files=no"], "").ok()!
+  let head = (git(root, ["rev-parse", "--verify", "--quiet", "HEAD"], "") |> ok)!
+  let changed = (git(root, ["status", "--porcelain", "--untracked-files=no"], "") |> ok)!
   if is_empty(trim(changed)) { Some(trim(head)) } else { None }
 }

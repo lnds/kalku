@@ -14,7 +14,7 @@ What ended a casting early, if anything: what the pool said, or else the
 interrupt that cancelled it.
 """)]
 pub fn what_ended(failure: Option[String], cancelled: Bool) : Option[String] =
-  failure.or_else(() => if cancelled { Some("it was interrupted") } else { None })
+  failure |> or_else(() => if cancelled { Some("it was interrupted") } else { None })
 
 #[doc("""
 Why a run is not a measurement, when it stopped before casting everything:
@@ -22,10 +22,11 @@ how far it got and what the pool said. `None` when it got through its plan,
 whatever the pool said on the way out, since nothing was left unmeasured.
 """)]
 pub fn stopped_short(failure: Option[String], cast: Int, planned: Int) : Option[String] =
-  failure.and_then(
-    why => if cast < planned {
-      Some("the run stopped after #{cast} of #{planned} wekufe: #{why}")
-    } else {
-      None
-    }
-  )
+  failure
+    |> and_then(
+      why => if cast < planned {
+        Some("the run stopped after #{cast} of #{planned} wekufe: #{why}")
+      } else {
+        None
+      }
+    )

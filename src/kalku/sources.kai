@@ -51,7 +51,7 @@ pub fn watched_here(known: Option[Known], settings: [String]) : [String] / File 
 
 #[doc("A file a walk from `.` named, as a person names it: `lib/a.ex` for `./lib/a.ex`.")]
 pub fn without_dot(path: String) : String = if starts_with(path, "./") {
-  byte_slice(path, 2, length(path) - 2).unwrap_or(path)
+  byte_slice(path, 2, length(path) - 2) |> unwrap_or(path)
 } else {
   path
 }

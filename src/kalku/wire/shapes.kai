@@ -126,7 +126,7 @@ impl Json for Scope {
     JObj([("all", JBool(true))]) -> Ok(All)
     JObj([("since", JStr(r))]) -> Ok(Since(r))
     JObj([("files", fs)]) ->
-      json_bind_list(fs, json_path_field(path, "files"), json_bind_string).map(Files)
+      json_bind_list(fs, json_path_field(path, "files"), json_bind_string) |> map(Files)
     _ -> Err(JsonError {
       path: path,
       expected: "exactly one of all: true, since, files",
@@ -152,7 +152,7 @@ impl Json for StrMap {
   fn to_json(self: StrMap) : JsonValue =
     JObj(self.entries | (e => (e.fst, JStr(e.snd))))
   fn of_json(v: JsonValue, path: String) : Result[StrMap, JsonError] = match v {
-    JObj(kvs) -> collect(kvs | (kv => str_entry(kv, path))).map(es => StrMap { entries: es })
+    JObj(kvs) -> collect(kvs | (kv => str_entry(kv, path))) |> map(es => StrMap { entries: es })
     _ -> Err(JsonError { path: path, expected: "Object", found: json_shape_name(v) })
   }
 }

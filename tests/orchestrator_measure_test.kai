@@ -71,7 +71,7 @@ test "a kalku that reads the project in a protocol this side cannot speak is ref
   let found = measured("protocol_mismatch.ndjson")
 
   assert found.report == None
-  assert is_some(index_of(found.failure.unwrap_or(""), "the kalku speaks protocol 99"))
+  assert is_some(index_of(found.failure |> unwrap_or(""), "the kalku speaks protocol 99"))
 }
 
 # The same kalku, saying nothing of what a cast after its baseline is worth.
@@ -80,7 +80,7 @@ test "a kalku that reads the project in a protocol this side cannot speak is ref
 test "a kalku that does not say it can cast after its baseline is not kept" {
   let found = measured("reads_and_leaves.ndjson")
 
-  assert is_some(index_of(found.failure.unwrap_or(""), "expected `baseline`, got `cast`"))
+  assert is_some(index_of(found.failure |> unwrap_or(""), "expected `baseline`, got `cast`"))
 }
 
 # The same run, read for what it leaves: the wekufe that kalku took with it
@@ -137,5 +137,5 @@ test "one name a kalku gives two different wekufe ends the run before anything i
   let found = measured("names_two.ndjson")
 
   assert found.cast == []
-  assert is_some(index_of(found.failure.unwrap_or(""), "named two different wekufe `s3`"))
+  assert is_some(index_of(found.failure |> unwrap_or(""), "named two different wekufe `s3`"))
 }

@@ -255,19 +255,19 @@ fn interview(
   let reported = coverage_from(baseline)!
   keep(keeping, baseline, reported, kept)
   let narrowed =
-    reported.map(entries => told.without(entries ++ coverage_of(kept), failing | .test_id))
+    reported |> map(entries => told.without(entries ++ coverage_of(kept), failing | .test_id))
   Ok(
     (
       caps,
       Known {
         sites: sites,
         tests: suite,
-        coverage: narrowed.map(.coverage),
+        coverage: narrowed |> map(.coverage),
         durations: durations_of(baseline) ++ (timings_of(kept) | (t => (t.test_id, t.duration_ms))),
         skipped: found.skipped,
         left_out: failing,
         differences: differences_of(baseline),
-        only_theirs: narrowed.map(.only_theirs).unwrap_or([]),
+        only_theirs: narrowed |> map(.only_theirs) |> unwrap_or([]),
         withheld: withheld_of(baseline),
         doubted: doubted_of(baseline),
         reused: length(kept)
@@ -333,7 +333,7 @@ fn failures_of(reply: KalkuReply) : [Failure] = match reply {
 }
 
 fn differences_of(reply: KalkuReply) : [String] = match reply {
-  BaselineDone(m) -> m.differences.unwrap_or([])
+  BaselineDone(m) -> m.differences |> unwrap_or([])
   _ -> []
 }
 
@@ -357,7 +357,7 @@ fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
 # never do.
 fn refuse_red(reply: KalkuReply, judging: [String]) : Result[Unit, String] = match reply {
   BaselineDone(m) -> if m.status == Red and is_empty(judging) {
-    Err(red_suite(m.failures, m.differences.unwrap_or([])))
+    Err(red_suite(m.failures, m.differences |> unwrap_or([])))
   } else {
     Ok(())
   }
@@ -698,7 +698,7 @@ pub fn report_after(ready: Plan, casts: [Wekufe], casting: Casting, known: Known
   Report {
     ...report_of(ready, casting, known),
     stopped: stopped,
-    blockers: stopped.map(why => [CouldNotMeasure(why)]).unwrap_or([])
+    blockers: stopped |> map(why => [CouldNotMeasure(why)]) |> unwrap_or([])
   }
 }
 
@@ -782,7 +782,7 @@ pub fn judged_by(r: Report, policy: Policy, touched: Option[[FileChange]]) : Rep
       r.counts,
       change,
       policy,
-      r.stopped.or_else(() => trouble_of(r.skipped)).or_else(() => trouble_with(r.left_out)),
+      r.stopped |> or_else(() => trouble_of(r.skipped)) |> or_else(() => trouble_with(r.left_out)),
       was_partial(r),
       is_some(touched)
     )

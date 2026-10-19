@@ -80,7 +80,8 @@ pub fn contract_line(n: Int) : String = "# kalku-summon-contract: #{n}"
 pub fn contract_of(script: String) : Option[Int] = find(
   lines(script),
   l => starts_with(trim(l), "# kalku-summon-contract:")
-).and_then(l => to_int(trim(slice(trim(l), 25, length(trim(l))))))
+)
+  |> and_then(l => to_int(trim(slice(trim(l), 25, length(trim(l))))))
 
 #[doc("True when a summoning is one this kalku knows how to use.")]
 pub fn summon_is_current(script: String) : Bool =
@@ -657,7 +658,7 @@ fn opening_of_deps(build_file: String) : Option[Int] {
 # and a list that was empty takes neither, so what comes out reads as
 # though a hand had written it and `mix format` has nothing to say.
 fn entry_for(build_file: String, at: Int, line: String) : String {
-  let after = byte_slice(build_file, at, byte_length(build_file) - at).unwrap_or("")
+  let after = byte_slice(build_file, at, byte_length(build_file) - at) |> unwrap_or("")
   if starts_with(trim_left(after), "]") {
     line
   } else if on_one_line(after) {

@@ -68,14 +68,15 @@ fn semantic_entry(at: Int, line: String) : Result[Option[Entry], Problem] {
     after_quote.fst,
     ordinal_text
   )!
-  reason_of(at, drop_token(trim(after_quote.snd))).map(
+  map(
+    reason_of(at, drop_token(trim(after_quote.snd))),
     r => Some(Entry { key: key, reason: r, at: at })
   )
 }
 
 fn line_entry(at: Int, line: String) : Result[Option[Entry], Problem] {
   let key = line_key(at, first_token(line))!
-  reason_of(at, drop_token(line)).map(r => Some(Entry { key: key, reason: r, at: at }))
+  map(reason_of(at, drop_token(line)), r => Some(Entry { key: key, reason: r, at: at }))
 }
 
 # What follows the ordinal is the reason, introduced by `#`.
@@ -204,11 +205,11 @@ fn drop_token(s: String) : String = match index_of(s, " ") {
 
 fn words(text: String) : [String] = filter(split(text, " "), w => not is_empty(w))
 
-fn drop_bytes(s: String, n: Int) : String = byte_slice(s, n, length(s) - n).unwrap_or("")
+fn drop_bytes(s: String, n: Int) : String = byte_slice(s, n, length(s) - n) |> unwrap_or("")
 
-fn nth_or(xs: [String], i: Int) : String = nth(xs, i).unwrap_or("")
+fn nth_or(xs: [String], i: Int) : String = nth(xs, i) |> unwrap_or("")
 
-fn last_of(xs: [String]) : String = last(xs).unwrap_or("")
+fn last_of(xs: [String]) : String = last(xs) |> unwrap_or("")
 
 fn nth_from_end(xs: [String], back: Int) : String = nth_or(xs, length(xs) - 1 - back)
 

@@ -43,12 +43,13 @@ A call site's original text is the call in full — `Decimal.new(amount)` —
 and the name is what stands before the arguments. A call with no
 parentheses is never a site, so there is always something to cut at.
 """)]
-pub fn called(site: Site) : Option[String] = site.original.and_then(before_arguments)
+pub fn called(site: Site) : Option[String] = site.original |> and_then(before_arguments)
 
-fn before_arguments(text: String) : Option[String] = index_of(text, "(").and_then(at => {
-  let name = trim(slice(text, 0, at))
-  if is_empty(name) { None } else { Some(name) }
-})
+fn before_arguments(text: String) : Option[String] = index_of(text, "(")
+  |> and_then(at => {
+    let name = trim(slice(text, 0, at))
+    if is_empty(name) { None } else { Some(name) }
+  })
 
 #[doc("""
 The calls that at least `least` surviving wekufe share, most first.

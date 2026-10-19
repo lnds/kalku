@@ -88,7 +88,7 @@ pub fn brought(
 ) : Result[[Kept], String] =
   match reply {
     BaselineDone(m) -> {
-      let reused = m.reused.unwrap_or([])
+      let reused = m.reused |> unwrap_or([])
       match unoffered(offer, reused) {
         [] -> Ok(
           match keeping.map(.store) {

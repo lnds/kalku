@@ -46,7 +46,7 @@ fn problems_of(text: String) : [String] = match parse(text) {
   Err(ps) -> map(ps, p => "#{p.at}: #{p.message}")
 }
 
-fn first_problem(text: String) : String = head(problems_of(text)).unwrap_or("accepted")
+fn first_problem(text: String) : String = head(problems_of(text)) |> unwrap_or("accepted")
 
 fn first_entry(text: String) : Option[Entry] = head(entries_of(text))
 
@@ -156,7 +156,7 @@ test "a line key suppresses by file, line, and spell" {
 test "an entry renders the way the file spells it, so it round-trips" {
   let rendered = map(entries_of("#{SEMANTIC}\n"), show_entry)
   assert rendered == [SEMANTIC]
-  assert entries_of("#{SEMANTIC}\n") == entries_of("#{head(rendered).unwrap_or("")}\n")
+  assert entries_of("#{SEMANTIC}\n") == entries_of("#{head(rendered) |> unwrap_or("")}\n")
 }
 
 # The file is read into a plan, or it is decoration. A declared entry
@@ -167,7 +167,7 @@ test "what a project declared reaches a run as the sites it suppresses" {
   let here = site_at("lib/c.ex", Some("C.limit/0"), Literal, Some("100"), Some(1), 5)
   let elsewhere = site_at("lib/c.ex", Some("C.big?/1"), Compare, Some(">="), Some(1), 2)
   let read = parse("lib/c.ex  C.limit/0  literal  \"100\"  #1  # a placeholder nobody cares about")
-  let declared = read.unwrap_or([])
+  let declared = read |> unwrap_or([])
 
   assert suppressed_by(declared, [here, elsewhere]) == ["id-lib/c.ex-5"]
   assert orphans_among(declared, [here, elsewhere]) == []
@@ -178,7 +178,7 @@ test "what a project declared reaches a run as the sites it suppresses" {
 test "an entry that names no site suppresses nothing" {
   let here = site_at("lib/c.ex", Some("C.limit/0"), Literal, Some("100"), Some(1), 5)
   let read = parse("lib/c.ex  C.deleted/0  literal  \"1\"  #1  # this function is gone")
-  let gone = read.unwrap_or([])
+  let gone = read |> unwrap_or([])
 
   assert suppressed_by(gone, [here]) == []
   assert length(orphans_among(gone, [here])) == 1

@@ -88,7 +88,7 @@ fn whole(offered: [Reuse], p: Print) : Bool =
 
 #[doc("The fingerprint a test gets, when its module has one and none of the module's tests failed.")]
 pub fn print_for(id: String, prints: Option[[Print]], failed: [String]) : Option[String] =
-  match prints.and_then(ps => find(ps, p => contains(p.ids, id))) {
+  match prints |> and_then(ps => find(ps, p => contains(p.ids, id))) {
     None -> None
     Some(p) -> if any(p.ids, i => contains(failed, i)) { None } else { Some(p.print) }
   }
@@ -108,7 +108,7 @@ fn modules_of(w: Work) : Option[[Module]] / Process =
 
 #[doc("The test modules `kai test --json --list --deps` describes, in its order.")]
 pub fn modules_in(said: [String]) : [Module] {
-  let records = flat_map(said, l => json_decode(l).map(v => [v]).unwrap_or([]))
+  let records = flat_map(said, l => (json_decode(l) |> map(v => [v]) |> unwrap_or([])))
   let tests = records |? (v => as_string(get(v, "type")) == Some("test"))
   flat_map(
     records |? (v => as_string(get(v, "type")) == Some("deps")),
@@ -120,7 +120,7 @@ pub fn modules_in(said: [String]) : [Module] {
           sources: strings_of(get(v, "sources")),
           ids: flat_map(
             tests |? (t => as_string(get(t, "file")) == Some(f)),
-            t => as_string(get(t, "id")).map(id => [id]).unwrap_or([])
+            t => (as_string(get(t, "id")) |> map(id => [id]) |> unwrap_or([]))
           )
         }
       ]
@@ -129,7 +129,7 @@ pub fn modules_in(said: [String]) : [Module] {
 }
 
 fn strings_of(v: JsonValue) : [String] = match v {
-  JArr(items) -> flat_map(items, i => as_string(i).map(s => [s]).unwrap_or([]))
+  JArr(items) -> flat_map(items, i => (as_string(i) |> map(s => [s]) |> unwrap_or([])))
   _ -> []
 }
 

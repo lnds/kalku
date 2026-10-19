@@ -101,11 +101,11 @@ fn of_toml(root: TomlValue) : Result[Config, [ConfigProblem]] {
     spells: spells.snd,
     exclude: strings_at(run, "exclude"),
     exclude_calls: strings_at(run, "exclude_calls"),
-    timeout_floor_ms: int_at(run, "timeout_floor_ms").unwrap_or(defaults().timeout_floor_ms),
+    timeout_floor_ms: int_at(run, "timeout_floor_ms") |> unwrap_or(defaults().timeout_floor_ms),
     memory_limit_mb: int_at(run, "memory_limit_mb"),
     policy: Policy { threshold: real_at(score, "threshold"), baseline: None },
-    ratchet: bool_at(score, "ratchet").unwrap_or(false),
-    options: string_at(root, "language").and_then(l => options_of(root, l))
+    ratchet: bool_at(score, "ratchet") |> unwrap_or(false),
+    options: string_at(root, "language") |> and_then(l => options_of(root, l))
   }
   let problems =
     spells.fst
@@ -175,7 +175,7 @@ fn pairs_of(v: TomlValue) : [(String, TomlValue)] = match v {
 }
 
 fn table_at(root: TomlValue, name: String) : TomlValue =
-  value_at(root, name).unwrap_or(TTbl([]))
+  value_at(root, name) |> unwrap_or(TTbl([]))
 
 fn value_at(table: TomlValue, key: String) : Option[TomlValue] =
   toml.pairs_get(pairs_of(table), key)

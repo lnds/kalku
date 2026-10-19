@@ -46,7 +46,7 @@ pub fn unpacked(p: Packed) : Result[[CoverageEntry], ProtocolError] {
   let groups = p.reached | (r => entries_of(r, names, length(p.tests)))
   match list.find(groups, g => is_err(g)) {
     Some(Err(e)) -> Err(e)
-    _ -> Ok(list.flat_map(groups, .unwrap_or([])))
+    _ -> Ok(list.flat_map(groups, g => unwrap_or(g, [])))
   }
 }
 
@@ -57,6 +57,6 @@ fn entries_of(r: Reached, names: Map[Int, String], known: Int) : Result[
   if list.any(r.tests, at => at < 0 or at >= known) {
     fail(Invalid, "coverage: #{r.file} names a test past the #{known} there are")
   } else {
-    let tests = r.tests | (at => map.get(names, at).unwrap_or(""))
+    let tests = r.tests | (at => unwrap_or(map.get(names, at), ""))
     Ok(r.lines | (line => CoverageEntry { file: r.file, line: line, tests: tests }))
   }

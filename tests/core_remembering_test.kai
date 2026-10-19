@@ -52,7 +52,7 @@ test "a line that will not decode is skipped, not fatal" {
 # What is true of a wekufe is what was true most recently: it is re-cast
 # as the suite around it changes.
 test "the last word about a wekufe is the one that counts" {
-  assert latest(ledger(), "w1").map(.outcome) == Some(Killed)
+  assert map(latest(ledger(), "w1"), .outcome) == Some(Killed)
   assert history(ledger(), "w1") == [Survived, Killed]
   assert latest(ledger(), "never-cast") == None
 }

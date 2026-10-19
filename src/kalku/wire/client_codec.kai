@@ -47,7 +47,7 @@ fn check_client_request(r: ClientRequest) : Result[Unit, ProtocolError] = match 
     None -> Ok(())
   }
   ProposeReq(m) -> require(
-    not m.reason.trim().is_empty(),
+    not (m.reason |> trim |> is_empty),
     "propose_equivalent: reason must not be empty"
   )
   _ -> Ok(())
@@ -101,7 +101,7 @@ fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
     )
   ProgressEv(m) -> {
     require(
-      m.done >= 0 and m.total >= 0 and m.estimate_ms.unwrap_or(0) >= 0,
+      m.done >= 0 and m.total >= 0 and unwrap_or(m.estimate_ms, 0) >= 0,
       "progress: neither a count nor an estimate is negative"
     )!
     require(

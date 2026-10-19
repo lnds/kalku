@@ -13,13 +13,13 @@ fn problem_of(text: String) : String = match parse_script(text) {
 test "a step says what it expects and what to reply" {
   let steps = steps_of("{\"expect\":\"hello\",\"reply\":{\"type\":\"ready\"},\"delay_ms\":20}\n")
   assert length(steps) == 1
-  assert head(steps).unwrap_or(no_step()).expect == "hello"
-  assert head(steps).unwrap_or(no_step()).delay_ms == 20
-  assert reply_text(head(steps).unwrap_or(no_step())) == "{\"type\":\"ready\"}"
+  assert (head(steps) |> unwrap_or(no_step())).expect == "hello"
+  assert (head(steps) |> unwrap_or(no_step())).delay_ms == 20
+  assert reply_text(head(steps) |> unwrap_or(no_step())) == "{\"type\":\"ready\"}"
 }
 
 test "a step that says nothing else does nothing else" {
-  let s = head(steps_of("{\"expect\":\"cast\"}\n")).unwrap_or(no_step())
+  let s = head(steps_of("{\"expect\":\"cast\"}\n")) |> unwrap_or(no_step())
   assert not s.hang
   assert not s.crash
   assert not s.garbage
@@ -33,13 +33,13 @@ test "a step that says nothing else does nothing else" {
 # test wants: one line for a hundred casts.
 test "a step with no expectation serves any request" {
   let s =
-    head(steps_of("{\"reply\":{\"type\":\"cast_done\"},\"repeat\":100}\n")).unwrap_or(no_step())
+    head(steps_of("{\"reply\":{\"type\":\"cast_done\"},\"repeat\":100}\n")) |> unwrap_or(no_step())
   assert is_wildcard(s)
   assert s.repeat == 100
 }
 
 test "a repeated step is spent one use at a time" {
-  let s = head(steps_of("{\"expect\":\"cast\",\"repeat\":3}\n")).unwrap_or(no_step())
+  let s = head(steps_of("{\"expect\":\"cast\",\"repeat\":3}\n")) |> unwrap_or(no_step())
   assert (spend(s) | (.repeat)) == [2]
   assert spend(Step { ...s, repeat: 1 }) == []
 }
@@ -64,8 +64,8 @@ fn no_step() : Step = Step {
 }
 
 test "a step is expected unless it says it is optional" {
-  let asked = head(steps_of("{\"expect\":\"baseline\"}\n")).unwrap_or(no_step())
-  let may = head(steps_of("{\"expect\":\"baseline\",\"optional\":true}\n")).unwrap_or(no_step())
+  let asked = head(steps_of("{\"expect\":\"baseline\"}\n")) |> unwrap_or(no_step())
+  let may = head(steps_of("{\"expect\":\"baseline\",\"optional\":true}\n")) |> unwrap_or(no_step())
   assert not asked.optional
   assert may.optional
 }

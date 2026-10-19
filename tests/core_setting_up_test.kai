@@ -15,8 +15,8 @@ fn elixir() : Known = Known {
 }
 
 test "a project says what it is written in" {
-  assert detect(["mix.exs", "README.md"]).map(.language) == Ok("elixir")
-  assert detect(["kai.toml"]).map(.language) == Ok("kaikai")
+  assert map(detect(["mix.exs", "README.md"]), .language) == Ok("elixir")
+  assert map(detect(["kai.toml"]), .language) == Ok("kaikai")
 }
 
 # Two markers are two answers and no way to choose, which is a question
@@ -34,7 +34,7 @@ test "a project with no marker says what it looked for" {
 test "a language kalku has no kalku for is named, with what it does have" {
   assert named("cobol") == Err(Unknown("cobol"))
   assert has(explain(Unknown("cobol")), "elixir")
-  assert named("Elixir").map(.language) == Ok("elixir")
+  assert map(named("Elixir"), .language) == Ok("elixir")
 }
 
 # The reni lives outside the tree it measures, named after the project so
@@ -83,7 +83,7 @@ test "the reni is not written into the file everyone shares" {
 # mix announcing each one on stdout. Compiling twice up front costs
 # nothing and keeps the channel clean.
 test "the summoning compiles the project too, not only its dependencies" {
-  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir()), "/r")
 
   assert has(plan.summoner, "mix deps.compile >&2")
   assert has(plan.summoner, "mix compile >&2")
@@ -94,7 +94,7 @@ test "the summoning compiles the project too, not only its dependencies" {
 # stdout carries the protocol: a summoning that let a build write there
 # would have the worker banished for nonsense it never meant to write.
 test "the summoning keeps the build off the protocol channel" {
-  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir()), "/r")
 
   assert has(plan.summoner, ">&2")
   assert has(plan.summoner, "</dev/null")
@@ -107,7 +107,7 @@ test "the summoning keeps the build off the protocol channel" {
 # was standing. A run knows its own reni and hands it over.
 test "the reni is not written into the summoning either" {
   let plan = plan_for(
-    find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()),
+    find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir()),
     "/one/machine/reni"
   )
 
@@ -121,7 +121,7 @@ test "the reni is not written into the summoning either" {
 # Every summoning takes the reni first, whatever the language, so the
 # kaikai side has one way of starting a kalku rather than one per kalku.
 test "a summoning that needs no build path still takes the reni first" {
-  let plan = plan_for(find(catalogue(), k => k.language == "kaikai").unwrap_or(elixir()), "/r")
+  let plan = plan_for(find(catalogue(), k => k.language == "kaikai") |> unwrap_or(elixir()), "/r")
 
   assert has(plan.summoner, "${1:?")
   assert has(plan.summoner, "shift")
@@ -158,7 +158,7 @@ end
 # lets a lock file keep one this binary was never run against.
 test "init requires the kalku of the binary that writes the requirement" {
   let elixir_plan =
-    plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+    plan_for(find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir()), "/r")
 
   assert minor_of("0.14.6") == "0.14"
   assert minor_of("1.2.0") == "1.2"
@@ -170,7 +170,7 @@ test "init requires the kalku of the binary that writes the requirement" {
 # every Mix project shares.
 test "init declares the dependency in the build file" {
   let line = "{:kalku_elixir, \"~> 0.1\", only: :test, runtime: false}"
-  let written = with_dependency(mix_exs(), line).unwrap_or("")
+  let written = with_dependency(mix_exs(), line) |> unwrap_or("")
 
   assert has(written, line)
   assert has(written, "{:jason, \"~> 1.4\"}")
@@ -181,7 +181,7 @@ test "init declares the dependency in the build file" {
 # An entry with nothing after it needs no comma, so what init writes reads
 # as though a hand had written it.
 test "an empty deps list gets an entry without a dangling comma" {
-  let written = with_dependency("defp deps do\n    []\n  end\n", "{:k, \"~> 1\"}").unwrap_or("")
+  let written = with_dependency("defp deps do\n    []\n  end\n", "{:k, \"~> 1\"}") |> unwrap_or("")
 
   assert has(written, "{:k, \"~> 1\"}")
   assert not has(written, "},")
@@ -216,7 +216,7 @@ test "a build file init does not recognise is left alone, with a reason" {
 # codepoints — and the file would come out corrupted.
 test "a build file with multibyte text survives the insertion" {
   let source = "# año\ndefp deps do\n    [{:jason, \"~> 1.4\"}]\n  end\n"
-  let written = with_dependency(source, "{:k, \"~> 1\"}").unwrap_or("")
+  let written = with_dependency(source, "{:k, \"~> 1\"}") |> unwrap_or("")
 
   assert has(written, "# año")
   assert has(written, "{:k, \"~> 1\"}")
@@ -227,7 +227,7 @@ test "a build file with multibyte text survives the insertion" {
 # every fix to it reaches only the projects that run `init` again — and
 # nothing ever told them to. The contract is how a run can tell.
 test "a summoning says which contract it was written against" {
-  let plan = plan_for(find(catalogue(), k => k.language == "elixir").unwrap_or(elixir()), "/r")
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir()), "/r")
 
   assert has(plan.summoner, contract_line(SUMMON_CONTRACT))
   assert contract_of(plan.summoner) == Some(SUMMON_CONTRACT)
@@ -250,8 +250,8 @@ test "a summoning from an older kalku is not current" {
 }
 
 test "a Cargo project is Rust, and its summoning starts the Rust kalku" {
-  assert detect(["Cargo.toml", "README.md"]).map(.language) == Ok("rust")
-  let plan = plan_for(named("rust").unwrap_or(elixir()), "/r")
+  assert map(detect(["Cargo.toml", "README.md"]), .language) == Ok("rust")
+  let plan = plan_for(named("rust") |> unwrap_or(elixir()), "/r")
   assert has(plan.config, "language = \"rust\"")
   assert has(plan.summoner, "exec kalku-rust")
   assert plan.dependency == None
@@ -264,7 +264,7 @@ test "a Cargo.toml beside another marker is ambiguous" {
   assert detect(["Cargo.toml", "mix.exs"]) == Err(Ambiguous(["elixir", "rust"]))
 }
 
-fn of(language: String) : Known = named(language).unwrap_or(elixir())
+fn of(language: String) : Known = named(language) |> unwrap_or(elixir())
 
 test "a source file is the language's own, outside its suite and its build" {
   assert is_source_of(of("elixir"), "lib/thing.ex")
@@ -304,9 +304,9 @@ test "a path is under a test directory by its directories, not its file name" {
 }
 
 test "a Python project is told by any of the files that mean Python, and runs in its own interpreter" {
-  assert detect(["pyproject.toml", "README.md"]).map(.language) == Ok("python")
-  assert detect(["setup.py"]).map(.language) == Ok("python")
-  assert detect(["requirements.txt", "src"]).map(.language) == Ok("python")
+  assert map(detect(["pyproject.toml", "README.md"]), .language) == Ok("python")
+  assert map(detect(["setup.py"]), .language) == Ok("python")
+  assert map(detect(["requirements.txt", "src"]), .language) == Ok("python")
   let plan = plan_for(of("python"), "/r")
   assert has(plan.config, "language = \"python\"")
   assert has(plan.config, "# memory_limit_mb = 8192")
@@ -319,10 +319,10 @@ test "a Python project is told by any of the files that mean Python, and runs in
 }
 
 test "a Maven or a Gradle project is Java, and is summoned on its own JDK with nothing built on the way up" {
-  assert detect(["pom.xml", "src", "README.md"]).map(.language) == Ok("java")
-  assert detect(["build.gradle", "settings.gradle", "src"]).map(.language) == Ok("java")
-  assert detect(["build.gradle.kts"]).map(.language) == Ok("java")
-  assert detect(["pom.xml", "build.gradle"]).map(.language) == Ok("java")
+  assert map(detect(["pom.xml", "src", "README.md"]), .language) == Ok("java")
+  assert map(detect(["build.gradle", "settings.gradle", "src"]), .language) == Ok("java")
+  assert map(detect(["build.gradle.kts"]), .language) == Ok("java")
+  assert map(detect(["pom.xml", "build.gradle"]), .language) == Ok("java")
   let plan = plan_for(of("java"), "/r")
   assert has(plan.config, "language = \"java\"")
   assert has(plan.summoner, "exec kalku-java \"$@\"")
@@ -335,7 +335,7 @@ test "a Maven or a Gradle project is Java, and is summoned on its own JDK with n
 }
 
 test "a Go module is told by its go.mod, and summoned with nothing built on the way up" {
-  assert detect(["go.mod", "go.sum", "main.go"]).map(.language) == Ok("go")
+  assert map(detect(["go.mod", "go.sum", "main.go"]), .language) == Ok("go")
   let plan = plan_for(of("go"), "/r")
   assert has(plan.config, "language = \"go\"")
   assert has(plan.summoner, "exec kalku-go \"$@\"")
@@ -365,8 +365,8 @@ test "Go sources are .go files that are not tests, testdata or vendored" {
 # A tsconfig.json, and not a package.json: a project in another language
 # often keeps one at its root for its tooling, and would become ambiguous.
 test "a TypeScript project is told by its tsconfig.json, and summoned with nothing built on the way up" {
-  assert detect(["package.json", "tsconfig.json", "src"]).map(.language) == Ok("typescript")
-  assert detect(["go.mod", "package.json"]).map(.language) == Ok("go")
+  assert map(detect(["package.json", "tsconfig.json", "src"]), .language) == Ok("typescript")
+  assert map(detect(["go.mod", "package.json"]), .language) == Ok("go")
   let plan = plan_for(of("typescript"), "/r")
   assert has(plan.config, "language = \"typescript\"")
   assert has(plan.summoner, "exec kalku-typescript \"$@\"")
@@ -400,7 +400,7 @@ test "TypeScript and JavaScript sources are the files outside the suite, node_mo
 
 test "a CMake project that asks for C++ is C++, and summoned with nothing built on the way up" {
   let markers = ["CMakeLists.txt", "src", "include"]
-  assert detect_cmake(markers, "project(calc CXX)", []).map(.language) == Ok("cpp")
+  assert map(detect_cmake(markers, "project(calc CXX)", []), .language) == Ok("cpp")
   assert detect_cmake(["CMakeLists.txt", "pyproject.toml"], "project(calc CXX)", [])
     == Err(Ambiguous(["python", "cpp"]))
   let plan = plan_for(of("cpp"), "/r")
@@ -437,9 +437,9 @@ test "C++ sources and headers are the files outside the suite, a build tree and 
 # the same kalku is summoned either way.
 test "a CMake project that asks for C alone is C, measured by the C and C++ kalku" {
   let markers = ["CMakeLists.txt", "src", "include"]
-  assert detect_cmake(markers, "project(calc C)", []).map(.language) == Ok("c")
-  assert detect_cmake(markers, "project(calc)", ["./src/calc.c"]).map(.language) == Ok("c")
-  assert detect_cmake(markers, "project(calc)", ["./src/calc.cc"]).map(.language) == Ok("cpp")
+  assert map(detect_cmake(markers, "project(calc C)", []), .language) == Ok("c")
+  assert map(detect_cmake(markers, "project(calc)", ["./src/calc.c"]), .language) == Ok("c")
+  assert map(detect_cmake(markers, "project(calc)", ["./src/calc.cc"]), .language) == Ok("cpp")
   assert detect_cmake(markers, "project(kernels CUDA)", []) == Err(Undetected)
   assert detect(["CMakeLists.txt"]) == Err(Ambiguous(["cpp", "c"]))
   let plan = plan_for(of("c"), "/r")
@@ -519,7 +519,7 @@ test "Python sources are .py files outside the suite, which is named by director
 # of the kalku that wrote it: any other is a kalku this one was not tested
 # against.
 test "the summoning for a project nobody set up brings the kalku with it" {
-  let known = find(catalogue(), k => k.language == "elixir").unwrap_or(elixir())
+  let known = find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir())
   let script = outside_text(known)
 
   assert summon_is_current(script)

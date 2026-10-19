@@ -19,7 +19,7 @@ fn problems_of(text: String) : [String] = match parse(text) {
 
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
 
-fn first_problem(text: String) : String = head(problems_of(text)).unwrap_or("accepted")
+fn first_problem(text: String) : String = head(problems_of(text)) |> unwrap_or("accepted")
 
 test "a project that writes nothing still gets a sane run" {
   assert parse("") == Ok(defaults())

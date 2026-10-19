@@ -161,7 +161,22 @@ released in `finally`, never by a line at the end of a function.
 - **`!` propagates** `None`/`Err` through the return type. It never
   raises; it is Rust's `?`, not Elixir's `File.read!`.
 - **Pipes**: `|>` applies, `|` maps, `||` flat-maps, `|?` filters. The
-  map pipe is not for `Option` — use a `match` or `.map`.
+  map pipe is not for `Option` or `Result`: use a `match` or
+  `|> option.map(f)`.
+- **No UFCS.** The method form `x.f(a)` is leaving kaikai, so write
+  `x |> f(a)` and chain with more pipes:
+  `found |> map(.tests) |> unwrap_or([])`. Field access (`r.field`) and
+  projections (`| .field`) are not UFCS and stay. Three things the
+  method form hid:
+  - `|>` resolves `f` by name, not by the receiver's type. Where an
+    import brings its own `map`, `filter` or `get` (`collections.map`
+    does), qualify the call: `o |> option.map(f)`,
+    `r |> result.map_err(g)`.
+  - `|>` binds looser than operators and is not a postfix, so a pipe
+    inside an operator, a condition or an interpolation is
+    parenthesised: `n + (o |> unwrap_or(0))`.
+  - A section that calls (`.unwrap_or([])`, `.length()`) is the method
+    form too: write a lambda or a plain call instead.
 
 ## Code-quality bar
 

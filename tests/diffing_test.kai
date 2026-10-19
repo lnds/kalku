@@ -21,7 +21,7 @@ fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $
 }
 
 fn scratch(name: String) : String / Env + Process {
-  let base = Env.get("TMPDIR").unwrap_or("/tmp")
+  let base = Env.get("TMPDIR") |> unwrap_or("/tmp")
   let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
   "#{dir}/kalku_diffing_#{own_pid()}_#{name}"
 }
@@ -59,10 +59,11 @@ fn commit(dir: String, message: String) : Bool / Process =
     )
 
 fn fresh(dir: String) : Unit / Process {
-  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]).map(c => {
-    let _ = drained(c, "")
-    proc.wait(c)
-  })
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir])
+    |> map(c => {
+      let _ = drained(c, "")
+      proc.wait(c)
+    })
   ()
 }
 

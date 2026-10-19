@@ -47,7 +47,7 @@ fn launcher_apart(pidfile: String) : KalkuSpec = KalkuSpec {
 # `file.read` panics on a file that is not there, and a launcher that never
 # wrote one is a test failure with a reason rather than a crash.
 fn temp_under() : String / Env {
-  let dir = Env.get("TMPDIR").unwrap_or("/tmp")
+  let dir = Env.get("TMPDIR") |> unwrap_or("/tmp")
   if ends_with(dir, "/") { slice(dir, 0, length(dir) - 1) } else { dir }
 }
 
@@ -251,7 +251,7 @@ test "a kalku that speaks another protocol version is refused" {
             _ -> "nothing the kalku said"
           }
           let refusal = match ready_of(line) {
-            Some(m) -> ready_refused(m).unwrap_or("accepted")
+            Some(m) -> ready_refused(m) |> unwrap_or("accepted")
             None -> "undecodable"
           }
           kill_now(k)

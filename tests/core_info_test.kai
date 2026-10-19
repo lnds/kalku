@@ -47,7 +47,7 @@ test "what the page calls scored is what the score is built from" {
 }
 
 test "a page renders for a person and for a program, from the same content" {
-  let outcomes = page("outcomes").unwrap_or(Topic { name: "", summary: "", entries: [] })
+  let outcomes = page("outcomes") |> unwrap_or(Topic { name: "", summary: "", entries: [] })
 
   assert has(as_text(outcomes), "killed")
   assert has(as_text(outcomes), "counts towards the score")

@@ -87,7 +87,9 @@ fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock
 fn told_about(asked: Asked) : Int / Stdout + Stderr = if asked.snippet_only {
   printed(snippet())
 } else {
-  asked.topic.map(name => told_page(name, asked.as_json)).unwrap_or_else(() => printed(listing()))
+  asked.topic
+    |> map(name => told_page(name, asked.as_json))
+    |> unwrap_or_else(() => printed(listing()))
 }
 
 fn told_page(name: String, json: Bool) : Int / Stdout + Stderr = match page(name) {
@@ -146,7 +148,7 @@ fn nothing_named(changed: Bool) : Int / Stderr = if changed {
 # missing.
 fn watched_files() : (() -> [FileHash] / File) / Stderr + Env + File + Process {
   let known = match settings() {
-    Ok(c) -> language_of(c).ok()
+    Ok(c) -> language_of(c) |> ok
     Err(_) -> None
   }
   () => read_hashes(watched_here(known, [CONFIG_PATH, EQUIVALENT_PATH]))
@@ -230,7 +232,7 @@ fn measured[e](
   remember(found.cast)
   match found.report {
     None -> {
-      Stderr.eprint("kalku: #{found.failure.unwrap_or("nothing measured")}")
+      Stderr.eprint("kalku: #{found.failure |> unwrap_or("nothing measured")}")
       2
     }
     Some(measured_only) -> {
@@ -267,14 +269,14 @@ fn settings() : Result[Config, String] / Stderr + File + Env + Process = setting
 # use it says so here — where the reason can be given — rather than deep in
 # a `prepare` that only knows the build path came out wrong.
 fn usable(c: Config, root: String) : Result[Config, String] / File {
-  let path = "#{root}/#{c.summon.unwrap_or("")}"
+  let path = "#{root}/#{c.summon |> unwrap_or("")}"
   if is_none(c.summon) or (not file.exists(path)) {
     Ok(c)
   } else if summon_is_current(file.read(path)) {
     Ok(c)
   } else {
     Err(
-      "#{c.summon.unwrap_or("")} was written for an older kalku and this one"
+      "#{c.summon |> unwrap_or("")} was written for an older kalku and this one"
         ++ " cannot use it. Run `kalku init` to renew it."
     )
   }
@@ -300,15 +302,15 @@ fn pool_of(c: Config) : PoolSpec / Env = summoning_in(c, ".", reni_of(c, "."))
 
 # Where a run's artefacts go: what the project asked for, or this machine's
 # own place for the project at that root.
-fn reni_of(c: Config, root: String) : String / Env = c.reni.unwrap_or(reni_here(root))
+fn reni_of(c: Config, root: String) : String / Env = c.reni |> unwrap_or(reni_here(root))
 
 # The reni reaches the summoning as its first argument, because the run is
 # what decides where it is. A script that was told at `kalku init` was told
 # on one machine, in one directory, and then committed.
 fn summoning_in(c: Config, root: String, reni: String) : PoolSpec = PoolSpec {
-  command: c.summon.unwrap_or(""),
+  command: c.summon |> unwrap_or(""),
   args: [reni],
-  workers: c.workers.unwrap_or(1),
+  workers: c.workers |> unwrap_or(1),
   root: root,
   reni: reni,
   inline_limit_bytes: 65536,
@@ -316,7 +318,7 @@ fn summoning_in(c: Config, root: String, reni: String) : PoolSpec = PoolSpec {
   options: c.options,
   greeting_ms: 60000,
   summons_allowed: 2,
-  memory_mb: c.memory_limit_mb.unwrap_or(0 - 1)
+  memory_mb: c.memory_limit_mb |> unwrap_or(0 - 1)
 }
 
 fn asking_for(
@@ -327,7 +329,7 @@ fn asking_for(
   declared: [equivalent.Entry]
 ) : Asking / Env + Process = Asking {
   ...asking_of(c, pool_of(c), files, declared),
-  store: c.language.map(language => store_for(".", language)),
+  store: c.language |> map(language => store_for(".", language)),
   reuse: 
   # What a baseline measured is reused by every run but one over the whole
   # project, which is what the full suite is for.
@@ -336,7 +338,7 @@ fn asking_for(
   # A change is already bounded by the diff, and a gate that answered for a
   # slice of one would pass a pull request over lines nobody looked at, so
   # a run asked about a change casts all of it unless told otherwise.
-  wanted.limit.unwrap_or(if is_some(touched) or wanted.all { 0 } else { DEFAULT_LIMIT }),
+  wanted.limit |> unwrap_or(if is_some(touched) or wanted.all { 0 } else { DEFAULT_LIMIT }),
   touched: touched,
   shard: wanted.shard
 }
@@ -636,7 +638,7 @@ fn run_for(
     }
   }
 
-fn asked_temp() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
+fn asked_temp() : String / Env = Env.get("TMPDIR") |> unwrap_or("/tmp")
 
 # What a client gets back for a `run`. The events arrive together rather
 # The run says what it is doing as it does it, and a client hears it then
@@ -712,7 +714,7 @@ fn elsewhere(c: Config, root: String, reni: String) : [String] =
 # The summoning script is the project's, and it expects to be run from
 # the project: a kalku that builds elsewhere measures elsewhere.
 fn summoning(c: Config, root: String) : String =
-  "cd '#{root}' && exec '#{c.summon.unwrap_or("")}' \"$@\""
+  "cd '#{root}' && exec '#{c.summon |> unwrap_or("")}' \"$@\""
 
 fn shortened(path: String, root: String) : String =
   if starts_with(path, "#{root}/") { slice(path, length(root) + 1, length(path)) } else { path }
@@ -756,7 +758,7 @@ fn tool_ran(
   }
 
 # A root the host named, or the one it is standing in.
-fn root_of(c: Call) : String = c.root.unwrap_or(".")
+fn root_of(c: Call) : String = c.root |> unwrap_or(".")
 
 fn measured_for(
   id: Option[Int],
@@ -800,7 +802,7 @@ fn asked_by_host(c: Call) : Result[Option[Asking], String] / Stderr + Env + File
       Some(
         Asking {
           ...asking_at(cfg, root, files, declared),
-          limit: c.limit.unwrap_or(if is_some(touched) { 0 } else { DEFAULT_LIMIT }),
+          limit: c.limit |> unwrap_or(if is_some(touched) { 0 } else { DEFAULT_LIMIT }),
           touched: touched
         }
       )
@@ -906,7 +908,7 @@ fn proposal_written(
 fn as_agent(root: String, id: Option[Int], found: Found) : String / File + Env {
   remember_in(root, found.cast)
   match found.report {
-    None -> refused(id, found.failure.unwrap_or("nothing measured"))
+    None -> refused(id, found.failure |> unwrap_or("nothing measured"))
     Some(r) -> answered(id, agent(r, of_files(sources_of(r))))
   }
 }
@@ -959,7 +961,7 @@ fn measured_over(
   # A run that cannot read what the project declared does not start: the
   # alternative is measuring while ignoring a suppression, and reporting
   # a hole somebody already decided was not one.
-  let asking = asking_at(c, p.root, files, declared_equivalents(p.root).unwrap_or([]))
+  let asking = asking_at(c, p.root, files, declared_equivalents(p.root) |> unwrap_or([]))
   # Asked before the pool is opened, and never while it is being opened:
   # a kalku greeting its way to `ready` talks into the same mailbox this
   # is waiting on, and two conversations in one mailbox is how a run

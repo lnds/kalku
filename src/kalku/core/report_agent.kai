@@ -284,7 +284,7 @@ fn undent(lines: [String]) : [String] {
 # source with an accent in it would otherwise lose characters instead of
 # leading blanks.
 fn undented(line: String, shared: Int) : String = if length(line) >= shared {
-  byte_slice(line, shared, length(line) - shared).unwrap_or(trim_left(line))
+  byte_slice(line, shared, length(line) - shared) |> unwrap_or(trim_left(line))
 } else {
   trim_left(line)
 }

@@ -34,7 +34,7 @@ fn cache_home() : String / Env = match Env.get("XDG_CACHE_HOME") {
   None -> home_cache()
 }
 
-fn home_cache() : String / Env = "#{Env.get("HOME").unwrap_or("/tmp")}/.cache"
+fn home_cache() : String / Env = "#{Env.get("HOME") |> unwrap_or("/tmp")}/.cache"
 
 # A repository can have more than one first commit, when histories were
 # joined; the least of them names it, so every clone picks the same one.
@@ -54,7 +54,8 @@ fn inside(prefix: String) : String = if is_empty(prefix) { "top" } else { path_k
 
 fn by_path(root: String) : String / Env = "path/#{path_key(absolute(root))}"
 
-fn asked(root: String, args: [String]) : Option[String] / Process = diffing.git(root, args, "").ok()
+fn asked(root: String, args: [String]) : Option[String] / Process =
+  diffing.git(root, args, "") |> ok
 
 #[doc("""
 The store kept at this path: none when there is none, and an error that

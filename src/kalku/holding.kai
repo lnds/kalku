@@ -76,7 +76,7 @@ pub fn keep_baseline(r: Report, code: Int) : Unit / Stderr + File = if code != 0
   Stderr.eprint("kalku: baseline not stored: this run did not end clean")
 } else {
   let was = if file.exists(BASELINE_PATH) {
-    ratchet.read(file.read(BASELINE_PATH)).ok()
+    ratchet.read(file.read(BASELINE_PATH)) |> ok
   } else {
     None
   }

@@ -65,17 +65,17 @@ fn step_of(line: String, no: Int) : Result[Step, String] = match json_decode(lin
 }
 
 fn read_step(v: JsonValue) : Step = Step {
-  expect: as_string(get(v, "expect")).unwrap_or("*"),
+  expect: as_string(get(v, "expect")) |> unwrap_or("*"),
   reply: value_at(v, "reply"),
-  delay_ms: as_int(get(v, "delay_ms")).unwrap_or(0),
-  hang: as_bool(get(v, "hang")).unwrap_or(false),
-  ignore_abort: as_bool(get(v, "ignore_abort")).unwrap_or(false),
-  crash: as_bool(get(v, "crash")).unwrap_or(false),
-  garbage: as_bool(get(v, "garbage")).unwrap_or(false),
+  delay_ms: as_int(get(v, "delay_ms")) |> unwrap_or(0),
+  hang: as_bool(get(v, "hang")) |> unwrap_or(false),
+  ignore_abort: as_bool(get(v, "ignore_abort")) |> unwrap_or(false),
+  crash: as_bool(get(v, "crash")) |> unwrap_or(false),
+  garbage: as_bool(get(v, "garbage")) |> unwrap_or(false),
   stderr: as_string(get(v, "stderr")),
   spawn: as_string(get(v, "spawn")),
-  repeat: as_int(get(v, "repeat")).unwrap_or(1),
-  optional: as_bool(get(v, "optional")).unwrap_or(false)
+  repeat: as_int(get(v, "repeat")) |> unwrap_or(1),
+  optional: as_bool(get(v, "optional")) |> unwrap_or(false)
 }
 
 fn value_at(v: JsonValue, key: String) : Option[JsonValue] = match get(v, key) {

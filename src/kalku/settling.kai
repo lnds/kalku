@@ -81,7 +81,7 @@ pub fn reni_here(root: String) : String / Env =
 pub fn absolute(root: String) : String / Env = if paths.is_absolute(root) {
   root
 } else {
-  "#{Env.get("PWD").unwrap_or("")}/#{root}"
+  "#{Env.get("PWD") |> unwrap_or("")}/#{root}"
 }
 
 #[doc("A project nobody set up: its language, the summoning a run wrote for it, and the configuration `init` would have written.")]
@@ -150,7 +150,7 @@ fn standing_in() : String / Env = match Env.get("PWD") {
 fn last_segment(p: String) : String =
   paths.basename(if ends_with(p, "/") { slice(p, 0, length(p) - 1) } else { p })
 
-fn temp_dir() : String / Env = Env.get("TMPDIR").unwrap_or("/tmp")
+fn temp_dir() : String / Env = Env.get("TMPDIR") |> unwrap_or("/tmp")
 
 # ---- asking -------------------------------------------------------------
 
@@ -248,13 +248,14 @@ fn make_runnable(path: String) : Unit / Process {
 
 # The line this project still needs, if it needs one: a language whose
 # kalku is a dependency, and a build file that does not name it yet.
-fn dependency_wanted(root: String, plan: Plan) : Option[String] / File = plan.dependency.and_then(
-  line => if depends_already(plan.known, build_file_of(root, plan.known)) {
-    None
-  } else {
-    Some(line)
-  }
-)
+fn dependency_wanted(root: String, plan: Plan) : Option[String] / File = plan.dependency
+  |> and_then(
+    line => if depends_already(plan.known, build_file_of(root, plan.known)) {
+      None
+    } else {
+      Some(line)
+    }
+  )
 
 fn declare_dependency(
   root: String,

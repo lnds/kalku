@@ -52,7 +52,7 @@ fn outcome_of(said: [String], wekufe: String) : String = match find(
 }
 
 fn field(line: String, name: String) : String = match json_decode(line) {
-  Some(v) -> as_string(get(v, name)).unwrap_or("")
+  Some(v) -> as_string(get(v, name)) |> unwrap_or("")
   None -> ""
 }
 
@@ -80,13 +80,13 @@ test "the three outcomes a cast can have, against a real package" {
 # A kill names the test that noticed, so a report can point at it.
 test "a kill names the test that noticed" {
   let said = told([hello(), "{\"type\":\"prepare\",\"id\":2}", cast(3, "covered", 305, 307, ">")])
-  let line = find(said, l => has(l, "\"wekufe\":\"covered\"")).unwrap_or("")
+  let line = find(said, l => has(l, "\"wekufe\":\"covered\"")) |> unwrap_or("")
 
   assert has(field(line, "killed_by"), "tests/tiny_test.kai")
 }
 
 test "it greets as a kaikai kalku and claims only what it can do" {
-  let ready = head(told([hello()])).unwrap_or("")
+  let ready = head(told([hello()])) |> unwrap_or("")
 
   assert field(ready, "type") == "ready"
   assert field(ready, "language") == "kaikai"
@@ -103,13 +103,13 @@ test "it greets as a kaikai kalku and claims only what it can do" {
 
 # An oracle judges the package as one test and says nothing of lines.
 test "under an oracle no coverage is claimed" {
-  let ready = head(told([hello_with("{\"oracle\":\"kai test .\"}")])).unwrap_or("")
+  let ready = head(told([hello_with("{\"oracle\":\"kai test .\"}")])) |> unwrap_or("")
   assert field(ready, "type") == "ready"
   assert not has(ready, "per_test_coverage")
 }
 
 fn baseline_line(said: [String]) : String =
-  find(said, l => has(l, "\"type\":\"baseline_done\"")).unwrap_or("")
+  find(said, l => has(l, "\"type\":\"baseline_done\"")) |> unwrap_or("")
 
 # Each line is credited to the tests that ran it, as `kai test --coverage`
 # says them. `clamp/1` is run by one test only, and `wrapped/1`'s line by
@@ -175,7 +175,7 @@ test "sites come from kaikai's own parser, with the span and text to match" {
     "{\"type\":\"prepare\",\"id\":2}",
     "{\"type\":\"sites\",\"id\":3,\"files\":[\"tiny.kai\"],\"spells\":[\"compare\"],\"exclude_calls\":[]}"
   ])
-  let found = find(said, l => has(l, "sites_found")).unwrap_or("")
+  let found = find(said, l => has(l, "sites_found")) |> unwrap_or("")
 
   assert has(found, "\"enclosing\":\"tiny.above/2\"")
   assert has(found, "\"original\":\">=\"")
@@ -189,7 +189,7 @@ test "a reni inside the package is refused rather than nested" {
   let nested =
     "{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":\"#{TINY}\",\"reni\":\"#{TINY}/inner\",\"worker\":0,\"inline_limit_bytes\":65536,\"env\":{}}"
   let said = told([nested, "{\"type\":\"prepare\",\"id\":2}"])
-  let answer = find(said, l => has(l, "\"id\":2")).unwrap_or("")
+  let answer = find(said, l => has(l, "\"id\":2")) |> unwrap_or("")
 
   assert field(answer, "type") == "error"
   assert field(answer, "code") == "prepare_failed"
@@ -331,9 +331,9 @@ test "a kalku whose run is gone ends in the middle of a cast, and the package is
 }
 
 fn error_of(said: [String]) : String =
-  find(said, l => has(l, "\"type\":\"error\"")).map(
+  find(said, l => has(l, "\"type\":\"error\"")) |> map(
     l => "#{field(l, "code")}: #{field(l, "message")}"
-  ).unwrap_or("no error")
+  ) |> unwrap_or("no error")
 
 # An oracle is any command, judged by its exit status alone. `kai test`
 # exits non-zero when a test fails, so as an oracle it kills what the
@@ -350,7 +350,7 @@ test "a project's oracle judges a wekufe by how it exits" {
   assert outcome_of(said, "covered") == "killed"
   assert outcome_of(said, "uncovered") == "survived"
   assert outcome_of(said, "broken") == "compile_error"
-  let line = find(said, l => has(l, "\"wekufe\":\"covered\"")).unwrap_or("")
+  let line = find(said, l => has(l, "\"wekufe\":\"covered\"")) |> unwrap_or("")
   assert field(line, "killed_by") == "kai test ."
 }
 
@@ -360,7 +360,7 @@ test "the oracle is the whole suite of a baseline" {
     "{\"type\":\"prepare\",\"id\":2}",
     "{\"type\":\"baseline\",\"id\":3}"
   ])
-  let line = find(green, l => has(l, "\"type\":\"baseline_done\"")).unwrap_or("")
+  let line = find(green, l => has(l, "\"type\":\"baseline_done\"")) |> unwrap_or("")
   assert field(line, "status") == "green"
   assert has(line, "\"test\":\"kai test .\"")
 
@@ -369,7 +369,7 @@ test "the oracle is the whole suite of a baseline" {
     "{\"type\":\"prepare\",\"id\":2}",
     "{\"type\":\"baseline\",\"id\":3}"
   ])
-  assert field(find(red, l => has(l, "\"type\":\"baseline_done\"")).unwrap_or(""), "status")
+  assert field(find(red, l => has(l, "\"type\":\"baseline_done\"")) |> unwrap_or(""), "status")
     == "red"
 }
 
@@ -411,7 +411,7 @@ test "a kalku that ran the baseline judges a wekufe as one only prepared would" 
     cast(8, "covered-again", 305, 307, ">")
   ])
 
-  assert has(find(said, l => has(l, "baseline_done")).unwrap_or(""), "\"status\":\"green\"")
+  assert has(find(said, l => has(l, "baseline_done")) |> unwrap_or(""), "\"status\":\"green\"")
   assert outcome_of(said, "covered") == "killed"
   assert outcome_of(said, "uncovered") == "survived"
   assert outcome_of(said, "broken") == "compile_error"
@@ -435,7 +435,7 @@ fn baseline_of_package(root: String, reni: String, reuse: String) : String / Pro
 
 fn of_each_test(line: String, name: String) : [String] = match json_decode(line) {
   Some(v) -> match get(v, "tests") {
-    JArr(tests) -> tests | (t => as_string(get(t, name)).unwrap_or(""))
+    JArr(tests) -> tests | (t => unwrap_or(as_string(get(t, name)), ""))
     _ -> []
   }
   None -> []
@@ -443,7 +443,7 @@ fn of_each_test(line: String, name: String) : [String] = match json_decode(line)
 
 fn reused_of(line: String) : [String] = match json_decode(line) {
   Some(v) -> match get(v, "reused") {
-    JArr(ids) -> ids | (i => as_string(i).unwrap_or(""))
+    JArr(ids) -> ids | (i => unwrap_or(as_string(i), ""))
     _ -> []
   }
   None -> []
@@ -528,7 +528,7 @@ test "under an oracle nothing is fingerprinted" {
   let oracle = hello_with("{\"oracle\":\"kai test .\"}")
   let said = told([oracle, "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":3}"])
 
-  assert not has(head(said).unwrap_or(""), "partial_baseline")
+  assert not has(head(said) |> unwrap_or(""), "partial_baseline")
   assert field(baseline_line(said), "status") == "green"
   assert not has(baseline_line(said), "fingerprint")
 }

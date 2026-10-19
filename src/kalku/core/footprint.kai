@@ -69,7 +69,7 @@ pub fn ceiling_mb(asked: Option[Int], total_mb: Int, workers: Int) : Int = match
 pub fn beyond(used_mb: Int, ceiling: Int) : Bool = ceiling > 0 and used_mb > ceiling
 
 #[doc("Megabytes from `sysctl -n hw.memsize`, which is a count of bytes; `0` when it is not one.")]
-pub fn memsize_mb(text: String) : Int = to_int(trim(text)).unwrap_or(0) / 1048576
+pub fn memsize_mb(text: String) : Int = unwrap_or(to_int(trim(text)), 0) / 1048576
 
 #[doc("Megabytes from the `MemTotal` line of `/proc/meminfo`, which is a count of kilobytes; `0` when there is none.")]
 pub fn meminfo_mb(text: String) : Int = match find(
@@ -77,7 +77,7 @@ pub fn meminfo_mb(text: String) : Int = match find(
   l => starts_with(l, "MemTotal:")
 ) {
   Some(l) -> match filter(split(l, " "), w => w != "") {
-    [_, kb, ..._] -> to_int(kb).unwrap_or(0) / 1024
+    [_, kb, ..._] -> unwrap_or(to_int(kb), 0) / 1024
     _ -> 0
   }
   None -> 0
