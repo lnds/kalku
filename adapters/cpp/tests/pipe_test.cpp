@@ -558,6 +558,117 @@ TEST("a doctest executable registered as one test is measured case by case") {
   remove_tree(reni);
 }
 
+namespace {
+
+// When each object under a build tree was last written, to the nanosecond.
+void objects(const std::string& dir, const std::string& rel, std::map<std::string, long long>& out) {
+  DIR* d = opendir(dir.c_str());
+  if (!d) return;
+  while (dirent* e = readdir(d)) {
+    std::string name = e->d_name;
+    if (name == "." || name == "..") continue;
+    std::string path = dir + "/" + name;
+    struct stat st;
+    if (lstat(path.c_str(), &st) != 0) continue;
+    if (S_ISDIR(st.st_mode)) {
+      objects(path, rel + name + "/", out);
+    } else if (name.size() > 2 && name.compare(name.size() - 2, 2, ".o") == 0) {
+#ifdef __APPLE__
+      out[rel + name] = st.st_mtimespec.tv_sec * 1000000000LL + st.st_mtimespec.tv_nsec;
+#else
+      out[rel + name] = st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+#endif
+    }
+  }
+  closedir(d);
+}
+
+std::string hello_of(const std::string& root, const std::string& reni, int worker, const std::string& options) {
+  return "{\"type\":\"hello\",\"id\":1,\"protocol\":1,\"root\":" + kalku::quote(root) +
+         ",\"reni\":" + kalku::quote(reni) + ",\"worker\":" + std::to_string(worker) +
+         ",\"inline_limit_bytes\":65536,\"env\":{},\"options\":" + options + "}";
+}
+
+}  // namespace
+
+TEST("under make the workers copy one build, and none sees another's wekufe") {
+  if (!have_cmake()) return;
+  std::string root = here("testdata/projects/ctest");
+  std::map<std::string, std::string> before;
+  snapshot(root, "", before);
+  std::string reni = temp_reni();
+  const std::string make = "{\"cmake_args\":[\"-G\",\"Unix Makefiles\"]}";
+  const std::string both = "[\"basics\",\"edges\"]";
+
+  Kalku first(KALKU_CPP_BIN);
+  first.send(hello_of(root, reni, 0, make));
+  CHECK_EQ(field(first.next(), "type"), std::string("ready"));
+  first.send("{\"type\":\"prepare\",\"id\":2}");
+  CHECK_EQ(field(first.next(), "type"), std::string("prepared"));
+  first.send(
+      "{\"type\":\"sites\",\"id\":3,\"files\":[\"src/calc.cpp\",\"include/calc.hpp\"],"
+      "\"spells\":[\"compare\",\"negate\",\"literal\"],\"exclude_calls\":[]}");
+  auto by = by_place(first.next());
+  std::map<std::string, long long> base;
+  objects(reni + "/build/base", "", base);
+  CHECK(!base.empty());
+
+  // The first worker's wekufe loops for good, and is in its copy while the
+  // second worker prepares and casts.
+  auto loops = by.find("src/calc.cpp:25 literal 2");
+  CHECK(loops != by.end());
+  if (loops == by.end()) {
+    remove_tree(reni);
+    return;
+  }
+  first.send(cast_of(10, loops->second, both));
+  usleep(500 * 1000);
+
+  Kalku second(KALKU_CPP_BIN);
+  second.send(hello_of(root, reni, 1, make));
+  CHECK_EQ(field(second.next(), "type"), std::string("ready"));
+  second.send("{\"type\":\"prepare\",\"id\":2}");
+  CHECK_EQ(field(second.next(), "type"), std::string("prepared"));
+
+  // Nothing was compiled again: every object is the base's, as it was built.
+  std::map<std::string, long long> copied;
+  objects(reni + "/build/1", "", copied);
+  CHECK(copied == base);
+  CHECK_EQ(read(reni + "/work/1/src/calc.cpp"), read(root + "/src/calc.cpp"));
+
+  // A header's wekufe still reaches every file that includes it, in the
+  // worker's own copy, and the other worker's wekufe reaches none of them.
+  int id = 20;
+  for (const auto& e : std::vector<Expect>{
+           {"include/calc.hpp:11 compare >", "killed", "edges"},
+           {"src/calc.cpp:7 compare >", "survived", ""},
+           {"src/calc.cpp:6 negate v < lo", "killed", "basics"},
+       }) {
+    auto it = by.find(e.site);
+    if (it == by.end()) {
+      kalku::testing::failed("sites", "no site " + e.site);
+      continue;
+    }
+    second.send(cast_of(id++, it->second, both));
+    std::string done = second.next();
+    CHECK_EQ(field(done, "outcome") + " " + e.site, e.outcome + " " + e.site);
+    CHECK_EQ(field(done, "killed_by") + " " + e.site, e.killed_by + " " + e.site);
+  }
+
+  first.send("{\"type\":\"abort\",\"id\":11,\"cast\":10}");
+  CHECK_EQ(field(first.next(), "restored"), std::string("true"));
+  for (Kalku* k : {&first, &second}) {
+    k->send("{\"type\":\"shutdown\",\"id\":99}");
+    CHECK_EQ(field(k->next(), "type"), std::string("bye"));
+    k->close_input();
+    CHECK_EQ(k->wait_exit(), 0);
+  }
+  std::map<std::string, std::string> after;
+  snapshot(root, "", after);
+  CHECK(before == after);
+  remove_tree(reni);
+}
+
 TEST("input that ends with no shutdown ends the kalku at once") {
   Kalku k(KALKU_CPP_BIN);
   k.close_input();

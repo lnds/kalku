@@ -1,6 +1,8 @@
 // One CMake project, as the kalku works on it: a copy of its tree in the
 // reni, configured and built in a build tree of its own beside it, and its
-// tests as CTest lists them.
+// tests as CTest lists them. Under make every worker's copy and build tree
+// are copied from one base, built once for them all, which no wekufe is
+// ever written into.
 #pragma once
 
 #include <atomic>
@@ -62,6 +64,11 @@ struct Compile {
   bool c = false;
 };
 
+// How bringing the base up to date ended: done; `Unshared`, configured
+// for a generator other than make, so each worker builds for itself; or
+// stopped at the step named.
+enum class BaseStage { Done, Unshared, Copy, Configure, Build };
+
 class Project {
  public:
   Project(const Hello& h, std::vector<std::string> cmake_args);
@@ -74,6 +81,16 @@ class Project {
   // build trees, and the reni.
   bool copy(std::string* why);
   bool copy_files(const std::vector<std::string>& files, std::string* why);
+
+  // True when the build tree can be copied from the base: make dates its
+  // outputs and nothing else, so a copy that keeps the dates is up to date.
+  // Ninja keeps the commands it ran in its own logs, and rebuilds anything
+  // moved.
+  bool shares_build() const;
+  // Brings the base up to date with the project, building it if need be,
+  // and makes this worker's copy and build tree a copy of it. `ran` is the
+  // command that failed, if one did.
+  BaseStage from_base(Ran* ran, std::string* why);
 
   Ran configure(const std::atomic<bool>* cancel = nullptr);
   Ran build(const std::atomic<bool>* cancel = nullptr);
@@ -103,15 +120,21 @@ class Project {
  private:
   std::string root_;
   std::string reni_;
+  std::string worker_;
   std::string work_;
   std::string build_;
+  std::string base_work_;
+  std::string base_build_;
   std::string junit_;
   // Where a framework writes its list of cases, or its report of a run.
   std::string cases_xml_;
   std::vector<std::string> env_;
   std::vector<std::string> cmake_args_;
-  // The build tree dates its outputs finer than to the second.
-  bool precise() const;
+  std::string generator() const;
+  Ran configure_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel);
+  Ran build_in(const std::string& build, const std::atomic<bool>* cancel);
+  // Paths of the base, as this worker's copy and build tree name them.
+  std::vector<std::pair<std::string, std::string>> rebased() const;
 
   // The cases of a test that runs one executable of a framework the kalku
   // lists; none, with why, when it cannot list them.
@@ -119,6 +142,8 @@ class Project {
   void run_ctest(const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out);
   void run_cases(int suite, const std::vector<const Test*>& tests, const std::atomic<bool>* cancel, TestRun& out);
 
+  // The copy and its build tree came from the base.
+  bool shared_ = false;
   std::vector<Test> tests_;
   std::vector<Suite> suites_;
   std::vector<std::string> listed_;
