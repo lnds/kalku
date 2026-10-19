@@ -44,7 +44,9 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
 - **Prepares** a copy of the project in the reni — everything but `.git` and
   any directory CMake built into — configured into a build tree of its own
   with `BUILD_TESTING=ON`, and built. Ninja is used when it is on the `PATH`
-  and nobody chose a generator.
+  and nobody chose a generator. Under make the project is built once, in a
+  base no wekufe is ever written into, and each worker's copy and build tree
+  are copied from it with their dates, so no worker compiles it again.
 - **Casts** by writing the wekufe into the copy, rebuilding, running the
   selected tests through CTest, and putting the file back before it answers.
   A build that fails is `compile_error`, with what the compiler said.
@@ -69,7 +71,9 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
   from the executable, and reads each one's verdict from the framework's XML
   report. When it cannot list them it runs the executable whole and says why
   in the baseline's differences.
-- Each worker builds the whole project in `prepare`, in its own build tree.
+- Under Ninja each worker builds the whole project in `prepare`, in its own
+  build tree: Ninja keeps the commands it ran in logs of its own, and a copy
+  of its build tree names other paths, so it would build it all again.
 - A build that turns warnings into errors (`-Werror`) makes a wekufe that
   leaves a variable unused a compile error, not a measurement.
 - Under make, which dates what it builds to the second, a cast waits for the

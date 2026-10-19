@@ -182,14 +182,30 @@ std::string Service::prepare(std::int64_t id) {
   auto started = std::chrono::steady_clock::now();
   copied_ = false;
   std::string why;
-  if (!ready_to_read(&why)) return error(id, "prepare_failed", why, true);
-  // Configured again whatever the copy held, so the build tree is the one
-  // this copy and these options make.
-  Ran c = project_->configure();
-  if (!c.ok()) {
-    return error(id, "prepare_failed",
-                 "cmake could not configure the project: " + diagnostic(project_->named(c.output)), true);
+  Ran ran;
+  BaseStage stage = project_->shares_build() ? project_->from_base(&ran, &why) : BaseStage::Unshared;
+  if (stage == BaseStage::Copy) {
+    return error(id, "prepare_failed", "cannot copy the project into the reni: " + why, true);
   }
+  if (stage == BaseStage::Configure) {
+    return error(id, "prepare_failed",
+                 "cmake could not configure the project: " + diagnostic(project_->named(ran.output)), true);
+  }
+  if (stage == BaseStage::Build) {
+    return error(id, "prepare_failed", "the project did not build: " + diagnostic(project_->named(ran.output)), true);
+  }
+  copied_ = stage == BaseStage::Done;
+  if (stage == BaseStage::Unshared) {
+    if (!ready_to_read(&why)) return error(id, "prepare_failed", why, true);
+    // Configured again whatever the copy held, so the build tree is the one
+    // this copy and these options make.
+    Ran c = project_->configure();
+    if (!c.ok()) {
+      return error(id, "prepare_failed",
+                   "cmake could not configure the project: " + diagnostic(project_->named(c.output)), true);
+    }
+  }
+  // What the copy of the base left out of date, if anything, is built here.
   Ran b = project_->build();
   if (!b.ok()) {
     return error(id, "prepare_failed", "the project did not build: " + diagnostic(project_->named(b.output)), true);

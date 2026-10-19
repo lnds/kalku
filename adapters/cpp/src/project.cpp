@@ -1,6 +1,8 @@
 #include "project.hpp"
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -18,6 +20,7 @@
 
 #include "cases.hpp"
 #include "json.hpp"
+#include "version.hpp"
 
 namespace kalku {
 
@@ -126,7 +129,10 @@ bool exists(const std::string& path) {
 // copy gigabytes of somebody else's objects.
 bool build_tree(const std::string& dir) { return exists(dir + "/CMakeCache.txt"); }
 
-bool sync_tree(const std::string& from, const std::string& to, const std::string& reni, bool top, std::string* why) {
+// Makes `to` hold what `from` does, writing only what differs; `changed`
+// says whether anything did.
+bool sync_tree(const std::string& from, const std::string& to, const std::string& reni, bool top, std::string* why,
+               bool* changed) {
   if (!make_dirs(to)) {
     *why = "cannot make " + to;
     return false;
@@ -148,6 +154,7 @@ bool sync_tree(const std::string& from, const std::string& to, const std::string
       ssize_t m = readlink(dst.c_str(), old, sizeof old - 1);
       if (m < 0 || std::string(old, static_cast<std::size_t>(m)) != target) {
         remove_all(dst);
+        *changed = true;
         if (symlink(target, dst.c_str()) != 0) {
           *why = "cannot link " + dst;
           return false;
@@ -157,7 +164,7 @@ bool sync_tree(const std::string& from, const std::string& to, const std::string
       if (build_tree(src)) continue;
       struct stat dt;
       if (lstat(dst.c_str(), &dt) == 0 && !S_ISDIR(dt.st_mode)) remove_all(dst);
-      if (!sync_tree(src, dst, reni, false, why)) return false;
+      if (!sync_tree(src, dst, reni, false, why, changed)) return false;
     } else if (S_ISREG(st.st_mode)) {
       bool ok = false;
       std::string data = read_file(src, &ok);
@@ -170,8 +177,105 @@ bool sync_tree(const std::string& from, const std::string& to, const std::string
       }
       struct stat dt;
       if (lstat(dst.c_str(), &dt) == 0 && !S_ISREG(dt.st_mode)) remove_all(dst);
+      *changed = true;
       if (!write_file(dst, data, st.st_mode & 07777)) {
         *why = "cannot write " + dst;
+        return false;
+      }
+    } else {
+      continue;
+    }
+    wanted.push_back(name);
+  }
+  for (const auto& name : entries(to)) {
+    if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+      remove_all(to + "/" + name);
+      *changed = true;
+    }
+  }
+  return true;
+}
+
+struct timespec mtime_of(const struct stat& st) {
+#ifdef __APPLE__
+  return st.st_mtimespec;
+#else
+  return st.st_mtim;
+#endif
+}
+
+bool date(const std::string& path, const struct timespec& t) {
+  struct timespec times[2] = {t, t};
+  return utimensat(AT_FDCWD, path.c_str(), times, 0) == 0;
+}
+
+using Rewrites = std::vector<std::pair<std::string, std::string>>;
+
+// Text says the worker's paths where it said the base's. What holds a NUL
+// byte is an object, a library or an executable, and is left as it is: its
+// paths are only for a debugger, and make never reads them.
+std::string rebase(std::string data, const Rewrites& rw) {
+  if (data.find('\0') != std::string::npos) return data;
+  for (const auto& r : rw) {
+    std::size_t at = 0;
+    while ((at = data.find(r.first, at)) != std::string::npos) {
+      data.replace(at, r.first.size(), r.second);
+      at += r.second.size();
+    }
+  }
+  return data;
+}
+
+// Makes `to` the tree `from` is, each file dated as it is there, so that
+// make finds in the copy what it found built in the original.
+bool clone_tree(const std::string& from, const std::string& to, const Rewrites& rw, std::string* why) {
+  if (!make_dirs(to)) {
+    *why = "cannot make " + to;
+    return false;
+  }
+  std::vector<std::string> wanted;
+  for (const auto& name : entries(from)) {
+    std::string src = from + "/" + name;
+    std::string dst = to + "/" + name;
+    struct stat st, dt;
+    if (lstat(src.c_str(), &st) != 0) continue;
+    bool there = lstat(dst.c_str(), &dt) == 0;
+    if (S_ISLNK(st.st_mode)) {
+      char target[PATH_MAX];
+      ssize_t n = readlink(src.c_str(), target, sizeof target - 1);
+      if (n < 0) continue;
+      std::string want = rebase(std::string(target, static_cast<std::size_t>(n)), rw);
+      char old[PATH_MAX];
+      ssize_t m = there ? readlink(dst.c_str(), old, sizeof old - 1) : -1;
+      if (m < 0 || std::string(old, static_cast<std::size_t>(m)) != want) {
+        remove_all(dst);
+        if (symlink(want.c_str(), dst.c_str()) != 0) {
+          *why = "cannot link " + dst;
+          return false;
+        }
+      }
+    } else if (S_ISDIR(st.st_mode)) {
+      if (there && !S_ISDIR(dt.st_mode)) remove_all(dst);
+      if (!clone_tree(src, dst, rw, why)) return false;
+    } else if (S_ISREG(st.st_mode)) {
+      bool ok = false;
+      std::string data = read_file(src, &ok);
+      if (!ok) {
+        *why = "cannot read " + src;
+        return false;
+      }
+      data = rebase(std::move(data), rw);
+      bool same = there && S_ISREG(dt.st_mode) && static_cast<std::size_t>(dt.st_size) == data.size() &&
+                  (dt.st_mode & 07777) == (st.st_mode & 07777) && read_file(dst) == data;
+      if (!same) {
+        if (there && !S_ISREG(dt.st_mode)) remove_all(dst);
+        if (!write_file(dst, data, st.st_mode & 07777)) {
+          *why = "cannot write " + dst;
+          return false;
+        }
+      }
+      if (!date(dst, mtime_of(st))) {
+        *why = "cannot date " + dst;
         return false;
       }
     } else {
@@ -184,6 +288,32 @@ bool sync_tree(const std::string& from, const std::string& to, const std::string
   }
   return true;
 }
+
+std::string generator_of(const std::string& build) {
+  bool ok = false;
+  std::string cache = read_file(build + "/CMakeCache.txt", &ok);
+  const std::string key = "CMAKE_GENERATOR:INTERNAL=";
+  auto at = ok ? cache.find(key) : std::string::npos;
+  if (at == std::string::npos) return "";
+  at += key.size();
+  return cache.substr(at, cache.find('\n', at) - at);
+}
+
+// Held from open to close; closing the file ends it, and so does the end of
+// the process, however it ends.
+class Lock {
+ public:
+  explicit Lock(const std::string& path) : fd_(open(path.c_str(), O_RDWR | O_CREAT, 0644)) {}
+  ~Lock() {
+    if (fd_ >= 0) close(fd_);
+  }
+  Lock(const Lock&) = delete;
+  Lock& operator=(const Lock&) = delete;
+  bool take(bool exclusive) { return fd_ >= 0 && flock(fd_, exclusive ? LOCK_EX : LOCK_SH) == 0; }
+
+ private:
+  int fd_;
+};
 
 std::string resolved(const std::string& path) {
   char buf[PATH_MAX];
@@ -351,11 +481,13 @@ bool is_test_file(const std::string& file) {
 
 Project::Project(const Hello& h, std::vector<std::string> cmake_args)
     : root_(h.root), reni_(h.reni), cmake_args_(std::move(cmake_args)) {
-  std::string worker = std::to_string(h.worker);
-  work_ = reni_ + "/work/" + worker;
-  build_ = reni_ + "/build/" + worker;
-  junit_ = reni_ + "/junit-" + worker + ".xml";
-  cases_xml_ = reni_ + "/cases-" + worker + ".xml";
+  worker_ = std::to_string(h.worker);
+  work_ = reni_ + "/work/" + worker_;
+  build_ = reni_ + "/build/" + worker_;
+  base_work_ = reni_ + "/work/base";
+  base_build_ = reni_ + "/build/base";
+  junit_ = reni_ + "/junit-" + worker_ + ".xml";
+  cases_xml_ = reni_ + "/cases-" + worker_ + ".xml";
   for (const char* k : INHERITED) {
     if (const char* v = std::getenv(k)) env_.push_back(std::string(k) + "=" + v);
   }
@@ -363,7 +495,8 @@ Project::Project(const Hello& h, std::vector<std::string> cmake_args)
 }
 
 bool Project::copy(std::string* why) {
-  if (!sync_tree(root_, work_, reni_, true, why)) return false;
+  bool changed = false;
+  if (!sync_tree(root_, work_, reni_, true, why, &changed)) return false;
   work_ = resolved(work_);
   make_dirs(build_);
   build_ = resolved(build_);
@@ -390,12 +523,92 @@ bool Project::copy_files(const std::vector<std::string>& files, std::string* why
 
 bool Project::configured() const { return exists(build_ + "/CMakeCache.txt"); }
 
+// The generator CMake is told to use, or empty for its own default.
+std::string Project::generator() const {
+  std::string chosen;
+  for (std::size_t i = 0; i < cmake_args_.size(); i++) {
+    const std::string& a = cmake_args_[i];
+    if (a == "-G" && i + 1 < cmake_args_.size()) {
+      chosen = cmake_args_[i + 1];
+    } else if (a.rfind("-G", 0) == 0 && a.size() > 2) {
+      chosen = a.substr(2);
+    }
+  }
+  for (const auto& kv : env_) {
+    if (chosen.empty() && kv.rfind("CMAKE_GENERATOR=", 0) == 0) chosen = kv.substr(16);
+  }
+  if (chosen.empty() && on_path("ninja", env_)) chosen = "Ninja";
+  return chosen;
+}
+
+bool Project::shares_build() const {
+  std::string g = generator();
+  return g.empty() || g == "Unix Makefiles";
+}
+
+std::vector<std::pair<std::string, std::string>> Project::rebased() const {
+  std::vector<std::pair<std::string, std::string>> rw = {{base_work_, work_}, {base_build_, build_}};
+  // The reni as the kaikai side named it, where that is not its real path.
+  std::string raw = reni_ + "/work/base";
+  if (raw != base_work_) {
+    rw.emplace_back(raw, reni_ + "/work/" + worker_);
+    rw.emplace_back(reni_ + "/build/base", reni_ + "/build/" + worker_);
+  }
+  return rw;
+}
+
+// The base is brought up to date by one worker at a time, and copied by any
+// number of them while none is changing it. It is built again only when the
+// project or the options changed since it was last built whole.
+BaseStage Project::from_base(Ran* ran, std::string* why) {
+  make_dirs(reni_);
+  Lock lock(reni_ + "/base.lock");
+  if (!lock.take(true)) {
+    *why = "cannot lock " + reni_ + "/base.lock";
+    return BaseStage::Copy;
+  }
+  bool changed = false;
+  if (!sync_tree(root_, base_work_, reni_, true, why, &changed)) return BaseStage::Copy;
+  base_work_ = resolved(base_work_);
+  make_dirs(base_build_);
+  base_build_ = resolved(base_build_);
+  std::string done = reni_ + "/base.done";
+  std::string stamp = std::string(VERSION) + "\n";
+  for (const auto& a : cmake_args_) stamp += a + "\n";
+  for (const auto& kv : env_) stamp += kv + "\n";
+  bool ok = false;
+  bool current = !changed && read_file(done, &ok) == stamp && ok && exists(base_build_ + "/CMakeCache.txt");
+  if (!current) {
+    unlink(done.c_str());
+    *ran = configure_in(base_work_, base_build_, nullptr);
+    if (!ran->ok()) return BaseStage::Configure;
+    if (generator_of(base_build_) != "Unix Makefiles") return BaseStage::Unshared;
+    *ran = build_in(base_build_, nullptr);
+    if (!ran->ok()) return BaseStage::Build;
+    write_file(done, stamp);
+  }
+  if (!lock.take(false)) {
+    *why = "cannot lock " + reni_ + "/base.lock";
+    return BaseStage::Copy;
+  }
+  make_dirs(work_);
+  work_ = resolved(work_);
+  make_dirs(build_);
+  build_ = resolved(build_);
+  auto rw = rebased();
+  if (!clone_tree(base_work_, work_, rw, why) || !clone_tree(base_build_, build_, rw, why)) return BaseStage::Copy;
+  shared_ = true;
+  return BaseStage::Done;
+}
+
+Ran Project::configure(const std::atomic<bool>* cancel) { return configure_in(work_, build_, cancel); }
+
 // Ninja when the machine has it and nobody chose a generator: it dates
 // what it builds to the nanosecond and rebuilds one file quickly, which is
 // what every cast asks of it.
-Ran Project::configure(const std::atomic<bool>* cancel) {
+Ran Project::configure_in(const std::string& work, const std::string& build, const std::atomic<bool>* cancel) {
   std::vector<std::string> argv = {
-      "cmake", "-S", work_, "-B", build_, "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", "-DBUILD_TESTING=ON"};
+      "cmake", "-S", work, "-B", build, "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", "-DBUILD_TESTING=ON"};
   bool chosen = false;
   for (const auto& a : cmake_args_) chosen = chosen || a.rfind("-G", 0) == 0;
   for (const auto& kv : env_) chosen = chosen || kv.rfind("CMAKE_GENERATOR=", 0) == 0;
@@ -404,37 +617,33 @@ Ran Project::configure(const std::atomic<bool>* cancel) {
     argv.emplace_back("Ninja");
   }
   for (const auto& a : cmake_args_) argv.push_back(a);
-  Ran r = run(argv, work_, env_, cancel);
+  Ran r = run(argv, work, env_, cancel);
   if (!r.ok() && !r.cancelled && r.output.find("Does not match the generator used previously") != std::string::npos) {
     // A build tree of another generator is started over.
-    remove_all(build_ + "/CMakeCache.txt");
-    remove_all(build_ + "/CMakeFiles");
-    r = run(argv, work_, env_, cancel);
+    remove_all(build + "/CMakeCache.txt");
+    remove_all(build + "/CMakeFiles");
+    r = run(argv, work, env_, cancel);
   }
   return r;
 }
+
+Ran Project::build(const std::atomic<bool>* cancel) { return build_in(build_, cancel); }
 
 // Make dates what it builds to the second: an object built in the second
 // the library was last archived in is taken for older than it, and the
 // library is not archived again. So a build under make starts in a second
 // after the last one ended.
-Ran Project::build(const std::atomic<bool>* cancel) {
-  if (!precise() && last_build_ > 0) {
+Ran Project::build_in(const std::string& build, const std::atomic<bool>* cancel) {
+  if (generator_of(build).rfind("Ninja", 0) != 0 && last_build_ > 0) {
     while (static_cast<long>(std::time(nullptr)) <= last_build_) {
       if (cancel && cancel->load()) break;
       usleep(20 * 1000);
     }
   }
   unsigned n = std::max(1u, std::thread::hardware_concurrency());
-  Ran r = run({"cmake", "--build", build_, "--parallel", std::to_string(n)}, work_, env_, cancel);
+  Ran r = run({"cmake", "--build", build, "--parallel", std::to_string(n)}, build, env_, cancel);
   last_build_ = static_cast<long>(std::time(nullptr));
   return r;
-}
-
-bool Project::precise() const {
-  bool ok = false;
-  std::string cache = read_file(build_ + "/CMakeCache.txt", &ok);
-  return ok && cache.find("CMAKE_GENERATOR:INTERNAL=Ninja") != std::string::npos;
 }
 
 bool Project::list_tests(std::string* why) {
@@ -854,7 +1063,7 @@ int Project::translation_units() const {
 
 std::string Project::named(const std::string& message) const {
   std::string out = message;
-  for (const std::string& from : {work_ + "/", build_ + "/"}) {
+  for (const std::string& from : {work_ + "/", build_ + "/", base_work_ + "/", base_build_ + "/"}) {
     std::size_t at = 0;
     while ((at = out.find(from, at)) != std::string::npos) out.erase(at, from.size());
   }
@@ -867,9 +1076,12 @@ std::vector<std::string> Project::differences() const {
   std::vector<std::string> out = {
       "it ran in a copy of the project kept in the reni, " + work_ +
           ": what the copy leaves out is not there, `.git` and any directory CMake built into",
-      "it was configured afresh into a build tree of its own, " + build_ +
-          ", with BUILD_TESTING=ON and the project's own defaults: a cache you configured with other options is "
-          "not used",
+      shared_ ? "it was configured afresh with BUILD_TESTING=ON and the project's own defaults, built once in " +
+                    base_build_ + " and copied into a build tree of its own, " + build_ +
+                    ": a cache you configured with other options is not used"
+              : "it was configured afresh into a build tree of its own, " + build_ +
+                    ", with BUILD_TESTING=ON and the project's own defaults: a cache you configured with other "
+                    "options is not used",
       "the tests ran through `ctest`, one at a time, from that build tree",
       "the tests see none of your environment but " + passed +
           ": any other variable set for them in your shell is not there",
