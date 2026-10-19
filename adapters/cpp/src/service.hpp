@@ -2,6 +2,7 @@
 #pragma once
 
 #include <atomic>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -30,7 +31,7 @@ class Service {
   Reply greet(const Request& r);
   std::string prepare(std::int64_t id);
   std::string sites(std::int64_t id, const SitesRequest& r);
-  std::string baseline(std::int64_t id);
+  std::string baseline(std::int64_t id, const std::map<std::string, std::string>& reuse);
   Reply cast(std::int64_t id, const CastRequest& c, const std::atomic<bool>& cancel);
   std::string reload(std::int64_t id, const std::vector<std::string>& files);
   bool ready_to_read(std::string* why);

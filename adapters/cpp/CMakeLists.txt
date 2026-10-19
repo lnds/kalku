@@ -12,6 +12,7 @@ add_library(kalku_cpp STATIC
   src/cases.cpp
   src/clang.cpp
   src/coverage.cpp
+  src/fingerprint.cpp
   src/framing.cpp
   src/json.cpp
   src/ninja.cpp
@@ -43,6 +44,7 @@ add_executable(kalku-cpp-tests
   tests/cases_test.cpp
   tests/coverage_test.cpp
   tests/ninja_test.cpp
+  tests/fingerprint_test.cpp
   tests/protocol_test.cpp
   tests/sites_test.cpp
   tests/service_test.cpp

@@ -861,6 +861,124 @@ TEST("a test that passes in the suite and fails alone withholds the coverage") {
   remove_tree(reni);
 }
 
+namespace {
+
+// Each test a baseline ran, with the fingerprint it gave it, or "" for none.
+std::map<std::string, std::string> prints_of(const std::string& baseline) {
+  std::map<std::string, std::string> out;
+  auto doc = parse_json(baseline);
+  if (!doc || !doc->get("tests")) return out;
+  for (const auto& t : doc->get("tests")->items) {
+    const Json* f = t.get("fingerprint");
+    out[t.get("test")->text] = f ? f->text : "";
+  }
+  return out;
+}
+
+std::set<std::string> ran_in(const std::string& baseline) {
+  std::set<std::string> out;
+  for (const auto& kv : prints_of(baseline)) out.insert(kv.first);
+  return out;
+}
+
+std::set<std::string> reused_in(const std::string& baseline) {
+  std::set<std::string> out;
+  auto doc = parse_json(baseline);
+  if (doc && doc->get("reused")) {
+    for (const auto& t : doc->get("reused")->items) out.insert(t.text);
+  }
+  return out;
+}
+
+// The tests a baseline is offered back, each with the fingerprint it had.
+std::string offer(const std::map<std::string, std::string>& prints) {
+  std::string out;
+  for (const auto& kv : prints) {
+    if (kv.second.empty()) continue;
+    out += std::string(out.empty() ? "" : ",") + "{\"test\":" + kalku::quote(kv.first) +
+           ",\"fingerprint\":" + kalku::quote(kv.second) + "}";
+  }
+  return "[" + out + "]";
+}
+
+// A kalku summoned afresh, prepared, and asked for a baseline.
+std::string baseline_offered(const std::string& root, const std::string& reni, const std::string& options,
+                             const std::string& reuse) {
+  Kalku k(KALKU_CPP_BIN);
+  k.send(hello_of(root, reni, 0, options));
+  std::string ready = k.next();
+  CHECK(ready.find("\"partial_baseline\"") != std::string::npos);
+  k.send("{\"type\":\"prepare\",\"id\":2}");
+  CHECK_EQ(field(k.next(), "type"), std::string("prepared"));
+  k.send(reuse.empty() ? "{\"type\":\"baseline\",\"id\":3}"
+                       : "{\"type\":\"baseline\",\"id\":3,\"reuse\":" + reuse + "}");
+  std::string baseline = k.next();
+  CHECK_EQ(field(baseline, "status"), std::string("green"));
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
+  return baseline;
+}
+
+void append(const std::string& path, const std::string& text) {
+  std::string cmd = "printf '" + text + "' >> '" + path + "'";
+  int ignored = std::system(cmd.c_str());
+  (void)ignored;
+}
+
+using Names = std::set<std::string>;
+
+void runs_only_what_changed(const std::string& generator) {
+  std::string root = temp_reni();
+  std::string copy = "cp -R '" + here("testdata/projects/traced") + "/.' '" + root + "'";
+  CHECK_EQ(std::system(copy.c_str()), 0);
+  std::string reni = temp_reni();
+  std::string options = "{\"cmake_args\":[\"-G\",\"" + generator + "\"]}";
+
+  auto first = prints_of(baseline_offered(root, reni, options, ""));
+  CHECK(!first["alpha"].empty());
+  CHECK(!first["beta"].empty());
+  CHECK(!first["data"].empty());
+  // One runs what a script does, the other reads from outside the project.
+  CHECK(first.count("scripted") == 1 && first["scripted"].empty());
+  CHECK(first.count("outside") == 1 && first["outside"].empty());
+
+  // What kalku keeps of its own runs is read by no test.
+  std::string mkdir = "mkdir -p '" + root + "/.kalku'";
+  CHECK_EQ(std::system(mkdir.c_str()), 0);
+  append(root + "/.kalku/runs.ndjson", "{}\\n");
+  std::string same = baseline_offered(root, reni, options, offer(first));
+  CHECK(reused_in(same) == (Names{"alpha", "beta", "data"}));
+  CHECK(ran_in(same) == (Names{"scripted", "outside"}));
+
+  // A header runs again every test whose compile included it, and no other.
+  append(root + "/include/alpha.hpp", "// changed\\n");
+  std::string header = baseline_offered(root, reni, options, offer(first));
+  CHECK(reused_in(header) == (Names{"beta", "data"}));
+  CHECK(ran_in(header) == (Names{"alpha", "scripted", "outside"}));
+  auto now = prints_of(header);
+  CHECK(!now["alpha"].empty() && now["alpha"] != first["alpha"]);
+
+  // A file in a test's working directory runs that test again.
+  first["alpha"] = now["alpha"];
+  append(root + "/tests/data/expected.txt", "a line the test does not check\\n");
+  std::string data = baseline_offered(root, reni, options, offer(first));
+  CHECK(ran_in(data).count("data") == 1);
+  CHECK(reused_in(data).count("data") == 0);
+  CHECK(!prints_of(data)["data"].empty() && prints_of(data)["data"] != first["data"]);
+  remove_tree(reni);
+  remove_tree(root);
+}
+
+}  // namespace
+
+TEST("a baseline runs again only the tests whose fingerprint changed") {
+  if (!have_cmake()) return;
+  runs_only_what_changed("Unix Makefiles");
+  if (std::system("command -v ninja >/dev/null 2>&1") == 0) runs_only_what_changed("Ninja");
+}
+
 TEST("input that ends with no shutdown ends the kalku at once") {
   Kalku k(KALKU_CPP_BIN);
   k.close_input();

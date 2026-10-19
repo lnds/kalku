@@ -333,10 +333,13 @@ std::string prepared(std::int64_t id, std::int64_t duration_ms, std::int64_t mod
 
 std::string baseline_done(std::int64_t id, std::int64_t duration_ms, const std::vector<Timed>& tests,
                           const std::vector<Failure>& failures, const std::vector<std::string>& differences,
-                          const Covered& covered) {
+                          const Covered& covered, const std::vector<std::string>& reused) {
   std::vector<std::string> ts;
   for (const auto& t : tests) {
-    ts.push_back(Writer().str("test", t.test).str("file", t.file).integer("duration_ms", t.duration_ms).done());
+    Writer w;
+    w.str("test", t.test).str("file", t.file).integer("duration_ms", t.duration_ms);
+    if (!t.fingerprint.empty()) w.str("fingerprint", t.fingerprint);
+    ts.push_back(w.done());
   }
   std::vector<std::string> fs;
   for (const auto& f : failures) fs.push_back(Writer().str("test", f.test).str("message", f.message).done());
@@ -347,6 +350,7 @@ std::string baseline_done(std::int64_t id, std::int64_t duration_ms, const std::
   if (!covered.withheld.empty()) w.str("coverage_withheld", covered.withheld);
   w.objects("failures", fs);
   if (!differences.empty()) w.strs("differences", differences);
+  if (!reused.empty()) w.strs("reused", reused);
   return w.done();
 }
 

@@ -91,6 +91,8 @@ struct Timed {
   std::string test;
   std::string file;
   std::int64_t duration_ms = 0;
+  // What the test runs; empty when the kalku cannot say.
+  std::string fingerprint;
 };
 
 struct Failure {
@@ -108,7 +110,7 @@ struct Covered {
 
 std::string baseline_done(std::int64_t id, std::int64_t duration_ms, const std::vector<Timed>& tests,
                           const std::vector<Failure>& failures, const std::vector<std::string>& differences,
-                          const Covered& covered = {});
+                          const Covered& covered = {}, const std::vector<std::string>& reused = {});
 
 struct Skipped {
   std::string file;
