@@ -91,7 +91,7 @@ pub fn brought(
       let reused = m.reused |> unwrap_or([])
       match unoffered(offer, reused) {
         [] -> Ok(
-          match keeping.map(.store) {
+          match keeping |> option.map(.store) {
             Some(Some(store)) -> held(store, reused)
             _ -> []
           }
