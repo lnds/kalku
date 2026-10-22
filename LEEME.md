@@ -1,5 +1,7 @@
 # kalku
 
+[![km score](https://lnds.github.io/kalku/km-score.svg)](https://kimun.tools)
+
 <p align="center">
   <img src="docs/img/mascot.png" alt="La mascota de kalku: un pájaro negro con una cinta ninja roja, sonriendo con la boca llena de dientes" width="380">
 </p>
