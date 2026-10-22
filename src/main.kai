@@ -435,7 +435,7 @@ fn recast_here(
         declared => with_mailbox {
           alone(
             () => measured(
-              asking_again(c, sites_for(all, wanted.files), wanted, declared),
+              asking_again(c, sites_for(all, wanted.files), declared),
               wanted,
               c.policy,
               asking => measure(asking)
@@ -452,10 +452,9 @@ fn recast_here(
 fn asking_again(
   c: Config,
   sites: [Site],
-  wanted: Wanted,
   declared: [equivalent.Entry]
-) : Asking / Env = Asking {
-  ...asking_of(c, pool_of(c), uniq(sites | .file), declared),
+) : Asking / Env + Process = Asking {
+  ...kept_at(asking_of(c, pool_of(c), uniq(sites | .file), declared), c, ".", false),
   only: sites | .site_id
 }
 
