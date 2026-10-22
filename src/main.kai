@@ -307,12 +307,7 @@ fn asking_for(
   touched: Option[[FileChange]],
   declared: [equivalent.Entry]
 ) : Asking / Env + Process = Asking {
-  ...asking_of(c, pool_of(c), files, declared),
-  store: c.language |> map(language => store_for(".", language)),
-  reuse: 
-  # What a baseline measured is reused by every run but one over the whole
-  # project, which is what the full suite is for.
-  not wanted.all,
+  ...kept_at(asking_of(c, pool_of(c), files, declared), c, ".", wanted.all),
   limit: 
   # A change is already bounded by the diff, and a gate that answered for a
   # slice of one would pass a pull request over lines nobody looked at, so
@@ -359,6 +354,11 @@ fn asking_of(
   shard: None,
   store: None,
   reuse: false
+}
+
+fn kept_at(asking: Asking, c: Config, root: String, whole: Bool) : Asking / Env + Process {
+  let (store, reuse) = keeping_for(root, c.language, whole)
+  Asking { ...asking, store: store, reuse: reuse }
 }
 
 #[doc("Where a project writes down what it has decided cannot be told apart.")]
@@ -588,7 +588,7 @@ fn run_for(
       Err(why) -> (p, [ErrorEv(ErrorMsg { code: "no_config", message: why, fatal: false })])
       Ok(known) -> match measurable(p.root, asked, every_source(p.root, known)) {
         Err(no) -> (p, [no])
-        Ok(files) -> measured_over(p, c, known, files, say)
+        Ok(files) -> measured_over(p, c, known, files, asked.scope == All, say)
       }
     }
   }
@@ -644,10 +644,15 @@ fn asking_at(
   c: Config,
   root: String,
   files: [String],
-  declared: [equivalent.Entry]
-) : Asking / Env = Asking {
-  ...asking_of(c, pool_at(c, root), files | (f => shortened(f, root)), declared)
-}
+  declared: [equivalent.Entry],
+  whole: Bool
+) : Asking / Env + Process =
+  kept_at(
+    asking_of(c, pool_at(c, root), files | (f => shortened(f, root)), declared),
+    c,
+    root,
+    whole
+  )
 
 # The pool for a project: the same kalku the CLI would summon, started
 # where the project is.
@@ -755,7 +760,7 @@ fn asked_by_host(c: Call) : Result[Option[Asking], String] / Stderr + Env + File
     Ok(
       Some(
         Asking {
-          ...asking_at(cfg, root, files, declared),
+          ...asking_at(cfg, root, files, declared, false),
           limit: c.limit |> unwrap_or(if is_some(touched) { 0 } else { DEFAULT_LIMIT }),
           touched: touched
         }
@@ -867,8 +872,8 @@ fn narrowed(
   root: String,
   sites: [Site],
   declared: [equivalent.Entry]
-) : Asking / Env = Asking {
-  ...asking_at(cfg, root, uniq(sites | .file), declared),
+) : Asking / Env + Process = Asking {
+  ...asking_at(cfg, root, uniq(sites | .file), declared, false),
   only: sites | .site_id
 }
 
@@ -895,6 +900,7 @@ fn measured_over(
   c: Config,
   known: setting_up.Known,
   files: [String],
+  whole: Bool,
   say: (ServerEvent) -> Unit / Actor[OrchMsg]
 ) : (Project, [ServerEvent]) / Stderr + Env + File + Process + Spawn + Clock + Actor[OrchMsg] + Ward + NetUnix {
   # The fingerprint covers the project, not the request: warm kalku hold a
@@ -904,7 +910,7 @@ fn measured_over(
   # A run that cannot read what the project declared does not start: the
   # alternative is measuring while ignoring a suppression, and reporting
   # a hole somebody already decided was not one.
-  let asking = asking_at(c, p.root, files, declared_equivalents(p.root) |> unwrap_or([]))
+  let asking = asking_at(c, p.root, files, declared_equivalents(p.root) |> unwrap_or([]), whole)
   # Asked before the pool is opened, and never while it is being opened:
   # a kalku greeting its way to `ready` talks into the same mailbox this
   # is waiting on, and two conversations in one mailbox is how a run
