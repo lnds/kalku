@@ -153,8 +153,12 @@ func (h *hashed) in(dir string) []string {
 	return out
 }
 
+// What git and kalku keep of their own, which no test is built from and
+// which every run of kalku writes to.
+var leftOut = map[string]bool{".git": true, ".kalku": true}
+
 // Every file under a directory, relative to the root, leaving out modules
-// of their own below it.
+// of their own below it and what git and kalku keep.
 func (h *hashed) under(dir string) []string {
 	var out []string
 	top := filepath.Join(h.root, dir)
@@ -163,6 +167,9 @@ func (h *hashed) under(dir string) []string {
 			return nil
 		}
 		if d.IsDir() && at != top {
+			if leftOut[d.Name()] {
+				return filepath.SkipDir
+			}
 			if _, err := os.Stat(filepath.Join(at, "go.mod")); err == nil {
 				return filepath.SkipDir
 			}

@@ -425,7 +425,7 @@ func strs(v any) []string {
 // A test whose package's fingerprint has not changed is not run again; one
 // whose package, or any package its test binary is built from, has changed
 // runs. The module's root holds every package below it, so its tests run
-// whatever changed.
+// whatever changed, though not when kalku writes down a run of its own.
 func TestABaselineRunsOnlyTheTestsOfWhatChanged(t *testing.T) {
 	t.Parallel()
 	root := calc(t)
@@ -436,6 +436,12 @@ func TestABaselineRunsOnlyTheTestsOfWhatChanged(t *testing.T) {
 	prints := fingerprints(t, first.ask(map[string]any{"type": "baseline", "id": 3}))
 	first.leave()
 
+	if err := os.MkdirAll(filepath.Join(root, ".kalku"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".kalku/runs.ndjson"), []byte("a run\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	again := summon(t)
 	again.start(root, map[string]string{})
 	same := again.ask(map[string]any{"type": "baseline", "id": 3, "reuse": offer(prints)})
