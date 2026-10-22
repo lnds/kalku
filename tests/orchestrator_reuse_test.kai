@@ -134,3 +134,23 @@ test "a store nobody can read is said, and the whole suite runs" {
 
   gone(store)
 }
+
+# Whoever asks for a run — the command line, a client of `kalku serve`, an
+# agent through its host — keeps its baseline, and reuses it unless the
+# run is over the whole project.
+test "a run over named files keeps its baseline where its language says, and reuses it" {
+  let (store, reuse) = keeping_for(".", Some("elixir"), false)
+  assert store == Some(store_for(".", "elixir"))
+  assert reuse
+}
+
+test "a run over the whole project keeps its baseline and reuses none" {
+  let (store, reuse) = keeping_for(".", Some("elixir"), true)
+  assert store == Some(store_for(".", "elixir"))
+  assert not reuse
+}
+
+test "a project that names no language keeps nothing" {
+  let (store, _) = keeping_for(".", None, false)
+  assert store == None
+}

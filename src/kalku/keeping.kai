@@ -25,6 +25,20 @@ import kalku.settling
 import kalku.core.reusing
 import kalku.core.setting_up
 
+#[doc("""
+Where a run keeps its baseline, and whether it reuses what is kept there.
+
+Kept wherever the project names its language, whoever asked for the run.
+Reused by every run but one over the whole project, which is what the full
+suite is for.
+""")]
+pub fn keeping_for(
+  root: String,
+  language: Option[String],
+  whole: Bool
+) : (Option[String], Bool) / Process + Env =
+  (language |> option.map(l => store_for(root, l)), not whole)
+
 #[doc("Where the store of this project's baseline for this language is kept on this machine.")]
 pub fn store_for(root: String, language: String) : String / Process + Env =
   "#{cache_home()}/kalku/repos/#{identity(root)}/#{language}.json"
