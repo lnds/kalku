@@ -1,5 +1,7 @@
 # kalku
 
+[![km score](https://lnds.github.io/kalku/km-score.svg)](https://kimun.tools)
+
 <p align="center">
   <img src="docs/img/mascot.png" alt="The kalku mascot: a black bird in a red ninja headband, grinning with a mouthful of teeth" width="380">
 </p>
