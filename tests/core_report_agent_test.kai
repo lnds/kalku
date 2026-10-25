@@ -365,5 +365,6 @@ test "an agent is told which tests kill nothing, when the run asked for every ki
   assert get(weights, "kill_nothing_count") == JNum(1)
   assert get(weights, "reach_nothing_count") == JNum(2)
   assert get(weights, "unsure") == JNum(1)
+  assert get(weights, "redundant_count") == JNum(0)
   assert not has(last_line(agent(report_of([], one()), lines_of)), "test_weights")
 }

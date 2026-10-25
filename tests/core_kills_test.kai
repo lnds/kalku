@@ -89,3 +89,37 @@ test "the weights of shards add up per test" {
   assert whole.unsure == 3
   assert whole.unreaching == ["t9"]
 }
+
+fn weights(ts: [(String, [String])]) : Weighed = Weighed {
+  tests: ts | (t => Weight { test_id: t.fst, faced: 9, kills: t.snd }),
+  unsure: 0,
+  unreaching: []
+}
+
+# Taking out a test whose kills another test holds lets no wekufe live.
+test "a test whose kills another test holds is redundant, and names that test" {
+  let found = redundant(weights([("narrow", ["a"]), ("wide", ["a", "b"]), ("own", ["c"])]))
+
+  assert found == [Redundant { test_id: "narrow", kills: 1, by: Some("wide"), same: false }]
+}
+
+# Each of two tests that kill exactly the same wekufe can go, but not both:
+# said once, the second by the first.
+test "two tests with the same kills are said once" {
+  let found = redundant(weights([("t1", ["a", "b"]), ("t2", ["a", "b"])]))
+
+  assert found == [Redundant { test_id: "t2", kills: 2, by: Some("t1"), same: true }]
+}
+
+test "a test whose kills the others hold only between them is redundant, by no one test" {
+  let found = redundant(weights([("mid", ["a", "b"]), ("left", ["a", "x"]), ("right", ["b", "y"])]))
+
+  assert found == [Redundant { test_id: "mid", kills: 2, by: None, same: false }]
+}
+
+test "a test with a kill of its own, or none at all, is not redundant" {
+  let found = redundant(weights([("t1", ["a", "b"]), ("t2", ["a"]), ("idle", [])]))
+
+  assert (found | .test_id) == ["t2"]
+  assert redundant(weights([("t1", ["a"]), ("t2", ["b"])])) == []
+}
