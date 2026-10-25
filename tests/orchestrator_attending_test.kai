@@ -14,6 +14,7 @@ fn running_on(root: String) : [Project] = [
     runs: 1,
     slots: [],
     fingerprint: "abc",
+    seen: [],
     next_id: 2
   }
 ]

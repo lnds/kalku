@@ -69,6 +69,28 @@ defmodule Kalku.ReloadTest do
     assert casts["as-dependents"]["killed_by"] == "test/door_test.exs:4"
   end
 
+  # A warm kalku is reloaded between the runs of a watch and asked for a
+  # baseline again. The suite it forgot on `reload` is loaded again, not
+  # taken for an empty one: an empty suite judges nothing, and every
+  # wekufe would come back with no test to face.
+  test "a baseline after a reload runs the whole suite again", %{reni: reni} do
+    lines =
+      summon(reni, "macros", [
+        request("prepare", 2),
+        request("baseline", 3),
+        ~s({"type":"reload","id":4,"files":["lib/greeter.ex"]}),
+        request("baseline", 5)
+      ])
+
+    ran =
+      for line <- lines,
+          {:ok, %{"type" => "baseline_done"} = d} <- [Kalku.Json.decode(line)],
+          do: {d["status"], length(d["tests"])}
+
+    assert [{"green", n}, {"green", n}] = ran
+    assert n > 0
+  end
+
   test "the kalku claims recompile_dependents only now that it can", %{reni: reni} do
     ready = reply(summon(reni, "macros", []), "ready")
     assert "recompile_dependents" in ready["capabilities"]

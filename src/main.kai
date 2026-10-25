@@ -46,6 +46,7 @@ import kalku.core.gate
 import kalku.wire.client_msg
 import kalku.wire.shapes
 import kalku.orchestrator.ward
+import kalku.orchestrator.warming
 
 fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix + Signal {
   match cli.parse_args(args.argv()) {
@@ -110,9 +111,26 @@ fn run_here(
 ) : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock + Signal = with_mailbox {
   if wanted.watch {
     let look = watched_files()
-    keeping_watch(
-      () => look(),
-      () => run_once(wanted, asking => measuring(asking))
+    # The pool outlives each run and is handed to the next, so the ward that
+    # ends it is the watch's.
+    telling(
+      wanted.aloud,
+      () => warded(() => {
+        var held := None
+        let code = keeping_watch(
+          () => look(),
+          () => run_once(
+            wanted,
+            asking => {
+              let (found, next) = measured_again(asking, held, sources_now())
+              held := next
+              found
+            }
+          )
+        )
+        alone(() => ended(held))
+        code
+      })
     )
   } else {
     alone(() => run_once(wanted, asking => measure(asking)))
@@ -126,6 +144,17 @@ fn nothing_named(changed: Bool) : Int / Stderr = if changed {
   0
 } else {
   fails("name the files to measure, as in `kalku run lib/thing.ex`, or say `--all`")
+}
+
+# What a kept pool is checked against: every source and test the project
+# has now, named as a kalku names them. A project whose settings cannot be
+# read has none, and a pool holding files is then holding files that are gone.
+fn sources_now() : [FileHash] / Stderr + Env + File + Process = match settings() {
+  Ok(c) -> match language_of(c) {
+    Ok(known) -> read_hashes(watched_here(Some(known), []))
+    Err(_) -> []
+  }
+  Err(_) -> []
 }
 
 # The language is read once, when the watch starts; a project that has
@@ -905,7 +934,7 @@ fn measured_over(
   # The fingerprint covers the project, not the request: warm kalku hold a
   # copy of all of it, and a file this run does not measure can still be
   # the one that made them stale.
-  let now = fingerprint(read_hashes(every_source(p.root, known) ++ every_test(p.root, known)))
+  let now = read_hashes(every_source(p.root, known) ++ every_test(p.root, known))
   # A run that cannot read what the project declared does not start: the
   # alternative is measuring while ignoring a suppression, and reporting
   # a hole somebody already decided was not one.
@@ -942,19 +971,37 @@ fn cast_it(
   )
 }
 
-# A pool is opened when there is none, and replaced when the project it
-# was compiled from is not the project on disk any more. Measuring with a
-# kalku that holds last week's code is measuring last week's code.
+# A pool is opened when there is none, told to reload what changed when the
+# project it was compiled from has been edited since, and replaced when it
+# cannot be. Measuring with a kalku that holds last week's code is measuring
+# last week's code.
 fn warm_pool(
   p: Project,
   c: Config,
-  now: String,
+  now: [FileHash],
   say: (ServerEvent) -> Unit / Actor[OrchMsg]
-) : Project / Stderr + Process + Spawn + Clock + Env + Actor[OrchMsg] + Ward + NetUnix =
-  if still_warm(p, now) {
+) : Project / Stderr + Process + Spawn + Clock + Env + Attending + Actor[OrchMsg] + Ward + NetUnix {
+  let print = fingerprint(now)
+  if still_warm(p, print) {
     p
+  } else if still_warm(p, p.fingerprint) and reloaded(p, now, say) {
+    Project { ...p, fingerprint: print, seen: now, next_id: p.next_id + 1 }
   } else {
     each(p.slots, s => banish(s))
     say(PhaseEv(PhaseMsg { phase: PhasePreparing }))
-    Project { ...p, slots: open_pool(pool_at(c, p.root)), fingerprint: now, next_id: 1 }
+    Project {
+      ...p,
+      slots: open_pool(pool_at(c, p.root)),
+      fingerprint: print,
+      seen: now,
+      next_id: 1
+    }
   }
+}
+
+fn reloaded(
+  p: Project,
+  now: [FileHash],
+  say: (ServerEvent) -> Unit / Actor[OrchMsg]
+) : Bool / Process + Clock + Attending + Actor[OrchMsg] + NetUnix =
+  streamed(say, () => reloaded_in_place(p.slots, p.root, p.seen, now, p.next_id)) |> is_ok

@@ -253,7 +253,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **`kalku info`** — spells, outcomes, formats and the agent loop, in the binary | done |
 | **`kalku mcp`** — the four agent tools, over stdio | done |
 | **`kalku serve`** — the client protocol on a `0600` Unix socket, streaming a run as it happens | done: one client at a time |
-| **Warm sessions** — the pool a project was measured with survives the run, and is replaced when the project changes | done |
+| **Warm sessions** — the pool a project was measured with survives the run, is told to `reload` what changed, and is replaced only when it cannot take the change | done |
 | **Protocol** — both directions, canonical NDJSON, fixtures for every message | done |
 | **Core** — planner, test selection, outcomes, score, gate, equivalents, `.kalku.toml`, sharding, changed lines | done |
 | **Reports** — human, JSON, GitHub annotations, and `agent` NDJSON with per-spell hints | done |
@@ -279,7 +279,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go, Elixir, TypeScript, Python, Rust, kaikai, Java, C and C++ |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
-| **`--watch`** — run again on every save, until interrupted; each run summons its kalku afresh, and the incremental baseline and the outcome cache keep it short | done |
+| **`--watch`** — run again on every save, until interrupted; the kalku stay warm between runs and reload what each save changed, and the incremental baseline keeps the suite to what the change can reach | done |
 | **`[score] ratchet`** — the score of the whole project may not drop below the baseline stored with `--store-baseline` | done |
 | **`kalku merge`** — the reports of `--shard` jobs combined into the whole project's, held to the threshold and the ratchet, refused unless they are every part of one plan | done |
 | **`--all` and `--shard i/n`** — the whole project, in parts, for a nightly run | done: a shard says it is one and is not held to the threshold |

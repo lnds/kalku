@@ -155,12 +155,16 @@ fn run_plan(
 #[doc("How long the run waits for its readers to notice that their kalku is gone.")]
 pub const LAST_WORDS_MS : Int = 2000
 
-# A reader outlives the kalku it was reading: killing the child makes the
-# read fail, and the reader says so once before it ends. The run waits for
-# that word from each of them, so it leaves no fiber talking to a mailbox
-# that is no longer there — and keeps what they were still carrying, which
-# is what a kalku wrote about itself on the way down.
-fn hear_last_words(slots: [Slot]) : [Slot] / Clock + Attending + Actor[OrchMsg] {
+#[doc("""
+Wait for the readers of a pool's kalku to say their kalku is gone.
+
+A reader outlives the kalku it was reading: killing the child makes the
+read fail, and the reader says so once before it ends. The run waits for
+that word from each of them, so it leaves no fiber talking to a mailbox
+that is no longer there — and keeps what they were still carrying, which
+is what a kalku wrote about itself on the way down.
+""")]
+pub fn hear_last_words(slots: [Slot]) : [Slot] / Clock + Attending + Actor[OrchMsg] {
   let heard = wait_out(slots, living(slots), deadline_in(millis(LAST_WORDS_MS)))
   if any(heard, still_silent) {
     linger(heard, deadline_in(millis(LINGER_MS)))

@@ -1,0 +1,111 @@
+import actor
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.cache
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.attending
+import kalku.orchestrator.telling
+import kalku.orchestrator.ward
+import kalku.orchestrator.measure
+import kalku.orchestrator.warming
+
+const FAKE : String = "./tests/fake_kalku/fake_kalku"
+
+fn asking_of(script: String) : Asking = Asking {
+  spec: PoolSpec {
+    command: FAKE,
+    args: ["tests/fixtures/scripts/#{script}"],
+    workers: 1,
+    root: ".",
+    reni: ".kalku",
+    inline_limit_bytes: 65536,
+    env: StrMap { entries: [] },
+    options: None,
+    greeting_ms: 5000,
+    summons_allowed: 1,
+    memory_mb: 0
+  },
+  files: ["lib/a.ex"],
+  only: [],
+  spells: [],
+  exclude_calls: [],
+  exclude: [],
+  equivalents: [],
+  limit: 0,
+  timeout_floor_ms: 5000,
+  touched: None,
+  shard: None,
+  store: None,
+  reuse: false
+}
+
+fn hashed(a: String) : [FileHash] =
+  [FileHash { file: "lib/a.ex", hash: a }, FileHash { file: "test/a_test.exs", hash: "t" }]
+
+fn judged(found: Found) : [(String, Outcome)] = found.cast | (c => (c.wekufe, c.outcome))
+
+# Two runs of a watch, the second after `lib/a.ex` became `second`, and what
+# each of them found.
+fn twice(
+  script: String,
+  second: [FileHash]
+) : (Found, Found) / Process + Spawn + Clock + File + Stderr =
+  with_mailbox {
+    alone(
+      () => untold(
+        () => warded(() => {
+          let asking = asking_of(script)
+          let (first, held) = measured_again(asking, None, hashed("one"))
+          let (then, left) = measured_again(asking, held, second)
+          ended(left)
+          (first, then)
+        })
+      )
+    )
+  }
+
+# The script's kalku answers `reload` after its first casts, and then reads
+# a project with one site where it had two. A kalku summoned again would
+# start the script over and find the two: finding the one is how the test
+# knows the second run asked the kalku it already had.
+test "a run after an edit tells the warm kalku what changed instead of summoning another" {
+  let (first, then) = twice("reloads_then_reads.ndjson", hashed("two"))
+
+  assert judged(first) == [("s3", Killed), ("s7", Killed)]
+  assert then.failure == None
+  assert judged(then) == [("s9", Survived)]
+}
+
+# This kalku answers `reload` with an error. Kept, it would be handed a
+# `baseline` where its script expects `shutdown`, and die of it; summoned
+# again, it reads the project from the start.
+test "a kalku that cannot reload is replaced by one summoned for the run" {
+  let (_, then) = twice("cannot_reload.ndjson", hashed("two"))
+
+  assert then.failure == None
+  assert judged(then) == [("s3", Killed), ("s7", Killed)]
+}
+
+# `reload` names files to load and none to forget, so a pool holding a
+# file that is gone is not told anything: it is replaced. Kept, the
+# kalku would be handed a `baseline` where its script expects `reload`.
+test "a file that is gone ends the warm pool" {
+  let (_, then) = twice("reloads_then_reads.ndjson", [FileHash { file: "lib/a.ex", hash: "one" }])
+
+  assert then.failure == None
+  assert judged(then) == [("s3", Killed), ("s7", Killed)]
+}
+
+test "a kalku is told the files that changed, named from the project's root" {
+  let before =
+    [FileHash { file: "/p/lib/a.ex", hash: "1" }, FileHash { file: "/p/lib/b.ex", hash: "1" }]
+  let now = [
+    FileHash { file: "/p/lib/a.ex", hash: "2" },
+    FileHash { file: "/p/lib/b.ex", hash: "1" },
+    FileHash { file: "/p/lib/c.ex", hash: "1" }
+  ]
+
+  assert to_reload("/p", before, now) == ["lib/a.ex", "lib/c.ex"]
+  assert to_reload(".", hashed("1"), hashed("2")) == ["lib/a.ex"]
+}

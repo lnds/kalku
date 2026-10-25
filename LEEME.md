@@ -256,7 +256,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **`kalku info`** — spells, resultados, formatos y el ciclo del agente, en el binario | hecho |
 | **`kalku mcp`** — las cuatro herramientas para agentes, por stdio | hecho |
 | **`kalku serve`** — el protocolo de cliente en un socket Unix `0600`, transmitiendo una corrida mientras ocurre | hecho: un cliente a la vez |
-| **Sesiones calientes** — el pool con el que se midió un proyecto sobrevive a la corrida, y se reemplaza cuando el proyecto cambia | hecho |
+| **Sesiones calientes** — el pool con el que se midió un proyecto sobrevive a la corrida, recibe `reload` con lo que cambió, y se reemplaza solo cuando no puede tomar el cambio | hecho |
 | **Protocolo** — en ambas direcciones, NDJSON canónico, fixtures para cada mensaje | hecho |
 | **Core** — planificador, selección de tests, resultados, puntaje, barrera, equivalentes, `.kalku.toml`, sharding, líneas cambiadas | hecho |
 | **Reportes** — humano, JSON, anotaciones de GitHub, y NDJSON `agent` con pistas por spell | hecho |
@@ -282,7 +282,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **Un baseline que corre solo lo que cambió**: los tests que su kalku identifica, por su huella, como sin cambios se reusan de un almacén que se guarda por repositorio, fuera del proyecto | hecho: Go, Elixir, TypeScript, Python, Rust, kaikai, Java, C y C++ |
 | Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
-| **`--watch`** — vuelve a correr en cada guardado, hasta que se interrumpe; cada corrida invoca sus kalku de nuevo, y el baseline incremental y el caché de resultados la mantienen corta | hecho |
+| **`--watch`** — vuelve a correr en cada guardado, hasta que se interrumpe; los kalku siguen calientes entre corridas y recargan lo que cambió cada guardado, y el baseline incremental reduce la suite a lo que el cambio puede alcanzar | hecho |
 | **`[score] ratchet`** — el score del proyecto completo no puede bajar de la línea base guardada con `--store-baseline` | listo |
 | **`kalku merge`** — los reportes de los jobs con `--shard` combinados en el del proyecto completo, sujeto al umbral y al ratchet, y rechazado si no son todas las partes de un mismo plan | hecho |
 | **`--all` y `--shard i/n`** — el proyecto completo, por partes, para una corrida nocturna | listo: un shard dice que lo es y no se le exige el umbral |

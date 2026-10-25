@@ -19,6 +19,7 @@ import kalku.wire.client_msg
 import kalku.wire.client_codec
 import kalku.wire.framing
 import kalku.core.session
+import kalku.core.cache.{FileHash}
 import kalku.orchestrator.pool
 import kalku.wire.envelope
 
@@ -29,10 +30,11 @@ pub type Serving = { path: String, sessions: [Project] }
 One project the server has been asked about, and the kalku it keeps warm
 for it.
 
-`fingerprint` is what those kalku were compiled from. A kalku holding a
-copy of a project that has since changed is holding the wrong one, and
-measuring with it would be measuring the wrong code — so the moment the
-fingerprint differs, the warm pool is worth nothing and is replaced.
+`fingerprint` is what those kalku were compiled from, and `seen` the files
+it was taken over. A kalku holding a copy of a project that has since
+changed is holding the wrong one, and measuring with it would be measuring
+the wrong code — so the moment the fingerprint differs, the warm pool is
+told what changed, or replaced when it cannot take it.
 """)]
 pub type Project = {
   root: String,
@@ -40,6 +42,7 @@ pub type Project = {
   runs: Int,
   slots: [Slot],
   fingerprint: String,
+  seen: [FileHash],
   next_id: Int
 }
 
@@ -68,7 +71,15 @@ pub fn session_for(sessions: [Project], root: String) : Project = match find(
 ) {
   Some(s) -> s
   None ->
-    Project { root: root, state: SessionCold, runs: 0, slots: [], fingerprint: "", next_id: 1 }
+    Project {
+      root: root,
+      state: SessionCold,
+      runs: 0,
+      slots: [],
+      fingerprint: "",
+      seen: [],
+      next_id: 1
+    }
 }
 
 #[doc("""
