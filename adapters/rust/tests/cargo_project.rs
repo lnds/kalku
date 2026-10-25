@@ -23,7 +23,13 @@ impl Dir {
     }
 
     fn project(&self) -> Cargo {
-        Cargo::new(self.0.join("proj"), self.0.join("reni"), 0, vec![])
+        Cargo::new(
+            self.0.join("proj"),
+            self.0.join("proj"),
+            self.0.join("reni"),
+            0,
+            vec![],
+        )
     }
 }
 
@@ -74,6 +80,28 @@ fn it_lists_and_runs_exactly_the_tests_it_is_asked_for() {
 
     let all = project.run(&targets[0], &[]).unwrap();
     assert_eq!(all.results.len(), 2);
+}
+
+// What a Tauri app's library declares: its unit tests are found and run
+// like any library's.
+#[test]
+fn a_library_built_as_static_and_dynamic_too_has_its_tests_found() {
+    let dir = Dir::new("crate_types");
+    dir.file(
+        "proj/Cargo.toml",
+        &format!(
+            "{PACKAGE}\n[lib]\nname = \"p_lib\"\ncrate-type = [\"staticlib\", \"cdylib\", \"rlib\"]\n"
+        ),
+    );
+    dir.file("proj/src/lib.rs", TESTS);
+    let mut project = dir.project();
+    let targets = built(&mut project);
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].select, ["--lib"]);
+
+    let mut listed = project.list(&targets[0]).unwrap();
+    listed.sort();
+    assert_eq!(listed, ["t::a", "t::ab"]);
 }
 
 #[test]
@@ -231,7 +259,13 @@ fn a_fingerprint_follows_the_packages_a_test_is_built_from() {
     );
     dir.file("proj/core/src/lib.rs", TESTS);
     let prints = |worker: i64| {
-        let mut project = Cargo::new(dir.0.join("proj"), dir.0.join("reni"), worker, vec![]);
+        let mut project = Cargo::new(
+            dir.0.join("proj"),
+            dir.0.join("proj"),
+            dir.0.join("reni"),
+            worker,
+            vec![],
+        );
         let targets = built(&mut project);
         let prints = project.fingerprints().unwrap();
         let mut by_file: Vec<(String, String)> = targets

@@ -13,7 +13,8 @@
 //!
 //! Paths go in relative to the copy, so two checkouts of a project agree.
 //! What a test reads from outside its package's directory and the root's own
-//! files is not in it.
+//! files is not in it, unless the copy is of a directory that holds the
+//! project: then every file beside the project goes in too.
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -58,6 +59,15 @@ pub fn base(kalku: &str, rustc: &str, env: &[(String, String)], work: &Path) -> 
     for f in ROOT_FILES {
         h.update(format!("{f} {}\n", file_hash(&work.join(f))));
     }
+    hex(&h.finalize())
+}
+
+/// A base that also covers every file of the copy beside the project, for a
+/// copy of a directory that holds it: a build may read any of them.
+pub fn and_beside(base: &str, copy: &Path, project: &Path) -> String {
+    let mut h = Sha256::new();
+    h.update(format!("{base}\n"));
+    h.update(tree_hash(copy, &HashSet::from([project.to_path_buf()])));
     hex(&h.finalize())
 }
 
@@ -332,6 +342,21 @@ mod tests {
         let one = workspace("copy-one");
         let two = workspace("copy-two");
         assert_eq!(prints(&one), prints(&two));
+    }
+
+    // A build may read any file of the copy beside the project; the project's
+    // own files go in by its packages.
+    #[test]
+    fn a_copy_around_the_project_puts_what_is_beside_it_in_the_base() {
+        let copy = scratch("beside");
+        write(&copy, "app/src/lib.rs", "pub fn f() {}\n");
+        write(&copy, "data/x.txt", "x\n");
+        let first = and_beside("b", &copy, &copy.join("app"));
+
+        write(&copy, "app/src/lib.rs", "pub fn g() {}\n");
+        assert_eq!(first, and_beside("b", &copy, &copy.join("app")));
+        write(&copy, "data/x.txt", "y\n");
+        assert_ne!(first, and_beside("b", &copy, &copy.join("app")));
     }
 
     #[test]
