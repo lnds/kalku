@@ -1,0 +1,12 @@
+{
+  "name": "calc-vitest-vite6",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vite": "6.4.5",
+    "vitest": "3.2.4"
+  }
+}

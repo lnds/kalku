@@ -29,13 +29,17 @@ function glob(file: string): string {
 // is one. It takes one argument, a JSON request, and writes the report
 // where the request says.
 const DRIVER = `import { createRequire } from "node:module";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const request = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const wekufe = request.wekufe ? JSON.parse(readFileSync(request.wekufe, "utf8")) : undefined;
 const counting = request.counting;
 const manifest = counting ? JSON.parse(readFileSync(counting.manifest, "utf8")) : {};
+// The setup file lives in the reni, outside every directory Vite reads from
+// disk (server.fs.allow), so it is served like the counted files: a Vite that
+// is strict about it finds nothing at the path and says the module is missing.
+const setups = counting ? new Set([counting.setup, realpathSync(counting.setup)]) : new Set();
 const required = createRequire(request.root + "/package.json");
 const { startVitest } = await import(pathToFileURL(required.resolve("vitest/node")).href);
 const { configDefaults } = await import(pathToFileURL(required.resolve("vitest/config")).href);
@@ -58,6 +62,7 @@ const plugin = {
   load(id) {
     const file = id.split("?")[0];
     if (manifest[file] !== undefined) return readFileSync(manifest[file], "utf8");
+    if (setups.has(file)) return readFileSync(counting.setup, "utf8");
     if (wekufe === undefined || !wekufe.files.includes(file)) return undefined;
     writeFileSync(wekufe.served, "");
     return wekufe.text;
