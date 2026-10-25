@@ -1,0 +1,5 @@
+{"expect":"hello","reply":{"type":"ready","protocol":1,"language":"fake","adapter":"fake_kalku 0.1","runtime":"none","spells":["arm"],"capabilities":["cast","abort","reset"]}}
+{"expect":"prepare","reply":{"type":"prepared","duration_ms":1,"modules":1}}
+{"expect":"cast","reply":{"type":"cast_done","wekufe":"w0","outcome":"killed","killed_by":"t1","duration_ms":1,"dirty":false}}
+{"expect":"cast","reply":{"type":"cast_done","wekufe":"w0","outcome":"killed","killed_by":"t3","duration_ms":1,"dirty":false}}
+{"expect":"cast","reply":{"type":"cast_done","wekufe":"w0","outcome":"survived","duration_ms":1,"dirty":false}}

@@ -9,6 +9,7 @@ import kalku.core.blaming
 import kalku.core.report_agent
 import kalku.core.report_json
 import kalku.core.costing
+import kalku.core.kills
 
 const SOURCE : [String] = [
   "defmodule Parser do",
@@ -62,7 +63,8 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   plan: None,
   commit: None,
   whole: false,
-  costs: []
+  costs: [],
+  weighed: None
 }
 
 fn one() : Counts = tally([Cast(Killed), Cast(Survived)])
@@ -345,4 +347,23 @@ test "an agent is told the few tests the casting spends most on" {
     }
   }
   assert not has(last_line(agent(report_of([], one()), lines_of)), "dearest_tests")
+}
+
+test "an agent is told which tests kill nothing, when the run asked for every kill" {
+  let w = Weighed {
+    tests: [
+      Weight { test_id: "t1", faced: 2, kills: [] },
+      Weight { test_id: "t2", faced: 2, kills: ["w"] }
+    ],
+    unsure: 1,
+    unreaching: ["t3", "t4"]
+  }
+  let summary = last_line(agent(Report { ...report_of([], one()), weighed: Some(w) }, lines_of))
+  let weights = field(summary, "test_weights")
+
+  assert get(weights, "kill_nothing") == JArr([JStr("t1")])
+  assert get(weights, "kill_nothing_count") == JNum(1)
+  assert get(weights, "reach_nothing_count") == JNum(2)
+  assert get(weights, "unsure") == JNum(1)
+  assert not has(last_line(agent(report_of([], one()), lines_of)), "test_weights")
 }

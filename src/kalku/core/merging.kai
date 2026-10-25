@@ -12,6 +12,7 @@ score of nothing.
 import kalku.wire.shapes
 import kalku.core.report
 import kalku.core.costing
+import kalku.core.kills
 import kalku.core.report_json
 import kalku.core.shard
 import kalku.core.blaming
@@ -223,7 +224,15 @@ pub fn combined(first: Report, rest: [Report]) : Report {
     plan: first.plan,
     commit: first.commit,
     whole: true,
-    costs: added_costs(parts | .costs)
+    costs: added_costs(parts | .costs),
+    weighed: match parts
+      || (p => match p.weighed {
+        Some(w) -> [w]
+        None -> []
+      }) {
+      [] -> None
+      weights -> Some(added_weights(weights))
+    }
   }
 }
 

@@ -89,6 +89,9 @@ options:
   --shard <i/n>    cast only part i of n: the same part on every machine
   --store-baseline store this run's score as the baseline `ratchet = true`
                    holds later runs of the whole project to
+  --every-kill     with --all: cast each killed wekufe again without its killer
+                   until no test left kills it, and name the tests that kill
+                   nothing; slower by as many casts as there are kills
   --watch          run again every time a source or test file changes, until
                    interrupted; the exit code is the last run's
   --format <name>  human (the default), agent, json, or github

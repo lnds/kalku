@@ -1,0 +1,135 @@
+#[doc("""
+Which tests kill which wekufe, from a run that asked for every kill.
+
+A cast stops at the first test that fails, so a normal run credits one
+test per kill: a test that would have killed a wekufe, run after the one
+that did, is never named. Saying from that which tests kill nothing would
+call good tests useless. A run that wants every kill casts each killed
+wekufe again without its killer until none of the tests left notices,
+and only a wekufe whose chase ended that way says who killed it.
+
+A test then kills nothing when every wekufe it faced is fully known and
+none of them fell to it. A test that faced no wekufe at all is another
+thing: it reaches no line a spell touched, which says what kalku measured,
+not that the test is useless.
+""")]
+
+import collections.map
+import kalku.wire.enums
+
+#[doc("""
+One cast of a wekufe, in the order the chase made them: the first is the
+cast that decided its outcome, the rest were made to find more killers.
+""")]
+#[derive(Eq, Show)]
+pub type Attempt = { wekufe: String, outcome: Outcome, tests: [String], killed_by: Option[String] }
+
+#[doc("One test, how many fully known wekufe it faced, and which of them it killed.")]
+#[derive(Eq, Show)]
+pub type Weight = { test_id: String, faced: Int, kills: [String] }
+
+#[doc("""
+What a run that asked for every kill says about its tests.
+
+`unsure` counts the wekufe whose killers are not all known: a chase that
+ended in a timeout, a crash, or a kill no test was named for. They are
+left out of every count rather than guessed at. `unreaching` are the tests
+of the suite that judge no wekufe the plan holds.
+""")]
+#[derive(Eq, Show)]
+pub type Weighed = { tests: [Weight], unsure: Int, unreaching: [String] }
+
+#[doc("""
+The weight of every test that faced a fully known wekufe, from the casts of
+a run, in the order they were made.
+
+Only a chase that settled counts: one that began with a survivor, or with
+a kill whose last cast was a survivor or left no test to cast against.
+""")]
+pub fn weighed(attempts: [Attempt], unreaching: [String]) : Weighed {
+  let chases = list.uniq(attempts | .wekufe) | (w => list.filter(attempts, a => a.wekufe == w))
+  let known = chases |? judged |? settled
+  let faced = list.foldl(
+    known || first_tests,
+    map.empty(),
+    (counts, t) => map.update(counts, t, 1, n => n + 1)
+  )
+  let kills = list.foldl(
+    known || killers,
+    map.empty(),
+    (by, kw) => map.update(by, kw.fst, [kw.snd], ws => ws ++ [kw.snd])
+  )
+  Weighed {
+    tests: map.to_pairs(faced)
+      | (p => Weight {
+        test_id: p.fst,
+        faced: p.snd,
+        kills: unwrap_or(map.get(kills, p.fst), [])
+      }),
+    unsure: list.length(chases |? judged) - list.length(known),
+    unreaching: unreaching
+  }
+}
+
+#[doc("The tests of a suite that judge none of the wekufe planned, less those already failing.")]
+pub fn unreaching(planned: [[String]], suite: [String], failing: [String]) : [String] {
+  let reaching = list.foldl(planned || (ts => ts), map.empty(), (seen, t) => map.put(seen, t, true))
+  suite |? (t => (not map.contains(reaching, t)) and (not list.contains(failing, t)))
+}
+
+#[doc("The tests that faced fully known wekufe and killed none of them.")]
+pub fn idle(w: Weighed) : [Weight] = w.tests |? (t => list.is_empty(t.kills))
+
+#[doc("The weights of several shards as one: what each test faced adds up, and so do its kills.")]
+pub fn added_weights(parts: [Weighed]) : Weighed {
+  let by_test = list.foldl(
+    parts || .tests,
+    map.empty(),
+    (acc, t) => map.update(
+      acc,
+      t.test_id,
+      t,
+      seen => Weight { ...seen, faced: seen.faced + t.faced, kills: seen.kills ++ t.kills }
+    )
+  )
+  Weighed {
+    tests: map.values(by_test),
+    unsure: list.sum(parts | .unsure),
+    unreaching: match parts {
+      [] -> []
+      [first, ...rest] ->
+        first.unreaching |? (t => list.all(rest, p => list.contains(p.unreaching, t)))
+    }
+  }
+}
+
+# A wekufe whose first cast neither killed nor survived was judged by no
+# test: it did not compile, ran out of time, or took the runner down.
+fn judged(chase: [Attempt]) : Bool = match chase {
+  [first, ..._] -> first.outcome == Killed or first.outcome == Survived
+  [] -> false
+}
+
+fn settled(chase: [Attempt]) : Bool = list.all(chase, named) and ended(chase)
+
+fn named(a: Attempt) : Bool = a.outcome != Killed or is_some(a.killed_by)
+
+fn ended(chase: [Attempt]) : Bool = match list.last(chase) {
+  None -> false
+  Some(a) -> a.outcome == Survived
+    or a.outcome == Killed and list.all(a.tests, t => Some(t) == a.killed_by)
+}
+
+fn first_tests(chase: [Attempt]) : [String] = match chase {
+  [first, ..._] -> first.tests
+  [] -> []
+}
+
+fn killers(chase: [Attempt]) : [(String, String)] =
+  list.flat_map(
+    chase,
+    a => match a.killed_by {
+      Some(t) -> [(t, a.wekufe)]
+      None -> []
+    }
+  )

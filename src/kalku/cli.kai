@@ -42,7 +42,8 @@ pub type Wanted = {
   all: Bool,
   shard: Option[Shard],
   store: Bool,
-  watch: Bool
+  watch: Bool,
+  every_kill: Bool
 }
 
 #[doc("How a run prints what it found.")]
@@ -141,7 +142,8 @@ pub fn nothing_wanted() : Wanted = Wanted {
   all: false,
   shard: None,
   store: false,
-  watch: false
+  watch: false,
+  every_kill: false
 }
 
 fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
@@ -149,6 +151,7 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   ["--all", ...rest] -> read_wanted(rest, Wanted { ...so_far, all: true })
   ["--store-baseline", ...rest] -> read_wanted(rest, Wanted { ...so_far, store: true })
   ["--watch", ...rest] -> read_wanted(rest, Wanted { ...so_far, watch: true })
+  ["--every-kill", ...rest] -> read_wanted(rest, Wanted { ...so_far, every_kill: true })
   ["--shard"] -> Misused("`--shard` needs a part, as in `--shard 2/4`")
   ["--shard", part, ...rest] -> match shard_named(part) {
     None -> Misused("`--shard` takes a part of a count, as in `2/4`, not `#{part}`")
@@ -181,19 +184,37 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
 
 # `--all` is the whole project, and files beside it would be a second
 # answer to the same question. A change has its own files too.
-fn whole_or_named(w: Wanted) : Command = if w.all and (not is_empty(w.files)) {
-  Misused("`--all` measures every source file; name files or say `--all`, not both")
-} else if w.all and is_some(w.since) {
-  Misused("`--all` measures the whole project and `--since` a change; say one")
-} else if w.store and ((not w.all) or is_some(w.shard) or unwrap_or(w.limit, 0) != 0) {
-  Misused(
-    "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
-  )
-} else {
-  match watch_refusal(w) {
+fn whole_or_named(w: Wanted) : Command =
+  match first_some([whole_refusal(w), store_refusal(w), every_kill_refusal(w), watch_refusal(w)]) {
     Some(why) -> Misused(why)
     None -> Measure(w)
   }
+
+fn whole_refusal(w: Wanted) : Option[String] = if w.all and (not is_empty(w.files)) {
+  Some("`--all` measures every source file; name files or say `--all`, not both")
+} else if w.all and is_some(w.since) {
+  Some("`--all` measures the whole project and `--since` a change; say one")
+} else {
+  None
+}
+
+fn store_refusal(w: Wanted) : Option[String] =
+  if w.store and ((not w.all) or is_some(w.shard) or unwrap_or(w.limit, 0) != 0) {
+    Some(
+      "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
+    )
+  } else {
+    None
+  }
+
+# A test that kills nothing in one file may be the only one that kills in
+# another, so which tests kill nothing is a question about the whole suite.
+fn every_kill_refusal(w: Wanted) : Option[String] = if w.every_kill and (not w.all) {
+  Some(
+    "`--every-kill` weighs the tests of the whole project: it goes with `--all`, since a test that kills nothing in one file may be the only one that kills in another"
+  )
+} else {
+  None
 }
 
 # A watch prints one report after another, and each of these is about one
@@ -387,6 +408,9 @@ options:
                    n jobs cover a project between them
   --store-baseline store this run's score, or a merge's, as the baseline
                    `ratchet = true` holds later runs of the whole project to
+  --every-kill     with --all: cast each killed wekufe again without its killer
+                   until no test left kills it, and name the tests that kill
+                   nothing; slower by as many casts as there are kills
   --watch          run again every time a source or test file changes
   --format <name>  human (the default), agent, json, or github
   --json           print an info topic as JSON

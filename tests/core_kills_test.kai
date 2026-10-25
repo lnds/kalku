@@ -1,0 +1,91 @@
+import kalku.wire.enums
+import kalku.core.kills
+
+fn killed(w: String, tests: [String], by: String) : Attempt =
+  Attempt { wekufe: w, outcome: Killed, tests: tests, killed_by: Some(by) }
+
+fn lived(w: String, tests: [String]) : Attempt =
+  Attempt { wekufe: w, outcome: Survived, tests: tests, killed_by: None }
+
+fn ended_as(w: String, tests: [String], o: Outcome) : Attempt =
+  Attempt { wekufe: w, outcome: o, tests: tests, killed_by: None }
+
+fn weight_of(w: Weighed, id: String) : Option[Weight] = find(w.tests, t => t.test_id == id)
+
+# A chase that ends in a survivor knows every test that kills its wekufe:
+# the ones it named, and none of the tests left.
+test "a settled chase credits every killer, and every test it faced" {
+  let w = weighed(
+    [killed("a", ["t1", "t2", "t3"], "t1"), killed("a", ["t2", "t3"], "t3"), lived("a", ["t2"])],
+    []
+  )
+
+  assert w.unsure == 0
+  assert weight_of(w, "t1") == Some(Weight { test_id: "t1", faced: 1, kills: ["a"] })
+  assert weight_of(w, "t2") == Some(Weight { test_id: "t2", faced: 1, kills: [] })
+  assert weight_of(w, "t3") == Some(Weight { test_id: "t3", faced: 1, kills: ["a"] })
+  assert (idle(w) | .test_id) == ["t2"]
+}
+
+test "a chase whose killer was the last test left is settled" {
+  let w = weighed([killed("a", ["t1", "t2"], "t2"), killed("a", ["t1"], "t1")], [])
+
+  assert w.unsure == 0
+  assert idle(w) == []
+}
+
+test "a survivor is settled: every test it faced killed nothing" {
+  let w = weighed([lived("a", ["t1", "t2"])], [])
+
+  assert (idle(w) | .test_id) == ["t1", "t2"]
+}
+
+# A test that would have killed a wekufe after one that did is never named
+# by a chase cut short, so such a chase counts for nobody.
+test "a chase that did not settle is left out and counted as unsure" {
+  let cut = [killed("a", ["t1", "t2"], "t1")]
+  let timed_out = [killed("b", ["t1", "t2"], "t1"), ended_as("b", ["t2"], Timeout)]
+  let unnamed = [ended_as("c", ["t1", "t2"], Killed)]
+  let w = weighed(cut ++ timed_out ++ unnamed, [])
+
+  assert w.unsure == 3
+  assert w.tests == []
+}
+
+# A wekufe that did not compile, or ran out of time on its first cast, was
+# judged by no test, and saying it is unsure would overstate what is missing.
+test "a wekufe no test judged is neither counted nor unsure" {
+  let w = weighed([ended_as("a", ["t1"], CompileError), ended_as("b", ["t1"], Timeout)], [])
+
+  assert w.unsure == 0
+  assert w.tests == []
+}
+
+test "the tests that reach no planned wekufe are named, less the failing ones" {
+  assert unreaching([["t1"], ["t1", "t2"]], ["t1", "t2", "t3", "t4"], ["t4"]) == ["t3"]
+}
+
+test "the weights of shards add up per test" {
+  let first = Weighed {
+    tests: [Weight { test_id: "t1", faced: 2, kills: ["a"] }],
+    unsure: 1,
+    unreaching: ["t8", "t9"]
+  }
+  let second = Weighed {
+    tests: [
+      Weight { test_id: "t1", faced: 1, kills: ["b"] },
+      Weight { test_id: "t2", faced: 1, kills: [] }
+    ],
+    unsure: 2,
+    unreaching: ["t9"]
+  }
+  let whole = added_weights([first, second])
+
+  assert whole.tests
+    == [
+      Weight { test_id: "t1", faced: 3, kills: ["a", "b"] },
+      Weight { test_id: "t2", faced: 1, kills: [] }
+    ]
+  assert whole.unsure == 3
+  assert whole.unreaching == ["t9"]
+}

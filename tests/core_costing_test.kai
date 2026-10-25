@@ -20,7 +20,8 @@ fn cast_of(line: Int, tests: [String]) : Wekufe = Wekufe {
   tests: tests,
   rest: [],
   timeout_ms: 60000,
-  casts: 1
+  casts: 1,
+  every_kill: false
 }
 
 fn took(ms: Int) : [(String, Int)] = [("t1", ms), ("t2", ms * 2)]
