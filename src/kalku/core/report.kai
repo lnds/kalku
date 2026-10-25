@@ -21,10 +21,17 @@ import kalku.core.recurring
 import kalku.core.changed_lines
 import kalku.core.skipping
 import kalku.core.blaming
+import kalku.core.costing
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
 const SHOWN_TESTS : Int = 3
+
+# Enough of the dearest tests to act on; the rest are in the JSON report.
+const COSTLY_SHOWN : Int = 10
+
+# Below this much casting, which tests it went to is not worth a reader's time.
+const COSTLY_FLOOR_MS : Int = 1000
 
 # Enough of a toolchain's diagnostic to name the file and the error.
 const SAID_LINES : Int = 6
@@ -83,7 +90,8 @@ pub type Report = {
   stopped: Option[String],
   plan: Option[PlanMark],
   commit: Option[String],
-  whole: Bool
+  whole: Bool,
+  costs: [TestCost]
 }
 
 #[doc("""
@@ -118,6 +126,7 @@ pub fn human(r: Report) : String = join(
     ...withheld_block(r.withheld),
     ...doubted_block(r.doubted),
     ...reused_block(r.reused),
+    ...costly_block(r.costs, r.reused),
     summary_line(r),
     ...suppression_block(r),
     ...blocker_block(r)
@@ -159,6 +168,33 @@ fn reused_block(reused: Int) : [String] = if reused == 0 {
     ""
   ]
 }
+
+# The tests the casting went to, dearest first: each one's duration once
+# for every wekufe it judged. Ranked by that, not by duration alone, since
+# a slow test that reaches one line costs a run less than a quicker one
+# that reaches the whole core.
+fn costly_block(costs: [TestCost], reused: Int) : [String] {
+  let total = sum(costs | casting_ms)
+  if total < COSTLY_FLOOR_MS {
+    []
+  } else {
+    [
+      "the tests the casting went to, dearest first (#{seconds(total)} in all):",
+      ...take(costs, COSTLY_SHOWN) | (c => costly_line(c, total)),
+      ...if reused == 0 {
+        []
+      } else {
+        ["  a test the baseline did not run again is timed as it was when it last ran."]
+      },
+      ""
+    ]
+  }
+}
+
+fn costly_line(c: TestCost, total: Int) : String =
+  "  #{seconds(casting_ms(c))}  #{casting_ms(c) * 100 / total}%  #{c.test_id}  #{c.duration_ms} ms × #{c.judges} wekufe"
+
+fn seconds(ms: Int) : String = "#{ms / 1000}.#{ms % 1000 / 100} s"
 
 #[doc("Where a survivor lives, which spell made it, and in which declaration.")]
 pub fn location(s: Survivor) : String = where_of(s.site)
