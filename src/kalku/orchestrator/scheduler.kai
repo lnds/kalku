@@ -29,13 +29,20 @@ import kalku.orchestrator.ward
 import kalku.orchestrator.telling
 import kalku.wire.envelope
 
-#[doc("What one wekufe came to.")]
+#[doc("""
+What one cast of a wekufe came to.
+
+`again` marks a cast made only to find more of the tests that kill a
+wekufe: it answers which tests notice, never what the wekufe came to.
+""")]
 #[derive(Eq, Show)]
 pub type Verdict = {
   wekufe: String,
   outcome: Outcome,
   tests: [String],
-  said: Option[String]
+  said: Option[String],
+  killed_by: Option[String],
+  again: Bool
 }
 
 #[doc("""
@@ -114,6 +121,8 @@ pub fn cast_over(
     spec: held,
     slots: slots,
     queue: casts,
+    chasing: [],
+    chased: [],
     verdicts: [],
     next_id: from_id,
     failure: no_kalku(slots, casts),
@@ -136,6 +145,8 @@ fn run_plan(
     spec: spec,
     slots: slots,
     queue: casts,
+    chasing: [],
+    chased: [],
     verdicts: [],
     next_id: 1,
     failure: no_kalku(slots, casts),
@@ -281,6 +292,8 @@ type Run = {
   spec: PoolSpec,
   slots: [Slot],
   queue: [Wekufe],
+  chasing: [Wekufe],
+  chased: [String],
   verdicts: [Verdict],
   next_id: Int,
   failure: Option[String],
@@ -296,7 +309,9 @@ fn turn(run: Run) : Run / Process + Spawn + Clock + Attending + Actor[OrchMsg] +
 # A run is over when nothing is left to cast and nobody is still working,
 # or when there is no kalku left to cast with.
 fn over(run: Run) : Bool =
-  is_some(run.failure) or waiting_on(run.slots) == 0 and (run.cancelled or is_empty(run.queue))
+  is_some(run.failure)
+    or waiting_on(run.slots) == 0
+      and (run.cancelled or is_empty(run.queue) and is_empty(run.chasing))
 
 fn listen(
   run: Run
@@ -305,7 +320,7 @@ fn listen(
     patience(run)
   ) {
     None -> expire(run)
-    Some(Cancel) -> Run { ...run, cancelled: true, queue: [] }
+    Some(Cancel) -> Run { ...run, cancelled: true, queue: [], chasing: [] }
     Some(Wire(life, what)) -> match slot_living(run.slots, life) {
       None -> run
       Some(slot) -> heard_from(run, slot, what)
@@ -318,16 +333,23 @@ fn listen(
 
 # ---- dispatch -----------------------------------------------------------
 
-fn dispatch(run: Run) : Run / Process + Clock + Telling = match (run.queue, idle(run.slots)) {
-  ([], _) -> run
-  (_, []) -> run
-  ([c, ...rest], [slot, ..._]) -> dispatch(hand(Run { ...run, queue: rest }, slot, c))
+# A wekufe cast again goes first: it holds back the end of the run, and
+# the kalku that just cast it still has it loaded.
+fn dispatch(run: Run) : Run / Process + Clock + Telling = match (
+  run.chasing,
+  run.queue,
+  idle(run.slots)
+) {
+  (_, _, []) -> run
+  ([c, ...rest], _, [slot, ..._]) -> dispatch(hand(Run { ...run, chasing: rest }, slot, c, true))
+  ([], [c, ...rest], [slot, ..._]) -> dispatch(hand(Run { ...run, queue: rest }, slot, c, false))
+  ([], [], _) -> run
 }
 
 fn and_then(rest: [String]) : String =
   if is_empty(rest) { "" } else { ", and #{length(rest)} more if none notices" }
 
-fn hand(run: Run, slot: Slot, c: Wekufe) : Run / Process + Clock + Telling {
+fn hand(run: Run, slot: Slot, c: Wekufe, again: Bool) : Run / Process + Clock + Telling {
   let id = run.next_id
   tell(
     slot,
@@ -347,7 +369,10 @@ fn hand(run: Run, slot: Slot, c: Wekufe) : Run / Process + Clock + Telling {
     wekufe: c.site.site_id,
     tests: c.tests ++ c.rest,
     deadline: deadline_in(millis(c.timeout_ms)),
-    awaiting: AwaitingCast
+    awaiting: AwaitingCast,
+    cast: c,
+    again: again,
+    killed_by: None
   }
   Run { ...run, slots: put(run.slots, Slot { ...slot, doing: Working(job) }), next_id: id + 1 }
 }
@@ -374,8 +399,14 @@ fn said(
   match reply {
     Ready(m) -> greeted(run, slot, m)
     Prepared(_) -> ready_for_work(run, slot)
+    CastDone(m) -> react(run, killed_by(slot, m.killed_by), on_reply(reply, slot.caps))
     other -> react(run, slot, on_reply(other, slot.caps))
   }
+
+fn killed_by(slot: Slot, killer: Option[String]) : Slot = match slot.doing {
+  Working(job) -> Slot { ...slot, doing: Working(Job { ...job, killed_by: killer }) }
+  _ -> slot
+}
 
 # A kalku whose protocol this side cannot speak ends the run rather than
 # the kalku: a second one would say the same thing.
@@ -544,15 +575,56 @@ fn record(run: Run, slot: Slot, r: Reaction) : Run / Telling = match (r.outcome,
     } else {
       ()
     }
-    Run {
-      ...run,
-      verdicts: run.verdicts
-        ++ [
-          Verdict { wekufe: job.wekufe, outcome: o, tests: job.tests, said: r.said }
-        ]
-    }
+    chased(
+      Run {
+        ...run,
+        verdicts: run.verdicts
+          ++ [
+            Verdict {
+              wekufe: job.wekufe,
+              outcome: o,
+              tests: job.tests,
+              said: r.said,
+              killed_by: job.killed_by,
+              again: job.again
+            }
+          ]
+      },
+      job,
+      o
+    )
   }
   _ -> run
+}
+
+# A wekufe that wants every kill is cast again without the test that
+# killed it, until none of the tests left notices. One chase per wekufe:
+# a wekufe cast several times to settle it is chased from its first kill.
+fn chased(run: Run, job: Job, o: Outcome) : Run = match (o, job.killed_by) {
+  (Killed, Some(killer)) -> if job.cast.every_kill
+    and (job.again or (not contains(run.chased, job.wekufe))) {
+    let left = without(job.cast, killer)
+    Run {
+      ...run,
+      chasing: if is_empty(left.tests) { run.chasing } else { [left, ...run.chasing] },
+      chased: [job.wekufe, ...run.chased]
+    }
+  } else {
+    run
+  }
+  _ -> run
+}
+
+# The tests credited with the line go first and the rest only when none of
+# them notices; with every credited test taken out, the rest are what is left.
+fn without(c: Wekufe, killer: String) : Wekufe {
+  let tests = filter(c.tests, t => t != killer)
+  let rest = filter(c.rest, t => t != killer)
+  if is_empty(tests) {
+    Wekufe { ...c, tests: rest, rest: [] }
+  } else {
+    Wekufe { ...c, tests: tests, rest: rest }
+  }
 }
 
 # What the run set out to cast: what is done, what is in flight, and what
@@ -563,7 +635,7 @@ fn record(run: Run, slot: Slot, r: Reaction) : Run / Telling = match (r.outcome,
 # would make the total start above the plan and shrink as the workers are
 # born — a figure a client cannot draw a bar from.
 fn cast_count(run: Run) : Int =
-  length(run.verdicts) + in_flight(run.slots) + length(run.queue)
+  length(run.verdicts) + in_flight(run.slots) + length(run.queue) + length(run.chasing)
 
 fn in_flight(slots: [Slot]) : Int = length(
   filter(

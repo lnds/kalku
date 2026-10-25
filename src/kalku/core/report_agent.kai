@@ -26,11 +26,15 @@ import kalku.core.shard
 import kalku.core.blaming
 import kalku.core.hint
 import kalku.core.costing
+import kalku.core.kills
 import kalku.core.report_json
 import kalku.core.report_json
 
 #[doc("How many of the dearest tests travel in the summary an agent reads.")]
 pub const COSTLY_FOR_AGENT : Int = 5
+
+#[doc("How many of the tests that kill nothing travel in the summary an agent reads.")]
+pub const IDLE_FOR_AGENT : Int = 20
 
 #[doc("How many lines of context travel with a survivor, on each side.")]
 pub const CONTEXT_LINES : Int = 2
@@ -154,6 +158,7 @@ fn summary_line(r: Report) : String = json_encode(
       ...doubted_field(r.doubted),
       ...reused_field(r.reused),
       ...costly_field(r.costs),
+      ...weighed_field(r.weighed),
       ...shard_field(r.shard),
       ...optional("stopped", r.stopped),
       ("exit", JNum(exit_code(r.blockers)))
@@ -202,6 +207,25 @@ fn costly_field(costs: [TestCost]) : [(String, JsonValue)] = if is_empty(costs) 
       "dearest_tests",
       JArr(
         take(costs, COSTLY_FOR_AGENT) | test_cost
+      )
+    )
+  ]
+}
+
+# Which tests kill nothing, when the run asked for every kill: an agent
+# told to tidy a suite is given the names and the counts, and decides.
+fn weighed_field(weighed: Option[Weighed]) : [(String, JsonValue)] = match weighed {
+  None -> []
+  Some(w) -> [
+    (
+      "test_weights",
+      JObj(
+        [
+          ("kill_nothing", JArr(take(idle(w), IDLE_FOR_AGENT) | (t => JStr(t.test_id)))),
+          ("kill_nothing_count", JNum(length(idle(w)))),
+          ("reach_nothing_count", JNum(length(w.unreaching))),
+          ("unsure", JNum(w.unsure))
+        ]
       )
     )
   ]

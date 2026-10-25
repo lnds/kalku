@@ -22,6 +22,7 @@ import kalku.core.changed_lines
 import kalku.core.skipping
 import kalku.core.blaming
 import kalku.core.costing
+import kalku.core.kills
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
@@ -29,6 +30,9 @@ const SHOWN_TESTS : Int = 3
 
 # Enough of the dearest tests to act on; the rest are in the JSON report.
 const COSTLY_SHOWN : Int = 10
+
+# Enough tests named to start on; the JSON report has every one.
+const IDLE_SHOWN : Int = 20
 
 # Below this much casting, which tests it went to is not worth a reader's time.
 const COSTLY_FLOOR_MS : Int = 1000
@@ -91,7 +95,8 @@ pub type Report = {
   plan: Option[PlanMark],
   commit: Option[String],
   whole: Bool,
-  costs: [TestCost]
+  costs: [TestCost],
+  weighed: Option[Weighed]
 }
 
 #[doc("""
@@ -127,6 +132,7 @@ pub fn human(r: Report) : String = join(
     ...doubted_block(r.doubted),
     ...reused_block(r.reused),
     ...costly_block(r.costs, r.reused),
+    ...weighed_block(r.weighed),
     summary_line(r),
     ...suppression_block(r),
     ...blocker_block(r)
@@ -190,6 +196,52 @@ fn costly_block(costs: [TestCost], reused: Int) : [String] {
     ]
   }
 }
+
+# Only a run that asked for every kill says which tests kill nothing: a
+# normal run credits one test per kill, and the test that would have
+# killed second looks idle. A test reaching no site is said apart, as what
+# kalku measured rather than a verdict on the test.
+fn weighed_block(weighed: Option[Weighed]) : [String] = match weighed {
+  None -> []
+  Some(w) -> [
+    ...idle_lines(idle(w)),
+    ...named_some(
+      w.unreaching,
+      "test(s) reach no line a spell touched: kalku did not measure them, which says nothing about what they check"
+    ),
+    ...if w.unsure == 0 {
+      []
+    } else {
+      [
+        "#{w.unsure} wekufe are left out of this: a cast of theirs timed out, crashed, or killed without naming the test, so not every test that kills them is known."
+      ]
+    },
+    ""
+  ]
+}
+
+fn idle_lines(tests: [Weight]) : [String] = if is_empty(tests) {
+  ["every test that faced a wekufe killed at least one."]
+} else {
+  [
+    "#{length(tests)} test(s) killed none of the wekufe they faced, each cast until no test left would kill it:",
+    ...take(tests, IDLE_SHOWN) | (t => "  #{t.test_id}  faced #{t.faced} wekufe"),
+    ...more_than(length(tests), IDLE_SHOWN)
+  ]
+}
+
+fn named_some(tests: [String], what: String) : [String] = if is_empty(tests) {
+  []
+} else {
+  [
+    "#{length(tests)} #{what}:",
+    ...take(tests, IDLE_SHOWN) | (t => "  #{t}"),
+    ...more_than(length(tests), IDLE_SHOWN)
+  ]
+}
+
+fn more_than(n: Int, shown: Int) : [String] =
+  if n <= shown { [] } else { ["  and #{n - shown} more: the JSON report names every one"] }
 
 fn costly_line(c: TestCost, total: Int) : String =
   "  #{seconds(casting_ms(c))}  #{casting_ms(c) * 100 / total}%  #{c.test_id}  #{c.duration_ms} ms × #{c.judges} wekufe"

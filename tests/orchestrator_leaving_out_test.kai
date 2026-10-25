@@ -39,7 +39,8 @@ fn asking_of(script: String) : Asking = Asking {
   touched: None,
   shard: None,
   store: None,
-  reuse: false
+  reuse: false,
+  every_kill: false
 }
 
 fn learnt(script: String) : Result[measure.Known, String] / Process + Spawn + Clock + File =
@@ -98,7 +99,9 @@ test "a wekufe a kalku saw no test run is not a survivor, and its reason is kept
         wekufe: "s3",
         outcome: NoCoverage,
         tests: ["test/a_test.exs:3"],
-        said: Some("no test ran `A.init/1` while the wekufe was in it.")
+        said: Some("no test ran `A.init/1` while the wekufe was in it."),
+        killed_by: None,
+        again: false
       }
       let r =
         report_of(ready, Casting { verdicts: [unrun], failure: None, cancelled: false }, known)
