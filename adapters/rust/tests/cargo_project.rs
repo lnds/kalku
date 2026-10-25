@@ -82,6 +82,28 @@ fn it_lists_and_runs_exactly_the_tests_it_is_asked_for() {
     assert_eq!(all.results.len(), 2);
 }
 
+// What a Tauri app's library declares: its unit tests are found and run
+// like any library's.
+#[test]
+fn a_library_built_as_static_and_dynamic_too_has_its_tests_found() {
+    let dir = Dir::new("crate_types");
+    dir.file(
+        "proj/Cargo.toml",
+        &format!(
+            "{PACKAGE}\n[lib]\nname = \"p_lib\"\ncrate-type = [\"staticlib\", \"cdylib\", \"rlib\"]\n"
+        ),
+    );
+    dir.file("proj/src/lib.rs", TESTS);
+    let mut project = dir.project();
+    let targets = built(&mut project);
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].select, ["--lib"]);
+
+    let mut listed = project.list(&targets[0]).unwrap();
+    listed.sort();
+    assert_eq!(listed, ["t::a", "t::ab"]);
+}
+
 #[test]
 fn a_failing_test_is_a_result_not_an_error() {
     let dir = Dir::new("failing");

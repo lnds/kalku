@@ -605,12 +605,8 @@ pub fn artifacts(stdout: &str, work: &Path) -> Vec<Target> {
         ) else {
             continue;
         };
-        let kind = kinds.first().and_then(Value::as_str).unwrap_or("");
-        let select = match kind {
-            "lib" | "rlib" | "proc-macro" => vec!["--lib".to_string()],
-            "bin" => vec!["--bin".to_string(), name.to_string()],
-            "test" => vec!["--test".to_string(), name.to_string()],
-            _ => continue,
+        let Some(select) = selection(kinds, name) else {
+            continue;
         };
         let file = Path::new(src)
             .strip_prefix(&work)
@@ -625,6 +621,25 @@ pub fn artifacts(stdout: &str, work: &Path) -> Vec<Target> {
         }
     }
     targets
+}
+
+/// The cargo arguments that pick out one target's test executable.
+///
+/// A library has one target whatever its `crate-type` lists — `staticlib`
+/// and `cdylib` beside `rlib`, as a Tauri app's must — and `--lib` picks
+/// it, so any library kind among them makes it the library.
+fn selection(kinds: &[Value], name: &str) -> Option<Vec<String>> {
+    const LIBRARY: [&str; 6] = ["lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"];
+    let has = |k: &str| kinds.iter().any(|v| v.as_str() == Some(k));
+    if LIBRARY.iter().any(|k| has(k)) {
+        Some(vec!["--lib".to_string()])
+    } else if has("bin") {
+        Some(vec!["--bin".to_string(), name.to_string()])
+    } else if has("test") {
+        Some(vec!["--test".to_string(), name.to_string()])
+    } else {
+        None
+    }
 }
 
 /// Every executable cargo built, in the order it said so.
@@ -809,6 +824,19 @@ mod tests {
         assert_eq!(targets[0].select, vec!["--lib"]);
         assert_eq!(targets[1].select, vec!["--test", "pipe"]);
         assert_eq!(targets[2].select, vec!["--bin", "p"]);
+    }
+
+    // A library that is also a static and a dynamic one is still the
+    // library, and its tests are the ones `--lib` runs.
+    #[test]
+    fn a_library_of_several_crate_types_is_the_library() {
+        let out = r#"{"reason":"compiler-artifact","package_id":"path+file:///w#p@1.0.0","target":{"kind":["staticlib","cdylib","rlib"],"name":"p_lib","src_path":"/w/src/lib.rs"},"profile":{"test":true},"executable":"/t/p_lib"}"#;
+
+        let targets = artifacts(out, Path::new("/w"));
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].file, "src/lib.rs");
+        assert_eq!(targets[0].select, vec!["--lib"]);
     }
 
     #[test]
