@@ -7,6 +7,7 @@ import kalku.core.blaming
 import kalku.core.changed_lines
 import kalku.core.report_json
 import kalku.core.report_github
+import kalku.core.costing
 
 fn site_of(
   file: String,
@@ -53,7 +54,8 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     stopped: None,
     plan: None,
     commit: None,
-    whole: false
+    whole: false,
+    costs: []
   }
 
 fn plain() : Report =
@@ -461,4 +463,36 @@ test "a run whose coverage was withheld says why, in the kalku's words" {
 
   assert has(json(r, 1), "\"coverage_withheld\":\"The suite reached 1 line(s)")
   assert not has(json(plain(), 1), "coverage_withheld")
+}
+
+# A run that knows how long each test took and which wekufe each judged
+# can say where its casting went, which is where a slow run is made faster.
+test "the tests the casting went to are named, dearest first, with the arithmetic" {
+  let r = Report {
+    ...plain(),
+    costs: [
+      TestCost { test_id: "t/slow_test.exs:3", duration_ms: 2000, judges: 300 },
+      TestCost { test_id: "t/quick_test.exs:9", duration_ms: 12, judges: 5 }
+    ]
+  }
+  let text = human(r)
+
+  assert has(text, "the tests the casting went to, dearest first (600.0 s in all):")
+  assert has(text, "  600.0 s  99%  t/slow_test.exs:3  2000 ms × 300 wekufe")
+  assert has(text, "  0.0 s  0%  t/quick_test.exs:9  12 ms × 5 wekufe")
+  assert index_of(text, "slow_test") < index_of(text, "score ")
+  assert not has(text, "timed as it was when it last ran")
+  assert has(human(Report { ...r, reused: 4 }), "timed as it was when it last ran")
+  assert has(
+    json(r, 0),
+    "\"test_costs\":[{\"test\":\"t/slow_test.exs:3\",\"duration_ms\":2000,\"judges\":300,\"casting_ms\":600000}"
+  )
+}
+
+test "a run whose casting took no time to speak of does not list where it went" {
+  let r = Report { ...plain(), costs: [TestCost { test_id: "t", duration_ms: 3, judges: 10 }] }
+
+  assert not has(human(r), "the tests the casting went to")
+  assert has(json(r, 0), "test_costs")
+  assert not has(json(plain(), 0), "test_costs")
 }

@@ -698,6 +698,7 @@ pub fn report_after(ready: Plan, casts: [Wekufe], casting: Casting, known: Known
   Report {
     ...report_of(ready, casting, known),
     stopped: stopped,
+    costs: test_costs(casts, known.durations),
     blockers: stopped |> map(why => [CouldNotMeasure(why)]) |> unwrap_or([])
   }
 }
@@ -742,7 +743,8 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     stopped: None,
     plan: None,
     commit: None,
-    whole: false
+    whole: false,
+    costs: []
   }
 }
 

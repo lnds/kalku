@@ -8,6 +8,7 @@ import kalku.core.report
 import kalku.core.blaming
 import kalku.core.report_agent
 import kalku.core.report_json
+import kalku.core.costing
 
 const SOURCE : [String] = [
   "defmodule Parser do",
@@ -60,7 +61,8 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   stopped: None,
   plan: None,
   commit: None,
-  whole: false
+  whole: false,
+  costs: []
 }
 
 fn one() : Counts = tally([Cast(Killed), Cast(Survived)])
@@ -324,4 +326,23 @@ test "a run that stopped short says so in the summary, and in the JSON" {
   assert field(json(stopped, 2), "stopped") == JStr(why)
   assert not has(last_line(agent(report_of([], one()), lines_of)), "stopped")
   assert not has(json(report_of([], one()), 0), "stopped")
+}
+
+# An agent asked to make a suite faster starts with the few tests the
+# casting spends most on, and gets the numbers rather than a verdict.
+test "an agent is told the few tests the casting spends most on" {
+  let costs = enumerate(repeat(0, 7))
+    | (ix => TestCost { test_id: "t#{ix.fst}", duration_ms: 10 * (7 - ix.fst), judges: 1 })
+  let summary = last_line(agent(Report { ...report_of([], one()), costs: costs }, lines_of))
+
+  match field(summary, "dearest_tests") {
+    JArr(listed) -> {
+      assert length(listed) == COSTLY_FOR_AGENT
+      assert get(listed |> head |> unwrap_or(JNull), "casting_ms") == JNum(70)
+    }
+    _ -> {
+      assert false
+    }
+  }
+  assert not has(last_line(agent(report_of([], one()), lines_of)), "dearest_tests")
 }

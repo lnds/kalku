@@ -11,6 +11,7 @@ score of nothing.
 
 import kalku.wire.shapes
 import kalku.core.report
+import kalku.core.costing
 import kalku.core.report_json
 import kalku.core.shard
 import kalku.core.blaming
@@ -221,7 +222,8 @@ pub fn combined(first: Report, rest: [Report]) : Report {
     stopped: None,
     plan: first.plan,
     commit: first.commit,
-    whole: true
+    whole: true,
+    costs: added_costs(parts | .costs)
   }
 }
 

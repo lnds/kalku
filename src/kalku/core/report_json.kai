@@ -18,6 +18,7 @@ import kalku.core.gate
 import kalku.core.report
 import kalku.core.shard
 import kalku.core.blaming
+import kalku.core.costing
 
 #[doc("The whole report as one canonical JSON object.")]
 pub fn json(r: Report, exit: Int) : String {
@@ -49,7 +50,8 @@ pub fn json(r: Report, exit: Int) : String {
         ...optional("whole", if r.whole { Some(JBool(true)) } else { None }),
         ("uncovered", JArr(r.uncovered | (s => to_json(s)))),
         ("troubles", JArr(r.troubles | (t => to_json(t)))),
-        ...optional("suite", suite |> map(strings))
+        ...optional("suite", suite |> map(strings)),
+        ...if is_empty(r.costs) { [] } else { [("test_costs", JArr(r.costs | test_cost))] }
       ]
     )
   )
@@ -97,6 +99,24 @@ fn survivor(s: Survivor, suite: Option[[String]]) : JsonValue = JObj(
     ...if s.chosen or suite == Some(s.tests) { [] } else { [("tests", strings(s.tests))] },
     ("site", to_json(s.site))
   ]
+)
+
+#[doc("One test's cost, as both JSON reports write it.")]
+pub fn test_cost(c: TestCost) : JsonValue = JObj(
+  [
+    ("test", JStr(c.test_id)),
+    ("duration_ms", JNum(c.duration_ms)),
+    ("judges", JNum(c.judges)),
+    ("casting_ms", JNum(casting_ms(c)))
+  ]
+)
+
+fn test_cost_from(e: JsonValue, at: String) : Result[TestCost, String] = Ok(
+  TestCost {
+    test_id: (json_bind_string(get(e, "test"), "#{at}.test") |> map_err(said))!,
+    duration_ms: (json_bind_int(get(e, "duration_ms"), "#{at}.duration_ms") |> map_err(said))!,
+    judges: (json_bind_int(get(e, "judges"), "#{at}.judges") |> map_err(said))!
+  }
 )
 
 fn strings(xs: [String]) : JsonValue = JArr(xs | JStr)
@@ -158,7 +178,11 @@ fn written_from(v: JsonValue) : Result[Written, String] {
         plan: (json_bind_opt(get(v, "plan"), "plan", planmark_of_json) |> map_err(said))!,
         commit: (json_bind_opt_string(get(v, "commit"), "commit") |> map_err(said))!,
         whole: ((json_bind_opt_bool(get(v, "whole"), "whole") |> map_err(said))!)
-          |> unwrap_or(false)
+          |> unwrap_or(false),
+        costs: match get(v, "test_costs") {
+          JNull -> []
+          _ -> each(v, "test_costs", test_cost_from)!
+        }
       },
       exit: int_at(v, "exit")!,
       kalku: (json_bind_opt_string(get(v, "kalku"), "kalku") |> map_err(said))!

@@ -7,6 +7,7 @@ import kalku.core.report_json
 import kalku.core.blaming
 import kalku.core.shard
 import kalku.core.merging
+import kalku.core.costing
 
 # A wekufe id that shard `i` of `n` owns, found by asking the partition.
 fn owned_by(i: Int, n: Int, k: Int) : String = match find(
@@ -61,7 +62,8 @@ fn shard_report(i: Int, n: Int, killed: Int) : Report {
     stopped: None,
     plan: Some(plan()),
     commit: Some("c0ffee"),
-    whole: true
+    whole: true,
+    costs: []
   }
 }
 
@@ -192,7 +194,8 @@ test "a report read back is the report that was written, less its blockers" {
       sites: [site_at("z", 6)]
     },
     withheld: Some("why"),
-    stopped: Some("cut")
+    stopped: Some("cut"),
+    costs: [TestCost { test_id: "t1", duration_ms: 40, judges: 3 }]
   }
   match read_report(json(judged, 2)) {
     Err(why) -> {
