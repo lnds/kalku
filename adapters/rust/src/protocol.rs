@@ -17,7 +17,8 @@ pub const PROTOCOL: i64 = 1;
 /// The longest line either side accepts, excluding the newline.
 pub const MAX_LINE: usize = 4_194_304;
 
-type Obj = Map<String, Value>;
+/// A JSON object as it was read.
+pub type Obj = Map<String, Value>;
 
 // ---- what a kalku is asked -----------------------------------------------
 
@@ -29,6 +30,8 @@ pub struct Hello {
     pub worker: i64,
     pub inline_limit_bytes: i64,
     pub env: Vec<(String, String)>,
+    /// The `[rust]` table of the project's `.kalku.toml`, as it stands.
+    pub options: Option<Obj>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -171,6 +174,7 @@ fn body(kind: &str, o: &Obj) -> Result<Request, DecodeError> {
             worker: int(o, "worker", "")?,
             inline_limit_bytes: int(o, "inline_limit_bytes", "")?,
             env: env(o)?,
+            options: options(o)?,
         }),
         "prepare" => Request::Prepare,
         "baseline" => Request::Baseline { reuse: reuse(o)? },
@@ -247,6 +251,14 @@ fn strings(o: &Obj, key: &str, parent: &str) -> Result<Vec<String>, DecodeError>
             })
             .collect(),
         _ => Err(bad(&here, "must be an array")),
+    }
+}
+
+fn options(o: &Obj) -> Result<Option<Obj>, DecodeError> {
+    match o.get("options") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Object(m)) => Ok(Some(m.clone())),
+        Some(_) => Err(bad("options", "must be an object")),
     }
 }
 
@@ -773,6 +785,7 @@ mod tests {
                 worker: 2,
                 inline_limit_bytes: 9,
                 env: vec![("A".into(), "1".into())],
+                options: None,
             })
         );
         assert_eq!(
