@@ -23,7 +23,13 @@ impl Dir {
     }
 
     fn project(&self) -> Cargo {
-        Cargo::new(self.0.join("proj"), self.0.join("reni"), 0, vec![])
+        Cargo::new(
+            self.0.join("proj"),
+            self.0.join("proj"),
+            self.0.join("reni"),
+            0,
+            vec![],
+        )
     }
 }
 
@@ -231,7 +237,13 @@ fn a_fingerprint_follows_the_packages_a_test_is_built_from() {
     );
     dir.file("proj/core/src/lib.rs", TESTS);
     let prints = |worker: i64| {
-        let mut project = Cargo::new(dir.0.join("proj"), dir.0.join("reni"), worker, vec![]);
+        let mut project = Cargo::new(
+            dir.0.join("proj"),
+            dir.0.join("proj"),
+            dir.0.join("reni"),
+            worker,
+            vec![],
+        );
         let targets = built(&mut project);
         let prints = project.fingerprints().unwrap();
         let mut by_file: Vec<(String, String)> = targets
