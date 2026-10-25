@@ -53,7 +53,11 @@ pub fn json(r: Report, exit: Int) : String {
         ("troubles", JArr(r.troubles | (t => to_json(t)))),
         ...optional("suite", suite |> map(strings)),
         ...if is_empty(r.costs) { [] } else { [("test_costs", JArr(r.costs | test_cost))] },
-        ...optional("test_weights", r.weighed |> map(weights))
+        ...optional("test_weights", r.weighed |> map(weights)),
+        ...optional(
+          "redundant_tests",
+          r.weighed |> map(w => JArr(dearest_redundant(redundant(w), r.costs) | redundant_json))
+        )
       ]
     )
   )
@@ -136,6 +140,16 @@ fn weights(w: Weighed) : JsonValue = JObj(
     ),
     ("unsure", JNum(w.unsure)),
     ("unreaching", strings(w.unreaching))
+  ]
+)
+
+#[doc("One redundant test, as both JSON reports write it.")]
+pub fn redundant_json(t: Redundant) : JsonValue = JObj(
+  [
+    ("test", JStr(t.test_id)),
+    ("kills", JNum(t.kills)),
+    ...optional("killed_also_by", t.by |> map(JStr)),
+    ...if t.same { [("same_kills", JBool(true))] } else { [] }
   ]
 )
 

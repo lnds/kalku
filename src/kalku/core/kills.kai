@@ -133,3 +133,63 @@ fn killers(chase: [Attempt]) : [(String, String)] =
       None -> []
     }
   )
+
+#[doc("""
+A test none of whose kills is its alone: every wekufe it kills, another
+test kills too.
+
+`by` names one test whose kills hold all of this one's, and `same` says
+whether the two kill exactly the same wekufe; without `by`, no single test
+does, and the rest of the suite between them does.
+""")]
+#[derive(Eq, Show)]
+pub type Redundant = { test_id: String, kills: Int, by: Option[String], same: Bool }
+
+#[doc("""
+The tests whose every kill another test also makes.
+
+Each is redundant on its own: taking it out lets no wekufe live. Two of
+them may be each other's cover, so taking out several at once can. Two
+tests that kill exactly the same wekufe are said once, the second by the
+first.
+""")]
+pub fn redundant(w: Weighed) : [Redundant] {
+  let killing = w.tests |? (t => not list.is_empty(t.kills))
+  let killers_of = list.foldl(
+    killing || (t => (t.kills | (k => (k, t.test_id)))),
+    map.empty(),
+    (by, kt) => map.update(by, kt.fst, [kt.snd], ts => ts ++ [kt.snd])
+  )
+  let kills_of = map.from(killing | (t => (t.test_id, t.kills)))
+  killing || (t => redundant_one(t, killers_of, kills_of))
+}
+
+fn redundant_one(
+  t: Weight,
+  killers_of: Map[String, [String]],
+  kills_of: Map[String, [String]]
+) : [Redundant] {
+  let me = t.test_id
+  let kills_by = (o: String) => unwrap_or(map.get(kills_of, o), [])
+  if not list.all(t.kills, w => not list.is_empty(others_of(killers_of, w, me))) {
+    []
+  } else {
+    let covers = list.uniq(list.flat_map(t.kills, w => others_of(killers_of, w, me)))
+      |? (o => holds(kills_by(o), t.kills))
+    let wider = covers |? (o => not holds(t.kills, kills_by(o)))
+    let same = covers |? (o => o < me and holds(t.kills, kills_by(o)))
+    let n = list.length(t.kills)
+    match (wider, same, covers) {
+      ([b, ..._], _, _) -> [Redundant { test_id: me, kills: n, by: Some(b), same: false }]
+      ([], [b, ..._], _) -> [Redundant { test_id: me, kills: n, by: Some(b), same: true }]
+      ([], [], []) -> [Redundant { test_id: me, kills: n, by: None, same: false }]
+      _ -> []
+    }
+  }
+}
+
+fn others_of(killers_of: Map[String, [String]], w: String, me: String) : [String] =
+  unwrap_or(map.get(killers_of, w), []) |? (o => o != me)
+
+# Whether `big` holds every wekufe of `small`.
+fn holds(big: [String], small: [String]) : Bool = list.all(small, w => list.contains(big, w))

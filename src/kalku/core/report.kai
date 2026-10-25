@@ -132,7 +132,7 @@ pub fn human(r: Report) : String = join(
     ...doubted_block(r.doubted),
     ...reused_block(r.reused),
     ...costly_block(r.costs, r.reused),
-    ...weighed_block(r.weighed),
+    ...weighed_block(r.weighed, r.costs),
     summary_line(r),
     ...suppression_block(r),
     ...blocker_block(r)
@@ -201,10 +201,11 @@ fn costly_block(costs: [TestCost], reused: Int) : [String] {
 # normal run credits one test per kill, and the test that would have
 # killed second looks idle. A test reaching no site is said apart, as what
 # kalku measured rather than a verdict on the test.
-fn weighed_block(weighed: Option[Weighed]) : [String] = match weighed {
+fn weighed_block(weighed: Option[Weighed], costs: [TestCost]) : [String] = match weighed {
   None -> []
   Some(w) -> [
     ...idle_lines(idle(w)),
+    ...redundant_lines(dearest_redundant(redundant(w), costs), costs),
     ...named_some(
       w.unreaching,
       "test(s) reach no line a spell touched: kalku did not measure them, which says nothing about what they check"
@@ -228,6 +229,26 @@ fn idle_lines(tests: [Weight]) : [String] = if is_empty(tests) {
     ...take(tests, IDLE_SHOWN) | (t => "  #{t.test_id}  faced #{t.faced} wekufe"),
     ...more_than(length(tests), IDLE_SHOWN)
   ]
+}
+
+# Each one alone can go without a wekufe living; several at once may be
+# each other's cover. And redundancy is against the spells cast: a test
+# may catch a defect no spell models.
+fn redundant_lines(tests: [Redundant], costs: [TestCost]) : [String] = if is_empty(tests) {
+  []
+} else {
+  [
+    "#{length(tests)} test(s) only repeat kills other tests make: any one of them can go without a wekufe living, though several at once may not, and a test may still catch what no spell models:",
+    ...take(tests, IDLE_SHOWN)
+      | (t => "  #{seconds(cost_of_test(costs, t.test_id))}  #{t.test_id}  #{covered_how(t)}"),
+    ...more_than(length(tests), IDLE_SHOWN)
+  ]
+}
+
+fn covered_how(t: Redundant) : String = match (t.by, t.same) {
+  (Some(b), true) -> "kills the same #{t.kills} wekufe as #{b}"
+  (Some(b), false) -> "kills #{t.kills} wekufe, all killed by #{b} too"
+  (None, _) -> "kills #{t.kills} wekufe, each killed by another test"
 }
 
 fn named_some(tests: [String], what: String) : [String] = if is_empty(tests) {
@@ -440,4 +461,18 @@ fn equivalents(e: EquivalentCounts) : [String] {
   } else {
     ["#{total} equivalent (#{e.bytecode} bytecode, #{e.declared} declared)"]
   }
+}
+
+#[doc("""
+The redundant tests, those that cost the casting most first: what taking
+one out would save is what a reader acts on.
+""")]
+pub fn dearest_redundant(tests: [Redundant], costs: [TestCost]) : [Redundant] = sort_by(
+  tests,
+  (a, b) => cost_of_test(costs, b.test_id) - cost_of_test(costs, a.test_id)
+)
+
+fn cost_of_test(costs: [TestCost], id: String) : Int = match find(costs, c => c.test_id == id) {
+  Some(c) -> casting_ms(c)
+  None -> 0
 }
