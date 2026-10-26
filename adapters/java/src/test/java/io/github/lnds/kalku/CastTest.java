@@ -349,6 +349,34 @@ class CastTest {
     assertEquals("survived", done.get("outcome"), done.toString());
   }
 
+  // `fx.Door` is compiled with a processor that loads only with its own dependencies beside
+  // it. With its jar alone the processor does not load, the file does not compile even
+  // unchanged, and nothing in it is measured.
+  @Test
+  void aProcessorIsCompiledWithWhatItDependsOn() throws Exception {
+    Path project = temp.resolve("serviced");
+    copy(PROJECTS.resolve("serviced"), project);
+    String file = "src/main/java/fx/Door.java";
+    List<Map<?, ?>> found = ask(project, hello(project), sitesOf(file));
+    Map<?, ?> site = null;
+    for (Object each : (List<?>) found.get(1).get("sites")) {
+      if (">=".equals(((Map<?, ?>) each).get("original"))) {
+        site = (Map<?, ?>) each;
+      }
+    }
+    List<String> tests = Collections.singletonList("fx.DoorTest#eighteenIsWelcome()");
+    List<Map<?, ?>> said =
+        ask(
+            project,
+            hello(project),
+            "{\"type\":\"prepare\",\"id\":2}",
+            castOf(rewritten(site, ">"), tests),
+            castOf(rewritten(site, ">="), tests));
+    assertEquals("prepared", said.get(1).get("type"), said.get(1).toString());
+    assertEquals("killed", said.get(2).get("outcome"), said.get(2).toString());
+    assertEquals("survived", said.get(3).get("outcome"), said.get(3).toString());
+  }
+
   // A cast of the one comparison in `fx.Account`, which becomes `becomes`. With
   // `unversioned`, the processor is named without its version and the project manages it.
   private static Map<?, ?> castInGenerated(Path project, boolean unversioned) throws Exception {
