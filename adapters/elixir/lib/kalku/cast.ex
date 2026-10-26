@@ -158,6 +158,7 @@ defmodule Kalku.Cast do
       safely(fn -> Code.compile_file(path) end)
     end
 
+    Code.purge_compiler_modules()
     :ok
   end
 
@@ -277,13 +278,23 @@ defmodule Kalku.Cast do
     end
   end
 
-  defp compile(source, file) do
+  @doc """
+  Compiles a wekufe's source in memory, as the file it came from.
+
+  Compiling loads a module of the compiler's own beside what it compiles,
+  and leaves it loaded until it is purged. A kalku compiles once per cast
+  for as long as it lives, and every module left loaded makes loading the
+  next one slower, so they are purged each time.
+  """
+  def compile(source, file) do
     {:ok, Code.compile_string(source, file)}
   rescue
     e -> {:error, Exception.message(e) |> first_line()}
   catch
     :exit, reason -> {:error, inspect(reason)}
     _kind, value -> {:error, inspect(value)}
+  after
+    Code.purge_compiler_modules()
   end
 
   # Loaded back under the file they came from. Loading a module under a
