@@ -264,7 +264,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **kalku de Elixir** — sites, `prepare`, `baseline` con cobertura por test, `cast`, `abort`, `reset`, `reload` | hecho: todos los mensajes del protocolo salvo `delegate` |
 | **kalku de kaikai** — el kalku con el que kalku se mide a sí mismo | hecho |
 | **kalku de Rust** — sites para `arm`, `compare`, `connect`, `negate`, `literal` desde `syn`, detrás del protocolo de kalku | hecho: encuentra sites |
-| kalku de Rust: `prepare`, `baseline` y `cast` en el reni, `abort`, cobertura por test con LLVM | hecho |
+| kalku de Rust: `prepare`, `baseline` y `cast` en el reni, `abort`, `reload`, cobertura por test con LLVM | hecho |
 | kalku de Rust: `kalku init` para proyectos Cargo, incluido en el release | hecho |
 | **kalku de Python** — sites desde `ast`, `prepare`/`baseline`/`cast` en hijos creados con fork, `abort`, cobertura por test con `sys.monitoring`, `kalku init`, incluido en el release | hecho |
 | **kalku de Java** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde `javac`, detrás del protocolo de kalku, en Java 11, 17, 21 y 25 | hecho: encuentra sites |
