@@ -167,6 +167,28 @@ kalku cast <wekufe>            # re-cast just that one
 kalku info outcomes            # what each outcome means
 ```
 
+### Weigh your tests
+
+Every run says which tests cost the casting most. Which tests kill
+nothing, and which are redundant, takes one more thing: a cast stops at
+the first test that fails, so a test that would have killed a wekufe
+after the one that did is never named.
+
+```sh
+kalku run --all --every-kill
+```
+
+Each killed wekufe is cast again without its killer until none of the
+tests left notices, and the report then lists the tests that kill
+nothing, the redundant ones (every wekufe they kill, another test kills
+too), dearest first, and apart, the tests that reach no line a spell
+touched. A redundant test can go on its own without a wekufe living;
+several at once may not, and a test may still catch a defect no spell
+models. A wekufe whose chase did not end is counted as unsure and left
+out rather than guessed at. It costs one cast per kill, so it is never
+the default; `--format json` carries `test_weights`, `redundant_tests`
+and `test_costs`.
+
 ## Keep it warm
 
 A run spends most of its time setting the project up. `kalku serve` keeps
