@@ -170,6 +170,28 @@ kalku cast <wekufe>            # re-cast just that one
 kalku info outcomes            # what each outcome means
 ```
 
+### Pesa tus tests
+
+Toda corrida dice qué tests le cuestan más al lanzamiento. Saber qué tests
+no matan nada, y cuáles son redundantes, pide algo más: un cast se detiene
+en el primer test que falla, así que un test que habría matado un wekufe
+después del que lo mató nunca se nombra.
+
+```sh
+kalku run --all --every-kill
+```
+
+Cada wekufe muerto se vuelve a lanzar sin el test que lo mató hasta que
+ninguno de los tests que quedan lo nota, y el reporte lista entonces los
+tests que no matan nada, los redundantes (cada wekufe que matan lo mata
+también otro test), los más caros primero, y aparte, los tests que no
+alcanzan ninguna línea que un spell tocó. Un test redundante puede irse
+solo sin que viva un wekufe; varios a la vez quizás no, y un test puede
+atrapar un defecto que ningún spell modela. Un wekufe cuya persecución no
+terminó cuenta como incierto y queda fuera en vez de adivinarse. Cuesta un
+cast por cada kill, así que nunca es lo predeterminado; `--format json`
+trae `test_weights`, `redundant_tests` y `test_costs`.
+
 ## Mantenlo caliente
 
 Una corrida gasta la mayor parte de su tiempo preparando el proyecto.
