@@ -2,6 +2,7 @@ package io.github.lnds.kalku;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -16,6 +17,12 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -88,6 +95,10 @@ final class Maven {
     Path launcher;
     // True when the tests are JUnit 4's or TestNG's, run by an engine fetched for them.
     boolean engineFetched;
+    // The annotation processors the build names apart from its dependencies, as a pom that
+    // depends on them, for Maven to resolve; and each one's own jar, should it not.
+    String processors;
+    List<String> processorJars = new ArrayList<>();
   }
 
   // Pinned, so what these goals write does not change under the kalku.
@@ -176,6 +187,7 @@ final class Maven {
         readClasspath(build, jars);
       }
       readPom(build, resolved);
+      processorPath(build, env);
       // A module with no tests of its own needs nothing to run them with.
       boolean tests = !Project.sources(build.testSources).isEmpty();
       if (build.platform == null && tests) {
@@ -481,7 +493,11 @@ final class Maven {
     }
     flags.addAll(stated);
     if (!stated.contains("-processorpath") && !stated.contains("--processor-path")) {
-      processors(build, project, child(set, "annotationProcessorPaths"));
+      processors(
+          build,
+          project,
+          child(set, "annotationProcessorPaths"),
+          "true".equals(text(set, "annotationProcessorPathsUseDepMgmt")));
     }
     // A program compiled with preview features only runs where they are switched on.
     if (flags.contains("--enable-preview")) {
@@ -548,16 +564,18 @@ final class Maven {
     return out;
   }
 
-  // Annotation processors a build names apart from its dependencies. Each is the jar Maven
-  // put in the repository the dependencies came from; its version is the one stated, or the
-  // one the project manages, which is how a build that inherits its versions names it.
+  // Annotation processors a build names apart from its dependencies. The compiler plugin
+  // resolves each as Maven resolves any dependency, with what the processor itself depends
+  // on, so they are written down as the dependencies of a pom of their own for Maven to
+  // resolve the same way. Their versions are the ones stated, or the ones the project
+  // manages, which is how a build that inherits its versions names them; the plugin goes by
+  // the project's managed versions only when the build asks it to.
   //
-  // What a processor itself depends on is not looked for. A processor that needs more than
-  // its own jar fails to load, the file then does not compile even unchanged, and a cast says
-  // that rather than blame a wekufe.
-  private static void processors(Build build, Element project, Element paths) {
+  // Each one's own jar is kept as well, found in the repository the dependencies came from:
+  // what a cast is compiled with should Maven not resolve the rest.
+  private static void processors(Build build, Element project, Element paths, boolean managed) {
     Path repository = repository(build);
-    List<String> jars = new ArrayList<>();
+    StringBuilder dependencies = new StringBuilder();
     for (Element path : children(paths)) {
       String group = text(path, "groupId");
       String artifact = text(path, "artifactId");
@@ -565,6 +583,16 @@ final class Maven {
       if (version == null || version.isEmpty()) {
         version = managed(project, group, artifact);
       }
+      dependencies.append("<dependency>");
+      for (Element part : children(path)) {
+        if (!part.getTagName().equals("version")) {
+          dependencies.append(xml(part));
+        }
+      }
+      if (version != null) {
+        dependencies.append("<version>").append(escaped(version)).append("</version>");
+      }
+      dependencies.append("</dependency>");
       Path jar = null;
       if (repository != null && group != null && artifact != null && version != null) {
         jar =
@@ -578,13 +606,95 @@ final class Maven {
         jar = among(build.libraries, artifact);
       }
       if (jar != null) {
-        jars.add(jar.toString());
+        build.processorJars.add(jar.toString());
       }
     }
-    if (!jars.isEmpty()) {
-      build.compilerFlags.add("-processorpath");
-      build.compilerFlags.add(String.join(File.pathSeparator, jars));
+    if (dependencies.length() == 0) {
+      return;
     }
+    build.processors =
+        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>"
+            + "<groupId>kalku</groupId><artifactId>processors</artifactId><version>1</version>"
+            + "<packaging>pom</packaging>"
+            + xml(child(project, "repositories"))
+            + (managed ? xml(child(project, "dependencyManagement")) : "")
+            + "<dependencies>"
+            + dependencies
+            + "</dependencies></project>\n";
+  }
+
+  // The processor path a cast is compiled with: what Maven resolves of the processors the
+  // build names, resolved in the module's own build directory so that the project's Maven
+  // settings apply, and again only when what it is resolved from changed. Should Maven not
+  // resolve it, each processor's own jar is the path; a processor that needs more then fails
+  // to load, and a cast says it cannot compile the file even unchanged rather than blame a
+  // wekufe.
+  private static void processorPath(Build build, Map<String, String> env) throws IOException {
+    if (build.processors == null) {
+      return;
+    }
+    List<String> jars;
+    try {
+      jars = resolvedProcessors(build, env);
+    } catch (Failed e) {
+      System.err.println(
+          "kalku-java: Maven did not resolve the annotation processors of "
+              + called(build)
+              + ", so each is compiled with its own jar alone: "
+              + e.getMessage());
+      jars = build.processorJars;
+    }
+    if (!jars.isEmpty()) {
+      String path = String.join(File.pathSeparator, jars);
+      build.compilerFlags.addAll(Arrays.asList("-processorpath", path));
+      build.testCompilerFlags.addAll(Arrays.asList("-processorpath", path));
+    }
+  }
+
+  private static List<String> resolvedProcessors(Build build, Map<String, String> env)
+      throws Failed, IOException {
+    Path dir = build.dir.resolve("target").resolve("kalku-processors");
+    Path pom = dir.resolve("pom.xml");
+    Path out = dir.resolve("processors.classpath");
+    byte[] wanted = build.processors.getBytes(StandardCharsets.UTF_8);
+    boolean same = Files.isRegularFile(pom) && Arrays.equals(Files.readAllBytes(pom), wanted);
+    if (!same || !Files.isRegularFile(out)) {
+      Files.createDirectories(dir);
+      Files.deleteIfExists(out);
+      Files.write(pom, wanted);
+      run(dir, build.project, env, DEPENDENCY + ":build-classpath", "-Dmdep.outputFile=" + out);
+      if (!Files.isRegularFile(out)) {
+        throw new Failed("Maven wrote no processor path");
+      }
+    }
+    List<String> jars = new ArrayList<>();
+    String text = new String(Files.readAllBytes(out), StandardCharsets.UTF_8).trim();
+    for (String jar : text.split(Pattern.quote(File.pathSeparator))) {
+      if (!jar.isEmpty()) {
+        jars.add(jar);
+      }
+    }
+    return jars;
+  }
+
+  // An element of the resolved project, written back as XML; nothing for none.
+  private static String xml(Element element) {
+    if (element == null) {
+      return "";
+    }
+    try {
+      Transformer out = TransformerFactory.newInstance().newTransformer();
+      out.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+      StringWriter text = new StringWriter();
+      out.transform(new DOMSource(element), new StreamResult(text));
+      return text.toString();
+    } catch (TransformerException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static String escaped(String text) {
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
   }
 
   // The version a project gives an artifact where it manages versions, or where it depends

@@ -406,7 +406,7 @@ final class Protocol {
     return Json.encode(out);
   }
 
-  // At most one of `coverage` and `coveragePath` is given; neither when coverage is withheld.
+  // At most one of `coverage` and `packedPath` is given; neither when coverage is withheld.
   // `differences` is how the run was unlike the build's own, a sentence each; `reused`, the
   // tests offered that did not run, left out when there are none.
   static String baselineDone(
@@ -415,7 +415,7 @@ final class Protocol {
       List<?> tests,
       List<?> failures,
       List<?> coverage,
-      String coveragePath,
+      String packedPath,
       List<String> differences,
       List<String> reused) {
     Map<String, Object> out = message("baseline_done", id);
@@ -424,8 +424,8 @@ final class Protocol {
     out.put("tests", tests);
     if (coverage != null) {
       out.put("coverage", coverage);
-    } else if (coveragePath != null) {
-      out.put("coverage_path", coveragePath);
+    } else if (packedPath != null) {
+      out.put("coverage_packed_path", packedPath);
     }
     out.put("failures", failures);
     out.put("differences", differences);
