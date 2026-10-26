@@ -1,3 +1,9 @@
+## v0.25.1 (2026-10-25)
+
+### Changed
+
+- **elixir**: purge the compiler's own modules after each compile (#460)
+
 ## v0.25.0 (2026-10-25)
 
 ### Added
