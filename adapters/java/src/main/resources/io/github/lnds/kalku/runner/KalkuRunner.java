@@ -1,12 +1,19 @@
 package io.github.lnds.kalku.runner;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Writer;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,13 +52,101 @@ import org.junit.platform.launcher.core.LauncherFactory;
  *
  * <p>Asked for no test in particular, it runs the classes it is given: the ones the project's
  * build takes for tests, which the kalku reads from the build.
+ *
+ * <p>Started with {@code --serve}, it stays, and runs one request after another as the kalku
+ * names them on its input. Only the JUnit Platform is on this JVM's own class path; each
+ * request's classes — the project's, its tests, what they use, the engines — are read by a
+ * class loader of that request's own, on a thread of its own, and let go after it.
  */
 public final class KalkuRunner {
   private KalkuRunner() {}
 
   public static void main(String[] args) throws IOException {
+    if (args.length > 0 && args[0].equals("--serve")) {
+      serve();
+      return;
+    }
     leaveWithTheKalku();
-    List<String> asked = Files.readAllLines(Paths.get(args[0]), StandardCharsets.UTF_8);
+    answer(Paths.get(args[0]), Paths.get(args[1]));
+    // A test may leave a thread running that would keep this JVM alive.
+    System.exit(0);
+  }
+
+  // One line a request, `request<TAB>events`; the end of the input is the end of the kalku.
+  // What a request's tests started and left running is said, since it may still be running
+  // what that request loaded when the next one starts.
+  private static void serve() throws IOException {
+    BufferedReader asked =
+        new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+    String line;
+    while ((line = asked.readLine()) != null) {
+      String[] paths = line.split("\t");
+      Path request = Paths.get(paths[0]);
+      Path events = Paths.get(paths[1]);
+      Set<Thread> before = new HashSet<>(Thread.getAllStackTraces().keySet());
+      URLClassLoader loader = loaderFor(request);
+      Thread run =
+          new Thread(
+              () -> {
+                try {
+                  answer(request, events);
+                } catch (IOException e) {
+                  // What could not be written is a request that never said it was done.
+                }
+              },
+              "kalku-run");
+      run.setContextClassLoader(loader);
+      run.start();
+      try {
+        run.join();
+      } catch (InterruptedException e) {
+        Runtime.getRuntime().halt(70);
+      }
+      int left = leftOver(before);
+      loader.close();
+      Files.write(
+          events,
+          Collections.singletonList("{\"e\":\"left\",\"threads\":" + left + "}"),
+          StandardCharsets.UTF_8,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.APPEND);
+      Files.write(Paths.get(paths[1] + ".over"), new byte[0]);
+    }
+    Runtime.getRuntime().halt(0);
+  }
+
+  // The classes a request is run with, first to last; this JVM's own class path, the
+  // platform, comes before them all.
+  private static URLClassLoader loaderFor(Path request) throws IOException {
+    List<URL> urls = new ArrayList<>();
+    for (String line : Files.readAllLines(request, StandardCharsets.UTF_8)) {
+      if (line.startsWith("cp:")) {
+        urls.add(Paths.get(line.substring(3)).toUri().toURL());
+      }
+    }
+    return new URLClassLoader(urls.toArray(new URL[0]), KalkuRunner.class.getClassLoader());
+  }
+
+  // The threads that were not there before the request and still are. The JDK's common pool
+  // keeps its workers waiting for work, and a waiting worker holds nothing of the request.
+  private static int leftOver(Set<Thread> before) {
+    int left = 0;
+    for (Thread t : Thread.getAllStackTraces().keySet()) {
+      if (before.contains(t) || !t.isAlive() || t == Thread.currentThread()) {
+        continue;
+      }
+      boolean idle =
+          t.getName().startsWith("ForkJoinPool.commonPool-worker")
+              && t.getState() != Thread.State.RUNNABLE;
+      if (!idle) {
+        left++;
+      }
+    }
+    return left;
+  }
+
+  private static void answer(Path requestFile, Path eventsFile) throws IOException {
+    List<String> asked = Files.readAllLines(requestFile, StandardCharsets.UTF_8);
     String mode = asked.get(0);
     Set<Path> roots = new LinkedHashSet<>();
     List<String> tests = new ArrayList<>();
@@ -74,7 +169,7 @@ public final class KalkuRunner {
         classes.add(Paths.get(line.substring(8)));
       }
     }
-    try (Writer out = Files.newBufferedWriter(Paths.get(args[1]), StandardCharsets.UTF_8)) {
+    try (Writer out = Files.newBufferedWriter(eventsFile, StandardCharsets.UTF_8)) {
       try {
         Launcher launcher = LauncherFactory.create();
         boolean covering = mode.equals("cover");
@@ -124,8 +219,6 @@ public final class KalkuRunner {
         say(out, "{\"e\":\"crashed\",\"message\":" + quoted(String.valueOf(t)) + "}");
       }
     }
-    // A test may leave a thread running that would keep this JVM alive.
-    System.exit(0);
   }
 
   // Whatever the kalku started ends with it: its end closes this process's input.
