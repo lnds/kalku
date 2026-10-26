@@ -65,6 +65,18 @@ final class Service {
   private final Map<String, Compiler.Result> unchanged = new HashMap<>();
   // The digests of the jars the tests run with, for as long as this kalku lives.
   private final Map<String, String> jars = new HashMap<>();
+  // A JVM that stays, for each module whose casts it runs the tests of.
+  private final Map<Maven.Build, Child.Warm> warm = new HashMap<>();
+  // How many times a module's warm run could not be believed. Past a few, its tests no longer
+  // run the same in a JVM that stays as in one of their own, and its casts are run cold.
+  private final Map<Maven.Build, Integer> doubted = new HashMap<>();
+
+  // How many runs a JVM that stays is asked before it is replaced: what a run leaves in the
+  // JDK's own state, and the classes nothing let go of, pile up.
+  private static final int WARM_RUNS = 200;
+  private static final int DOUBTS = 3;
+  // What a warm run says when only a cold one can be believed.
+  private static final String COLD = new String("cold");
 
   Service(InputStream in, OutputStream out, String adapter) {
     this(in, out, adapter, () -> {});
@@ -218,6 +230,7 @@ final class Service {
         say(greet(request));
         return false;
       case "shutdown":
+        retireAll();
         say(Protocol.bye(request.id));
         return true;
       case "abort":
@@ -402,6 +415,8 @@ final class Service {
   // pool is only ever asked to cast, so everything a cast needs is left by this.
   private String prepare(Protocol.Request request) throws IOException {
     long started = System.nanoTime();
+    retireAll();
+    doubted.clear();
     project = null;
     tests.clear();
     runners.clear();
@@ -494,6 +509,7 @@ final class Service {
     if (project == null) {
       return Protocol.error(request.id, "not_ready", "`prepare` has to come first", false);
     }
+    retireAll();
     long started = System.nanoTime();
     Path root = Paths.get(hello.root).toAbsolutePath().normalize();
     for (String file : request.files) {
@@ -1301,50 +1317,63 @@ final class Service {
           request.id, request.wekufe, "compile_error", null, compiled.result.error, ms(started));
     }
 
-    // The tests of each module run in a JVM of that module's own, one after another, until
-    // one of them notices.
+    // A JVM that stays is asked first. A kill there is believed when the test that noticed
+    // passes on the original in the same JVM; anything else is asked again of a JVM of its
+    // own, which is what a survivor always is.
+    String verdict = judged(request, chosen, compiled, started, true);
+    return verdict == COLD ? judged(request, chosen, compiled, started, false) : verdict;
+  }
+
+  // The tests of each module, in a JVM that stays or in one of that module's own, one module
+  // after another, until one of them notices. Null when the cast was aborted, and `COLD` when
+  // what a JVM that stays said cannot be believed.
+  private String judged(
+      Protocol.Request request,
+      Map<Maven.Build, List<String>> chosen,
+      Compiled compiled,
+      long started,
+      boolean warmly)
+      throws IOException {
     int passed = 0;
+    boolean warmed = false;
     for (Map.Entry<Maven.Build, List<String>> each : chosen.entrySet()) {
       Maven.Build tested = each.getKey();
       if (each.getValue().isEmpty()) {
         continue;
       }
-      // The compiler runs in this process and is not stopped half way; what was asked
-      // meanwhile is heard before a JVM is started for nothing.
-      Protocol.Request stop = aborting(request.id, 0);
-      Child.Running running = null;
-      if (stop == null && !ended) {
-        running =
-            Child.start(
-                tested, runners.get(tested), compiled.before(tested), "run", each.getValue(),
-                work.resolve("run"), environment());
-        while (!running.ended(0) && stop == null && !ended) {
-          stop = aborting(request.id, 20);
-        }
-      }
-      if (stop != null || ended) {
-        boolean gone = running == null || running.ended(0) || running.kill();
-        if (stop != null) {
-          say(Protocol.aborted(stop.id, stop.cast, gone));
-        }
+      Child.Warm jvm = warmly ? warmFor(tested) : null;
+      warmed |= jvm != null;
+      Child.Ran ran = waited(request, tested, jvm, compiled.before(tested), each.getValue());
+      if (ran == null) {
         return null;
       }
-      Child.Ran ran = running.finish();
       if (ran.problem() != null) {
-        return unjudged(request, ran.problem());
+        return jvm != null ? doubt(tested) : unjudged(request, ran.problem());
       }
       for (Map<?, ?> event : ran.of("test")) {
         String id = named(tested, (String) event.get("id"));
         if ("failed".equals(event.get("outcome"))) {
           // What failed may be a class and not one of its tests: then no test is named.
+          String killer = tests.containsKey(id) ? id : null;
+          if (jvm != null) {
+            Boolean original = killer == null ? Boolean.FALSE : passesOriginal(request, tested, killer);
+            if (original == null) {
+              return null;
+            }
+            if (!original) {
+              return doubt(tested);
+            }
+          }
           return Protocol.castDone(
-              request.id, request.wekufe, "killed", tests.containsKey(id) ? id : null, null,
-              ms(started));
+              request.id, request.wekufe, "killed", killer, null, ms(started));
         }
         if ("passed".equals(event.get("outcome")) && request.tests.contains(id)) {
           passed++;
         }
       }
+    }
+    if (warmed) {
+      return COLD;
     }
     // Nothing ran, so nothing was measured. `survived` here would count a hole nobody looked
     // for as a hole somebody looked for and did not find.
@@ -1353,6 +1382,107 @@ final class Service {
           request, "none of the " + request.tests.size() + " selected test(s) ran and passed");
     }
     return Protocol.castDone(request.id, request.wekufe, "survived", null, null, ms(started));
+  }
+
+  // One run of tests, waited for while `abort` is listened for. Null when the cast was
+  // aborted or the input ended: it has been answered, or nobody is left to answer.
+  private Child.Ran waited(
+      Protocol.Request request, Maven.Build tested, Child.Warm jvm, List<Path> before,
+      List<String> chosen)
+      throws IOException {
+    // The compiler runs in this process and is not stopped half way; what was asked
+    // meanwhile is heard before a JVM is started for nothing.
+    Protocol.Request stop = aborting(request.id, 0);
+    Child.Running running = null;
+    if (stop == null && !ended) {
+      running =
+          jvm != null
+              ? jvm.ask(before, chosen)
+              : Child.start(
+                  tested, runners.get(tested), before, "run", chosen, work.resolve("run"),
+                  environment());
+      while (!running.ended(0) && stop == null && !ended) {
+        stop = aborting(request.id, 20);
+      }
+    }
+    if (stop != null || ended) {
+      boolean gone =
+          jvm != null ? retire(tested) : running == null || running.ended(0) || running.kill();
+      if (stop != null) {
+        say(Protocol.aborted(stop.id, stop.cast, gone));
+      }
+      return null;
+    }
+    Child.Ran ran = running.finish();
+    // A thread a run left behind may still be running its classes when the next one starts.
+    if (jvm != null && (ran.problem() != null || ran.leftThreads() > 0 || jvm.asked() >= WARM_RUNS)) {
+      retire(tested);
+    }
+    return ran;
+  }
+
+  // Whether the test that killed passes on the original code in a JVM that stays: if it does
+  // not, it failed for something the JVM held and not for the wekufe. Null when aborted.
+  private Boolean passesOriginal(Protocol.Request request, Maven.Build tested, String killer)
+      throws IOException {
+    Child.Warm jvm = warmFor(tested);
+    if (jvm == null) {
+      return Boolean.FALSE;
+    }
+    String alone = local(killer);
+    Child.Ran ran =
+        waited(request, tested, jvm, Collections.emptyList(), Collections.singletonList(alone));
+    if (ran == null) {
+      return null;
+    }
+    if (ran.problem() != null) {
+      return Boolean.FALSE;
+    }
+    for (Map<?, ?> event : ran.of("test")) {
+      if (killer.equals(named(tested, (String) event.get("id")))
+          && "passed".equals(event.get("outcome"))) {
+        return Boolean.TRUE;
+      }
+    }
+    return Boolean.FALSE;
+  }
+
+  // The JVM that stays for a module, started when there is none; none for a module whose
+  // warm runs could not be believed too often.
+  private Child.Warm warmFor(Maven.Build module) throws IOException {
+    if (doubted.getOrDefault(module, 0) >= DOUBTS || !runners.containsKey(module)) {
+      return null;
+    }
+    Child.Warm jvm = warm.get(module);
+    if (jvm != null && jvm.alive()) {
+      return jvm;
+    }
+    jvm =
+        Child.Warm.start(
+            module,
+            runners.get(module),
+            work.resolve("warm").resolve(String.valueOf(project.modules.indexOf(module))),
+            environment());
+    warm.put(module, jvm);
+    return jvm;
+  }
+
+  private String doubt(Maven.Build module) throws IOException {
+    retire(module);
+    doubted.merge(module, 1, Integer::sum);
+    return COLD;
+  }
+
+  // Ends a module's JVM that stays, and says whether all of it is gone.
+  private boolean retire(Maven.Build module) throws IOException {
+    Child.Warm jvm = warm.remove(module);
+    return jvm == null || jvm.kill();
+  }
+
+  private void retireAll() throws IOException {
+    for (Maven.Build module : new ArrayList<>(warm.keySet())) {
+      retire(module);
+    }
   }
 
   // No verdict. The kaikai side records a fatal error during a cast as `crashed`, never as a
