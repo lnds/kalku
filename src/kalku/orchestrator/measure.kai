@@ -223,7 +223,7 @@ fn interview(
   let kept = brought(keeping, offer, baseline)!
   let failing = failures_of(baseline)
   let suite = judging_of(baseline, failing) ++ (kept | .test_id)
-  refuse_red(baseline, suite)!
+  refuse_unjudged(baseline, suite)!
   Telling.tell_of(
     if is_empty(failing) {
       "the suite is green: #{length(suite)} test(s)"
@@ -354,14 +354,16 @@ fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
   suite_of(reply) |? (t => not contains(gone, t))
 }
 
-# A suite in which nothing passes ends the run: there is nothing to measure
-# with, and pretending otherwise is the one thing a measuring tool must
-# never do.
-fn refuse_red(reply: KalkuReply, judging: [String]) : Result[Unit, String] = match reply {
-  BaselineDone(m) -> if m.status == Red and is_empty(judging) {
+# A suite in which nothing passes ends the run, whether its tests all fail
+# or it has none: there is nothing to measure with, and pretending
+# otherwise is the one thing a measuring tool must never do.
+fn refuse_unjudged(reply: KalkuReply, judging: [String]) : Result[Unit, String] = match reply {
+  BaselineDone(m) -> if not is_empty(judging) {
+    Ok(())
+  } else if m.status == Red {
     Err(red_suite(m.failures, m.differences |> unwrap_or([])))
   } else {
-    Ok(())
+    Err(empty_suite(m.differences |> unwrap_or([])))
   }
   _ -> Ok(())
 }

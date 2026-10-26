@@ -85,6 +85,20 @@ test "a suite in which nothing passes is still refused, in the kalku's words" {
   }
 }
 
+# A kalku that found no test reports a green suite of none. Going on would
+# end every wekufe with no test to judge it, and read as a clean run of a
+# project nobody measured.
+test "a suite with no test in it is refused, not reported green" {
+  match learnt("green_no_tests.ndjson") {
+    Ok(_) -> {
+      assert false
+    }
+    Err(why) -> {
+      assert is_some(index_of(why, "the kalku ran no test: the suite it found is empty"))
+    }
+  }
+}
+
 # Every test passed because none of them met the wekufe: code that runs
 # once, as an application starts, does not run again where a wekufe is
 # cast. A kalku that saw that says so, and it is not a hole anyone found.

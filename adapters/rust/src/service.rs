@@ -7,7 +7,7 @@
 use crate::cancel::Cancel;
 use crate::coverage::{self, Entry, Tools, invert};
 use crate::editions::{self, Cargo, Editions};
-use crate::project::{Build, Cargo as CargoProject, Project, Target};
+use crate::project::{Build, Cargo as CargoProject, Project, Target, copied_from};
 use crate::protocol::{
     self, Coverage, DecodeError, Failure, Hello, Outcome, Request, SitesRequest, Skipped, Timed,
 };
@@ -77,8 +77,11 @@ impl Service {
             Box::new(toolchain::probe),
             Box::new(|root| Box::new(Cargo::new(PathBuf::from(root)))),
             Box::new(|hello| {
+                let root = PathBuf::from(&hello.root);
+                let from = copied_from(&root, hello.options.as_ref()).unwrap_or(root.clone());
                 Box::new(CargoProject::new(
-                    PathBuf::from(&hello.root),
+                    root,
+                    from,
                     PathBuf::from(&hello.reni),
                     hello.worker,
                     hello.env.clone(),
@@ -167,6 +170,9 @@ impl Service {
                 ),
                 true,
             ));
+        }
+        if let Err(why) = copied_from(Path::new(&hello.root), hello.options.as_ref()) {
+            return Step::Reply(protocol::error(id, "bad_options", &why, true));
         }
         let toolchain = match (self.probe)() {
             Ok(t) => t,
@@ -852,6 +858,7 @@ mod tests {
             worker: 0,
             inline_limit_bytes: 0,
             env: vec![],
+            options: None,
         };
         let sites = SitesRequest {
             files: vec![],
