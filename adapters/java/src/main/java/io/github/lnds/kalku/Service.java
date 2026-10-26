@@ -56,6 +56,8 @@ final class Service {
   // What `prepare` leaves for every request after it.
   private Maven.Reactor project;
   private Path work;
+  // Why the last baseline's coverage was withheld, when it was.
+  private String withheldWhy;
   // The runner as it was compiled for each module that has tests, against that module's JUnit.
   private final Map<Maven.Build, Path> runners = new HashMap<>();
   // Every test, and the module it is a test of.
@@ -731,6 +733,7 @@ final class Service {
       return Protocol.error(request.id, "baseline_failed", run.problem, true);
     }
     // A red baseline ends the run: there is nothing to select tests for.
+    withheldWhy = null;
     List<Map<String, Object>> reached = null;
     if (run.failures.isEmpty()) {
       if (run.plain.isEmpty() && !reused.isEmpty()) {
@@ -755,6 +758,7 @@ final class Service {
     }
     return Protocol.baselineDone(
         request.id, ms(started), run.tests, run.failures, reached, spilled,
+        reached == null && spilled == null ? withheldWhy : null,
         differences(project, environment().keySet()), reused);
   }
 
@@ -1214,12 +1218,10 @@ final class Service {
     return out;
   }
 
-  private static List<Map<String, Object>> withheld(String why) {
-    System.err.println(
-        "kalku: per-test coverage is not reportable for this run: "
-            + why
-            + ". Every wekufe will be cast against the whole suite instead, so this run is "
-            + "slower and every survivor is real.");
+  // The reason travels in `baseline_done`, where the kaikai side quotes it beside every
+  // survivor: a run told only that the whole suite judged cannot say why it was slow.
+  private List<Map<String, Object>> withheld(String why) {
+    withheldWhy = "per-test coverage is not reportable for this run: " + why;
     return null;
   }
 

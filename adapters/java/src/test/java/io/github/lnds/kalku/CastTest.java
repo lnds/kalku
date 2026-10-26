@@ -615,22 +615,15 @@ class CastTest {
                 + "  }\n"
                 + "}\n")
             .getBytes(StandardCharsets.UTF_8));
-    java.io.PrintStream err = System.err;
-    java.io.ByteArrayOutputStream said = new java.io.ByteArrayOutputStream();
-    Map<?, ?> done;
-    try {
-      System.setErr(new java.io.PrintStream(said, true, "UTF-8"));
-      done =
-          ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":4}")
-              .get(2);
-    } finally {
-      System.setErr(err);
-    }
+    Map<?, ?> done =
+        ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":4}")
+            .get(2);
     assertEquals("green", done.get("status"), done.toString());
     assertEquals(6, ((List<?>) done.get("tests")).size());
     assertNull(done.get("coverage"));
     assertNull(done.get("coverage_packed_path"));
-    String why = new String(said.toByteArray(), StandardCharsets.UTF_8);
+    // Said where the kaikai side reads it, so the report says why the whole suite judged.
+    String why = String.valueOf(done.get("coverage_withheld"));
     assertTrue(why.contains("per-test coverage is not reportable"), why);
     assertTrue(why.contains("did not end the same way"), why);
 
