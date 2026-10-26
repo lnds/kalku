@@ -1,3 +1,11 @@
+## v0.26.0 (2026-10-26)
+
+### Added
+
+- **java**: answer reload by compiling what was edited into the copy (#464)
+- **rust**: answer reload by copying the changed files and building again (#463)
+- **python**: answer reload by updating the copy and collecting again (#462)
+
 ## v0.25.1 (2026-10-25)
 
 ### Changed
