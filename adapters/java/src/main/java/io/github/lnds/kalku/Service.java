@@ -729,10 +729,11 @@ final class Service {
     }
     String spilled = null;
     if (reached != null && Json.encode(reached).getBytes(StandardCharsets.UTF_8).length > hello.inlineLimit) {
-      // Past what the kaikai side takes on a line, the same entries go to a file in the reni.
+      // Past what the kaikai side takes on a line, the same coverage goes to a file in the
+      // reni, packed.
       Path file = Paths.get(hello.reni).resolve("coverage").resolve(hello.worker + ".json");
       Files.createDirectories(file.getParent());
-      Files.write(file, (Json.encode(reached) + "\n").getBytes(StandardCharsets.UTF_8));
+      Files.write(file, (Json.encode(packed(reached)) + "\n").getBytes(StandardCharsets.UTF_8));
       spilled = file.toString();
       reached = null;
     }
@@ -1158,6 +1159,43 @@ final class Service {
     } catch (Maven.Failed e) {
       return withheld("the coverage agent could not be fetched: " + e.getMessage());
     }
+  }
+
+  // The packed form of coverage entries: every test id once, and the lines of each file that
+  // the same tests reach, together. Written line by line, a place every test reaches names the
+  // whole suite, and most of a project's coverage is the same few hundred ids over again.
+  static Map<String, Object> packed(List<Map<String, Object>> entries) {
+    Map<String, Integer> index = new LinkedHashMap<>();
+    Map<String, Map<String, Object>> groups = new LinkedHashMap<>();
+    for (Map<String, Object> entry : entries) {
+      List<Integer> positions = new ArrayList<>();
+      for (Object test : (List<?>) entry.get("tests")) {
+        Integer at = index.get((String) test);
+        if (at == null) {
+          at = index.size();
+          index.put((String) test, at);
+        }
+        positions.add(at);
+      }
+      String file = (String) entry.get("file");
+      Map<String, Object> group =
+          groups.computeIfAbsent(
+              file + "\u0000" + positions,
+              k -> {
+                Map<String, Object> g = new LinkedHashMap<>();
+                g.put("file", file);
+                g.put("lines", new ArrayList<Object>());
+                g.put("tests", positions);
+                return g;
+              });
+      @SuppressWarnings("unchecked")
+      List<Object> lines = (List<Object>) group.get("lines");
+      lines.add(entry.get("line"));
+    }
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("tests", new ArrayList<>(index.keySet()));
+    out.put("reached", new ArrayList<>(groups.values()));
+    return out;
   }
 
   private static List<Map<String, Object>> withheld(String why) {

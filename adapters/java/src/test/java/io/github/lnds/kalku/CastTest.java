@@ -16,6 +16,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -456,20 +457,35 @@ class CastTest {
     assertEquals(9, killed);
   }
 
-  // Past what a line may carry, the same entries go to a file, as one JSON array.
+  // Past what a line may carry, the same coverage goes to a file, packed: every test once, and
+  // the lines of a file the same tests reach together. Unpacked, it is the inline coverage.
   @Test
-  void coverageTooLargeForALineGoesToAFile() throws Exception {
+  void coverageTooLargeForALineGoesToAFilePacked() throws Exception {
     Path project = temp.resolve("spilled");
     copy(PROJECTS.resolve("calc"), project);
     String small = hello(project).replace("\"inline_limit_bytes\":65536", "\"inline_limit_bytes\":10");
     Map<?, ?> done =
         ask(project, small, "{\"type\":\"prepare\",\"id\":2}", "{\"type\":\"baseline\",\"id\":4}").get(2);
     assertNull(done.get("coverage"));
-    Path file = Paths.get((String) done.get("coverage_path"));
+    assertNull(done.get("coverage_path"));
+    Path file = Paths.get((String) done.get("coverage_packed_path"));
     assertTrue(file.startsWith(reni.resolve("spilled")), file.toString());
-    List<?> entries =
-        (List<?>) Json.decode(new String(Files.readAllBytes(file), StandardCharsets.UTF_8).trim());
-    assertEquals(((List<?>) baseline.get("coverage")).size(), entries.size());
+    Map<?, ?> packed =
+        (Map<?, ?>) Json.decode(new String(Files.readAllBytes(file), StandardCharsets.UTF_8).trim());
+    List<?> ids = (List<?>) packed.get("tests");
+    assertEquals(new HashSet<>(ids).size(), ids.size(), "every test is named once");
+    Map<String, List<?>> unpacked = new java.util.TreeMap<>();
+    for (Object each : (List<?>) packed.get("reached")) {
+      Map<?, ?> group = (Map<?, ?>) each;
+      List<Object> tests = new ArrayList<>();
+      for (Object at : (List<?>) group.get("tests")) {
+        tests.add(ids.get(((Number) at).intValue()));
+      }
+      for (Object line : (List<?>) group.get("lines")) {
+        assertNull(unpacked.put(group.get("file") + ":" + line, tests), "a line is in one group");
+      }
+    }
+    assertEquals(new java.util.TreeMap<>(reaching(baseline)), unpacked);
   }
 
   // A class fills its table when it is first used, in whichever test comes first, and only
@@ -547,7 +563,7 @@ class CastTest {
     assertEquals("green", done.get("status"), done.toString());
     assertEquals(6, ((List<?>) done.get("tests")).size());
     assertNull(done.get("coverage"));
-    assertNull(done.get("coverage_path"));
+    assertNull(done.get("coverage_packed_path"));
     String why = new String(said.toByteArray(), StandardCharsets.UTF_8);
     assertTrue(why.contains("per-test coverage is not reportable"), why);
     assertTrue(why.contains("did not end the same way"), why);
