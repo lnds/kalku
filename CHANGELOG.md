@@ -1,3 +1,27 @@
+## v0.25.0 (2026-10-25)
+
+### Added
+
+- **report**: name the redundant tests (#451)
+- **report**: name the tests that kill no wekufe (#447)
+- **report**: name the tests the casting time goes to (#446)
+
+### Fixed
+
+- **typescript**: count coverage under Vite 6.4, which reads nothing outside the project (#458)
+- **baseline**: a suite with no test in it cannot measure (#456)
+- **rust**: copy a directory that holds the crate when its build reads beside it (#457)
+- **rust**: find the tests of a library built as several crate types (#455)
+- **cli**: kalku cast keeps and reuses the baseline (#442)
+- **server**: runs served to a client or an agent keep and reuse the baseline (#440)
+- **go**: leave what git and kalku keep out of a package's fingerprint (#439)
+
+### Changed
+
+- **watch**: reload a warm pool after an edit instead of summoning another (#450)
+- **cli**: say every refusal one way in main (#435)
+- write pipes instead of the method form (#434)
+
 ## v0.24.0 (2026-10-19)
 
 ### Added
