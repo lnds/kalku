@@ -41,6 +41,25 @@ final class Project {
    * would be trusted, and a stale class measured.
    */
   static int sync(Path root, Path copy, Path reni) throws IOException {
+    return sync(root, copy, reni, new Changes());
+  }
+
+  /** What one sync did to the copy, by paths from the top of the project. */
+  static final class Changes {
+    // Files that were there and now hold something else.
+    final List<String> written = new java.util.ArrayList<>();
+    // Files that were not there.
+    final List<String> added = new java.util.ArrayList<>();
+    // Files and directories the project no longer has.
+    final List<String> removed = new java.util.ArrayList<>();
+
+    int count() {
+      return written.size() + added.size() + removed.size();
+    }
+  }
+
+  /** The same, and what changed told into {@code changes}. */
+  static int sync(Path root, Path copy, Path reni, Changes changes) throws IOException {
     Path top = root.toAbsolutePath().normalize();
     Path inside = reni.toAbsolutePath().normalize();
     Set<Path> kept = new HashSet<>();
@@ -71,6 +90,9 @@ final class Project {
               Path to = copy.resolve(top.relativize(file).toString());
               kept.add(to);
               if (!same(file, to)) {
+                String relative = top.relativize(file).toString().replace('\\', '/');
+                (Files.exists(to, LinkOption.NOFOLLOW_LINKS) ? changes.written : changes.added)
+                    .add(relative);
                 Files.copy(
                     file,
                     to,
@@ -84,7 +106,7 @@ final class Project {
             return FileVisitResult.CONTINUE;
           }
         });
-    return changed[0] + forget(copy, kept);
+    return changed[0] + forget(copy, kept, changes);
   }
 
   private static boolean skipped(Path dir) {
@@ -99,7 +121,7 @@ final class Project {
   }
 
   // What the project no longer has is taken out of the copy; what a build left stays.
-  private static int forget(Path copy, Set<Path> kept) throws IOException {
+  private static int forget(Path copy, Set<Path> kept, Changes changes) throws IOException {
     List<Path> gone;
     try (Stream<Path> all = Files.walk(copy)) {
       gone =
@@ -108,6 +130,7 @@ final class Project {
               .collect(Collectors.toList());
     }
     for (Path p : gone) {
+      changes.removed.add(copy.relativize(p).toString().replace('\\', '/'));
       Files.deleteIfExists(p);
     }
     return gone.size();

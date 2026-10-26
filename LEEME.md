@@ -271,6 +271,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | kalku de Java: `prepare`, `baseline` y `cast` en el reni para un proyecto Maven | hecho |
 | kalku de Java: `kalku init` para proyectos Maven y Gradle, incluido en el release | hecho |
 | kalku de Java: `abort`, terminando la JVM donde corren los tests | hecho |
+| kalku de Java: `reload`, compilando un fuente editado con su módulo y los módulos que lo usan, para que un watch conserve su kalku | hecho |
 | kalku de Java: cobertura por test, contada por JaCoCo y retenida donde no se pueda confiar en ella | hecho |
 | kalku de Java: proyectos Maven de varios módulos; un site se juzga con los tests de cada módulo que usa el suyo | hecho |
 | kalku de Java: builds Gradle, consultados al ejecutarlos con un script agregado desde fuera del proyecto | hecho |

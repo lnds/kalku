@@ -242,6 +242,9 @@ final class Service {
       case "baseline":
         say(baseline(request));
         break;
+      case "reload":
+        say(reload(request));
+        break;
       case "cast":
         String done = cast(request);
         // A cast that was aborted has been answered already, with `aborted`, and gets no
@@ -477,6 +480,206 @@ final class Service {
       }
     }
     return out;
+  }
+
+  // ---- reload --------------------------------------------------------------
+
+  // The copy is brought up to the project again, and what changed is compiled into it, so
+  // the next cast and the next baseline run what the project now holds. A source that was
+  // edited is compiled here, with the module it is in and every module that uses it: a
+  // constant is copied into the classes that read it, so one file alone is not enough. Any
+  // other change, a file added or taken away or one that is not a source, is the build's
+  // to make, and the copy is built again as `prepare` builds it.
+  private String reload(Protocol.Request request) throws IOException {
+    if (project == null) {
+      return Protocol.error(request.id, "not_ready", "`prepare` has to come first", false);
+    }
+    long started = System.nanoTime();
+    Path root = Paths.get(hello.root).toAbsolutePath().normalize();
+    for (String file : request.files) {
+      if (!inside(root, file)) {
+        return Protocol.error(
+            request.id, "bad_request", "`" + file + "` is not a file of the project", false);
+      }
+    }
+    Project.Changes changes = new Project.Changes();
+    Project.sync(root, project.root, Paths.get(hello.reni), changes);
+    Map<Maven.Build, Boolean> touched = edited(changes);
+    List<Maven.Build> again = touched == null ? null : usingThem(touched);
+    if (again == null) {
+      return rebuilt(request, changes, started);
+    }
+    // What is compiled here is not what the build would leave: a kalku summoned after this
+    // one builds the copy again rather than trusting it.
+    distrust();
+    String refused = compileAgain(again, touched);
+    if (refused == null) {
+      refused = listAgain(again);
+    }
+    if (refused != null) {
+      project = null;
+      return Protocol.error(request.id, "reload_failed", refused, true);
+    }
+    unchanged.clear();
+    List<String> dependents = new ArrayList<>();
+    for (Maven.Build module : again) {
+      if (!touched.containsKey(module)) {
+        dependents.add(module.name);
+      }
+    }
+    return Protocol.reloaded(
+        request.id, new ArrayList<>(new TreeSet<>(changes.written)), dependents, ms(started));
+  }
+
+  private void distrust() throws IOException {
+    if (project.gradle) {
+      Gradle.distrust(work);
+    } else {
+      Maven.distrust(project.root);
+    }
+  }
+
+  private static boolean inside(Path root, String file) {
+    try {
+      return !Paths.get(file).isAbsolute() && root.resolve(file).normalize().startsWith(root);
+    } catch (InvalidPathException e) {
+      return false;
+    }
+  }
+
+  // Of each module a source was edited in, whether one of its own sources was, and not only
+  // its tests: null when something else changed, which only the build can take in.
+  private Map<Maven.Build, Boolean> edited(Project.Changes changes) {
+    if (!changes.added.isEmpty() || !changes.removed.isEmpty()) {
+      return null;
+    }
+    Map<Maven.Build, Boolean> out = new LinkedHashMap<>();
+    for (String relative : changes.written) {
+      if (!relative.endsWith(".java")) {
+        return null;
+      }
+      Path file = project.root.resolve(relative);
+      Maven.Build owner = ownerOf(file, true);
+      if (owner != null) {
+        out.put(owner, true);
+        continue;
+      }
+      owner = ownerOf(file, false);
+      if (owner == null) {
+        return null;
+      }
+      out.putIfAbsent(owner, false);
+    }
+    return out;
+  }
+
+  // The module that compiles a file among its own sources, or among its tests.
+  private Maven.Build ownerOf(Path file, boolean own) {
+    for (Maven.Build module : project.modules) {
+      for (Path dir : own ? module.sources : module.testSources) {
+        if (file.startsWith(dir)) {
+          return module;
+        }
+      }
+    }
+    return null;
+  }
+
+  // The modules to compile again, in the order they build: those edited, and every module
+  // that uses one whose own sources were. Null when such a module is tested against a jar the
+  // build made of the other, and not against its classes: only the build makes it again.
+  private List<Maven.Build> usingThem(Map<Maven.Build, Boolean> touched) {
+    List<Maven.Build> out = new ArrayList<>();
+    for (Maven.Build module : project.modules) {
+      boolean uses = false;
+      for (Maven.Build used : out) {
+        if (module.uses.contains(used) && touched.getOrDefault(used, true)) {
+          if (!module.libraries.contains(used.classes)) {
+            return null;
+          }
+          uses = true;
+        }
+      }
+      if (touched.containsKey(module) || uses) {
+        out.add(module);
+      }
+    }
+    return out;
+  }
+
+  // Each module's own sources, when they or those of a module it uses changed, and then its
+  // tests, into the directories the build compiles them into. The first refusal, or nothing.
+  private String compileAgain(List<Maven.Build> again, Map<Maven.Build, Boolean> touched)
+      throws IOException {
+    for (Maven.Build module : again) {
+      List<Path> sources = Project.sources(module.sources);
+      if (touched.getOrDefault(module, true) && !sources.isEmpty()) {
+        List<Path> against = new ArrayList<>();
+        against.add(module.classes);
+        against.addAll(module.libraries);
+        Compiler.Result own =
+            Compiler.compile(
+                sources, null, null, against, module.classes, module.compilerFlags, project.root);
+        if (!own.ok()) {
+          return "the project no longer compiles: " + own.error;
+        }
+      }
+      List<Path> tests = Project.sources(module.testSources);
+      if (!tests.isEmpty()) {
+        List<Path> against = new ArrayList<>();
+        against.add(module.testClasses);
+        against.add(module.classes);
+        against.addAll(module.libraries);
+        Compiler.Result own =
+            Compiler.compile(
+                tests, null, null, against, module.testClasses, module.testCompilerFlags,
+                project.root);
+        if (!own.ok()) {
+          return "the tests no longer compile: " + own.error;
+        }
+      }
+    }
+    return null;
+  }
+
+  // The tests of the modules compiled again, listed again in place of the ones they had: an
+  // edit can add a test, or take one away.
+  private String listAgain(List<Maven.Build> again) throws IOException {
+    for (Maven.Build module : again) {
+      if (!runners.containsKey(module)) {
+        continue;
+      }
+      Child.Ran listed =
+          Child.run(
+              module, runners.get(module), Collections.emptyList(), "discover",
+              Collections.emptyList(), work.resolve("run"), environment());
+      if (listed.problem() != null) {
+        return "the tests could not be listed: " + listed.problem();
+      }
+      tests.values().removeIf(m -> m == module);
+      for (Map<?, ?> found : listed.of("found")) {
+        tests.put(named(module, (String) found.get("id")), module);
+      }
+    }
+    return null;
+  }
+
+  // What a source edit cannot account for is built again by the build, from the copy as it
+  // now stands: everything `prepare` leaves is made anew.
+  private String rebuilt(Protocol.Request request, Project.Changes changes, long started)
+      throws IOException {
+    // The copy is up to date by now, and a build that went by what changed would skip.
+    distrust();
+    jars.clear();
+    String built = prepare(request);
+    if (project == null) {
+      return built;
+    }
+    Set<String> modules = new TreeSet<>(changes.written);
+    modules.addAll(changes.added);
+    modules.addAll(changes.removed);
+    return Protocol.reloaded(
+        request.id, new ArrayList<>(modules), Collections.emptyList(), ms(started));
   }
 
   // ---- baseline ------------------------------------------------------------

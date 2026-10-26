@@ -46,6 +46,14 @@ final class Gradle {
   }
 
   /**
+   * Makes the next build in this work directory run Gradle again, whatever it finds already
+   * built: what this kalku compiled into it itself is not what the build would have.
+   */
+  static void distrust(Path work) throws IOException {
+    Files.deleteIfExists(work.resolve("gradle").resolve("kalku.jdk"));
+  }
+
+  /**
    * Builds the copy, tests included but not run, and reads back what Gradle wrote down.
    *
    * @param fresh false when nothing changed since a build that is still there

@@ -108,6 +108,14 @@ final class Maven {
   private static final String POM_FILE = "target/kalku.pom.xml";
   private static final String JDK_FILE = "target/kalku.jdk";
 
+  /**
+   * Makes the next build of this copy run Maven again, whatever it finds already built: what
+   * this kalku compiled into it itself is not what the build would have.
+   */
+  static void distrust(Path project) throws IOException {
+    Files.deleteIfExists(project.resolve(JDK_FILE));
+  }
+
   private static final Pattern ENGINE = Pattern.compile("junit-platform-engine-(.+)\\.jar");
 
   /**

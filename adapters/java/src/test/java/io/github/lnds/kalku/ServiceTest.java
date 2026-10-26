@@ -199,13 +199,19 @@ class ServiceTest {
         ask(
             hello(1),
             "{\"type\":\"reset\",\"id\":3}",
-            "{\"type\":\"reload\",\"id\":4,\"files\":[]}",
             "{\"type\":\"delegate\",\"id\":5,\"scope\":{\"all\":true}}");
-    assertEquals(4, said.size());
-    for (Map<?, ?> reply : said.subList(1, 4)) {
+    assertEquals(3, said.size());
+    for (Map<?, ?> reply : said.subList(1, 3)) {
       assertEquals("error", reply.get("type"));
       assertEquals("not_implemented", reply.get("code"));
     }
+  }
+
+  // There is no copy of the project to bring up to date before `prepare` made one.
+  @Test
+  void aReloadBeforePrepareIsRefused() throws Exception {
+    Map<?, ?> said = ask(hello(1), "{\"type\":\"reload\",\"id\":4,\"files\":[]}").get(1);
+    assertEquals("not_ready", said.get("code"), said.toString());
   }
 
   @Test

@@ -159,7 +159,7 @@ final class Protocol {
         }
         break;
       case "reload":
-        strings(o, "files", "");
+        r.files = strings(o, "files", "");
         break;
       case "delegate":
         scope(required(o, "scope", ""));
@@ -456,6 +456,14 @@ final class Protocol {
     Map<String, Object> out = message("aborted", id);
     out.put("cast", cast);
     out.put("restored", restored);
+    return Json.encode(out);
+  }
+
+  static String reloaded(long id, List<String> modules, List<String> dependents, long durationMs) {
+    Map<String, Object> out = message("reloaded", id);
+    out.put("modules", modules);
+    out.put("dependents", dependents);
+    out.put("duration_ms", durationMs);
     return Json.encode(out);
   }
 

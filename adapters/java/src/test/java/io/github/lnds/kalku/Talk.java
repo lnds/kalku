@@ -33,6 +33,67 @@ final class Talk {
     }
   }
 
+  /**
+   * One kalku asked one request at a time, each answered before the next is written: what a
+   * test does between two of them, the kalku sees done.
+   */
+  static final class Conversation implements AutoCloseable {
+    private final PipedOutputStream to = new PipedOutputStream();
+    private final Heard out = new Heard();
+    private final Thread kalku;
+    private final Throwable[] failed = {null};
+    private int asked;
+
+    Conversation() throws Exception {
+      PipedInputStream in = new PipedInputStream(to, 1 << 20);
+      kalku =
+          new Thread(
+              () -> {
+                try {
+                  new Service(in, out, "test").serve();
+                } catch (Throwable t) {
+                  failed[0] = t;
+                }
+                synchronized (out) {
+                  out.notifyAll();
+                }
+              },
+              "kalku-under-test");
+      kalku.start();
+    }
+
+    /** The reply to this request. */
+    Map<?, ?> ask(String request) throws Exception {
+      asked++;
+      to.write((request + "\n").getBytes(StandardCharsets.UTF_8));
+      to.flush();
+      synchronized (out) {
+        long deadline = System.currentTimeMillis() + 600_000;
+        while (out.lines() < asked && kalku.isAlive() && System.currentTimeMillis() < deadline) {
+          out.wait(200);
+        }
+      }
+      if (failed[0] != null) {
+        throw new IllegalStateException("the kalku failed", failed[0]);
+      }
+      String[] lines = new String(out.toByteArray(), StandardCharsets.UTF_8).split("\n");
+      if (lines.length < asked) {
+        throw new IllegalStateException("no reply to " + request);
+      }
+      return (Map<?, ?>) Json.decode(lines[asked - 1]);
+    }
+
+    @Override
+    public void close() throws java.io.IOException {
+      to.close();
+      try {
+        kalku.join(60_000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
   /** What a kalku says, line by line, to these requests. */
   static List<Map<?, ?>> ask(String... requests) throws Exception {
     PipedOutputStream to = new PipedOutputStream();
