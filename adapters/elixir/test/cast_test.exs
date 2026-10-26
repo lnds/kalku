@@ -31,6 +31,29 @@ defmodule Kalku.CastTest do
     end
   end
 
+  describe "compiling" do
+    # A kalku lives for thousands of casts. What each compile leaves loaded
+    # piles up, and every cast after it loads more slowly.
+    test "a compile leaves none of the compiler's own modules loaded" do
+      before = compiler_modules()
+
+      for _ <- 1..20 do
+        Cast.compile("defmodule Kalku.CastTest.Leftover do\n  def f, do: 1\nend\n", "leftover.ex")
+      end
+
+      assert compiler_modules() -- before == []
+    after
+      :code.purge(Kalku.CastTest.Leftover)
+      :code.delete(Kalku.CastTest.Leftover)
+    end
+
+    defp compiler_modules do
+      for {module, _} <- :code.all_loaded(),
+          String.starts_with?(Atom.to_string(module), "elixir_compiler_"),
+          do: module
+    end
+  end
+
   describe "against a real project" do
     setup :a_reni
 

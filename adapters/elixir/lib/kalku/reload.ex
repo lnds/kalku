@@ -71,6 +71,8 @@ defmodule Kalku.Reload do
     e -> {:error, Exception.message(e)}
   catch
     _, value -> {:error, inspect(value)}
+  after
+    Code.purge_compiler_modules()
   end
 
   defp names(compiled),
