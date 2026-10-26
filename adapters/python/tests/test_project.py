@@ -276,3 +276,29 @@ def test_the_src_directory_is_an_import_root_only_when_it_exists(tmp_path):
 
 def test_a_directory_that_cannot_be_listed_has_no_packages(tmp_path):
     assert project.project_packages(tmp_path / "missing") == set()
+
+
+def test_one_file_is_brought_up_to_date_as_the_tree_would_be(tmp_path):
+    root, work = tmp_path / "proj", tmp_path / "work"
+    (root / "pkg").mkdir(parents=True)
+    (root / "pkg" / "new.py").write_text("X = 2\n")
+    (work / "pkg").mkdir(parents=True)
+    (work / "pkg" / "gone.py").write_text("X = 1\n")
+
+    assert project.sync_file(root, work, "pkg/new.py")
+    assert project.sync_file(root, work, "pkg/gone.py")
+
+    assert (work / "pkg" / "new.py").read_text() == "X = 2\n"
+    assert not (work / "pkg" / "gone.py").exists()
+
+
+def test_a_file_the_copy_leaves_out_is_not_copied_and_one_outside_is_refused(tmp_path):
+    root, work = tmp_path / "proj", tmp_path / "work"
+    (root / ".venv").mkdir(parents=True)
+    (root / ".venv" / "site.py").write_text("")
+
+    assert not project.sync_file(root, work, ".venv/site.py")
+    assert not (work / ".venv").exists()
+    for outside in ("../x.py", "/etc/passwd", "a/../../x.py"):
+        with pytest.raises(ValueError):
+            project.sync_file(root, work, outside)

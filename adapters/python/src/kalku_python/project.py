@@ -93,6 +93,34 @@ def sync_tree(source: Path, dest: Path, skip: Path | None = None) -> None:
             _remove(existing)
 
 
+def sync_file(source: Path, dest: Path, relative: str, skip: Path | None = None) -> bool:
+    """Bring one file of `dest` up to date with `source`, the way `sync_tree`
+    would: copied when its content differs, removed when the project no longer
+    has it. False for a file the copy leaves out.
+
+    A path that leaves the project is refused: it names nothing a run reads."""
+    path = PurePosixPath(relative.replace(os.sep, "/"))
+    if path.is_absolute() or ".." in path.parts or not path.parts:
+        raise ValueError(f"`{relative}` is not a path inside the project")
+    if any(is_ignored(part) for part in path.parts):
+        return False
+    origin, target = source.joinpath(*path.parts), dest.joinpath(*path.parts)
+    if skip is not None and (origin == skip or skip in origin.parents):
+        return False
+    if origin.is_symlink():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _sync_link(origin, target)
+    elif origin.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _sync_file(origin, target)
+    elif not origin.exists():
+        if target.exists() or target.is_symlink():
+            _remove(target)
+    else:
+        return False
+    return True
+
+
 def _sync_link(source: Path, target: Path) -> None:
     link = os.readlink(source)
     if target.is_symlink() and os.readlink(target) == link:

@@ -227,8 +227,8 @@ def test_a_garbled_or_oversized_line_is_refused_and_the_service_goes_on(harness,
 def test_what_it_does_not_answer_is_fatal_and_names_the_request(harness):
     h = harness()
     h.hello()
-    for kind in ("reset", "reload", "delegate"):
-        fields = {"reload": {"files": []}, "delegate": {"scope": {"all": True}}}.get(kind, {})
+    for kind in ("reset", "delegate"):
+        fields = {"delegate": {"scope": {"all": True}}}.get(kind, {})
         said = h.one(type=kind, **fields)
         assert said["code"] == "not_implemented" and said["fatal"] is True
         assert f"`{kind}`" in said["message"]

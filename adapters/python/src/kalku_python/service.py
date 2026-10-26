@@ -173,7 +173,9 @@ class Service:
             return [self._baseline(ident, request.reuse)], False
         if isinstance(request, Cast):
             return self._cast(ident, request), False
-        name = {Reset: "reset", Reload: "reload", Delegate: "delegate"}[type(request)]
+        if isinstance(request, Reload):
+            return [self._reload(ident, request.files)], False
+        name = {Reset: "reset", Delegate: "delegate"}[type(request)]
         return [
             protocol.error(ident, "not_implemented", f"this kalku does not answer `{name}`", True)
         ], False
@@ -275,6 +277,42 @@ class Service:
         )
         modules = len(set(self.session.files.values()))
         return protocol.prepared(ident, int((time.monotonic() - started) * 1000), modules)
+
+    # ---- reload -------------------------------------------------------------
+
+    def _reload(self, ident: int, files: list[str]) -> str:
+        """Bring the copy up to date with the files that changed, and read the
+        suite again from it.
+
+        Nothing of the project is held in this process: every run imports it
+        afresh, from the copy, in a child of its own, and no bytecode is ever
+        written. What the copy holds is what the next run runs; what has to
+        be read again is which tests there are, since a file that changed may
+        add one, drop one, or no longer load."""
+        assert self.hello is not None
+        if not self.session.prepared:
+            return protocol.error(ident, "not_ready", "`prepare` has to come first", False)
+        started = time.monotonic()
+        root, reni, work = Path(self.hello.root), Path(self.hello.reni), self._work()
+        try:
+            copied = [f for f in files if project.sync_file(root, work, f, skip=reni)]
+        except (OSError, ValueError) as e:
+            return protocol.error(
+                ident, "load_failed", f"cannot copy the files into the reni: {e}", True
+            )
+        events = self._run(runner.Spec(str(work), "collect"))
+        if events is None:
+            return protocol.error(ident, "aborted", "the kalku was asked to stop", True)
+        problem = _problem(events)
+        if problem is not None:
+            # The suite no longer loads: a kalku summoned now would say so at
+            # `prepare`, where it is reported as what it is.
+            return protocol.error(ident, "load_failed", problem, True)
+        ids = [i for e in events if e.get("e") == "collected" for i in e["ids"]]
+        self.session = _Session(
+            ids=ids, files={i: i.partition("::")[0] for i in ids}, prepared=True
+        )
+        return protocol.reloaded(ident, _module_names(copied), _ms(started))
 
     # ---- baseline -----------------------------------------------------------
 
@@ -594,6 +632,21 @@ def differences(work: Path) -> list[str]:
         "`addopts`, and the plugins `xdist`, `cov`, `randomly` and `cacheprovider` are off",
         "the tests ran in a process forked from the kalku's, which had already imported pytest",
     ]
+
+
+def _module_names(files: list[str]) -> list[str]:
+    """The modules those files are, as Python names them."""
+    names = set()
+    for file in files:
+        path = PurePosixPath(file)
+        if path.suffix != ".py":
+            continue
+        parts = path.with_suffix("").parts
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
+        if parts:
+            names.add(".".join(parts))
+    return sorted(names)
 
 
 def _ms(started: float) -> int:
