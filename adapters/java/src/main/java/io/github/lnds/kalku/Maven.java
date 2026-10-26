@@ -2,10 +2,12 @@ package io.github.lnds.kalku;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -204,6 +206,39 @@ final class Maven {
     run(project, project, env, goals);
   }
 
+  // Every worker of a run builds a copy of its own, and every copy is built against the one
+  // local repository the user's Maven keeps. Maven does not lock that repository between
+  // processes unless it is told to, and before 3.9 two builds fetching one artifact at once
+  // write it through one half-written file: one renames it away under the other, which fails.
+  // So the workers' builds take turns, by a lock in the reni, and a worker after the first
+  // finds fetched what it needs.
+  private static Path turns;
+
+  /** Makes every Maven run of this kalku wait for those of the other workers of this reni. */
+  static void takeTurnsIn(Path reni) {
+    turns = reni.resolve("maven.turn");
+  }
+
+  // The lock is the operating system's, so a worker that dies holding it lets it go.
+  private static FileChannel turn() throws IOException {
+    if (turns == null) {
+      return null;
+    }
+    Files.createDirectories(turns.getParent());
+    FileChannel channel =
+        FileChannel.open(turns, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+    try {
+      if (channel.tryLock() == null) {
+        System.err.println("kalku-java: waiting for another worker's Maven build to end");
+        channel.lock();
+      }
+      return channel;
+    } catch (IOException | RuntimeException e) {
+      channel.close();
+      throw e;
+    }
+  }
+
   // Maven run in `where`, as the project `of` would run it: with its wrapper, if it has one.
   private static void run(Path where, Path of, Map<String, String> env, String... goals)
       throws Failed, IOException {
@@ -221,6 +256,7 @@ final class Maven {
     builder.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
     builder.redirectErrorStream(true).redirectOutput(log.toFile());
     int exit;
+    FileChannel held = turn();
     try {
       exit = heard(builder.start(), log);
     } catch (IOException e) {
@@ -233,6 +269,10 @@ final class Maven {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new Failed("interrupted while Maven was running");
+    } finally {
+      if (held != null) {
+        held.close();
+      }
     }
     if (exit != 0) {
       throw new Failed(said(log, exit));

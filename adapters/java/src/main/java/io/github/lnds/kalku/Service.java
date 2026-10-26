@@ -416,6 +416,7 @@ final class Service {
       work = copy.getParent();
       // A project that has both is built the way its `pom.xml` says.
       Maven.Reactor built;
+      Maven.takeTurnsIn(reni);
       if (Files.isRegularFile(copy.resolve("pom.xml"))) {
         built = Maven.build(copy, work.resolve("lib"), environment(), changed > 0);
       } else if (Gradle.builds(copy)) {
