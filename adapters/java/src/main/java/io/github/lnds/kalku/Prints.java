@@ -22,8 +22,8 @@ import java.util.stream.Stream;
  * What the tests of one class run, as a fingerprint.
  *
  * <p>A test class runs the classes the coverage agent saw it run, and what every test of its
- * module may depend on: what ran outside any one test, which includes every static initialiser,
- * and the classes with no code, an interface or an annotation, which run without being counted.
+ * module may depend on: what ran outside any one test or as a class was first used, and the
+ * classes with no code, an interface or an annotation, which run without being counted.
  * Classes go in by their bytecode, so a constant the compiler copied into a class changes that
  * class.
  *

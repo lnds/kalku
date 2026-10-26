@@ -428,7 +428,7 @@ final class Child {
    * Runs the tests with the coverage agent counting, and waits.
    *
    * @param classes the class directories counted in: the module's own and those it uses
-   * @param tests class directories of tests, counted in too and never initialised up front
+   * @param tests class directories of tests, counted in too
    * @param only the outermost classes of the tests to run, or null for every one
    * @param dumps where what each test reached is written
    */
@@ -459,9 +459,6 @@ final class Child {
     }
     counting.add("-javaagent:" + coverage.agent + "=output=none,includes=" + String.join(":", counted));
     counting.add("dumps:" + dumps);
-    for (Path each : classes) {
-      counting.add("classes:" + each);
-    }
     return start(
             build, runner, Collections.emptyList(), "cover", Collections.emptyList(), only,
             scratch, env, counting)
