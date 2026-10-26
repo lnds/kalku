@@ -16,7 +16,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * The JVM the project's tests run in, one for each run of them.
+ * The JVM the project's tests run in: one for each run of them, or one that stays for a
+ * module's casts ({@link Warm}).
  *
  * <p>The tests never run in the kalku's own JVM. A wekufe that calls {@code System.exit}, that
  * loops, or that takes all the memory would take the kalku with it, and what one run left in
@@ -38,6 +39,17 @@ final class Child {
     // True when the runner got to the end of what it was asked.
     boolean done;
     String crashed;
+
+    /** How many threads the run left running, in a JVM that stays. */
+    int leftThreads() {
+      for (Map<?, ?> event : of("left")) {
+        Object n = event.get("threads");
+        if (n instanceof Number) {
+          return ((Number) n).intValue();
+        }
+      }
+      return 0;
+    }
 
     /** Why there is no verdict in this, or null when there is one. */
     String problem() {
@@ -111,14 +123,33 @@ final class Child {
   static final class Running {
     private final Process process;
     private final Path events;
+    // For a JVM that stays: the file it writes when this request is over.
+    private final Path over;
 
     Running(Process process, Path events) {
-      this.process = process;
-      this.events = events;
+      this(process, events, null);
     }
 
-    /** Waits this long for the JVM to end, and says whether it has. */
+    Running(Process process, Path events, Path over) {
+      this.process = process;
+      this.events = events;
+      this.over = over;
+    }
+
+    /** Waits this long for the run to end, and says whether it has. */
     boolean ended(long millis) {
+      if (over != null) {
+        long deadline = System.nanoTime() + millis * 1_000_000L;
+        do {
+          if (Files.exists(over) || !process.isAlive()) {
+            return true;
+          }
+          if (millis > 0) {
+            pause(5);
+          }
+        } while (System.nanoTime() < deadline);
+        return Files.exists(over) || !process.isAlive();
+      }
       try {
         return process.waitFor(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
       } catch (InterruptedException e) {
@@ -127,8 +158,20 @@ final class Child {
       }
     }
 
-    /** What the JVM said, once it has ended. */
+    /** What the JVM said, once the run has ended. */
     Ran finish() throws IOException {
+      if (over != null) {
+        while (!ended(1000)) {
+          // A run is waited for as long as it takes: the kaikai side holds it to its deadline.
+        }
+        Ran ran = new Ran();
+        if (!Files.exists(over)) {
+          // It ended under the run: whatever it wrote is all it will say.
+          ran.exit = exitOf(process);
+        }
+        read(ran, events);
+        return ran;
+      }
       Ran ran = new Ran();
       try {
         ran.exit = process.waitFor();
@@ -173,6 +216,166 @@ final class Child {
       }
       return all.stream().noneMatch(ProcessHandle::isAlive);
     }
+  }
+
+  private static int exitOf(Process process) {
+    try {
+      return process.waitFor();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return -1;
+    }
+  }
+
+  private static void pause(long millis) {
+    try {
+      Thread.sleep(millis);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  /**
+   * A JVM that stays, for the casts of one module, and is asked one run after another.
+   *
+   * <p>Starting a JVM and JUnit costs more than most casts' tests take. This one is started
+   * once with nothing on its class path but the runner and the JUnit Platform, and each run
+   * reads the cast's classes, the project's, its tests and everything they use with a class
+   * loader of that run's own: a static field of the project is a field of that run's classes,
+   * and goes with them. What it cannot keep apart is what lives outside any class loader —
+   * the JDK's own state, threads a test left running — and that is why the kalku believes no
+   * survivor of it, and no kill whose test fails on the original code too.
+   */
+  static final class Warm {
+    private final Process process;
+    private final Path dir;
+    private final Maven.Build build;
+    private final List<Path> own;
+    private int asked;
+
+    private Warm(Process process, Path dir, Maven.Build build, List<Path> own) {
+      this.process = process;
+      this.dir = dir;
+      this.build = build;
+      this.own = own;
+    }
+
+    /** How many runs it has been asked. */
+    int asked() {
+      return asked;
+    }
+
+    boolean alive() {
+      return process.isAlive();
+    }
+
+    /** Starts one, from the runner compiled for this module. */
+    static Warm start(Maven.Build build, Path runner, Path dir, Map<String, String> env)
+        throws IOException {
+      Project.clear(dir);
+      List<Path> own = new ArrayList<>();
+      own.add(runner);
+      for (Path jar : jarsOf(build)) {
+        if (platform(jar)) {
+          own.add(jar);
+        }
+      }
+      List<String> options = new ArrayList<>();
+      options.add("-ea");
+      options.add("-XX:+ExitOnOutOfMemoryError");
+      options.addAll(build.jvmFlags);
+      options.add("-cp");
+      options.add(own.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator)));
+      Path arguments = dir.resolve("java.args");
+      Files.write(
+          arguments,
+          options.stream().map(Child::argument).collect(Collectors.toList()),
+          StandardCharsets.UTF_8);
+      ProcessBuilder builder =
+          new ProcessBuilder(
+                  Paths.get(System.getProperty("java.home"), "bin", "java").toString(),
+                  "@" + arguments,
+                  RUNNER,
+                  "--serve")
+              .directory(build.dir.toFile());
+      builder.environment().clear();
+      builder.environment().putAll(env);
+      builder.environment().putAll(build.environment);
+      builder.redirectErrorStream(true).redirectOutput(dir.resolve("tests.log").toFile());
+      return new Warm(builder.start(), dir, build, own);
+    }
+
+    /** Asks it to run these tests, with these class directories before the project's. */
+    Running ask(List<Path> before, List<String> tests) throws IOException {
+      asked++;
+      Path request = dir.resolve("request-" + asked);
+      Path events = dir.resolve("events-" + asked);
+      List<String> lines = new ArrayList<>();
+      lines.add("run");
+      for (String test : tests) {
+        lines.add("test:" + test);
+      }
+      if (build.reruns > 0 && !build.engineFetched) {
+        lines.add("reruns:" + build.reruns);
+      }
+      List<Path> classpath = new ArrayList<>(before);
+      classpath.add(build.testClasses);
+      classpath.add(build.classes);
+      for (Path jar : jarsOf(build)) {
+        if (!own.contains(jar)) {
+          classpath.add(jar);
+        }
+      }
+      for (Path each : classpath) {
+        lines.add("cp:" + each);
+      }
+      Files.write(request, lines, StandardCharsets.UTF_8);
+      process
+          .getOutputStream()
+          .write((request + "\t" + events + "\n").getBytes(StandardCharsets.UTF_8));
+      process.getOutputStream().flush();
+      return new Running(process, events, Paths.get(events + ".over"));
+    }
+
+    /** Ends it and everything it started, and says whether all of it is gone. */
+    boolean kill() throws IOException {
+      return new Running(process, null).kill();
+    }
+  }
+
+  // The jars the tests run with, the launcher among them.
+  private static List<Path> jarsOf(Maven.Build build) {
+    List<Path> jars = new ArrayList<>(build.libraries);
+    if (!jars.contains(build.launcher)) {
+      jars.add(build.launcher);
+    }
+    return jars;
+  }
+
+  private static final Map<Path, Boolean> PLATFORM = new java.util.concurrent.ConcurrentHashMap<>();
+
+  // A jar of the JUnit Platform, or of the two libraries its own types are written in. These
+  // are shared by every run of a JVM that stays: the launcher in it speaks to engines through
+  // them. An engine, and what a test is written against, is not one of them.
+  static boolean platform(Path jar) {
+    return PLATFORM.computeIfAbsent(
+        jar,
+        j -> {
+          if (!Files.isRegularFile(j)) {
+            return false;
+          }
+          try (java.util.jar.JarFile file = new java.util.jar.JarFile(j.toFile())) {
+            return file.stream()
+                .map(java.util.zip.ZipEntry::getName)
+                .anyMatch(
+                    n ->
+                        n.startsWith("org/junit/platform/")
+                            || n.startsWith("org/opentest4j/")
+                            || n.startsWith("org/apiguardian/"));
+          } catch (IOException e) {
+            return false;
+          }
+        });
   }
 
   /** Runs the tests in a JVM of their own and waits for it. */
