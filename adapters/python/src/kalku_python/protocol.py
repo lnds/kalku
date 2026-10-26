@@ -339,6 +339,14 @@ def prepared(ident: int, duration_ms: int, modules: int) -> str:
     return _line("prepared", ident, [("duration_ms", duration_ms), ("modules", modules)])
 
 
+def reloaded(ident: int, modules: list[str], duration_ms: int) -> str:
+    return _line(
+        "reloaded",
+        ident,
+        [("modules", modules), ("dependents", []), ("duration_ms", duration_ms)],
+    )
+
+
 def baseline_done(
     ident: int,
     duration_ms: int,
