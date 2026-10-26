@@ -268,6 +268,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Java kalku: `prepare`, `baseline` and `cast` in the reni for a Maven project | done |
 | Java kalku: `kalku init` for Maven and Gradle projects, shipped in the release | done |
 | Java kalku: `abort`, by ending the JVM the tests run in | done |
+| Java kalku: `reload`, compiling an edited source with its module and the modules that use it, so a watch keeps its kalku | done |
 | Java kalku: per-test coverage, counted by JaCoCo and withheld wherever it cannot be trusted | done |
 | Java kalku: Maven projects of several modules; a site is judged by the tests of every module that uses its own | done |
 | Java kalku: Gradle builds, asked by running them with a script added from outside the project | done |
