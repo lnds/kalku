@@ -522,6 +522,58 @@ test "a change to a source runs again only the module built from it" {
     == ["tests/beta_test.kai:twice doubles", "tests/beta_test.kai:twice keeps zero"]
 }
 
+# ---- reload --------------------------------------------------------------
+
+# Everything the kalku says, with `edit` made once it has prepared: what a
+# developer does between two runs of a watch.
+fn told_around(
+  first: [String],
+  edit: () -> Unit / File,
+  then: [String]
+) : [String] / Process + File = match proc.start_piped(KALKU, []) {
+  Err(e) -> ["cannot start the kalku: #{e}"]
+  Ok(child) -> {
+    let _ = proc.write_stdin(child, join(first, "\n") ++ "\n")
+    let before = until_prepared(child, "")
+    edit()
+    let rest = then ++ ["{\"type\":\"shutdown\",\"id\":99}"]
+    let _ = proc.write_stdin(child, join(rest, "\n") ++ "\n")
+    let _ = proc.close_stdin(child)
+    let out = drain(child, before)
+    let _ = proc.wait(child)
+    lines(out)
+  }
+}
+
+fn until_prepared(child: Child, so_far: String) : String / Process =
+  if has(so_far, "\"prepared\"") {
+    so_far
+  } else {
+    match proc.read_stdout(child) {
+      Err(_) -> so_far
+      Ok(chunk) -> if is_empty(chunk) { so_far } else { until_prepared(child, so_far ++ chunk) }
+    }
+  }
+
+# The copy in the reni is what a cast builds. A package that no longer
+# compiles after the edit, reloaded, makes the wekufe that was a kill a
+# compile error: the cast built the edited file, not the one copied at
+# `prepare`.
+test "a reloaded file is the one the next cast builds" {
+  let root = "#{reni()}/reload-pkg"
+  let _ = proc.wait(proc.start("/bin/rm", ["-rf", root]))
+  let _ = proc.wait(proc.start("/bin/mkdir", ["-p", reni()]))
+  let _ = proc.wait(proc.start("/bin/cp", ["-R", TINY, root]))
+  let said = told_around(
+    [reuse_hello(root, "#{reni()}/reload-reni"), "{\"type\":\"prepare\",\"id\":2}"],
+    () => file.write("#{root}/tiny.kai", file.read("#{root}/tiny.kai") ++ "\nfn broken( : Int = 0\n"),
+    ["{\"type\":\"reload\",\"id\":3,\"files\":[\"tiny.kai\"]}", cast(4, "covered", 305, 307, ">")]
+  )
+
+  assert any(said, l => field(l, "type") == "reloaded")
+  assert outcome_of(said, "covered") == "compile_error"
+}
+
 # An oracle is a command, and what it reads is not known to be inside the
 # package.
 test "under an oracle nothing is fingerprinted" {

@@ -85,6 +85,7 @@ fn session(root: String, state: State, runs: Int) : Project = Project {
   runs: runs,
   slots: [],
   fingerprint: "",
+  seen: [],
   next_id: 1
 }
 
@@ -94,6 +95,7 @@ fn warm(slots: [Slot], fingerprint: String) : Project = Project {
   runs: 1,
   slots: slots,
   fingerprint: fingerprint,
+  seen: [],
   next_id: 7
 }
 

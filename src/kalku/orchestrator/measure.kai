@@ -129,12 +129,16 @@ pub fn measuring(
 
 fn not_found(why: String) : Found = Found { report: None, failure: Some(why), cast: [] }
 
-# The kalku that read the project stays as the pool's first worker only
-# where it says a wekufe cast after its baseline is judged as one cast in a
-# kalku that was only prepared. A kalku that does not say so is ended here,
-# and the pool summons its own: slower, and the only honest reading of "this
-# kalku cannot say".
-fn kept(k: Kalku, caps: [Capability]) : Option[Slot] / Process + Telling + Clock + Ward =
+#[doc("""
+The kalku that read the project, as the pool's first worker, or nothing
+when it cannot be one.
+
+It stays only where it says a wekufe cast after its baseline is judged as
+one cast in a kalku that was only prepared. A kalku that does not say so is
+ended here, and the pool summons its own: slower, and the only honest
+reading of "this kalku cannot say".
+""")]
+pub fn kept(k: Kalku, caps: [Capability]) : Option[Slot] / Process + Telling + Clock + Ward =
   if contains(caps, CastAfterBaseline) {
     Some(warm_slot(k, caps))
   } else {
@@ -179,9 +183,8 @@ pub fn discover(
   }
 }
 
-# A kalku summoned to read the project, with both its streams read into
-# this mailbox.
-fn met(asking: Asking, life: Life) : Result[Kalku, String] / Process + Spawn + Actor[OrchMsg] {
+#[doc("A kalku summoned to read the project, with both its streams read into this mailbox.")]
+pub fn met(asking: Asking, life: Life) : Result[Kalku, String] / Process + Spawn + Actor[OrchMsg] {
   let k = summon(KalkuSpec { life: life, command: asking.spec.command, args: asking.spec.args })!
   let me = Actor.self()
   let _reader = spawn_actor(() => read_loop(k, me))
@@ -207,15 +210,43 @@ fn interview(
   k: Kalku,
   asking: Asking
 ) : Result[([Capability], Known), String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
+  let hello = introduced(k, asking)!
+  Ok((able(hello)!, read_by(k, asking, hello)!))
+}
+
+#[doc("""
+Greet a kalku and have it build the project: what it said of itself, or
+why it cannot be used.
+""")]
+pub fn introduced(
+  k: Kalku,
+  asking: Asking
+) : Result[KalkuReply, String] / Process + Clock + Attending + Actor[OrchMsg] + Telling {
   greet(k, asking)!
   let hello = await_kind(k, "ready")!
-  let caps = able(hello)!
-  let keeping = keeping_of(asking.store, asking.reuse, caps, hello, asking.spec)
-  let offer = offer_of(keeping)
+  (able(hello)!) |> ignore
   Telling.entered(PhasePreparing)
   Telling.tell_of("preparing #{asking.spec.root}; this builds the project and can take minutes")
   tell(k, 2, Prepare)!
   (await_kind(k, "prepared")!) |> ignore
+  Ok(hello)
+}
+
+#[doc("""
+What a prepared kalku says the project holds: its suite, run once, and the
+sites in the files asked about.
+
+`hello` is what the kalku said when it was greeted, which decides what
+it is offered to reuse.
+""")]
+pub fn read_by(
+  k: Kalku,
+  asking: Asking,
+  hello: KalkuReply
+) : Result[Known, String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
+  let caps = able(hello)!
+  let keeping = keeping_of(asking.store, asking.reuse, caps, hello, asking.spec)
+  let offer = offer_of(keeping)
   Telling.entered(PhaseBaselining)
   Telling.tell_of("running the suite once, for a baseline")
   tell(k, 3, asked_with(offer))!
@@ -259,22 +290,19 @@ fn interview(
   let narrowed =
     reported |> map(entries => told.without(entries ++ coverage_of(kept), failing | .test_id))
   Ok(
-    (
-      caps,
-      Known {
-        sites: sites,
-        tests: suite,
-        coverage: narrowed |> map(.coverage),
-        durations: durations_of(baseline) ++ (timings_of(kept) | (t => (t.test_id, t.duration_ms))),
-        skipped: found.skipped,
-        left_out: failing,
-        differences: differences_of(baseline),
-        only_theirs: narrowed |> map(.only_theirs) |> unwrap_or([]),
-        withheld: withheld_of(baseline),
-        doubted: doubted_of(baseline),
-        reused: length(kept)
-      }
-    )
+    Known {
+      sites: sites,
+      tests: suite,
+      coverage: narrowed |> map(.coverage),
+      durations: durations_of(baseline) ++ (timings_of(kept) | (t => (t.test_id, t.duration_ms))),
+      skipped: found.skipped,
+      left_out: failing,
+      differences: differences_of(baseline),
+      only_theirs: narrowed |> map(.only_theirs) |> unwrap_or([]),
+      withheld: withheld_of(baseline),
+      doubted: doubted_of(baseline),
+      reused: length(kept)
+    }
   )
 }
 
@@ -379,13 +407,16 @@ fn greet(k: Kalku, asking: Asking) : Result[Unit, String] / Process =
 fn tell(k: Kalku, id: Int, request: KalkuRequest) : Result[Unit, String] / Process =
   ask(k, id, request)
 
-# One reply of the kind asked for. Anything else the kalku says on the
-# way — progress, a line that will not decode — is not the answer.
-# Only this kalku's words are this kalku's answer. A mailbox is shared —
-# a server keeps other kalku warm on it — and reading someone else's
-# `ready` as the answer to your own `hello` is how a run waits forever
-# for a reply it already threw away.
-fn await_kind(
+#[doc("""
+One reply of the kind asked for, from this kalku.
+
+Anything else the kalku says on the way — progress, a line that will not
+decode — is not the answer. Only this kalku's words are this kalku's
+answer. A mailbox is shared — a server keeps other kalku warm on it — and
+reading someone else's `ready` as the answer to your own `hello` is how a
+run waits forever for a reply it already threw away.
+""")]
+pub fn await_kind(
   k: Kalku,
   kind: String
 ) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling =
@@ -555,6 +586,22 @@ fn casting_them(
   all_known: Known,
   warm: Option[Slot]
 ) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
+  let p = planned(asking, all_known)
+  found_after(
+    asking,
+    p,
+    match warm {
+      Some(first) -> cast_beside(asking.spec, first, p.casts)
+      None -> cast_all(asking.spec, p.casts)
+    }
+  )
+}
+
+#[doc("What a run is about to cast: the plan, every cast in it, and what the plan was made from.")]
+pub type Planned = { ready: Plan, casts: [Wekufe], known: Known, whole: Plan }
+
+#[doc("The plan for what a kalku read, said aloud with what it will cost.")]
+pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
   let known = wanted_only(asking, all_known)
   let whole = plan(inputs_for(asking, known), _id => None)
   let ready = doubting(part_of(whole, asking.shard), known)
@@ -571,13 +618,14 @@ fn casting_them(
     estimate_ms(casts, known.durations, workers),
     most_ms(casts, known.durations, workers)
   )
-  let cast = match warm {
-    Some(first) -> cast_beside(asking.spec, first, casts)
-    None -> cast_all(asking.spec, casts)
-  }
+  Planned { ready: ready, casts: casts, known: known, whole: whole }
+}
+
+#[doc("What a run found, once its plan has been cast.")]
+pub fn found_after(asking: Asking, p: Planned, cast: Casting) : Found / Telling {
   let casting = agreed(cast)
   Telling.entered(PhaseReporting)
-  let whole_report = report_after(ready, casts, casting, known)
+  let whole_report = report_after(p.ready, p.casts, casting, p.known)
   Found {
     report: 
     # One that cast nothing has nothing to report but why it stopped.
@@ -588,9 +636,9 @@ fn casting_them(
         Report {
           ...whole_report,
           shard: asking.shard,
-          plan: Some(marked(known.sites)),
+          plan: Some(marked(p.known.sites)),
           weighed: if asking.every_kill {
-            Some(weighed(attempts(cast, casting), unreaching_in(whole, known)))
+            Some(weighed(attempts(cast, casting), unreaching_in(p.whole, p.known)))
           } else {
             None
           }
@@ -598,7 +646,7 @@ fn casting_them(
       )
     },
     failure: whole_report.stopped,
-    cast: written_down(casting, known)
+    cast: written_down(casting, p.known)
   }
 }
 

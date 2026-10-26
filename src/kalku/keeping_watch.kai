@@ -2,12 +2,9 @@
 `kalku run --watch`: a run, and another every time the project changes,
 until a signal says stop.
 
-Every run is a whole run: it summons its kalku, measures, and banishes them
-before the watch waits again, so nothing is left running between saves and
-an interrupt between runs has nothing to clean up. A warm pool is only worth
-keeping while the project is exactly what it was compiled from, and a watch
-runs again precisely because it is not; the incremental baseline and the
-outcome cache are what make the next run cheap.
+What a run does is its caller's business, including what it keeps for the
+next: a run may leave its kalku warm, told to reload what the next save
+changes, and whatever holds them ends them when the watch ends.
 
 The signal is trapped once, for the whole watch, and heard the way a host's
 words are heard: as a message to this fiber. In a run it ends the run as an

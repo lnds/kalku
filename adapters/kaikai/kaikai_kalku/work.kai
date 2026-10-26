@@ -230,6 +230,34 @@ pub fn splice_in(w: Work, which: String, source: String) : String / File {
   was
 }
 
+#[doc("""
+Bring files of the package that changed into the copy; why not, naming the
+first that could not be.
+
+The copy is what every cast builds, and one that kept a file from before an
+edit would measure the code from before it.
+""")]
+pub fn reload(w: Work, files: [String]) : Result[Unit, String] / Process = match files {
+  [] -> Ok(())
+  [which, ...rest] -> {
+    let to = "#{w.copy}/#{which}"
+    let _ = run(["/bin/mkdir", "-p", folder_of(to)])
+    match run(["/bin/cp", "#{w.root}/#{which}", to]) {
+      Ok(came) -> if finished(came.exit) {
+        reload(w, rest)
+      } else {
+        Err("cannot copy #{which} into the reni: #{trim(came.said)}")
+      }
+      Err(e) -> Err("cannot copy #{which} into the reni: #{e}")
+    }
+  }
+}
+
+fn folder_of(path: String) : String {
+  let parts = split(path, "/")
+  join(take(parts, length(parts) - 1), "/")
+}
+
 #[doc("Put the file in the copy back to what it held.")]
 pub fn restore(w: Work, which: String, was: String) : Unit / File =
   file.write("#{w.copy}/#{which}", was)

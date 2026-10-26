@@ -538,9 +538,12 @@ defmodule Kalku.Baseline do
   """
   def keep_suite_state, do: Application.put_env(:ex_unit, :after_suite, [])
 
+  # A file already required is not required again, and a suite forgotten on
+  # `reload` would load as no tests at all: they are unrequired first.
   defp load_files(root, files) do
     helper = Path.join(root, "test/test_helper.exs")
     if File.exists?(helper), do: Code.require_file(helper)
+    Code.unrequire_files(Enum.map(files, &Path.expand/1))
 
     {required, named} =
       Fingerprint.tracing(fn ->

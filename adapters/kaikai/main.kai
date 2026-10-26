@@ -124,6 +124,10 @@ fn answer(
     say(encode_reply(id, cast_one(m, state)))
     serve(state)
   }
+  Reload(m) -> {
+    say(encode_reply(id, reloaded(m, state)))
+    serve(state)
+  }
   Shutdown -> {
     say(encode_reply(id, Bye))
     0
@@ -360,6 +364,19 @@ fn gather(w: Work, m: SitesMsg, sites: [Site], skipped: [Skipped]) : KalkuReply 
       )
     }
   }
+
+# ---- reload --------------------------------------------------------------
+
+# Every cast builds the copy, so there is nothing loaded to bring up to date:
+# the files are copied in, and the next build reads them. A copy that could
+# not take a file is a copy that cannot be measured with any more.
+fn reloaded(m: ReloadMsg, state: Serving) : KalkuReply / Process = match state.work {
+  None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
+  Some(w) -> match work.reload(w, m.files) {
+    Ok(_) -> Reloaded(ReloadedMsg { modules: m.files, dependents: [], duration_ms: 0 })
+    Err(why) -> refusal("load_failed", why, true)
+  }
+}
 
 # ---- cast ----------------------------------------------------------------
 

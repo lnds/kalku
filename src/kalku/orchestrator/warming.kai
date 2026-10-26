@@ -1,0 +1,246 @@
+#[doc("""
+A pool kept from one run to the next, brought up to date with `reload`
+rather than summoned again.
+
+A run after an edit asks the same kalku the same questions about a project
+that differs in a few files. Summoning and preparing them again costs the
+whole build; telling each one which files changed costs what loading those
+files costs. The baseline and the sites are asked again on every run all the
+same: what an edit can break is only known by asking.
+
+Anything doubtful ends the pool, and the run summons a new one: a file that
+is gone, since `reload` names files to load and none to forget; a kalku that
+does not answer `reload`, or is not there to; a pool summoned with other
+settings. Measuring with a kalku that holds the code from before the edit is
+measuring the wrong code.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.kalku_msg
+import kalku.core.cache
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.attending
+import kalku.orchestrator.pool
+import kalku.orchestrator.ward
+import kalku.orchestrator.scheduler
+import kalku.orchestrator.telling
+import kalku.orchestrator.measure
+
+#[doc("""
+A pool between runs: its kalku, what the first of them said when it was
+greeted, the settings it was summoned with, and the files it holds.
+""")]
+pub type Warm = {
+  slots: [Slot],
+  hello: KalkuReply,
+  spec: PoolSpec,
+  seen: [FileHash],
+  next_id: Int
+}
+
+#[doc("""
+Measure with the pool a previous run left, brought up to date with the
+project as it is `now`, or with a new one when that pool cannot be trusted.
+
+What comes back with the findings is the pool to hand the next run. The
+ward is the caller's, and it lasts as long as the pool does.
+""")]
+pub fn measured_again(
+  asking: Asking,
+  held: Option[Warm],
+  now: [FileHash]
+) : (Found, Option[Warm]) / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Ward {
+  match held |> and_then(w => brought_up(w, asking.spec, now)) {
+    Some(w) -> again(asking, w, now)
+    None -> afresh(asking, now)
+  }
+}
+
+#[doc("""
+End a kept pool: `shutdown` to each kalku, the kill that reaps it, and the
+last word of each of its readers.
+
+A pool summoned after this one lives the same lives, worker by worker, and
+whatever the old readers still had to say would be taken for the new kalku
+speaking.
+""")]
+pub fn ended(
+  held: Option[Warm]
+) : Unit / Process + Telling + Clock + Attending + Actor[OrchMsg] + Ward = match held {
+  Some(w) -> {
+    dismiss_all(w.slots, w.next_id)
+    each(
+      w.slots,
+      s => match s.kalku {
+        Some(k) -> {
+          Ward.release(k)
+          kill_now(k)
+        }
+        None -> ()
+      }
+    )
+    hear_last_words(w.slots) |> ignore
+  }
+  None -> ()
+}
+
+#[doc("""
+Tell every kalku of a pool what changed between `before` and `now`, or say
+why the pool cannot be brought up to date.
+
+It cannot when a kalku is gone, or when a file it holds is: `reload` names
+files to load, and has no way to say one is to be forgotten.
+""")]
+pub fn reloaded_in_place(
+  slots: [Slot],
+  root: String,
+  before: [FileHash],
+  now: [FileHash],
+  id: Int
+) : Result[Unit, String] / Process + Clock + Attending + Actor[OrchMsg] + Telling =
+  match find(before, f => not any(now, n => n.file == f.file)) {
+    Some(f) -> Err("#{from_root(root, f.file)} is gone")
+    None -> match to_reload(root, before, now) {
+      [] -> live(slots)
+      files -> reloaded_all(slots, files, id)
+    }
+  }
+
+#[doc("""
+The files a kalku of the pool is told to reload, named from the project's
+root as a kalku names them.
+""")]
+pub fn to_reload(root: String, before: [FileHash], now: [FileHash]) : [String] =
+  changed(before, now) | (f => from_root(root, f))
+
+fn from_root(root: String, f: String) : String = if starts_with(f, "#{root}/") {
+  byte_slice(f, length(root) + 1, length(f) - length(root) - 1) |> unwrap_or(f)
+} else {
+  f
+}
+
+fn live(slots: [Slot]) : Result[Unit, String] = match find(
+  slots,
+  s => is_none(s.kalku) or is_gone(s)
+) {
+  Some(s) -> Err("worker #{s.worker} is gone")
+  None -> Ok(())
+}
+
+# The pool told what changed, or nothing when it cannot be trusted with it.
+fn brought_up(
+  w: Warm,
+  spec: PoolSpec,
+  now: [FileHash]
+) : Option[Warm] / Process + Clock + Attending + Actor[OrchMsg] + Telling + Ward {
+  let fit = if w.spec != spec {
+    Err("the settings changed")
+  } else {
+    reloaded_in_place(w.slots, spec.root, w.seen, now, w.next_id)
+  }
+  match fit {
+    Ok(_) -> Some(Warm { ...w, seen: now, next_id: w.next_id + 1 })
+    Err(why) -> {
+      Telling.tell_of("summoning the kalku again: #{why}")
+      ended(Some(w))
+      None
+    }
+  }
+}
+
+# One kalku at a time: a wait hears only the kalku it waits on, and drops
+# what any other says.
+fn reloaded_all(
+  slots: [Slot],
+  files: [String],
+  id: Int
+) : Result[Unit, String] / Process + Clock + Attending + Actor[OrchMsg] + Telling = match slots {
+  [] -> Ok(())
+  [s, ...rest] -> match (s.kalku, is_gone(s)) {
+    (Some(k), false) -> {
+      ask(k, id, Reload(ReloadMsg { files: files }))!
+      (await_kind(k, "reloaded")!) |> ignore
+      reloaded_all(rest, files, id)
+    }
+    _ -> Err("worker #{s.worker} is gone")
+  }
+}
+
+# The suite and the sites asked again: of the pool's first kalku where it
+# can go on casting after a baseline, and of a kalku summoned for it where
+# it cannot.
+fn again(
+  asking: Asking,
+  w: Warm,
+  now: [FileHash]
+) : (Found, Option[Warm]) / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Ward {
+  let read = match first_reader(w.slots) {
+    Some(k) -> read_by(k, asking, w.hello)
+    None -> discover(asking)
+  }
+  match read {
+    Err(why) -> (not_measured(why), Some(w))
+    Ok(known) -> cast_kept(asking, known, w.slots, Warm { ...w, seen: now })
+  }
+}
+
+fn first_reader(slots: [Slot]) : Option[Kalku] =
+  find(slots, s => contains(s.caps, CastAfterBaseline)) |> and_then(.kalku)
+
+# A run with no pool to keep, which leaves one: the kalku that read the
+# project is the first of it where it can be.
+fn afresh(
+  asking: Asking,
+  now: [FileHash]
+) : (Found, Option[Warm]) / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Ward =
+  match met(asking, discovery_life()) {
+    Err(why) -> (not_measured(why), None)
+    Ok(k) -> {
+      Ward.watch(k)
+      match read_afresh(k, asking) {
+        Err(why) -> {
+          Ward.release(k)
+          kill_now(k)
+          (not_measured(why), None)
+        }
+        Ok((hello, known)) -> {
+          let slots = match kept(k, capabilities_of(hello)) {
+            Some(first) -> fill_around(asking.spec, first)
+            None -> fill(asking.spec)
+          }
+          cast_kept(
+            asking,
+            known,
+            slots,
+            Warm { slots: slots, hello: hello, spec: asking.spec, seen: now, next_id: 1 }
+          )
+        }
+      }
+    }
+  }
+
+fn read_afresh(
+  k: Kalku,
+  asking: Asking
+) : Result[(KalkuReply, Known), String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
+  let hello = introduced(k, asking)!
+  Ok((hello, read_by(k, asking, hello)!))
+}
+
+fn cast_kept(
+  asking: Asking,
+  known: Known,
+  slots: [Slot],
+  w: Warm
+) : (Found, Option[Warm]) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling + Ward {
+  let p = planned(asking, known)
+  let done = cast_over(asking.spec, slots, p.casts, w.next_id)
+  (found_after(asking, p, done.fst), Some(Warm { ...w, slots: done.snd, next_id: done.trd }))
+}
+
+fn capabilities_of(hello: KalkuReply) : [Capability] = match hello {
+  Ready(m) -> m.capabilities
+  _ -> []
+}
+
+fn not_measured(why: String) : Found = Found { report: None, failure: Some(why), cast: [] }
