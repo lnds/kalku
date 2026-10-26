@@ -556,6 +556,44 @@ class CastTest {
     assertEquals(Arrays.asList("fx.CodesTest#aKnowsItsNames()"), by.get(file + ":20"));
   }
 
+  // A class is first used by a test, as it is in a cast, and not before the tests: `Greeting`
+  // reads, as it is first used, what the tests' `@BeforeAll` set. Initialised ahead of them it
+  // took the other way and the first test failed, so all coverage was withheld. What a class
+  // runs as it is first used belongs to every test, told from its bytecode; and where its
+  // initialiser reaches code by reflection, as `Registry` does, from everything the test that
+  // first used it ran.
+  @Test
+  void aClassIsFirstUsedByATestAndWhatThatRanBelongsToEveryTest() throws Exception {
+    Path project = temp.resolve("firstuse");
+    copy(PROJECTS.resolve("firstuse"), project);
+    String greeting = "src/main/java/fx/Greeting.java";
+    String shelf = "src/main/java/fx/Shelf.java";
+    List<Map<?, ?>> said =
+        ask(
+            project, hello(project), "{\"type\":\"prepare\",\"id\":2}", sitesOf(greeting, shelf),
+            "{\"type\":\"baseline\",\"id\":4}");
+    Map<?, ?> done = said.get(3);
+    assertEquals("green", done.get("status"), done.toString());
+    assertNotNull(done.get("coverage"), "coverage is reported, not withheld: " + done);
+    Map<String, List<?>> by = reaching(done);
+    List<String> every =
+        Arrays.asList(
+            "fx.GreetingTest#aGreets()", "fx.GreetingTest#bGreetsInFull()",
+            "fx.RegistryTest#aIsThere()", "fx.RegistryTest#bCountsTheShelf()");
+    assertEquals(every, by.get(greeting + ":10"), "what the initialiser ran belongs to every test");
+    assertEquals(every, by.get(shelf + ":7"), "what it reached by reflection too");
+    assertTrue(by.get(greeting + ":14") == null || by.get(greeting + ":14").isEmpty(), by.toString());
+    // A wekufe in either is killed by the tests it is cast against.
+    for (Object each : (List<?>) said.get(2).get("sites")) {
+      Map<?, ?> site = (Map<?, ?>) each;
+      if ("\"good day\"".equals(site.get("original")) || "3".equals(site.get("original"))) {
+        Map<?, ?> cast =
+            ask(project, hello(project), "{\"type\":\"prepare\",\"id\":2}", castOf(site, every)).get(2);
+        assertEquals("killed", cast.get("outcome"), site + " " + cast);
+      }
+    }
+  }
+
   // A suite that does not end the same way with the agent counting as without it: here a
   // test that looks for the agent and fails when it finds it. What was counted is then not
   // what the suite does, so nothing of it is reported, the reason is said, and a cast against
