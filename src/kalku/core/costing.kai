@@ -20,6 +20,7 @@ both: the first alone would be read as the likely duration and be off by
 the size of the suite.
 """)]
 
+import collections.map
 import kalku.core.planner
 import kalku.core.told
 
@@ -105,3 +106,73 @@ fn plural(n: Int, unit: String) : String = if n == 1 { "1 #{unit}" } else { "#{n
 
 # Half up, so an estimate never rounds its way down to nothing.
 fn rounded_div(n: Int, by: Int) : Int = (n + by / 2) / by
+
+#[doc("""
+One test, and what it costs a run to have it judge wekufe.
+
+A test costs twice in mutation testing: once in the suite, and once for
+every wekufe whose line it reaches. Its own duration says little alone; a
+test of two seconds that judges three hundred wekufe is ten minutes of
+casting, and a slower one that judges one wekufe is not.
+""")]
+#[derive(Eq, Show)]
+pub type TestCost = { test_id: String, duration_ms: Int, judges: Int }
+
+#[doc("The casting time a test implies: its duration once for every wekufe it judges.")]
+pub fn casting_ms(t: TestCost) : Int = t.duration_ms * t.judges
+
+#[doc("""
+Every test that judges one of these wekufe, dearest first.
+
+A test judges the wekufe it is sent with. Where the coverage was doubted
+it may also face the ones it is held back for, but only when the tests
+credited with the line did not kill it, which is not known before casting:
+counting those would rank a test by work it may never do.
+""")]
+pub fn test_costs(casts: [Wekufe], durations: [(String, Int)]) : [TestCost] {
+  let took = map.from(durations)
+  let judged =
+    list.foldl(casts || .tests, map.empty(), (counts, t) => map.update(counts, t, 1, n => n + 1))
+  ranked(
+    map.to_pairs(judged)
+      | (p => TestCost {
+        test_id: p.fst,
+        duration_ms: unwrap_or(map.get(took, p.fst), 0),
+        judges: p.snd
+      })
+  )
+}
+
+#[doc("""
+The costs of several runs over one suite as one list: each shard counted
+the wekufe that fell to it, so what a test judges adds up, and its
+duration is the one the first shard measured.
+""")]
+pub fn added_costs(parts: [[TestCost]]) : [TestCost] {
+  let by_test = list.foldl(
+    parts || (p => p),
+    map.empty(),
+    (acc, c) => map.update(
+      acc,
+      c.test_id,
+      c,
+      seen => TestCost { ...seen, judges: seen.judges + c.judges }
+    )
+  )
+  ranked(map.values(by_test))
+}
+
+# Dearest first; a tie is broken by the id, so two runs of one shape list
+# the same tests in the same order.
+fn ranked(costs: [TestCost]) : [TestCost] = sort_by(
+  costs,
+  (a, b) => if casting_ms(a) != casting_ms(b) {
+    casting_ms(b) - casting_ms(a)
+  } else if a.test_id < b.test_id {
+    0 - 1
+  } else if a.test_id > b.test_id {
+    1
+  } else {
+    0
+  }
+)

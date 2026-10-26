@@ -225,7 +225,7 @@ Run the full suite, with per-test coverage when capable.
 | `failures` | [{`test`, `message`}] | empty when green |
 | `differences`? | [string] | how this run of the suite was unlike the project's own test command, one sentence each |
 
-Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); none of them beside `coverage_withheld`, and one of them beside `coverage_doubted`; `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run.
+Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); none of them beside `coverage_withheld`, and one of them beside `coverage_doubted`; `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run, and so does a `green` one with no test in it: nothing could judge a wekufe, and a run that went on would read as clean.
 
 A packed file is one JSON object: `tests`, every test id once, and `reached`, a list of {`file`, `lines`, `tests`} where `lines` are the lines of that file the same tests reach and `tests` are positions in the list of ids, from 0. It stands for one entry per line. Written line by line, a function most of a suite calls names most of the suite on each of its lines, and a project's coverage is the same few thousand ids a hundred megabytes over.
 

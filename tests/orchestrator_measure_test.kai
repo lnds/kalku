@@ -36,7 +36,8 @@ fn asking_of(script: String) : Asking = Asking {
   touched: None,
   shard: None,
   store: None,
-  reuse: false
+  reuse: false,
+  every_kill: false
 }
 
 fn measured(script: String) : Found / Process + Spawn + Clock + File + Stderr =

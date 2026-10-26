@@ -18,6 +18,8 @@ import kalku.core.gate
 import kalku.core.report
 import kalku.core.shard
 import kalku.core.blaming
+import kalku.core.costing
+import kalku.core.kills
 
 #[doc("The whole report as one canonical JSON object.")]
 pub fn json(r: Report, exit: Int) : String {
@@ -49,7 +51,13 @@ pub fn json(r: Report, exit: Int) : String {
         ...optional("whole", if r.whole { Some(JBool(true)) } else { None }),
         ("uncovered", JArr(r.uncovered | (s => to_json(s)))),
         ("troubles", JArr(r.troubles | (t => to_json(t)))),
-        ...optional("suite", suite |> map(strings))
+        ...optional("suite", suite |> map(strings)),
+        ...if is_empty(r.costs) { [] } else { [("test_costs", JArr(r.costs | test_cost))] },
+        ...optional("test_weights", r.weighed |> map(weights)),
+        ...optional(
+          "redundant_tests",
+          r.weighed |> map(w => JArr(dearest_redundant(redundant(w), r.costs) | redundant_json))
+        )
       ]
     )
   )
@@ -97,6 +105,69 @@ fn survivor(s: Survivor, suite: Option[[String]]) : JsonValue = JObj(
     ...if s.chosen or suite == Some(s.tests) { [] } else { [("tests", strings(s.tests))] },
     ("site", to_json(s.site))
   ]
+)
+
+#[doc("One test's cost, as both JSON reports write it.")]
+pub fn test_cost(c: TestCost) : JsonValue = JObj(
+  [
+    ("test", JStr(c.test_id)),
+    ("duration_ms", JNum(c.duration_ms)),
+    ("judges", JNum(c.judges)),
+    ("casting_ms", JNum(casting_ms(c)))
+  ]
+)
+
+fn test_cost_from(e: JsonValue, at: String) : Result[TestCost, String] = Ok(
+  TestCost {
+    test_id: (json_bind_string(get(e, "test"), "#{at}.test") |> map_err(said))!,
+    duration_ms: (json_bind_int(get(e, "duration_ms"), "#{at}.duration_ms") |> map_err(said))!,
+    judges: (json_bind_int(get(e, "judges"), "#{at}.judges") |> map_err(said))!
+  }
+)
+
+fn weights(w: Weighed) : JsonValue = JObj(
+  [
+    (
+      "tests",
+      JArr(
+        w.tests
+          | (t => JObj([
+            ("test", JStr(t.test_id)),
+            ("faced", JNum(t.faced)),
+            ("kills", strings(t.kills))
+          ]))
+      )
+    ),
+    ("unsure", JNum(w.unsure)),
+    ("unreaching", strings(w.unreaching))
+  ]
+)
+
+#[doc("One redundant test, as both JSON reports write it.")]
+pub fn redundant_json(t: Redundant) : JsonValue = JObj(
+  [
+    ("test", JStr(t.test_id)),
+    ("kills", JNum(t.kills)),
+    ...optional("killed_also_by", t.by |> map(JStr)),
+    ...if t.same { [("same_kills", JBool(true))] } else { [] }
+  ]
+)
+
+fn weights_from(v: JsonValue, at: String) : Result[Weighed, String] = Ok(
+  Weighed {
+    tests: each(v, "tests", weight_from)!,
+    unsure: (json_bind_int(get(v, "unsure"), "#{at}.unsure") |> map_err(said))!,
+    unreaching: (json_bind_list(get(v, "unreaching"), "#{at}.unreaching", json_bind_string)
+      |> map_err(said))!
+  }
+)
+
+fn weight_from(e: JsonValue, at: String) : Result[Weight, String] = Ok(
+  Weight {
+    test_id: (json_bind_string(get(e, "test"), "#{at}.test") |> map_err(said))!,
+    faced: (json_bind_int(get(e, "faced"), "#{at}.faced") |> map_err(said))!,
+    kills: (json_bind_list(get(e, "kills"), "#{at}.kills", json_bind_string) |> map_err(said))!
+  }
 )
 
 fn strings(xs: [String]) : JsonValue = JArr(xs | JStr)
@@ -158,7 +229,15 @@ fn written_from(v: JsonValue) : Result[Written, String] {
         plan: (json_bind_opt(get(v, "plan"), "plan", planmark_of_json) |> map_err(said))!,
         commit: (json_bind_opt_string(get(v, "commit"), "commit") |> map_err(said))!,
         whole: ((json_bind_opt_bool(get(v, "whole"), "whole") |> map_err(said))!)
-          |> unwrap_or(false)
+          |> unwrap_or(false),
+        costs: match get(v, "test_costs") {
+          JNull -> []
+          _ -> each(v, "test_costs", test_cost_from)!
+        },
+        weighed: match get(v, "test_weights") {
+          JNull -> None
+          w -> Some(weights_from(w, "test_weights")!)
+        }
       },
       exit: int_at(v, "exit")!,
       kalku: (json_bind_opt_string(get(v, "kalku"), "kalku") |> map_err(said))!

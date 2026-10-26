@@ -12,6 +12,7 @@
 use crate::cancel::{Stop, capture};
 use crate::coverage::{Lines, Tools, parse_lcov};
 use crate::fingerprint;
+use crate::protocol::Obj;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -95,7 +96,9 @@ pub trait Project {
 }
 
 pub struct Cargo {
-    root: PathBuf,
+    // The directory copied into the reni, and where the project is inside it.
+    from: PathBuf,
+    inside: PathBuf,
     reni: PathBuf,
     work: PathBuf,
     worker: i64,
@@ -129,12 +132,63 @@ fn passed_on(get: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The directory `prepare` copies into the reni: the project's own, or the
+/// one `copy_from` under `[rust]` names, relative to it, for a build that
+/// reads files beside the project (`include_str!("../../docs/x")`). It has to
+/// hold the project; anything else is a setting this kalku cannot honour.
+pub fn copied_from(root: &Path, options: Option<&Obj>) -> Result<PathBuf, String> {
+    let mut from = None;
+    for (key, value) in options.into_iter().flatten() {
+        match (key.as_str(), value) {
+            ("copy_from", Value::String(dir)) => from = Some(root.join(dir)),
+            ("copy_from", _) => {
+                return Err("rust.copy_from: expected a directory, as a string".to_string());
+            }
+            (other, _) => {
+                return Err(format!(
+                    "rust.{other}: the Rust kalku takes only `copy_from`, the directory to copy \
+                     into the reni when the build reads files beside the project"
+                ));
+            }
+        }
+    }
+    let Some(from) = from else {
+        return Ok(root.to_path_buf());
+    };
+    let (Ok(whole), Ok(project)) = (fs::canonicalize(&from), fs::canonicalize(root)) else {
+        return Err(format!(
+            "rust.copy_from: {} is not a directory there is",
+            from.display()
+        ));
+    };
+    if !project.starts_with(&whole) {
+        return Err(format!(
+            "rust.copy_from: {} does not hold the project, {}",
+            whole.display(),
+            project.display()
+        ));
+    }
+    Ok(whole)
+}
+
 impl Cargo {
-    pub fn new(root: PathBuf, reni: PathBuf, worker: i64, extra: Vec<(String, String)>) -> Self {
+    /// The project at `root`, copied from `from`, which holds it.
+    pub fn new(
+        root: PathBuf,
+        from: PathBuf,
+        reni: PathBuf,
+        worker: i64,
+        extra: Vec<(String, String)>,
+    ) -> Self {
         let mut env = passed_on(|k| std::env::var(k).ok());
         env.extend(extra);
+        let inside = fs::canonicalize(&root)
+            .ok()
+            .and_then(|r| r.strip_prefix(&from).ok().map(Path::to_path_buf))
+            .unwrap_or_default();
         Cargo {
-            root,
+            from,
+            inside,
             work: reni.join("work").join(worker.to_string()),
             worker,
             target_dir: reni.join("target").join(worker.to_string()),
@@ -185,8 +239,29 @@ impl Cargo {
         if !out.status.success() {
             return Err(io::Error::other("llvm-cov could not read the profile"));
         }
-        let work = fs::canonicalize(&self.work).unwrap_or_else(|_| self.work.clone());
+        let here = self.here();
+        let work = fs::canonicalize(&here).unwrap_or(here);
         Ok(parse_lcov(&String::from_utf8_lossy(&out.stdout), &work))
+    }
+
+    // The project in the copy: the copy itself, unless a directory around the
+    // project was copied.
+    fn here(&self) -> PathBuf {
+        self.work.join(&self.inside)
+    }
+
+    // A build that could not read a file outside what was copied says so in
+    // the compiler's words, which name the file and not the cause.
+    fn beyond_the_copy(&self, errors: String) -> String {
+        match outside(&errors, &self.here(), &self.work) {
+            Some(file) => format!(
+                "{errors}\nthe build reads {file}, outside the directory kalku copies into the \
+                 reni ({}): set `copy_from` under `[rust]` in .kalku.toml to a directory that \
+                 holds both, relative to the project",
+                self.from.display()
+            ),
+            None => errors,
+        }
     }
 
     // Cargo on the instrumented build: its own target directory, and the flag
@@ -211,7 +286,7 @@ impl Cargo {
 
     fn cargo(&self) -> Command {
         let mut c = Command::new("cargo");
-        c.current_dir(&self.work)
+        c.current_dir(self.here())
             .env_clear()
             .envs(self.env.iter().map(|(k, v)| (k, v)))
             .env("CARGO_TARGET_DIR", &self.target_dir)
@@ -226,7 +301,12 @@ impl Cargo {
 
 impl Project for Cargo {
     fn copy(&mut self) -> io::Result<()> {
-        sync_tree(&self.root, &self.work, &self.reni)
+        // The reni may be inside what is copied, and it is told apart by
+        // its path: both are compared as the file system names them.
+        fs::create_dir_all(&self.work)?;
+        let from = fs::canonicalize(&self.from)?;
+        let reni = fs::canonicalize(&self.reni)?;
+        sync_tree(&from, &self.work, &reni)
     }
 
     fn build(&mut self) -> io::Result<Build> {
@@ -235,13 +315,13 @@ impl Project for Cargo {
         let out = capture(command, self.stop.as_ref())?;
         let stdout = String::from_utf8_lossy(&out.stdout);
         if out.status.success() {
-            Ok(Build::Built(artifacts(&stdout, &self.work)))
+            Ok(Build::Built(artifacts(&stdout, &self.here())))
         } else {
             let errors = diagnostics(&stdout);
             Ok(Build::Failed(if errors.is_empty() {
                 "cargo could not build the project".to_string()
             } else {
-                errors
+                self.beyond_the_copy(errors)
             }))
         }
     }
@@ -282,11 +362,11 @@ impl Project for Cargo {
     }
 
     fn read(&self, file: &str) -> io::Result<String> {
-        fs::read_to_string(self.work.join(file))
+        fs::read_to_string(self.here().join(file))
     }
 
     fn write(&mut self, file: &str, text: &str) -> io::Result<()> {
-        fs::write(self.work.join(file), text)
+        fs::write(self.here().join(file), text)
     }
 
     fn set_stop(&mut self, stop: Option<Stop>) {
@@ -303,12 +383,12 @@ impl Project for Cargo {
             return Ok(Build::Failed(if errors.is_empty() {
                 "cargo could not build the project with coverage".to_string()
             } else {
-                errors
+                self.beyond_the_copy(errors)
             }));
         }
         self.objects = executables(&stdout);
         self.tools = Some(tools.clone());
-        Ok(Build::Built(artifacts(&stdout, &self.work)))
+        Ok(Build::Built(artifacts(&stdout, &self.here())))
     }
 
     fn run_covered(&mut self, target: &Target, name: &str) -> io::Result<(Ran, Lines)> {
@@ -339,7 +419,7 @@ impl Project for Cargo {
         let mut rustc = Command::new("rustc");
         rustc
             .arg("-vV")
-            .current_dir(&self.work)
+            .current_dir(self.here())
             .env_clear()
             .envs(self.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null())
@@ -359,9 +439,16 @@ impl Project for Cargo {
             env!("CARGO_PKG_VERSION"),
             &String::from_utf8_lossy(&said.stdout),
             &self.env,
-            &self.work,
+            &self.here(),
         );
-        Ok(fingerprint::fingerprints(&metadata, &self.work, &base))
+        // A build may read what the copy holds beside the project: it goes
+        // in whole, since which of it a test reads is not known.
+        let base = if self.inside.as_os_str().is_empty() {
+            base
+        } else {
+            fingerprint::and_beside(&base, &self.work, &self.here())
+        };
+        Ok(fingerprint::fingerprints(&metadata, &self.here(), &base))
     }
 
     // Unlike `cargo test` at the root of the project. A suite that is green
@@ -378,8 +465,10 @@ impl Project for Cargo {
         vec![
             format!(
                 "it ran in a copy of the project kept in the reni, {}: what the copy leaves \
-                 out is not there, `.git` and whatever is named `target`",
-                self.work.display()
+                 out is not there, `.git`, whatever is named `target`, and anything outside \
+                 {} (`copy_from` under `[rust]` copies a directory that holds more)",
+                self.work.display(),
+                self.from.display()
             ),
             format!(
                 "the build is in {} (CARGO_TARGET_DIR), not in `target`: a test that looks \
@@ -400,6 +489,27 @@ impl Project for Cargo {
             ),
         ]
     }
+}
+
+// The first path the compiler could not read that lies outside the copy,
+// as it named it: rustc says ``couldn't read `PATH` `` for `include_str!` and
+// its kin, with the path relative to the package.
+fn outside(errors: &str, here: &Path, work: &Path) -> Option<String> {
+    errors.split("couldn't read `").skip(1).find_map(|rest| {
+        let named = rest.split('`').next()?;
+        let mut at = here.to_path_buf();
+        for part in Path::new(named).components() {
+            match part {
+                std::path::Component::ParentDir => {
+                    at.pop();
+                }
+                std::path::Component::Normal(p) => at.push(p),
+                std::path::Component::RootDir => at = PathBuf::from("/"),
+                _ => {}
+            }
+        }
+        (!at.starts_with(work)).then(|| named.to_string())
+    })
 }
 
 // Put the project's files in `to`, without what Cargo built or what git
@@ -495,12 +605,8 @@ pub fn artifacts(stdout: &str, work: &Path) -> Vec<Target> {
         ) else {
             continue;
         };
-        let kind = kinds.first().and_then(Value::as_str).unwrap_or("");
-        let select = match kind {
-            "lib" | "rlib" | "proc-macro" => vec!["--lib".to_string()],
-            "bin" => vec!["--bin".to_string(), name.to_string()],
-            "test" => vec!["--test".to_string(), name.to_string()],
-            _ => continue,
+        let Some(select) = selection(kinds, name) else {
+            continue;
         };
         let file = Path::new(src)
             .strip_prefix(&work)
@@ -515,6 +621,25 @@ pub fn artifacts(stdout: &str, work: &Path) -> Vec<Target> {
         }
     }
     targets
+}
+
+/// The cargo arguments that pick out one target's test executable.
+///
+/// A library has one target whatever its `crate-type` lists — `staticlib`
+/// and `cdylib` beside `rlib`, as a Tauri app's must — and `--lib` picks
+/// it, so any library kind among them makes it the library.
+fn selection(kinds: &[Value], name: &str) -> Option<Vec<String>> {
+    const LIBRARY: [&str; 6] = ["lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"];
+    let has = |k: &str| kinds.iter().any(|v| v.as_str() == Some(k));
+    if LIBRARY.iter().any(|k| has(k)) {
+        Some(vec!["--lib".to_string()])
+    } else if has("bin") {
+        Some(vec!["--bin".to_string(), name.to_string()])
+    } else if has("test") {
+        Some(vec!["--test".to_string(), name.to_string()])
+    } else {
+        None
+    }
 }
 
 /// Every executable cargo built, in the order it said so.
@@ -598,6 +723,35 @@ fn failure_message(stdout: &str, name: &str) -> String {
 mod tests {
     use super::*;
 
+    // rustc names the file relative to the package; only a path that leaves
+    // the copy is the copy's fault.
+    #[test]
+    fn a_file_the_compiler_could_not_read_is_blamed_on_the_copy_only_past_it() {
+        let said = "error: couldn't read `src/../../docs/x.txt`: No such file or directory";
+
+        assert_eq!(
+            outside(said, Path::new("/w"), Path::new("/w")),
+            Some("src/../../docs/x.txt".to_string())
+        );
+        assert_eq!(outside(said, Path::new("/w/app"), Path::new("/w")), None);
+        assert_eq!(
+            outside(
+                "error: couldn't read `src/x.txt`",
+                Path::new("/w"),
+                Path::new("/w")
+            ),
+            None
+        );
+        assert_eq!(
+            outside(
+                "error[E0425]: cannot find value",
+                Path::new("/w"),
+                Path::new("/w")
+            ),
+            None
+        );
+    }
+
     #[test]
     fn it_reads_pass_and_fail_from_what_libtest_prints() {
         let out = "running 3 tests\n\
@@ -670,6 +824,19 @@ mod tests {
         assert_eq!(targets[0].select, vec!["--lib"]);
         assert_eq!(targets[1].select, vec!["--test", "pipe"]);
         assert_eq!(targets[2].select, vec!["--bin", "p"]);
+    }
+
+    // A library that is also a static and a dynamic one is still the
+    // library, and its tests are the ones `--lib` runs.
+    #[test]
+    fn a_library_of_several_crate_types_is_the_library() {
+        let out = r#"{"reason":"compiler-artifact","package_id":"path+file:///w#p@1.0.0","target":{"kind":["staticlib","cdylib","rlib"],"name":"p_lib","src_path":"/w/src/lib.rs"},"profile":{"test":true},"executable":"/t/p_lib"}"#;
+
+        let targets = artifacts(out, Path::new("/w"));
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].file, "src/lib.rs");
+        assert_eq!(targets[0].select, vec!["--lib"]);
     }
 
     #[test]
@@ -854,6 +1021,7 @@ mod tests {
     fn it_says_where_it_ran_where_it_built_and_what_of_the_environment_it_kept() {
         let mut cargo = Cargo::new(
             PathBuf::from("/root"),
+            PathBuf::from("/root"),
             PathBuf::from("/reni"),
             3,
             vec![("EXTRA".to_string(), "1".to_string())],
@@ -873,7 +1041,13 @@ mod tests {
 
     #[test]
     fn the_build_it_names_is_the_instrumented_one_when_that_is_what_ran() {
-        let mut cargo = Cargo::new(PathBuf::from("/root"), PathBuf::from("/reni"), 3, vec![]);
+        let mut cargo = Cargo::new(
+            PathBuf::from("/root"),
+            PathBuf::from("/root"),
+            PathBuf::from("/reni"),
+            3,
+            vec![],
+        );
         cargo.tools = Some(Tools {
             profdata: PathBuf::from("llvm-profdata"),
             cov: PathBuf::from("llvm-cov"),
@@ -885,6 +1059,7 @@ mod tests {
     #[test]
     fn cargo_runs_in_the_copy_with_its_own_target_directory_and_no_colour() {
         let cargo = Cargo::new(
+            PathBuf::from("/root"),
             PathBuf::from("/root"),
             PathBuf::from("/reni"),
             3,

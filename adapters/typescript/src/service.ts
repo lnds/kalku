@@ -1,6 +1,6 @@
 // The requests, answered one at a time in the order they came.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { credited, entries, instrumentAll, packed, records, sources } from "./coverage";
 import { Imports, type Shared, declaredTests, fingerprint, shared, snapshots } from "./fingerprint";
 import path from "node:path";
@@ -75,7 +75,10 @@ export class Service {
   private greet(id: number, given: Hello): string {
     // The kaikai side may name the root as it was given on its command line;
     // the kalku is summoned in the same directory, so it resolves from here.
-    const h: Hello = { ...given, root: path.resolve(given.root), reni: path.resolve(given.reni) };
+    // Through any symlink too: Vite reads test files by their real path, and
+    // one strict about what it reads finds none of them under a root that
+    // names a link.
+    const h: Hello = { ...given, root: real(path.resolve(given.root)), reni: path.resolve(given.reni) };
     if (h.protocol !== wire.PROTOCOL) {
       return wire.error(
         id,
@@ -242,6 +245,17 @@ export class Service {
       const withheld = `the run that counts which tests reach which lines failed: ${ran.failed}`;
       return { coverage: { withheld }, reached: undefined, doubted: new Set() };
     }
+    const second = new Set<string>();
+    for (const f of ran.files)
+      for (const t of unique(f.tests)) if (t.status === "passed") second.add(testId(root, f.file, t.names));
+    // A counting run in which none of the tests that passed passed again
+    // counted nothing: reported as coverage, it would call every line
+    // unreached, and the reason would be lost in the reni.
+    if (passed.size > 0 && ![...passed].some((t) => second.has(t))) {
+      const said = ran.files.find((f) => f.broken !== undefined)?.broken;
+      const withheld = `no test that passed passed again in the run that counts which tests reach which lines${said === undefined ? "" : `: ${said}`}`;
+      return { coverage: { withheld }, reached: undefined, doubted: new Set() };
+    }
     const names = namesByFile(root, plain);
     const found = records(out);
     const reached = new Set<string>();
@@ -251,9 +265,6 @@ export class Service {
       for (const id of judging) reached.add(id);
       return judging;
     });
-    const second = new Set<string>();
-    for (const f of ran.files)
-      for (const t of unique(f.tests)) if (t.status === "passed") second.add(testId(root, f.file, t.names));
     const doubted = [...passed].filter((t) => !second.has(t) || !reached.has(t)).sort();
     const coverage = this.spoken(entries(byFile));
     const filesOf = new Map<string, Set<string>>();
@@ -362,6 +373,16 @@ function unique(tests: TestResult[]): TestResult[] {
     names[names.length - 1] = `${names[names.length - 1]} (${n})`;
     return { ...t, names };
   });
+}
+
+// A path with its symlinks resolved, or as it is when there is nothing there:
+// a root that does not exist is refused a little later, by name.
+function real(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
 }
 
 // The fingerprints of the test files, worked out once per baseline: what

@@ -62,7 +62,8 @@ fn casts(n: Int, timeout_ms: Int) : [Wekufe] =
       tests: ["test/a_test.kai"],
       rest: [],
       timeout_ms: timeout_ms,
-      casts: 1
+      casts: 1,
+      every_kill: false
     })
 
 fn site_named(id: String) : Site = Site {
@@ -347,4 +348,43 @@ test "a run goes on past every cast that goes over the memory ceiling" {
   assert tally(done) == [("crashed", 3)]
   assert done.failure == None
   assert not hog_alive()
+}
+
+fn chased_cast(tests: [String], every_kill: Bool) : Wekufe = Wekufe {
+  site: site_named("w0"),
+  tests: tests,
+  rest: [],
+  timeout_ms: 5000,
+  casts: 1,
+  every_kill: every_kill
+}
+
+# A cast stops at the first test that fails. A run that wants every kill
+# casts the wekufe again without that test, until none left notices; the
+# casts made again never stand for what the wekufe came to.
+test "a wekufe that wants every kill is cast again without its killer until none left notices" {
+  let done = with_mailbox {
+    casting(pool_of("pool_every_kill.ndjson", 1, 1), [chased_cast(["t1", "t2", "t3"], true)])
+  }
+  assert (done.verdicts | (v => (outcome_name(v.outcome), v.killed_by, v.again, v.tests)))
+    == [
+      ("killed", Some("t1"), false, ["t1", "t2", "t3"]),
+      ("killed", Some("t3"), true, ["t2", "t3"]),
+      ("survived", None, true, ["t2"])
+    ]
+  assert done.failure == None
+}
+
+test "a chase ends when its killer was the last test left" {
+  let done = with_mailbox {
+    casting(pool_of("pool_every_kill.ndjson", 1, 1), [chased_cast(["t1"], true)])
+  }
+  assert (done.verdicts | (v => (v.killed_by, v.again))) == [(Some("t1"), false)]
+}
+
+test "a wekufe that does not want every kill is cast once" {
+  let done = with_mailbox {
+    casting(pool_of("pool_every_kill.ndjson", 1, 1), [chased_cast(["t1", "t2", "t3"], false)])
+  }
+  assert (done.verdicts | (v => (v.killed_by, v.again))) == [(Some("t1"), false)]
 }

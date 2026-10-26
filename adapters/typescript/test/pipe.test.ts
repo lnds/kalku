@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -97,6 +98,16 @@ function hello(root: string, options?: Record<string, unknown>, limit = 65536): 
     env: {},
     ...(options ? { options } : {}),
   };
+}
+
+// A copy of a fixture, so that a file can be added or changed; its packages
+// are the fixture's.
+function copied(root: string, files: Record<string, string> = {}): string {
+  const copy = realpathSync(mkdtempSync(path.join(tmpdir(), "kalku-ts-project-")));
+  cpSync(root, copy, { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
+  symlinkSync(path.join(root, "node_modules"), path.join(copy, "node_modules"));
+  for (const [name, text] of Object.entries(files)) writeFileSync(path.join(copy, name), text);
+  return copy;
 }
 
 async function started(root: string, limit = 65536): Promise<Kalku> {
@@ -198,6 +209,9 @@ const TESTS = {
 // and the oldest Node that runner runs on.
 const PROJECTS = [
   { dir: "vitest", runner: "vitest", runtime: /^Node \d+\.\d+\.\d+, Vitest 3\./, node: 20 },
+  // Vite 6.4 reads nothing from disk outside `server.fs.allow`, where the
+  // reni is not: the file that counts has to be served, not read.
+  { dir: "vitest-vite6", runner: "vitest", runtime: /^Node \d+\.\d+\.\d+, Vitest 3\./, node: 20 },
   { dir: "vitest5", runner: "vitest", runtime: /^Node \d+\.\d+\.\d+, Vitest 5\./, node: 22 },
   { dir: "jest", runner: "jest", runtime: /^Node \d+\.\d+\.\d+, Jest 30\./, node: 20 },
 ] as const;
@@ -257,6 +271,37 @@ for (const { dir, runner, runtime, node } of PROJECTS) {
       assert.ok(!coverage.some((e) => e.file.startsWith("test/")), "the suite is not its own coverage");
       await k.ask({ type: "shutdown", id: 9 });
     });
+
+    // A temporary directory on macOS is one: /var is a link to /private/var.
+    test("a root named through a symlink is measured as the directory it names", async () => {
+      const link = path.join(realpathSync(mkdtempSync(path.join(tmpdir(), "kalku-ts-link-"))), "project");
+      symlinkSync(copied(root), link);
+      const k = await started(link);
+      const done = await k.ask({ type: "baseline", id: 3 });
+      assert.equal(done["status"], "green", JSON.stringify(done["failures"]));
+      assert.deepEqual((done["tests"] as { test: string }[]).map((t) => t.test).sort(), Object.values(TESTS).sort());
+      assert.equal(done["coverage_doubted"], undefined, String(done["coverage_doubted"]));
+      await k.ask({ type: "shutdown", id: 9 });
+    });
+
+    // A counting run in which no test passed again counted nothing, and as
+    // coverage it would call every line unreached.
+    test(
+      "a counting run in which no test passed again withholds the coverage, and says why",
+      { skip: runner !== "vitest" },
+      async () => {
+        const copy = copied(root, {
+          "vite.config.mjs": `export default { test: { setupFiles: ["./count-setup.mjs"] } };\n`,
+          "count-setup.mjs": `if (process.env.KALKU_COVERAGE_OUT) throw new Error("no counting here");\n`,
+        });
+        const k = await started(copy);
+        const done = await k.ask({ type: "baseline", id: 3 });
+        assert.equal(done["status"], "green");
+        assert.equal(done["coverage"], undefined);
+        assert.match(String(done["coverage_withheld"]), /no test that passed passed again.*no counting here/);
+        await k.ask({ type: "shutdown", id: 9 });
+      },
+    );
 
     test("coverage past the inline limit is packed into a file in the reni", async () => {
       const k = await started(root, 10);

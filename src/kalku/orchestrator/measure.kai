@@ -36,6 +36,7 @@ import kalku.core.gate
 import kalku.core.changed_lines
 import kalku.core.report
 import kalku.core.remembering
+import kalku.core.kills
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.escalation
 import kalku.orchestrator.attending
@@ -63,7 +64,8 @@ pub type Asking = {
   touched: Option[[FileChange]],
   shard: Option[Shard],
   store: Option[String],
-  reuse: Bool
+  reuse: Bool,
+  every_kill: Bool
 }
 
 # `durations` holds pairs, which have no `Eq`, so this record derives
@@ -252,7 +254,7 @@ pub fn read_by(
   let kept = brought(keeping, offer, baseline)!
   let failing = failures_of(baseline)
   let suite = judging_of(baseline, failing) ++ (kept | .test_id)
-  refuse_red(baseline, suite)!
+  refuse_unjudged(baseline, suite)!
   Telling.tell_of(
     if is_empty(failing) {
       "the suite is green: #{length(suite)} test(s)"
@@ -380,14 +382,16 @@ fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
   suite_of(reply) |? (t => not contains(gone, t))
 }
 
-# A suite in which nothing passes ends the run: there is nothing to measure
-# with, and pretending otherwise is the one thing a measuring tool must
-# never do.
-fn refuse_red(reply: KalkuReply, judging: [String]) : Result[Unit, String] = match reply {
-  BaselineDone(m) -> if m.status == Red and is_empty(judging) {
+# A suite in which nothing passes ends the run, whether its tests all fail
+# or it has none: there is nothing to measure with, and pretending
+# otherwise is the one thing a measuring tool must never do.
+fn refuse_unjudged(reply: KalkuReply, judging: [String]) : Result[Unit, String] = match reply {
+  BaselineDone(m) -> if not is_empty(judging) {
+    Ok(())
+  } else if m.status == Red {
     Err(red_suite(m.failures, m.differences |> unwrap_or([])))
   } else {
-    Ok(())
+    Err(empty_suite(m.differences |> unwrap_or([])))
   }
   _ -> Ok(())
 }
@@ -594,13 +598,16 @@ fn casting_them(
 }
 
 #[doc("What a run is about to cast: the plan, every cast in it, and what the plan was made from.")]
-pub type Planned = { ready: Plan, casts: [Wekufe], known: Known }
+pub type Planned = { ready: Plan, casts: [Wekufe], known: Known, whole: Plan }
 
 #[doc("The plan for what a kalku read, said aloud with what it will cost.")]
 pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
   let known = wanted_only(asking, all_known)
-  let ready = doubting(part_of(plan(inputs_for(asking, known), _id => None), asking.shard), known)
-  let casts = repeated(limited(ready.to_cast, asking.limit))
+  let whole = plan(inputs_for(asking, known), _id => None)
+  let ready = doubting(part_of(whole, asking.shard), known)
+  let casts =
+    repeated(limited(ready.to_cast, asking.limit))
+      | (c => Wekufe { ...c, every_kill: asking.every_kill })
   Telling.entered(PhaseCasting)
   Telling.tell_of(
     "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
@@ -611,26 +618,52 @@ pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
     estimate_ms(casts, known.durations, workers),
     most_ms(casts, known.durations, workers)
   )
-  Planned { ready: ready, casts: casts, known: known }
+  Planned { ready: ready, casts: casts, known: known, whole: whole }
 }
 
 #[doc("What a run found, once its plan has been cast.")]
 pub fn found_after(asking: Asking, p: Planned, cast: Casting) : Found / Telling {
   let casting = agreed(cast)
   Telling.entered(PhaseReporting)
-  let whole = report_after(p.ready, p.casts, casting, p.known)
+  let whole_report = report_after(p.ready, p.casts, casting, p.known)
   Found {
     report: 
     # One that cast nothing has nothing to report but why it stopped.
-    if is_some(whole.stopped) and is_empty(casting.verdicts) {
+    if is_some(whole_report.stopped) and is_empty(casting.verdicts) {
       None
     } else {
-      Some(Report { ...whole, shard: asking.shard, plan: Some(marked(p.known.sites)) })
+      Some(
+        Report {
+          ...whole_report,
+          shard: asking.shard,
+          plan: Some(marked(p.known.sites)),
+          weighed: if asking.every_kill {
+            Some(weighed(attempts(cast, casting), unreaching_in(p.whole, p.known)))
+          } else {
+            None
+          }
+        }
+      )
     },
-    failure: whole.stopped,
+    failure: whole_report.stopped,
     cast: written_down(casting, p.known)
   }
 }
+
+# Each wekufe's chase: the cast that settled what it came to, then the casts
+# made again to find more of its killers, in the order they were made.
+fn attempts(cast: Casting, settled: Casting) : [Attempt] = flat_map(
+  settled.verdicts,
+  v => [attempt(v), ...cast.verdicts |? (a => a.again and a.wekufe == v.wekufe) | attempt]
+)
+
+fn attempt(v: scheduler.Verdict) : Attempt =
+  Attempt { wekufe: v.wekufe, outcome: v.outcome, tests: v.tests, killed_by: v.killed_by }
+
+# Of the whole plan, shards and limits aside: which tests reach no site is
+# a fact about the project, not about the part of it this run cast.
+fn unreaching_in(whole: Plan, known: Known) : [String] =
+  unreaching(whole.to_cast | .tests, known.tests, known.left_out | .test_id)
 
 # What a run leaves for the next question: every wekufe it cast, where it
 # was, what came of it, and which tests judged it.
@@ -745,6 +778,7 @@ pub fn report_after(ready: Plan, casts: [Wekufe], casting: Casting, known: Known
   Report {
     ...report_of(ready, casting, known),
     stopped: stopped,
+    costs: test_costs(casts, known.durations),
     blockers: stopped |> map(why => [CouldNotMeasure(why)]) |> unwrap_or([])
   }
 }
@@ -789,7 +823,9 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     stopped: None,
     plan: None,
     commit: None,
-    whole: false
+    whole: false,
+    costs: [],
+    weighed: None
   }
 }
 
@@ -906,7 +942,14 @@ fn settled(verdicts: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {
   let mine = filter(verdicts, v => v.wekufe == wekufe)
   let first = head(mine)
   match first {
-    None -> scheduler.Verdict { wekufe: wekufe, outcome: Crashed, tests: [], said: None }
+    None -> scheduler.Verdict {
+      wekufe: wekufe,
+      outcome: Crashed,
+      tests: [],
+      said: None,
+      killed_by: None,
+      again: false
+    }
     Some(one) -> if all(mine, v => v.outcome == one.outcome) {
       one
     } else {

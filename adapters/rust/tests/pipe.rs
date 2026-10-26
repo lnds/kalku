@@ -914,3 +914,103 @@ fn a_baseline_runs_only_what_changed() {
     assert_eq!(changed["tests"].as_array().unwrap().len(), 2, "{changed}");
     assert!(changed.get("reused").is_none());
 }
+
+// A crate inside a larger repository, with a test that reads a file beside
+// the crate, as a Tauri app's `src-tauri` reads the repository's docs.
+const READS_BESIDE: &str = "pub fn gate(a: i32) -> bool { a >= 1 }\n\
+    #[cfg(test)]\nmod tests {\n    use super::*;\n\
+    #[test]\n    fn the_example_is_there() {\n        \
+    assert_eq!(include_str!(\"../../data/x.txt\"), \"x\\n\");\n        assert!(gate(1));\n    }\n}\n";
+
+fn repository_with_a_crate(name: &str) -> (Project, PathBuf) {
+    let project = Project::new(name, "2024", &[]);
+    let app = project.0.join("app");
+    fs::create_dir_all(app.join("src")).unwrap();
+    fs::rename(project.0.join("Cargo.toml"), app.join("Cargo.toml")).unwrap();
+    fs::write(app.join("src/lib.rs"), READS_BESIDE).unwrap();
+    fs::create_dir_all(project.0.join("data")).unwrap();
+    fs::write(project.0.join("data/x.txt"), "x\n").unwrap();
+    (project, app)
+}
+
+fn hello_with(k: &mut Kalku, root: &PathBuf, reni: &PathBuf, options: Value) -> Value {
+    k.ask(json!({
+        "type": "hello", "id": 1, "protocol": 1,
+        "root": root, "reni": reni, "worker": 0,
+        "inline_limit_bytes": 65536, "env": {}, "options": options
+    }))
+}
+
+// The copy holds only the crate, so the build cannot read what lies beside
+// it: the compiler names the file, and the kalku names the cause.
+#[test]
+fn a_build_that_reads_beside_the_copy_says_why_it_failed() {
+    let (project, app) = repository_with_a_crate("beside_fails");
+    let mut k = Kalku::summon();
+    let hello = hello_with(&mut k, &app, &project.0.join(".reni"), json!({}));
+    assert_eq!(hello["type"], "ready", "{hello}");
+
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["code"], "prepare_failed", "{prepared}");
+    let message = prepared["message"].as_str().unwrap();
+    assert!(message.contains("couldn't read"), "{message}");
+    assert!(
+        message.contains("outside the directory kalku copies")
+            && message.contains("`copy_from` under `[rust]`"),
+        "{message}"
+    );
+    k.leave();
+}
+
+// `copy_from` copies a directory that holds the crate, and the crate builds
+// and runs inside the copy; the user's tree is left as it was.
+#[test]
+fn copy_from_copies_the_directory_that_holds_what_the_build_reads() {
+    let (project, app) = repository_with_a_crate("beside_copied");
+    let mut k = Kalku::summon();
+    let hello = hello_with(
+        &mut k,
+        &app,
+        &project.0.join(".reni"),
+        json!({"copy_from": ".."}),
+    );
+    assert_eq!(hello["type"], "ready", "{hello}");
+
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+    let baseline = k.ask(json!({"type": "baseline", "id": 3}));
+    assert_eq!(baseline["status"], "green", "{baseline}");
+    assert_eq!(
+        baseline["tests"][0]["test"],
+        "src/lib.rs::tests::the_example_is_there"
+    );
+    k.leave();
+    assert_eq!(
+        fs::read_to_string(app.join("src/lib.rs")).unwrap(),
+        READS_BESIDE
+    );
+    assert!(!app.join("target").exists());
+}
+
+#[test]
+fn a_copy_from_that_does_not_hold_the_project_is_refused() {
+    let (project, app) = repository_with_a_crate("beside_refused");
+    for (options, says) in [
+        (json!({"copy_from": "src"}), "does not hold the project"),
+        (
+            json!({"copy_from": "../nowhere"}),
+            "is not a directory there is",
+        ),
+        (json!({"copy_from": 1}), "expected a directory"),
+        (
+            json!({"manifest": "x"}),
+            "rust.manifest: the Rust kalku takes only `copy_from`",
+        ),
+    ] {
+        let mut k = Kalku::summon();
+        let hello = hello_with(&mut k, &app, &project.0.join(".reni"), options);
+        assert_eq!(hello["code"], "bad_options", "{hello}");
+        assert!(hello["message"].as_str().unwrap().contains(says), "{hello}");
+        k.leave();
+    }
+}

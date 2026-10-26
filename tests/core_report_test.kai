@@ -7,6 +7,8 @@ import kalku.core.blaming
 import kalku.core.changed_lines
 import kalku.core.report_json
 import kalku.core.report_github
+import kalku.core.costing
+import kalku.core.kills
 
 fn site_of(
   file: String,
@@ -53,7 +55,9 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     stopped: None,
     plan: None,
     commit: None,
-    whole: false
+    whole: false,
+    costs: [],
+    weighed: None
   }
 
 fn plain() : Report =
@@ -461,4 +465,128 @@ test "a run whose coverage was withheld says why, in the kalku's words" {
 
   assert has(json(r, 1), "\"coverage_withheld\":\"The suite reached 1 line(s)")
   assert not has(json(plain(), 1), "coverage_withheld")
+}
+
+# A run that knows how long each test took and which wekufe each judged
+# can say where its casting went, which is where a slow run is made faster.
+test "the tests the casting went to are named, dearest first, with the arithmetic" {
+  let r = Report {
+    ...plain(),
+    costs: [
+      TestCost { test_id: "t/slow_test.exs:3", duration_ms: 2000, judges: 300 },
+      TestCost { test_id: "t/quick_test.exs:9", duration_ms: 12, judges: 5 }
+    ]
+  }
+  let text = human(r)
+
+  assert has(text, "the tests the casting went to, dearest first (600.0 s in all):")
+  assert has(text, "  600.0 s  99%  t/slow_test.exs:3  2000 ms × 300 wekufe")
+  assert has(text, "  0.0 s  0%  t/quick_test.exs:9  12 ms × 5 wekufe")
+  assert index_of(text, "slow_test") < index_of(text, "score ")
+  assert not has(text, "timed as it was when it last ran")
+  assert has(human(Report { ...r, reused: 4 }), "timed as it was when it last ran")
+  assert has(
+    json(r, 0),
+    "\"test_costs\":[{\"test\":\"t/slow_test.exs:3\",\"duration_ms\":2000,\"judges\":300,\"casting_ms\":600000}"
+  )
+}
+
+test "a run whose casting took no time to speak of does not list where it went" {
+  let r = Report { ...plain(), costs: [TestCost { test_id: "t", duration_ms: 3, judges: 10 }] }
+
+  assert not has(human(r), "the tests the casting went to")
+  assert has(json(r, 0), "test_costs")
+  assert not has(json(plain(), 0), "test_costs")
+}
+
+fn weighed_report(unsure: Int, unreaching: [String]) : Report = Report {
+  ...plain(),
+  weighed: Some(
+    Weighed {
+      tests: [
+        Weight { test_id: "t/a_test.exs:3", faced: 4, kills: ["w1"] },
+        Weight { test_id: "t/b_test.exs:9", faced: 2, kills: [] }
+      ],
+      unsure: unsure,
+      unreaching: unreaching
+    }
+  )
+}
+
+# Only a run that cast every killed wekufe again until no test was left to
+# kill it can say a test kills nothing; anything else would call the test
+# that ran second useless.
+test "a run that asked for every kill names the tests that killed nothing" {
+  let text = human(weighed_report(0, []))
+
+  assert has(
+    text,
+    "1 test(s) killed none of the wekufe they faced, each cast until no test left would kill it:"
+  )
+  assert has(text, "  t/b_test.exs:9  faced 2 wekufe")
+  assert not has(text, "t/a_test.exs:3  faced")
+  assert not has(text, "left out of this")
+  assert not has(human(plain()), "killed none")
+}
+
+test "tests reaching no site are named apart, and unsure wekufe are counted" {
+  let text = human(weighed_report(3, ["t/c_test.exs:1"]))
+
+  assert has(text, "1 test(s) reach no line a spell touched: kalku did not measure them")
+  assert has(text, "  t/c_test.exs:1")
+  assert has(text, "3 wekufe are left out of this")
+  assert has(
+    json(weighed_report(3, ["t/c_test.exs:1"]), 0),
+    "\"test_weights\":{\"tests\":[{\"test\":\"t/a_test.exs:3\",\"faced\":4,\"kills\":[\"w1\"]}"
+  )
+  assert not has(json(plain(), 0), "test_weights")
+}
+
+test "a run in which every test killed something says so" {
+  let all_kill = Report {
+    ...plain(),
+    weighed: Some(Weighed {
+      tests: [Weight { test_id: "t", faced: 1, kills: ["w"] }],
+      unsure: 0,
+      unreaching: []
+    })
+  }
+
+  assert has(human(all_kill), "every test that faced a wekufe killed at least one.")
+}
+
+# What taking a redundant test out would save is what a reader acts on, so
+# the dearest come first, each with what covers it.
+test "redundant tests are named dearest first, with what covers each" {
+  let r = Report {
+    ...plain(),
+    costs: [
+      TestCost { test_id: "t/cheap_test.exs:1", duration_ms: 1000, judges: 2 },
+      TestCost { test_id: "t/dear_test.exs:1", duration_ms: 5000, judges: 2 }
+    ],
+    weighed: Some(
+      Weighed {
+        tests: [
+          Weight { test_id: "t/cheap_test.exs:1", faced: 2, kills: ["a"] },
+          Weight { test_id: "t/dear_test.exs:1", faced: 2, kills: ["a", "b"] },
+          Weight { test_id: "t/wide_test.exs:1", faced: 2, kills: ["a", "b", "c"] }
+        ],
+        unsure: 0,
+        unreaching: []
+      }
+    )
+  }
+  let text = human(r)
+
+  assert has(text, "2 test(s) only repeat kills other tests make")
+  assert has(
+    text,
+    "  10.0 s  t/dear_test.exs:1  kills 2 wekufe, all killed by t/wide_test.exs:1 too"
+  )
+  assert index_of(text, "t/dear_test.exs:1  kills") < index_of(text, "t/cheap_test.exs:1  kills")
+  assert has(
+    json(r, 0),
+    "\"redundant_tests\":[{\"test\":\"t/dear_test.exs:1\",\"kills\":2,\"killed_also_by\":\"t/wide_test.exs:1\"}"
+  )
+  assert not has(json(plain(), 0), "redundant_tests")
 }

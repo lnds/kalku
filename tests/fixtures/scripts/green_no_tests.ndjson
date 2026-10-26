@@ -1,0 +1,4 @@
+{"expect":"hello","reply":{"type":"ready","protocol":1,"language":"fake","adapter":"fake_kalku 0.1","runtime":"none","spells":["arm","compare"],"capabilities":["cast","per_test_coverage","abort","reset"]}}
+{"expect":"prepare","reply":{"type":"prepared","duration_ms":1,"modules":1}}
+{"expect":"baseline","reply":{"type":"baseline_done","status":"green","duration_ms":10,"tests":[],"coverage":[],"failures":[]}}
+{"expect":"shutdown","reply":{"type":"bye"}}

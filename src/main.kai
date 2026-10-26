@@ -343,7 +343,8 @@ fn asking_for(
   # a run asked about a change casts all of it unless told otherwise.
   wanted.limit |> unwrap_or(if is_some(touched) or wanted.all { 0 } else { DEFAULT_LIMIT }),
   touched: touched,
-  shard: wanted.shard
+  shard: wanted.shard,
+  every_kill: wanted.every_kill
 }
 
 # What every run is asked, whoever asks it: the project's spells and
@@ -382,7 +383,8 @@ fn asking_of(
   touched: None,
   shard: None,
   store: None,
-  reuse: false
+  reuse: false,
+  every_kill: false
 }
 
 fn kept_at(asking: Asking, c: Config, root: String, whole: Bool) : Asking / Env + Process {

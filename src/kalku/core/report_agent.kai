@@ -25,6 +25,16 @@ import kalku.core.report
 import kalku.core.shard
 import kalku.core.blaming
 import kalku.core.hint
+import kalku.core.costing
+import kalku.core.kills
+import kalku.core.report_json
+import kalku.core.report_json
+
+#[doc("How many of the dearest tests travel in the summary an agent reads.")]
+pub const COSTLY_FOR_AGENT : Int = 5
+
+#[doc("How many of the tests that kill nothing travel in the summary an agent reads.")]
+pub const IDLE_FOR_AGENT : Int = 20
 
 #[doc("How many lines of context travel with a survivor, on each side.")]
 pub const CONTEXT_LINES : Int = 2
@@ -147,6 +157,8 @@ fn summary_line(r: Report) : String = json_encode(
       ...withheld_field(r.withheld),
       ...doubted_field(r.doubted),
       ...reused_field(r.reused),
+      ...costly_field(r.costs),
+      ...weighed_field(r.weighed, r.costs),
       ...shard_field(r.shard),
       ...optional("stopped", r.stopped),
       ("exit", JNum(exit_code(r.blockers)))
@@ -184,6 +196,46 @@ fn doubted_field(why: Option[String]) : [(String, JsonValue)] = match why {
 # what it runs and is told it passed should know which run said so.
 fn reused_field(reused: Int) : [(String, JsonValue)] =
   if reused == 0 { [] } else { [("baseline_reused", JNum(reused))] }
+
+# The few tests a run spends its casting on: an agent asked to speed up a
+# suite starts there, and is told the arithmetic rather than a verdict.
+fn costly_field(costs: [TestCost]) : [(String, JsonValue)] = if is_empty(costs) {
+  []
+} else {
+  [
+    (
+      "dearest_tests",
+      JArr(
+        take(costs, COSTLY_FOR_AGENT) | test_cost
+      )
+    )
+  ]
+}
+
+# Which tests kill nothing, when the run asked for every kill: an agent
+# told to tidy a suite is given the names and the counts, and decides.
+fn weighed_field(weighed: Option[Weighed], costs: [TestCost]) : [(String, JsonValue)] =
+  match weighed {
+    None -> []
+    Some(w) -> [
+      (
+        "test_weights",
+        JObj(
+          [
+            ("kill_nothing", JArr(take(idle(w), IDLE_FOR_AGENT) | (t => JStr(t.test_id)))),
+            ("kill_nothing_count", JNum(length(idle(w)))),
+            ("reach_nothing_count", JNum(length(w.unreaching))),
+            (
+              "redundant",
+              JArr(take(dearest_redundant(redundant(w), costs), IDLE_FOR_AGENT) | redundant_json)
+            ),
+            ("redundant_count", JNum(length(redundant(w)))),
+            ("unsure", JNum(w.unsure))
+          ]
+        )
+      )
+    ]
+  }
 
 # A shard's counts are of a part, and an agent that reads them as the
 # project's has been told something nobody measured.

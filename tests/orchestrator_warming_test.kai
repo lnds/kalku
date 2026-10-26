@@ -37,7 +37,8 @@ fn asking_of(script: String) : Asking = Asking {
   touched: None,
   shard: None,
   store: None,
-  reuse: false
+  reuse: false,
+  every_kill: false
 }
 
 fn hashed(a: String) : [FileHash] =

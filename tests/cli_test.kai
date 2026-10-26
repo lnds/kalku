@@ -108,7 +108,8 @@ test "run takes the files to measure, and how much of them" {
         all: false,
         shard: None,
         store: false,
-        watch: false
+        watch: false,
+        every_kill: false
       }
     )
   assert cli.parse_args(["run", "--limit", "6", "-v", "lib/a.ex"])
@@ -121,7 +122,8 @@ test "run takes the files to measure, and how much of them" {
       all: false,
       shard: None,
       store: false,
-      watch: false
+      watch: false,
+      every_kill: false
     })
 }
 
@@ -137,7 +139,8 @@ test "run with nothing named is still a run" {
       all: false,
       shard: None,
       store: false,
-      watch: false
+      watch: false,
+      every_kill: false
     })
 }
 
@@ -165,7 +168,8 @@ test "run takes the shape it should print in" {
       all: false,
       shard: None,
       store: false,
-      watch: false
+      watch: false,
+      every_kill: false
     })
   assert cli.parse_args(["run", "--format", "github", "lib/a.ex"])
     == Measure(Wanted {
@@ -177,7 +181,8 @@ test "run takes the shape it should print in" {
       all: false,
       shard: None,
       store: false,
-      watch: false
+      watch: false,
+      every_kill: false
     })
   assert cli.parse_args(["run", "--format"])
     == Misused("`--format` needs a name: human, agent, json or github")
@@ -199,7 +204,8 @@ test "cast names wekufe, show names one, and both need a name" {
         all: false,
         shard: None,
         store: false,
-        watch: false
+        watch: false,
+        every_kill: false
       }
     )
   assert cli.parse_args(["cast"]) == Misused("`kalku cast` needs a wekufe to re-cast")
@@ -233,7 +239,8 @@ test "run takes the ref a change started from" {
         all: false,
         shard: None,
         store: false,
-        watch: false
+        watch: false,
+        every_kill: false
       }
     )
   assert cli.parse_args(["run", "lib/a.ex", "--since", "main", "--format", "github"])
@@ -247,7 +254,8 @@ test "run takes the ref a change started from" {
         all: false,
         shard: None,
         store: false,
-        watch: false
+        watch: false,
+        every_kill: false
       }
     )
 }
@@ -324,7 +332,8 @@ test "run --watch is a run that goes on" {
       ...nothing_wanted(),
       since: Some("origin/main"),
       shape: AsAgent,
-      watch: true
+      watch: true,
+      every_kill: false
     })
 }
 
@@ -341,4 +350,15 @@ test "run --watch refuses what is about one report" {
   assert parse_args(["run", "lib/a.ex", "--watch", "--format", "github"]) == Misused(one_report)
   assert parse_args(["cast", "abc", "--watch"])
     == Misused("`kalku cast` re-casts once; `--watch` is for `kalku run`")
+}
+
+# Every kill is about the whole suite: a test that kills nothing in one
+# file may be the only one that kills in another.
+test "run --every-kill weighs the tests of the whole project" {
+  assert parse_args(["run", "--all", "--every-kill"])
+    == Measure(Wanted { ...nothing_wanted(), all: true, every_kill: true })
+  assert parse_args(["run", "lib/a.ex", "--every-kill"])
+    == Misused(
+      "`--every-kill` weighs the tests of the whole project: it goes with `--all`, since a test that kills nothing in one file may be the only one that kills in another"
+    )
 }

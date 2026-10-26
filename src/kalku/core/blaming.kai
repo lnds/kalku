@@ -59,6 +59,14 @@ pub fn red_suite(failures: [Failure], differences: [String]) : String = if is_em
   "the suite is already failing, #{length(failures)} test(s), and none of it passes:\n#{named(failures)}#{unlike_yours(differences)}"
 }
 
+#[doc("""
+The refusal for a suite with no test in it. Every wekufe would come back
+with no test to judge it, and a run that went on would read as clean while
+it measured nothing.
+""")]
+pub fn empty_suite(differences: [String]) : String =
+  "the kalku ran no test: the suite it found is empty, so nothing can judge a wekufe. If the project has tests, the kalku did not find them, which is worth reporting#{unlike_yours(differences)}"
+
 #[doc("What a run says, once, as it goes on without the tests that fail.")]
 pub fn going_on_without(failures: [Failure], passing: Int) : String =
   "#{length(failures)} test(s) fail before anything is cast and judge nothing; going on with the #{passing} that pass"

@@ -20,7 +20,8 @@ fn cast_of(line: Int, tests: [String]) : Wekufe = Wekufe {
   tests: tests,
   rest: [],
   timeout_ms: 60000,
-  casts: 1
+  casts: 1,
+  every_kill: false
 }
 
 fn took(ms: Int) : [(String, Int)] = [("t1", ms), ("t2", ms * 2)]
@@ -137,4 +138,46 @@ check "work never grows by adding a worker" with a: Int, b: Int {
   let one = 1 + abs(a) % 8
   let more = one + abs(b) % 8
   estimate_ms(casts, took(100), more) <= estimate_ms(casts, took(100), one)
+}
+
+# A test is ranked by what it costs the casting, not by its own duration:
+# a slow test that judges one wekufe costs less than a quicker one that
+# judges many.
+test "the dearest test is the one the casting spends most on" {
+  let casts = [cast_of(1, ["t1"]), cast_of(2, ["t1"]), cast_of(3, ["t1", "t2"])]
+  let costs = test_costs(casts, [("t1", 100), ("t2", 250)])
+
+  assert costs
+    == [
+      TestCost { test_id: "t1", duration_ms: 100, judges: 3 },
+      TestCost { test_id: "t2", duration_ms: 250, judges: 1 }
+    ]
+  assert sum(costs | casting_ms) == tests_ms(casts, [("t1", 100), ("t2", 250)])
+}
+
+test "a test the baseline never timed is listed at no cost" {
+  let costs = test_costs([cast_of(1, ["unknown"])], took(100))
+
+  assert costs == [TestCost { test_id: "unknown", duration_ms: 0, judges: 1 }]
+}
+
+test "tests that cost the same are listed by id" {
+  let costs = test_costs([cast_of(1, ["b", "a"])], [("a", 5), ("b", 5)])
+
+  assert (costs | .test_id) == ["a", "b"]
+}
+
+# Each shard counted the wekufe that fell to it.
+test "the costs of shards add up per test" {
+  let first = [TestCost { test_id: "t1", duration_ms: 10, judges: 2 }]
+  let second = [
+    TestCost { test_id: "t2", duration_ms: 30, judges: 1 },
+    TestCost { test_id: "t1", duration_ms: 10, judges: 3 }
+  ]
+
+  assert added_costs([first, second])
+    == [
+      TestCost { test_id: "t1", duration_ms: 10, judges: 5 },
+      TestCost { test_id: "t2", duration_ms: 30, judges: 1 }
+    ]
 }
