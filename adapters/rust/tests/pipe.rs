@@ -362,6 +362,69 @@ fn it_prepares_measures_and_casts_in_the_reni() {
     k.leave();
 }
 
+// A kalku kept between runs is told what changed instead of being summoned
+// again. The edit replaces the test that killed `>=` to `>` with one the
+// wekufe passes: a kill after the reload would be the old copy talking.
+#[test]
+fn a_reloaded_file_is_the_one_the_next_baseline_and_cast_build() {
+    let project = Project::new("reloads", "2024", &[("src/lib.rs", TESTED)]);
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+    let mut weaker = site(&mut k, "compare", ">=");
+    weaker["replacement"] = ">".into();
+    let cast = |k: &mut Kalku, id: i64, site: &Value, tests: &[&str]| {
+        k.ask(json!({"type": "cast", "id": id, "wekufe": site["site_id"],
+            "site": site, "tests": tests}))
+    };
+    let before = cast(
+        &mut k,
+        3,
+        &weaker,
+        &[
+            "src/lib.rs::tests::one_is_inside",
+            "src/lib.rs::tests::zero_is_outside",
+        ],
+    );
+    assert_eq!(before["outcome"], "killed", "{before}");
+
+    let edited = TESTED.replace(
+        "fn one_is_inside() { assert!(gate(1)); }",
+        "fn five_is_inside() { assert!(gate(5)); }",
+    );
+    fs::write(project.0.join("src/lib.rs"), &edited).unwrap();
+    let reloaded = k.ask(json!({"type": "reload", "id": 4, "files": ["src/lib.rs"]}));
+    assert_eq!(reloaded["type"], "reloaded", "{reloaded}");
+    assert_eq!(
+        reloaded["modules"].as_array().unwrap().len(),
+        1,
+        "{reloaded}"
+    );
+
+    let baseline = k.ask(json!({"type": "baseline", "id": 5}));
+    let tests: Vec<&str> = baseline["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["test"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        tests,
+        [
+            "src/lib.rs::tests::five_is_inside",
+            "src/lib.rs::tests::zero_is_outside"
+        ],
+        "{baseline}"
+    );
+
+    let mut weaker = site(&mut k, "compare", ">=");
+    weaker["replacement"] = ">".into();
+    let after = cast(&mut k, 6, &weaker, &tests);
+    assert_eq!(after["outcome"], "survived", "{after}");
+    k.leave();
+}
+
 #[test]
 fn a_cast_before_a_baseline_is_not_ready_and_a_stale_site_is_refused() {
     let project = Project::new("stale", "2024", &[("src/lib.rs", TESTED)]);

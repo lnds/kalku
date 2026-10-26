@@ -619,6 +619,20 @@ pub fn bye(id: i64) -> String {
     line("bye", id, vec![])
 }
 
+/// The packages a `reload` brought up to date. A crate is built whole, so
+/// none is ever rebuilt only because another depends on it.
+pub fn reloaded(id: i64, modules: &[String], duration_ms: u64) -> String {
+    line(
+        "reloaded",
+        id,
+        vec![
+            ("modules", modules.into()),
+            ("dependents", Value::Array(vec![])),
+            ("duration_ms", duration_ms.into()),
+        ],
+    )
+}
+
 pub fn sites_found(id: i64, sites: &[Site], skipped: &[Skipped]) -> String {
     line(
         "sites_found",
