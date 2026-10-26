@@ -69,6 +69,11 @@ pub trait Project {
     fn read(&self, file: &str) -> io::Result<String>;
     /// Overwrite a file of the copy.
     fn write(&mut self, file: &str, text: &str) -> io::Result<()>;
+    /// Bring these files of the copy, relative to the project, up to date
+    /// with the project's; one the project no longer has is removed.
+    fn refresh(&mut self, _files: &[String]) -> io::Result<()> {
+        self.copy()
+    }
     /// What the operations that follow look at to know they should stop; one
     /// that is stopped fails with `Interrupted`. A project that cannot be
     /// stopped ignores it.
@@ -367,6 +372,31 @@ impl Project for Cargo {
 
     fn write(&mut self, file: &str, text: &str) -> io::Result<()> {
         fs::write(self.here().join(file), text)
+    }
+
+    // A file is written only when its content differs, and then with a time
+    // of now, for the reason `sync_tree` gives: cargo trusts what it built
+    // from a file whose time has not moved.
+    fn refresh(&mut self, files: &[String]) -> io::Result<()> {
+        let project = self.from.join(&self.inside);
+        for file in files {
+            let (from, to) = (project.join(file), self.here().join(file));
+            match fs::read(&from) {
+                Err(e) if e.kind() == io::ErrorKind::NotFound => remove_any(&to)?,
+                Err(e) => return Err(e),
+                Ok(bytes) => {
+                    if fs::read(&to).ok().as_deref() != Some(bytes.as_slice()) {
+                        if let Some(dir) = to.parent() {
+                            fs::create_dir_all(dir)?;
+                        }
+                        remove_any(&to)?;
+                        fs::write(&to, bytes)?;
+                        fs::set_permissions(&to, fs::metadata(&from)?.permissions())?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn set_stop(&mut self, stop: Option<Stop>) {

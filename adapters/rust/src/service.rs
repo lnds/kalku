@@ -148,6 +148,7 @@ impl Service {
                 site,
                 tests,
             } => self.cast(id, &wekufe, &site, &tests),
+            Request::Reload { files } => self.reload(id, &files),
             Request::Shutdown => Step::Stop(protocol::bye(id)),
             other => Step::Reply(protocol::error(
                 id,
@@ -257,41 +258,79 @@ impl Service {
                 &format!("cannot copy the project: {e}"),
             );
         }
-        match project.build() {
-            Err(e) => Self::failed(id, "prepare_failed", &format!("cannot run cargo: {e}")),
-            Ok(Build::Failed(message)) => Self::failed(id, "prepare_failed", &message),
-            Ok(Build::Built(targets)) => {
-                let modules = targets.len();
-                let mut listed = Vec::new();
-                for (index, target) in targets.iter().enumerate() {
-                    match project.list(target) {
-                        Ok(names) => listed.extend(
-                            names
-                                .into_iter()
-                                .map(|n| (format!("{}::{n}", target.file), index, n)),
-                        ),
-                        Err(e) => {
-                            return Self::failed(
-                                id,
-                                "prepare_failed",
-                                &format!("cannot list tests: {e}"),
-                            );
-                        }
-                    }
-                }
-                let tests = listed
-                    .iter()
-                    .enumerate()
-                    .map(|(at, (test, _, _))| (test.clone(), at))
-                    .collect();
-                self.session = Session {
-                    targets,
-                    listed,
-                    tests,
-                };
-                Step::Reply(protocol::prepared(id, millis(started), modules))
-            }
+        match self.settle() {
+            Err(why) => Self::failed(id, "prepare_failed", &why),
+            Ok(modules) => Step::Reply(protocol::prepared(id, millis(started), modules)),
         }
+    }
+
+    // Build every test executable and list what each holds: what a baseline
+    // runs and a cast chooses from. Says how many executables there are.
+    fn settle(&mut self) -> Result<usize, String> {
+        let Some(project) = self.project.as_mut() else {
+            return Err("`hello` has to come first".to_string());
+        };
+        let targets = match project.build() {
+            Err(e) => return Err(format!("cannot run cargo: {e}")),
+            Ok(Build::Failed(message)) => return Err(message),
+            Ok(Build::Built(targets)) => targets,
+        };
+        let mut listed = Vec::new();
+        for (index, target) in targets.iter().enumerate() {
+            let names = project
+                .list(target)
+                .map_err(|e| format!("cannot list tests: {e}"))?;
+            listed.extend(
+                names
+                    .into_iter()
+                    .map(|n| (format!("{}::{n}", target.file), index, n)),
+            );
+        }
+        let tests = listed
+            .iter()
+            .enumerate()
+            .map(|(at, (test, _, _))| (test.clone(), at))
+            .collect();
+        let modules = targets.len();
+        self.session = Session {
+            targets,
+            listed,
+            tests,
+        };
+        Ok(modules)
+    }
+
+    // What changed on disk is copied into the reni and the project built and
+    // listed again, so the next baseline runs a test an edit added and the
+    // next cast builds the file as it is now. A reload that cannot finish
+    // ends this kalku: a fresh one prepares from the project itself.
+    fn reload(&mut self, id: i64, files: &[String]) -> Step {
+        let Some(project) = self.project.as_mut() else {
+            return Self::not_ready(id, "`hello` has to come first");
+        };
+        if self.session.targets.is_empty() {
+            return Self::not_ready(id, "`prepare` has to come first");
+        }
+        if let Some(outside) = files.iter().find(|f| !within(f)) {
+            return Self::failed(
+                id,
+                "load_failed",
+                &format!("{outside} is not a file inside the project"),
+            );
+        }
+        let started = Instant::now();
+        if let Err(e) = project.refresh(files) {
+            return Self::failed(
+                id,
+                "load_failed",
+                &format!("cannot copy the files into the reni: {e}"),
+            );
+        }
+        if let Err(why) = self.settle() {
+            return Self::failed(id, "load_failed", &why);
+        }
+        let packages = packages_of(&self.session.targets, files);
+        Step::Reply(protocol::reloaded(id, &packages, millis(started)))
     }
 
     // Every test is run alone once, which is how it gets a duration of its
@@ -586,6 +625,56 @@ fn cast_in(
         }
     }
     Ok(Outcome::Survived)
+}
+
+// A path the kaikai side names is relative to the project and stays in it.
+fn within(file: &str) -> bool {
+    let path = Path::new(file);
+    !file.is_empty()
+        && path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
+// The package each file belongs to: the one whose executable's source sits
+// deepest in the directories above the file. A file of no package, such as
+// a workspace's own manifest, names none.
+fn packages_of(targets: &[Target], files: &[String]) -> Vec<String> {
+    let mut packages: Vec<String> = Vec::new();
+    for file in files {
+        let owner = targets
+            .iter()
+            .filter_map(|t| {
+                let root = package_root(&t.file);
+                Path::new(file)
+                    .starts_with(&root)
+                    .then(|| (root.components().count(), t))
+            })
+            .max_by_key(|(depth, _)| *depth);
+        if let Some((_, t)) = owner {
+            if !packages.contains(&t.package) {
+                packages.push(t.package.clone());
+            }
+        }
+    }
+    packages
+}
+
+// Where a package's files are, from one of its executables' source: above
+// the conventional `src`, `tests`, `benches` or `examples` it is in.
+fn package_root(source: &str) -> PathBuf {
+    let mut dir = Path::new(source).parent().unwrap_or(Path::new(""));
+    while let Some(name) = dir.file_name() {
+        let up = dir.parent().unwrap_or(Path::new(""));
+        if ["src", "tests", "benches", "examples"].contains(&name.to_str().unwrap_or("")) {
+            return up.to_path_buf();
+        }
+        dir = up;
+    }
+    Path::new(source)
+        .parent()
+        .unwrap_or(Path::new(""))
+        .to_path_buf()
 }
 
 fn name(r: &Request) -> &'static str {
@@ -887,6 +976,115 @@ mod tests {
         for (request, wire) in names {
             assert_eq!(name(&request), wire);
         }
+    }
+
+    // An edit can add a test as well as change code: the next baseline has
+    // to run the suite the project holds now, not the one `prepare` listed.
+    #[test]
+    fn a_reload_builds_and_lists_the_project_again() {
+        let (mut fake, _) = Fake::new();
+        fake.listing
+            .insert("tests/more.rs".into(), vec!["added".into()]);
+        fake.builds
+            .push_back(Ok(Build::Built(vec![target("src/lib.rs")])));
+        fake.builds.push_back(Ok(Build::Built(vec![
+            target("src/lib.rs"),
+            target("tests/more.rs"),
+        ])));
+        let mut service = prepared_and_baselined(fake);
+
+        let said = say(
+            &mut service,
+            json!({"type": "reload", "id": 4, "files": ["src/lib.rs"]}),
+        );
+        let baseline = say(&mut service, json!({"type": "baseline", "id": 5}));
+
+        assert_eq!(said["type"], "reloaded", "{said}");
+        assert_eq!(said["modules"], json!(["p"]));
+        assert_eq!(said["dependents"], json!([]));
+        assert_eq!(baseline["tests"].as_array().unwrap().len(), 3, "{baseline}");
+    }
+
+    #[test]
+    fn a_reload_comes_after_a_prepare() {
+        let (fake, _) = Fake::new();
+        let mut service = greeted(fake);
+
+        let said = say(
+            &mut service,
+            json!({"type": "reload", "id": 4, "files": []}),
+        );
+
+        assert_eq!(said["code"], "not_ready");
+        assert_eq!(said["fatal"], false);
+    }
+
+    // A reload this kalku cannot see through ends it, so the kaikai side
+    // summons one that prepares from the project itself.
+    #[test]
+    fn a_reload_it_cannot_finish_is_fatal_and_says_why() {
+        type Setup = fn(&mut Fake);
+        let cases: [(Setup, &str, &str); 3] = [
+            (|_| {}, "../elsewhere.rs", "not a file inside the project"),
+            (
+                |f| {
+                    f.builds
+                        .push_back(Ok(Build::Built(vec![target("src/lib.rs")])));
+                    f.builds
+                        .push_back(Ok(Build::Failed("error[E0308]: mismatched types".into())));
+                },
+                "src/lib.rs",
+                "mismatched types",
+            ),
+            (
+                |f| {
+                    f.builds
+                        .push_back(Ok(Build::Built(vec![target("src/lib.rs")])));
+                    f.builds.push_back(Err(io_error("no cargo")));
+                },
+                "src/lib.rs",
+                "cannot run cargo",
+            ),
+        ];
+        for (setup, file, why) in cases {
+            let (mut fake, _) = Fake::new();
+            setup(&mut fake);
+            let mut service = prepared_and_baselined(fake);
+
+            let said = say(
+                &mut service,
+                json!({"type": "reload", "id": 4, "files": [file]}),
+            );
+
+            assert_eq!(said["code"], "load_failed", "{said}");
+            assert_eq!(said["fatal"], true);
+            assert!(said["message"].as_str().unwrap().contains(why), "{said}");
+        }
+    }
+
+    #[test]
+    fn a_file_belongs_to_the_package_whose_sources_hold_it() {
+        let member = |package: &str, file: &str| Target {
+            package: package.into(),
+            select: vec!["--lib".into()],
+            file: file.into(),
+        };
+        let targets = [
+            member("root", "src/lib.rs"),
+            member("tool", "crates/tool/src/main.rs"),
+            member("tool", "crates/tool/tests/cli.rs"),
+        ];
+        let files = [
+            "crates/tool/src/args.rs".to_string(),
+            "src/bin/x.rs".to_string(),
+            "crates/tool/tests/cli.rs".to_string(),
+        ];
+
+        assert_eq!(packages_of(&targets, &files), vec!["tool", "root"]);
+        assert!(within("src/a.rs"));
+        assert!(!within("../a.rs"));
+        assert!(!within("/etc/passwd"));
+        assert!(!within(""));
     }
 
     #[test]

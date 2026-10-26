@@ -263,6 +263,66 @@ def test_a_cast_before_prepare_is_not_ready_and_a_stale_site_is_refused(kalku, m
     assert refused["code"] == "bad_request" and refused["fatal"] is False
 
 
+def edit(root: Path, file: str, old: str, new: str) -> None:
+    path = root / file
+    text = path.read_text()
+    assert old in text
+    path.write_text(text.replace(old, new))
+
+
+def test_a_reloaded_source_is_the_one_the_next_cast_runs(kalku, make_project):
+    k, root = prepared(kalku, make_project)
+    prepare_and_baseline(k)
+    edit(root, "gate.py", "a >= 1 and a < LIMIT", "1 <= a < LIMIT")
+    site = k.site("gate.py", "compare", "<=", "<")
+
+    # The copy still holds the text from before the edit.
+    assert k.cast(site, [INSIDE])["code"] == "bad_request"
+    reloaded = k.ask({"type": "reload", "files": ["gate.py"]})
+    done = k.cast(site, [INSIDE])
+
+    assert reloaded["type"] == "reloaded" and reloaded["modules"] == ["gate"]
+    assert done["outcome"] == "killed" and done["killed_by"] == INSIDE
+
+
+def test_a_test_a_reload_adds_is_run_by_the_next_baseline_and_can_judge(kalku, make_project):
+    k, root = prepared(kalku, make_project)
+    prepare_and_baseline(k)
+    two = "tests/test_gate.py::test_two_is_inside"
+    with (root / "tests/test_gate.py").open("a") as f:
+        f.write("\n\ndef test_two_is_inside():\n    assert gate(2)\n")
+    site = k.site("gate.py", "compare", ">=", ">")
+
+    assert k.cast(site, [two])["code"] == "unknown_test"
+    assert k.ask({"type": "reload", "files": ["tests/test_gate.py"]})["type"] == "reloaded"
+    baseline = k.ask({"type": "baseline"})
+    done = k.cast(site, [two])
+
+    assert two in [t["test"] for t in baseline["tests"]]
+    assert done["outcome"] == "survived"
+
+
+def test_a_reload_after_which_the_suite_no_longer_loads_is_fatal(kalku, make_project):
+    k, root = prepared(kalku, make_project)
+    prepare_and_baseline(k)
+    edit(root, "tests/test_gate.py", "from gate import", "from nowhere_at_all import")
+
+    said = k.ask({"type": "reload", "files": ["tests/test_gate.py"]})
+
+    assert said["code"] == "load_failed" and said["fatal"] is True
+    assert "nowhere_at_all" in said["message"]
+
+
+def test_a_reload_of_a_path_outside_the_project_is_refused(kalku, make_project):
+    k, root = prepared(kalku, make_project)
+    assert k.ask({"type": "reload", "files": ["gate.py"]})["code"] == "not_ready"
+    k.ask({"type": "prepare"})
+
+    said = k.ask({"type": "reload", "files": ["../elsewhere.py"]})
+
+    assert said["code"] == "load_failed" and said["fatal"] is True
+
+
 def test_what_it_does_not_answer_is_said_plainly(kalku, make_project):
     k, _ = prepared(kalku, make_project)
 
