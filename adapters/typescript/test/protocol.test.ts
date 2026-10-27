@@ -150,7 +150,7 @@ test("a ready reply is in canonical order", () => {
   assert.equal(
     wire.ready(1, "0.18.2", "Node 22.4.0, Vitest 3.2.4", ["cast", "abort"]),
     '{"type":"ready","id":1,"protocol":1,"language":"typescript","adapter":"0.18.2","runtime":"Node 22.4.0, Vitest 3.2.4",' +
-      '"spells":["arm","compare","connect","negate","literal","call"],"capabilities":["cast","abort"]}',
+      '"spells":["arm","compare","connect","negate","literal","call","return"],"capabilities":["cast","abort"]}',
   );
 });
 

@@ -15,6 +15,7 @@ export const ALL_SPELLS = [
   "negate",
   "literal",
   "call",
+  "return",
   "await",
   "supervise",
   "foreign",
@@ -22,7 +23,7 @@ export const ALL_SPELLS = [
 export type Spell = (typeof ALL_SPELLS)[number];
 
 /** What this kalku casts: `await` and `supervise` are for runtimes it does not judge. */
-export const SPELLS: Spell[] = ["arm", "compare", "connect", "negate", "literal", "call"];
+export const SPELLS: Spell[] = ["arm", "compare", "connect", "negate", "literal", "call", "return"];
 
 export interface Position {
   line: number;
