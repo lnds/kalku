@@ -36,7 +36,9 @@ runner = "vitest"
   `compare`, `connect`, `negate` (the condition of an `if`, a loop or a
   conditional expression, and a `!` dropped), `literal` (plain decimal
   integers, booleans, non-empty strings), `arm` (a clause of a `switch`, never
-  `default` or the last) and `call` (a call that is a whole statement). Types,
+  `default` or the last), `call` (a call that is a whole statement) and, when
+  `[run] spells` names it, `return` (a returned value becomes the neutral one
+  of the type the function declares, or `undefined` where it declares none). Types,
   imports, decorators, property names, module specifiers, `case` labels, JSX
   attribute strings, test files, declaration files and tool configuration are
   never touched, nor the arguments of the calls `exclude_calls` names.

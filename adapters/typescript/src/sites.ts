@@ -15,6 +15,7 @@
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import type { Site, Spell } from "./protocol";
+import { returnSite } from "./returns";
 import { Source } from "./source";
 
 export class ParseError extends Error {}
@@ -179,6 +180,8 @@ class Walker {
   }
 
   private visit(node: ts.Node, enclosing: string): void {
+    const r = returnSite(node, this.sf);
+    if (r !== undefined) this.propose("return", r.from, r.to, r.replacement, enclosing);
     if (ts.isBinaryExpression(node)) {
       const op = node.operatorToken;
       const compare = COMPARE.get(op.kind);
