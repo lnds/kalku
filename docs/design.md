@@ -480,7 +480,7 @@ The shared catalog, in order of diagnostic value:
 | `negate` | an inverted guard | `if`↔`unless`, `c` → `not c` in conditions |
 | `literal` | wrong seed or base case | `0`→`1`, `n`→`n+1`, `true`↔`false`, `:ok`↔`:error`, `""` for a non-empty string |
 | `call` | a step that silently does nothing | drop a pipe stage (`\|> f()`), `f(x)` → `x` |
-| `return` | a function whose result nobody checks | a returned value → the language's neutral one (`nil`, `None`, a type's default) |
+| `return` | a function whose result nobody checks | a `def`/`defp` clause's last expression → `nil`, except a literal `literal` perturbs, a `raise`, or an `@impl` callback, whose result is the behaviour's protocol; other languages: a returned value → their neutral one |
 
 `return` is cast only where `[run] spells` names it. A spell outside the default set moves every project's score the day it is added, so it waits there until it has been measured on real projects in each language and a release says it joins the default. A run that names a spell its kalku does not cast stops and says which, rather than reporting a score over less than was asked for.
 

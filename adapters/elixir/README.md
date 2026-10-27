@@ -30,7 +30,7 @@ kalku run lib/thing.ex     # measure one file
 | Message | Served |
 |---|---|
 | `hello` → `ready` | yes |
-| `sites` → `sites_found` | yes, all six spells |
+| `sites` → `sites_found` | yes, all six default spells, and `return` when asked for |
 | `prepare` → `prepared` | yes |
 | `baseline` → `baseline_done` | yes, with per-test coverage |
 | `shutdown` → `bye` | yes |
@@ -200,6 +200,7 @@ Sources are parsed with `Code.string_to_quoted/2` (`columns`, `token_metadata`, 
 | `negate` | `if`↔`unless`; drop `not` / `!` |
 | `literal` | integer `n`→`n+1`, `true`↔`false`, `:ok`↔`:error`, a non-empty plain string → `""` |
 | `call` | drop one pipe stage; `f(x, …)` → `x` when `x` is a variable or a literal |
+| `return` | a `def`/`defp` clause's last expression → `nil`; only when `[run] spells` names it. Not a result that is already `nil`, a literal `literal` perturbs, a `raise`/`throw`/`exit`, a callback marked `@impl` (its result is the behaviour's protocol, and `nil` there crashes the process for every test that reaches it), or a macro |
 
 Never proposed: test files and scripts (`test/`, anything but `.ex`); `@moduledoc`, `@doc`, typespecs, and other directive attributes; anything inside calls matched by `exclude_calls`; literals inside `raise`; `if`/`unless` whose branches are identical; calls in patterns, guards, or a pipe's right side.
 
