@@ -19,7 +19,12 @@
 //     sizes an array or a bit-field in a declaration;
 //   - a call to an operator, a constructor or a destructor, a call that
 //     ends a path (`exit`, `abort`, `std::terminate`), and anything in a
-//     call `exclude_calls` names, that call included.
+//     call `exclude_calls` names, that call included;
+//   - a returned value whose type has no neutral value this kalku can write
+//     and be sure compiles (a reference, an enum, a class other than the
+//     standard library's string, vector and optional, a type a template
+//     decides), one that already is that value, a `true` or `false` (`literal`
+//     turns those), and what a `constexpr` function or a lambda returns.
 
 namespace kalku {
 
@@ -38,6 +43,9 @@ struct Node {
   int callee_kind = 0;
   // For a declaration: its name, qualified by namespaces and classes.
   std::string qualified;
+  // For a function: the type it returns, as Clang resolves it.
+  int result_kind = 0;
+  std::string result;
   std::vector<Node> children;
 };
 
@@ -123,6 +131,11 @@ class Builder {
       }
     }
     if (is_function(n.kind) || n.kind == cx::VarDecl || n.kind == cx::FieldDecl) n.qualified = qualified(c);
+    if (is_function(n.kind)) {
+      cx::Type t = api_.getCanonicalType(api_.getCursorResultType(c));
+      n.result_kind = t.kind;
+      n.result = cx::text(api_, api_.getTypeSpelling(t));
+    }
     return n;
   }
 
@@ -168,12 +181,21 @@ const std::map<std::string, std::string> COMPARE = {{"<", "<="}, {"<=", "<"},  {
 const std::map<std::string, std::string> CONNECT = {{"&&", "||"}, {"||", "&&"}};
 const std::set<std::string> ENDS_A_PATH = {"abort",     "exit",        "_Exit",          "quick_exit",
                                            "terminate", "unreachable", "__builtin_trap", "__builtin_unreachable"};
+// Returned values that already are a type's neutral one.
+const std::set<std::string> NEUTRAL = {
+    "0.0",       "0.0f",          "0.f",           "0.",           "0.0L",
+    "false",     "nullptr",       "NULL",          "{}",           "\"\"",
+    "(void *)0", "std::string()", "std::string{}", "std::nullopt", "std::string_view()"};
+// The standard library classes whose empty value `{}` writes: by name, or
+// by the template they are made from.
+const std::set<std::string> EMPTY_NAMED = {"string", "wstring", "u8string", "u16string", "u32string", "string_view"};
+const std::vector<std::string> EMPTY_FROM = {"basic_string<", "basic_string_view<", "vector<", "optional<"};
 
 class Walker {
  public:
   Walker(const std::string& text, std::vector<Tok> toks, std::vector<std::pair<long, long>> macros,
-         const std::vector<std::string>& spells, const std::vector<std::string>& exclude)
-      : text_(text), toks_(std::move(toks)), macros_(std::move(macros)), exclude_(exclude) {
+         const std::vector<std::string>& spells, const std::vector<std::string>& exclude, bool c)
+      : text_(text), toks_(std::move(toks)), macros_(std::move(macros)), exclude_(exclude), c_(c) {
     for (const auto& s : spells) wanted_.insert(s);
   }
 
@@ -182,10 +204,20 @@ class Walker {
     if (quiet(n, parent)) return;
     if (is_function(n.kind)) {
       if (!has_body(n)) return;
-      std::string saved = enclosing_;
+      std::string saved = enclosing_, returned = neutral_;
       enclosing_ = n.qualified + "(" + parameters(n) + ")";
+      neutral_ = constant(n) ? "" : neutral(n);
       children(n);
       enclosing_ = saved;
+      neutral_ = returned;
+      return;
+    }
+    if (n.kind == cx::LambdaExpr) {
+      // What a lambda returns is its own, of a type its body decides.
+      std::string returned = neutral_;
+      neutral_.clear();
+      children(n);
+      neutral_ = returned;
       return;
     }
     if ((n.kind == cx::VarDecl || n.kind == cx::FieldDecl) && !in_function_) {
@@ -270,6 +302,66 @@ class Walker {
       }
     }
     return false;
+  }
+
+  // The value a function's result is replaced with: one that compiles for
+  // its type whatever the function computes, or none.
+  std::string neutral(const Node& fn) const {
+    int k = fn.result_kind;
+    if (k == cx::TypeBool) return c_ ? "0" : "false";
+    if (k >= cx::TypeFirstInteger && k <= cx::TypeLastInteger) return "0";
+    if (k == cx::TypeFloat || k == cx::TypeDouble || k == cx::TypeLongDouble || k == cx::TypeFloat128 ||
+        k == cx::TypeHalf || k == cx::TypeFloat16) {
+      return "0.0";
+    }
+    if (k == cx::TypePointer) return c_ ? "0" : "nullptr";
+    if (k == cx::TypeRecord && !c_ && fn.result.rfind("std::", 0) == 0) {
+      std::string t = fn.result;
+      for (const char* ns : {"std::__1::", "std::__cxx11::", "std::"}) {
+        if (t.rfind(ns, 0) == 0) {
+          t = t.substr(std::string(ns).size());
+          break;
+        }
+      }
+      if (EMPTY_NAMED.count(t)) return "{}";
+      for (const auto& e : EMPTY_FROM) {
+        if (t.rfind(e, 0) == 0) return "{}";
+      }
+    }
+    return "";
+  }
+
+  // A `constexpr` or `consteval` function, whose value may be taken where
+  // the program is compiled rather than where a test runs it.
+  bool constant(const Node& fn) const {
+    long body = fn.end;
+    for (const auto& c : fn.children) {
+      if (c.kind == cx::CompoundStmt) body = c.begin;
+    }
+    for (std::size_t i = token_at(fn.begin); i < toks_.size() && toks_[i].begin < body; i++) {
+      if (toks_[i].text == "constexpr" || toks_[i].text == "consteval") return true;
+    }
+    return false;
+  }
+
+  void returned(const Node& n) {
+    if (neutral_.empty() || n.children.empty()) return;
+    const Node& e = n.children.back();
+    if (!e.own || e.begin <= n.begin) return;
+    std::string was = tidy(slice(e.begin, e.end));
+    if (NEUTRAL.count(was) || zero(was) || was == "true" || was == neutral_) return;
+    add("return", e.begin, e.end, neutral_);
+  }
+
+  // A literal zero, whatever its suffix: `0`, `0u`, `0L`, `0.0f`, `0x0`.
+  static bool zero(const std::string& t) {
+    std::size_t i = t.rfind("0x", 0) == 0 || t.rfind("0X", 0) == 0 ? 2 : 0;
+    bool digit = false;
+    for (; i < t.size() && (t[i] == '0' || t[i] == '.'); i++) digit = digit || t[i] == '0';
+    for (; i < t.size(); i++) {
+      if (std::string("uUlLfFzZ").find(t[i]) == std::string::npos) return false;
+    }
+    return digit;
   }
 
   static bool has_body(const Node& fn) {
@@ -430,6 +522,9 @@ class Walker {
         break;
       case cx::CallExpr:
         if (statement(n, parent)) call(n);
+        break;
+      case cx::ReturnStmt:
+        returned(n);
         break;
       default:
         break;
@@ -601,7 +696,10 @@ class Walker {
   std::vector<std::pair<long, long>> macros_;
   const std::vector<std::string>& exclude_;
   std::set<std::string> wanted_;
+  bool c_;
   std::string enclosing_;
+  // What the enclosing function's result is replaced with; empty for none.
+  std::string neutral_;
   bool in_function_ = false;
   std::vector<const Node*> stack_;
 };
@@ -825,7 +923,7 @@ Searched find_sites(const cx::Api& api, const SiteSearch& s) {
   cx::File main = api.getFile(tu, s.path.c_str());
   Builder b(api, tu, main);
   Node root = b.root();
-  Walker w(s.text, tokens(api, tu, main, s.text.size()), b.macros, s.spells, s.exclude_calls);
+  Walker w(s.text, tokens(api, tu, main, s.text.size()), b.macros, s.spells, s.exclude_calls, s.c);
   for (const auto& c : root.children) w.walk(c);
   api.disposeTranslationUnit(tu);
   std::vector<Candidate> found = without_null_pointers(api, index, cargv, s, diagnosed, std::move(w.found));

@@ -110,6 +110,9 @@ bool bind_all(void* lib, std::string& missing) {
          bind(lib, api.disposeString, "clang_disposeString", missing) &&
          bind(lib, api.getCursorSemanticParent, "clang_getCursorSemanticParent", missing) &&
          bind(lib, api.getCursorReferenced, "clang_getCursorReferenced", missing) &&
+         bind(lib, api.getCursorResultType, "clang_getCursorResultType", missing) &&
+         bind(lib, api.getCanonicalType, "clang_getCanonicalType", missing) &&
+         bind(lib, api.getTypeSpelling, "clang_getTypeSpelling", missing) &&
          bind(lib, api.Cursor_isNull, "clang_Cursor_isNull", missing) &&
          bind(lib, api.getFile, "clang_getFile", missing) &&
          bind(lib, api.getLocationForOffset, "clang_getLocationForOffset", missing) &&

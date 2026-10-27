@@ -2,12 +2,12 @@
 
 namespace kalku {
 
-const std::vector<std::string> SPELLS = {"arm", "compare", "connect", "negate", "literal", "call"};
+const std::vector<std::string> SPELLS = {"arm", "compare", "connect", "negate", "literal", "call", "return"};
 
 namespace {
 
-const std::vector<std::string> ALL_SPELLS = {"arm",  "compare", "connect",   "negate", "literal",
-                                             "call", "await",   "supervise", "foreign"};
+const std::vector<std::string> ALL_SPELLS = {"arm",  "compare", "connect", "negate",    "literal",
+                                             "call", "return",  "await",   "supervise", "foreign"};
 
 // The fields of one object, read with the first problem kept.
 class Fields {

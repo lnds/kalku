@@ -42,6 +42,26 @@ struct SourceRange {
   unsigned end_int_data;
 };
 
+struct Type {
+  int kind;
+  void* data[2];
+};
+
+// The kinds of type this kalku tells apart, by their values in libclang.
+enum TypeKind {
+  TypeBool = 3,
+  TypeFirstInteger = 4,
+  TypeLastInteger = 20,
+  TypeFloat = 21,
+  TypeDouble = 22,
+  TypeLongDouble = 23,
+  TypeFloat128 = 30,
+  TypeHalf = 31,
+  TypeFloat16 = 32,
+  TypePointer = 101,
+  TypeRecord = 105,
+};
+
 struct Token {
   unsigned int_data[4];
   void* ptr_data;
@@ -98,6 +118,7 @@ enum Kind {
   WhileStmt = 207,
   DoStmt = 208,
   ForStmt = 209,
+  ReturnStmt = 214,
   CXXForRangeStmt = 225,
   DeclStmt = 231,
   LastStmt = 299,
@@ -147,6 +168,9 @@ struct Api {
   void (*disposeString)(String);
   Cursor (*getCursorSemanticParent)(Cursor);
   Cursor (*getCursorReferenced)(Cursor);
+  Type (*getCursorResultType)(Cursor);
+  Type (*getCanonicalType)(Type);
+  String (*getTypeSpelling)(Type);
   int (*Cursor_isNull)(Cursor);
   File (*getFile)(TranslationUnit, const char*);
   SourceLocation (*getLocationForOffset)(TranslationUnit, File, unsigned);
