@@ -137,6 +137,28 @@ def test_a_guard_and_its_condition_are_values_and_the_pattern_is_not():
     assert of("compare", text) == [(">", ">=")]
 
 
+def test_a_returned_value_becomes_none_and_none_is_not_returned_again():
+    text = "def f(x):\n    if x:\n        return None\n    if x > 1:\n        return\n    return x + 1\n"
+    assert of("return", text) == [("x + 1", "None")]
+
+
+# A function that gives back `None` whatever it returns has no value a test
+# could read: its `return` wekufe would survive by construction.
+def test_a_function_whose_result_is_always_none_has_no_return_site():
+    init = "class A:\n    def __init__(self):\n        return self.setup()\n"
+    annotated = "def f() -> None:\n    return g()\n"
+    generator = "def f(n):\n    yield n\n    return n\n"
+    stub = "def f() -> int:\n    return ...\n"
+    for text in (init, annotated, generator, stub):
+        assert of("return", text) == [], text
+
+
+def test_a_yield_inside_a_nested_function_does_not_make_its_parent_a_generator():
+    text = "def f():\n    def g():\n        yield 1\n    return g\n"
+    assert of("return", text) == [("g", "None")]
+    assert [s.enclosing for s in found(text, ("return",)).sites] == ["f"]
+
+
 def test_a_spell_that_was_not_asked_for_is_not_proposed():
     assert {s.spell for s in found("if a >= 1 and b:\n    pass\n", ("connect",)).sites} == {
         "connect"

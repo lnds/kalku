@@ -7,12 +7,23 @@ states and nothing of Python's own.
 
 from __future__ import annotations
 
-ALL = ("arm", "compare", "connect", "negate", "literal", "call", "await", "supervise", "foreign")
+ALL = (
+    "arm",
+    "compare",
+    "connect",
+    "negate",
+    "literal",
+    "call",
+    "return",
+    "await",
+    "supervise",
+    "foreign",
+)
 
 # What this kalku can cast. `await` and `supervise` are concurrency spells for
 # the BEAM, and `foreign` is for a runtime with a native boundary; a spell is
 # announced when it is true.
-CAST = ("arm", "compare", "connect", "negate", "literal", "call")
+CAST = ("arm", "compare", "connect", "negate", "literal", "call", "return")
 
 
 def parse(name: str) -> str | None:

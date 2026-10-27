@@ -16,6 +16,9 @@ Not proposed, on purpose:
   `if TYPE_CHECKING:` and `if __name__ == "__main__":`: nothing a test can
   run, or a different program;
 - patterns of `match`, whose literals are structure and not values;
+- a `return` whose function gives back `None` whatever it returns: `__init__`,
+  one annotated `-> None`, and a generator, whose `return` value only a
+  `yield from` or a caught `StopIteration` reads;
 - the arguments of a call that `exclude_calls` names;
 - test files, which the service refuses before it gets here: mutating the
   oracle is not a measurement of the oracle.
@@ -277,6 +280,27 @@ def _is_main_guard(test: ast.expr) -> bool:
     )
 
 
+def _gives_back(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether what the function returns is a value a caller can read."""
+    returns = node.returns
+    if isinstance(returns, ast.Constant) and returns.value in (None, "None"):
+        return False
+    return node.name != "__init__" and not _yields(node.body)
+
+
+def _yields(body: list[ast.stmt]) -> bool:
+    """A `yield` of this function's own, not of a function or lambda inside it."""
+    pending: list[ast.AST] = list(body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.Yield, ast.YieldFrom)):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
 class _Walker(ast.NodeVisitor):
     def __init__(
         self, src: Source, tokens: list[_Token], spells: frozenset[str], exclude: tuple[str, ...]
@@ -287,6 +311,8 @@ class _Walker(ast.NodeVisitor):
         self.spells = spells
         self.exclude = exclude
         self.scope: list[str] = []
+        # Whether the `return` of each function being walked gives back a value.
+        self.returning: list[bool] = []
         self.found: list[_Candidate] = []
 
     # ---- helpers -----------------------------------------------------------
@@ -347,7 +373,9 @@ class _Walker(ast.NodeVisitor):
         for default in [*args.defaults, *[d for d in args.kw_defaults if d is not None]]:
             self.visit(default)
         self.scope.append(node.name)
+        self.returning.append(_gives_back(node))
         self.visit_body(node.body)
+        self.returning.pop()
         self.scope.pop()
 
     visit_FunctionDef = _function
@@ -362,6 +390,23 @@ class _Walker(ast.NodeVisitor):
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         self.visit(node.body)
+
+    def visit_Return(self, node: ast.Return) -> None:
+        """`return x` becomes `return None`."""
+        value = node.value
+        if (
+            value is not None
+            and self.returning
+            and self.returning[-1]
+            and not (
+                isinstance(value, ast.Constant) and (value.value is None or value.value is ...)
+            )
+        ):
+            span = self.span(value)
+            original = self.text(value)
+            if span is not None and original is not None:
+                self.propose("return", *span, "None", expected=original)
+        self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         # The annotation is not a value; the assigned expression is.
