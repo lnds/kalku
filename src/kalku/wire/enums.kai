@@ -15,6 +15,7 @@ pub type Spell
   | Negate
   | Literal
   | Call
+  | Return
   | Await
   | Supervise
   | Foreign
@@ -86,6 +87,7 @@ fn spells() : [(String, Spell)] = [
   ("negate", Negate),
   ("literal", Literal),
   ("call", Call),
+  ("return", Return),
   ("await", Await),
   ("supervise", Supervise),
   ("foreign", Foreign)

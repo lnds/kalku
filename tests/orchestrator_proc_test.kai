@@ -352,3 +352,21 @@ test "a kalku that never answers is killed, and killing it leaves nothing behind
   let _ = if told == expected { () } else { Stderr.eprint("received #{told}") }
   assert told == expected
 }
+
+fn ready_casting(spells: [Spell]) : ReadyMsg = ReadyMsg {
+  version: 1,
+  language: "python",
+  adapter: "0.26.1",
+  runtime: "CPython 3.13",
+  spells: spells,
+  capabilities: []
+}
+
+# A spell left out because the kalku cannot cast it would make the score
+# one over less than the project asked for.
+test "a run asking for a spell its kalku does not cast is refused, naming the spell" {
+  assert spells_refused(ready_casting([Arm, Compare]), [Arm]) == None
+  let why = spells_refused(ready_casting([Arm, Compare]), [Arm, Return]) |> unwrap_or("")
+  assert is_some(index_of(why, "python kalku 0.26.1 does not cast `return`"))
+  assert is_some(index_of(why, "`[run] spells`"))
+}

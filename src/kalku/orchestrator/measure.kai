@@ -245,6 +245,7 @@ pub fn read_by(
   hello: KalkuReply
 ) : Result[Known, String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   let caps = able(hello)!
+  castable(hello, asking.spells)!
   let keeping = keeping_of(asking.store, asking.reuse, caps, hello, asking.spec)
   let offer = offer_of(keeping)
   Telling.entered(PhaseBaselining)
