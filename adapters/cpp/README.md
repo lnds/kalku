@@ -34,8 +34,10 @@ cmake_args = ["-DCMAKE_BUILD_TYPE=Debug", "-DACME_BUILD_TESTS=ON"]
   `compile_commands.json` gives it: `compare`, `connect`, `negate` (the
   condition of an `if`, a loop or `?:`, and a `!` dropped), `literal` (decimal
   integers, booleans, non-empty strings), `arm` (a clause of a `switch`, never
-  `default` or the last) and `call` (a call that is a whole statement becomes
-  `{}`). Headers are read too, with the flags of a file beside them, and a
+  `default` or the last), `call` (a call that is a whole statement becomes
+  `{}`) and, where `[run] spells` names it, `return` (a returned value becomes
+  its type's neutral one: `0`, `0.0`, `false`, `nullptr`, or `{}` for a
+  standard string, vector or optional). Headers are read too, with the flags of a file beside them, and a
   wekufe in one rebuilds every file that includes it. Test files, anything a
   macro writes or is handed, what is never evaluated (`sizeof`,
   `static_assert`, `if constexpr`), template arguments, enum values, array

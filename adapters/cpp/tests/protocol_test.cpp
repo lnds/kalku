@@ -58,6 +58,17 @@ TEST("every request fixture decodes") {
   CHECK(seen >= 10);
 }
 
+// `return` is cast only where a project names it, so the kalku says it can
+// and reads a request that asks for it.
+TEST("ready announces return, and a sites request may name it") {
+  std::string r = ready(1, "0", "clang", {"cast"});
+  CHECK(r.find("\"literal\",\"call\",\"return\"]") != std::string::npos);
+  DecodeError e;
+  auto req =
+      decode("{\"type\":\"sites\",\"id\":4,\"files\":[\"a.c\"],\"spells\":[\"return\"],\"exclude_calls\":[]}", &e);
+  CHECK(req.has_value());
+}
+
 TEST("a malformed request is refused with the kind its fixture names") {
   int seen = 0;
   for (const auto& entry : lines_of("invalid/kalku_requests.ndjson")) {
