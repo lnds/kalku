@@ -27,7 +27,8 @@ Linux: every run of the suite is a `fork`.
 ## What it does
 
 - **Sites** from `ast` and `tokenize`: `compare`, `connect`, `negate`,
-  `literal`, `call` and `arm` (a `case` of a `match`). Docstrings, annotations,
+  `literal`, `call`, `arm` (a `case` of a `match`), and `return` when a project
+  names it in `[run] spells` (a returned value becomes `None`). Docstrings, annotations,
   `TYPE_CHECKING` blocks, `__main__` guards, the arguments of the calls
   `exclude_calls` names, and test files are never touched.
 - **Casts** in a forked child that is thrown away. The changed module is served

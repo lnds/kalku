@@ -70,6 +70,13 @@ test "the table named after the language travels to its kalku as it stands" {
   assert config_of("language = \"kaikai\"\n").options == None
 }
 
+# A spell that moves every project's score is cast only where a project
+# names it, until a release makes it a default.
+test "a spell outside the default set is cast only when named" {
+  assert not contains(defaults().spells, Return)
+  assert config_of("[run]\nspells = [\"arm\", \"return\"]\n").spells == [Arm, Return]
+}
+
 test "a spell nobody has is a typo, and typos are errors" {
   assert has(
     first_problem("[run]\nspells = [\"arm\", \"hex\"]\n"),

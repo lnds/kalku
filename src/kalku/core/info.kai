@@ -119,6 +119,8 @@ fn breaks(s: Spell) : String {
   case Negate -> "inverts a condition"
   case Literal -> "perturbs a literal: a number, a string, a boolean"
   case Call -> "elides a call, leaving its argument or nothing"
+  case Return ->
+    "returns the language's neutral value instead of what was computed; cast only when `[run] spells` names it"
   case Await -> "takes the deadline off a wait, or the waiting off a call"
   case Supervise -> "changes what happens when a process dies: the restart, the link, the trapping"
   case Foreign -> "whatever an existing framework's operator did; a driver's spell"

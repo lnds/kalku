@@ -120,6 +120,9 @@ Its spells are the shared ones, with Rust's own judgement about where each is wo
 | `connect` | `&&`↔`\|\|` — not in a `let` chain, where `\|\|` cannot bind |
 | `negate` | `if c` → `if !(c)`, and drop a `!` |
 | `literal` | `n`→`n+1` for plain decimals within their type's range, `true`↔`false`, a non-empty string → `""` |
+| `return` | the value a function returns — each `return <expr>` and the expression its body ends with — → the neutral value of the type its signature writes: an integer `0` (`1` for a `0`), a float `0.0` (`1.0`), `bool` `false` (`true` for a `false`), `String` and `Vec` their `::new()` under the path the signature uses, `&str` `""`, `Option` `None`, `Result<T, _>` `Ok` of the neutral `T` |
+
+`return` names a value only where the signature does: `()`, `Result<(), _>`, generics, `Self`, `impl Trait`, references other than `&str`, and the project's own types get no site, because a value guessed for them would be a compile error that costs a build. Nor does a value that already is the neutral one, a `const fn`, whose value can be computed where no test sees it, a closure's or an async block's own `return`, or a body that ends in a loop or a `panic!`-like macro, whose value is returned elsewhere or never. Measured on `rand_core` (13 wekufe: 9 killed, 4 survived) and on seven files of this kalku's own crate (46: 45 killed, 1 survived), none of them a compile error and none of the survivors equivalent: each was a forwarding method or a helper whose value no test looked at.
 
 `call` is not offered: dropping a call in Rust almost never keeps the types, so it would propose compile errors and little else, and each of those costs a build. Nothing is proposed in tests, in `unsafe fn`, in patterns, types or attributes (a literal there is structure, not a value), or in the arguments of a macro, which are tokens the parser does not read.
 
@@ -143,8 +146,9 @@ Python has mutation frameworks (`mutmut`, `cosmic-ray`), and the rule above says
 | `negate` | `not x` becomes `x`, and a condition `c` becomes `not (c)` (`if`, `elif`, `while`, a conditional expression) |
 | `literal` | `n`→`n+1` for plain decimals, `True`↔`False`, a non-empty string → `""` |
 | `call` | a call that is a whole statement, awaited or not, becomes `pass` |
+| `return` | `return x` becomes `return None`, unless `x` already is `None` or `...` |
 
-Not proposed: docstrings and bare strings, module dunders (`__all__`, `__version__`), annotations, the type a `cast(...)` or `TypeVar(...)` names, `if TYPE_CHECKING:`, `if __name__ == "__main__":`, the patterns of a `match`, the arguments of a call `exclude_calls` names, and test files. Only `arm` can leave a file that does not parse, so only its candidates are parsed before anyone is asked to cast them.
+Not proposed: a `return` whose function gives back `None` whatever it returns (`__init__`, a function annotated `-> None`, a generator), docstrings and bare strings, module dunders (`__all__`, `__version__`), annotations, the type a `cast(...)` or `TypeVar(...)` names, `if TYPE_CHECKING:`, `if __name__ == "__main__":`, the patterns of a `match`, the arguments of a call `exclude_calls` names, and test files. Only `arm` can leave a file that does not parse, so only its candidates are parsed before anyone is asked to cast them.
 
 ### The Java kalku
 
@@ -233,8 +237,11 @@ Not claimed: `hot_load` (each cast links a test binary) and `code_hash`.
 | `negate` | the condition `c` of an `if` or a `for` becomes `!(c)` |
 | `literal` | `n`→`n+1` for plain decimals — `n-1` for the largest value of a sized type, `255` or `32767`, which is most often that type — and `true`↔`false` |
 | `call` | a call that is a whole statement is deleted |
+| `return` | each value a `return` gives back becomes its type's zero value, read from the declared result types: `0` for a number, `""`, `false`, `nil` for a pointer, slice, map, channel, function or interface, and `T{}` for a struct declared in the same file |
 
-Not proposed: an integer in an array's length, in a `case` list, or as the key of a composite literal, where changing it changes a type or repeats a case; hexadecimal, octal, binary and underscored numbers; a `true` or `false` that is somebody's variable; a call whose removal would leave an import or a variable unused, or a `panic` that ends its block, each a compile error rather than a wekufe; anything in a call `exclude_calls` names; and a wekufe that no longer parses.
+Not proposed: an integer in an array's length, in a `case` list, or as the key of a composite literal, where changing it changes a type or repeats a case; hexadecimal, octal, binary and underscored numbers; a `true` or `false` that is somebody's variable; a call whose removal would leave an import or a variable unused, or a `panic` that ends its block, each a compile error rather than a wekufe; anything in a call `exclude_calls` names; and a wekufe that no longer parses. A `return` wekufe is not proposed for an `error` result, whose `nil` is another defect than a wrong value; for a type from another file or package, an array or a type parameter, whose zero value the file does not say how to write; for a value that already is the zero value, or a `true` or `false` the `literal` spell already flips; for a bare `return` of named results; or where the value holds the last use of a variable or an import.
+
+`return` measured on the fixture module and on the Go kalku's own sources (171 wekufe): 82 killed, 26 survived, 63 `no_coverage`, and no `compile_error` or `crashed`. One survivor is equivalent, a constant from another package whose value is the zero value; the `no_coverage` are mostly the kalku's service and module handling, which its tests reach through a kalku binary they build.
 
 ### The TypeScript kalku
 
@@ -473,6 +480,9 @@ The shared catalog, in order of diagnostic value:
 | `negate` | an inverted guard | `if`↔`unless`, `c` → `not c` in conditions |
 | `literal` | wrong seed or base case | `0`→`1`, `n`→`n+1`, `true`↔`false`, `:ok`↔`:error`, `""` for a non-empty string |
 | `call` | a step that silently does nothing | drop a pipe stage (`\|> f()`), `f(x)` → `x` |
+| `return` | a function whose result nobody checks | a returned value → the language's neutral one (`nil`, `None`, a type's default) |
+
+`return` is cast only where `[run] spells` names it. A spell outside the default set moves every project's score the day it is added, so it waits there until it has been measured on real projects in each language and a release says it joins the default. A run that names a spell its kalku does not cast stops and says which, rather than reporting a score over less than was asked for.
 
 A language may add spells; each new spell gets a shared name in the protocol and fixtures in its adapter. Sites are never proposed inside tests, comments, docs, or string contents.
 

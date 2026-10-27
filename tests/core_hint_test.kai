@@ -28,6 +28,7 @@ test "every spell has a hint that says what to do" {
   assert has(hint(Negate, None), "Assert what only one of them does")
   assert has(hint(Literal, Some("0")), "exact value")
   assert has(hint(Call, Some("log(x)")), "Assert what it returns")
+  assert has(hint(Return, Some("total")), "Assert what the function gives back")
   assert has(hint(Foreign, Some("mutator.rename")), "No test detects this change")
 }
 
@@ -38,6 +39,7 @@ test "a hint quotes the text the site changed" {
   assert has(hint(Compare, Some(">=")), "`>`")
   assert has(hint(Literal, Some("0")), "`0`")
   assert has(hint(Call, Some("log(x)")), "`log(x)`")
+  assert has(hint(Return, Some("total")), "`total`")
 }
 
 # A kalku that reports positions but no text gets the general sentence
@@ -47,6 +49,7 @@ test "a site with no text degrades to the general sentence" {
   assert not has(hint(Compare, None), "``")
   assert has(hint(Literal, None), "this exact value")
   assert has(hint(Call, None), "this call")
+  assert has(hint(Return, None), "the value returned in `Parser.next/2`")
   assert has(hint(Connect, None), "this condition")
   assert has(hint(Foreign, None), "No test detects this change.")
 }

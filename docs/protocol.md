@@ -121,7 +121,7 @@ A `site_id` names one wekufe. If a `sites_found` lists the same `site_id` twice 
 
 | Set | Values |
 |---|---|
-| Spell | `arm` `compare` `connect` `negate` `literal` `call` `await` `supervise` `foreign` (drivers only) |
+| Spell | `arm` `compare` `connect` `negate` `literal` `call` `return` `await` `supervise` `foreign` (drivers only) |
 | Outcome | `killed` `survived` `timeout` `no_coverage` `compile_error` `crashed` `nondeterministic` `equivalent` |
 | Capability | `cast` `delegate` `per_test_coverage` `hot_load` `recompile_dependents` `abort` `reset` `code_hash` `cast_after_baseline` — unknown values ignored |
 | Format | `human` `json` `github` `agent` |
