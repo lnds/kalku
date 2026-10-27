@@ -24,8 +24,9 @@ later.
 
 - **Sites** from `go/parser`: `compare`, `connect`, `negate` (an `if` or `for`
   condition), `literal` (decimal integers and booleans), `arm` (a clause of a
-  `switch`, never `default` or the last) and `call` (a call that is a whole
-  statement). Test files, generated files, files the build leaves out on this
+  `switch`, never `default` or the last), `call` (a call that is a whole
+  statement) and, when a project names it, `return` (a returned value becomes
+  its type's zero value, where the declared type says what that is). Test files, generated files, files the build leaves out on this
   machine, and the arguments of the calls `exclude_calls` names are never
   touched.
 - **Casts** in a copy of the module in the reni, through `go test -overlay`:

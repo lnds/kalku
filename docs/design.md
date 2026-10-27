@@ -234,8 +234,11 @@ Not claimed: `hot_load` (each cast links a test binary) and `code_hash`.
 | `negate` | the condition `c` of an `if` or a `for` becomes `!(c)` |
 | `literal` | `n`→`n+1` for plain decimals — `n-1` for the largest value of a sized type, `255` or `32767`, which is most often that type — and `true`↔`false` |
 | `call` | a call that is a whole statement is deleted |
+| `return` | each value a `return` gives back becomes its type's zero value, read from the declared result types: `0` for a number, `""`, `false`, `nil` for a pointer, slice, map, channel, function or interface, and `T{}` for a struct declared in the same file |
 
-Not proposed: an integer in an array's length, in a `case` list, or as the key of a composite literal, where changing it changes a type or repeats a case; hexadecimal, octal, binary and underscored numbers; a `true` or `false` that is somebody's variable; a call whose removal would leave an import or a variable unused, or a `panic` that ends its block, each a compile error rather than a wekufe; anything in a call `exclude_calls` names; and a wekufe that no longer parses.
+Not proposed: an integer in an array's length, in a `case` list, or as the key of a composite literal, where changing it changes a type or repeats a case; hexadecimal, octal, binary and underscored numbers; a `true` or `false` that is somebody's variable; a call whose removal would leave an import or a variable unused, or a `panic` that ends its block, each a compile error rather than a wekufe; anything in a call `exclude_calls` names; and a wekufe that no longer parses. A `return` wekufe is not proposed for an `error` result, whose `nil` is another defect than a wrong value; for a type from another file or package, an array or a type parameter, whose zero value the file does not say how to write; for a value that already is the zero value, or a `true` or `false` the `literal` spell already flips; for a bare `return` of named results; or where the value holds the last use of a variable or an import.
+
+`return` measured on the fixture module and on the Go kalku's own sources (171 wekufe): 82 killed, 26 survived, 63 `no_coverage`, and no `compile_error` or `crashed`. One survivor is equivalent, a constant from another package whose value is the zero value; the `no_coverage` are mostly the kalku's service and module handling, which its tests reach through a kalku binary they build.
 
 ### The TypeScript kalku
 

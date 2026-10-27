@@ -16,11 +16,11 @@ const Protocol = 1
 const MaxLine = 4 * 1024 * 1024
 
 // The spells of the shared catalogue, by their wire names.
-var allSpells = []string{"arm", "compare", "connect", "negate", "literal", "call", "await", "supervise", "foreign"}
+var allSpells = []string{"arm", "compare", "connect", "negate", "literal", "call", "return", "await", "supervise", "foreign"}
 
 // Spells is what this kalku can cast. `await` and `supervise` are for
 // runtimes with supervised processes, and `foreign` is a driver's.
-var Spells = []string{"arm", "compare", "connect", "negate", "literal", "call"}
+var Spells = []string{"arm", "compare", "connect", "negate", "literal", "call", "return"}
 
 // DecodeError is a line this kalku cannot accept, of one of the kinds the
 // protocol names.
