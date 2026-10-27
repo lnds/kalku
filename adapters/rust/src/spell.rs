@@ -14,6 +14,7 @@ pub enum Spell {
     Negate,
     Literal,
     Call,
+    Return,
     Await,
     Supervise,
     Foreign,
@@ -28,6 +29,7 @@ impl Spell {
             Spell::Negate => "negate",
             Spell::Literal => "literal",
             Spell::Call => "call",
+            Spell::Return => "return",
             Spell::Await => "await",
             Spell::Supervise => "supervise",
             Spell::Foreign => "foreign",
@@ -42,6 +44,7 @@ impl Spell {
             Spell::Negate,
             Spell::Literal,
             Spell::Call,
+            Spell::Return,
             Spell::Await,
             Spell::Supervise,
             Spell::Foreign,
@@ -63,12 +66,13 @@ impl fmt::Display for Spell {
 /// types, so it would propose compile errors and little else, and each of
 /// those costs a build. `await` and `supervise` are concurrency spells for
 /// the BEAM. A spell is announced when it is true.
-pub const CAST: [Spell; 5] = [
+pub const CAST: [Spell; 6] = [
     Spell::Arm,
     Spell::Compare,
     Spell::Connect,
     Spell::Negate,
     Spell::Literal,
+    Spell::Return,
 ];
 
 #[cfg(test)]

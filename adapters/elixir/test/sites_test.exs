@@ -6,16 +6,19 @@ defmodule Kalku.SitesTest do
   @fixtures Path.expand("fixtures", __DIR__)
   # The goldens cover the spells a default run casts. The concurrency
   # ones are opt-in and have fixtures of their own, in
-  # `concurrency_test.exs`.
-  @spells Schema.spells() -- ~w(foreign await supervise)
+  # `concurrency_test.exs`; `return` is opt-in too, and its fixtures are
+  # read for it alone.
+  @spells Schema.spells() -- ~w(foreign await supervise return)
   @exclude ["Logger.*"]
 
   # Set KALKU_UPDATE_GOLDENS=1 to rewrite the goldens after reviewing a change.
   @update System.get_env("KALKU_UPDATE_GOLDENS") == "1"
 
   defp sites(path) do
+    spells = if Path.basename(Path.dirname(path)) == "return", do: ["return"], else: @spells
+
     {:ok, sites, 0} =
-      Sites.find(Path.relative_to(path, @fixtures), File.read!(path), @spells, @exclude)
+      Sites.find(Path.relative_to(path, @fixtures), File.read!(path), spells, @exclude)
 
     sites
   end
@@ -54,7 +57,7 @@ defmodule Kalku.SitesTest do
   end
 
   defp sites_anywhere(path) do
-    {:ok, sites, _dropped} = Sites.find(path, File.read!(path), @spells, @exclude)
+    {:ok, sites, _dropped} = Sites.find(path, File.read!(path), ["return" | @spells], @exclude)
     sites
   end
 
@@ -87,6 +90,14 @@ defmodule Kalku.SitesTest do
 
     assert Enum.map(ors, & &1["ordinal"]) == [1, 2, 3, 4]
     assert Enum.uniq(Enum.map(ors, & &1["enclosing"])) == ["Fx.Compare.eq/2"]
+  end
+
+  test "a run that does not ask for arm gets no function clause to delete" do
+    path = Path.join(@fixtures, "arm/clauses.ex")
+    {:ok, sites, _} = Sites.find("clauses.ex", File.read!(path), ["literal"], [])
+
+    assert sites != []
+    assert Enum.all?(sites, &(&1["spell"] == "literal"))
   end
 
   test "site ids are stable and distinct" do

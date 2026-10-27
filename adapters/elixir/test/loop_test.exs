@@ -41,7 +41,8 @@ defmodule Kalku.LoopTest do
                "partial_baseline"
              ]
 
-    assert msg.body["spells"] == ~w(arm compare connect negate literal call await supervise)
+    assert msg.body["spells"] ==
+             ~w(arm compare connect negate literal call return await supervise)
   end
 
   test "a protocol version mismatch is a fatal error" do

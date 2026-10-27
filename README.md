@@ -282,7 +282,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **Orchestrator** — kalku pool, scheduler, timeout escalation (abort → reset → kill), restart budget, cancellation | done |
 | **Elixir kalku** — sites, `prepare`, `baseline` with per-test coverage, `cast`, `abort`, `reset`, `reload` | done: every protocol message but `delegate` |
 | **kaikai kalku** — the one kalku measures itself with | done |
-| **Rust kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal` from `syn`, behind the kalku protocol | done: finds sites |
+| **Rust kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `return` (opt-in) from `syn`, behind the kalku protocol | done: finds sites |
 | Rust kalku: `prepare`, `baseline` and `cast` in the reni, `abort`, `reload`, per-test coverage with LLVM | done |
 | Rust kalku: `kalku init` for Cargo projects, shipped in the release | done |
 | **Python kalku** — sites from `ast`, `prepare`/`baseline`/`cast` in forked children, `abort`, per-test coverage with `sys.monitoring`, `kalku init`, shipped in the release | done |
@@ -296,7 +296,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Java kalku: Gradle builds, asked by running them with a script added from outside the project | done |
 | Java kalku: projects that test with JUnit 4 or with TestNG, run through their JUnit Platform engines | done |
 | Java kalku: several workers, whose Maven builds take turns against the one local repository they share | done |
-| **Go kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `go/parser`; `prepare`, `baseline` and `cast` in the reni through `-overlay`, `abort`, `kalku init` for Go modules, shipped in the release | done |
+| **Go kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call`, `return` from `go/parser`; `prepare`, `baseline` and `cast` in the reni through `-overlay`, `abort`, `kalku init` for Go modules, shipped in the release | done |
 | **TypeScript kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from the TypeScript parser, in TypeScript and JavaScript; `prepare`, `baseline` and `cast` through the project's own Vitest or Jest with the wekufe served in memory, `abort`, `kalku init` for projects with a `tsconfig.json`, shipped in the release | done |
 | **C and C++ kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from Clang's parser, in C and C++ sources and headers; `prepare`, `baseline` and `cast` with the project's own CMake build and CTest in the reni, `abort`, `kalku init` for projects with a `CMakeLists.txt`, telling C from C++ by what it asks CMake for, shipped in the release | done, with coverage per test under Clang and a baseline that runs only what changed; projects built without CMake are not yet |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java, Go, TypeScript, kaikai |
