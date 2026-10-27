@@ -44,7 +44,13 @@ defmodule Kalku.Walker do
   defp walk({:defmodule, meta, [{:__aliases__, _, parts}, body]}, ctx, src) do
     inner = %{ctx | module: ctx.module ++ Enum.map(parts, &Atom.to_string/1), fun: nil}
     block = kw(body, :do)
-    Arms.def_clauses(block, get_in(meta, [:end, :line]), inner, src) ++ walk(block, inner, src)
+
+    clauses =
+      if "arm" in ctx.spells,
+        do: Arms.def_clauses(block, get_in(meta, [:end, :line]), inner, src),
+        else: []
+
+    clauses ++ walk(block, inner, src)
   end
 
   defp walk({def, _, [head | body]}, ctx, src) when def in @defs do
