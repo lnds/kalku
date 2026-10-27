@@ -89,6 +89,14 @@ defmodule Kalku.SitesTest do
     assert Enum.uniq(Enum.map(ors, & &1["enclosing"])) == ["Fx.Compare.eq/2"]
   end
 
+  test "a run that does not ask for arm gets no function clause to delete" do
+    path = Path.join(@fixtures, "arm/clauses.ex")
+    {:ok, sites, _} = Sites.find("clauses.ex", File.read!(path), ["literal"], [])
+
+    assert sites != []
+    assert Enum.all?(sites, &(&1["spell"] == "literal"))
+  end
+
   test "site ids are stable and distinct" do
     path = Path.join(@fixtures, "arm/clauses.ex")
     ids = path |> sites() |> Enum.map(& &1["site_id"])
