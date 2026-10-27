@@ -1,3 +1,17 @@
+## v0.26.1 (2026-10-26)
+
+### Fixed
+
+- **java**: let the workers' Maven builds take turns (#470)
+- **java**: say why coverage was withheld in baseline_done (#472)
+- **java**: let a class be first used by a test when counting coverage (#471)
+- **java**: compile a cast with what its annotation processors depend on (#466)
+
+### Changed
+
+- **java**: send per-test coverage packed when it does not fit on a line (#467)
+- **java**: run a cast's tests in a JVM that stays (#469)
+
 ## v0.26.0 (2026-10-26)
 
 ### Added
