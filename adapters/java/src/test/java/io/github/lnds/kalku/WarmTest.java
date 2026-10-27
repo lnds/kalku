@@ -139,7 +139,7 @@ class WarmTest {
     o.put("type", "sites");
     o.put("id", 3L);
     o.put("files", Collections.singletonList(file));
-    o.put("spells", Spell.CAST);
+    o.put("spells", Talk.DEFAULT_SPELLS);
     o.put("exclude_calls", new ArrayList<String>());
     return Json.encode(o);
   }

@@ -24,7 +24,8 @@ JDK, with the kalku's jar behind it.
 
 - **Sites** from `javac`, the project's own compiler, through its public tree
   API: `arm` (a `case` of a `switch`, while a `default` remains), `compare`,
-  `connect`, `negate`, `literal` and `call`. Annotations, `case` labels,
+  `connect`, `negate`, `literal`, `call`, and `return` (the neutral value of
+  the declared return type, cast when `[run] spells` names it). Annotations, `case` labels,
   conditions that bind a pattern variable, the arguments of the calls
   `exclude_calls` names, and test sources are never touched.
 - **Builds in the reni.** `prepare` copies the project there and lets Maven

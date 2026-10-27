@@ -289,7 +289,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | kalku de Rust: `prepare`, `baseline` y `cast` en el reni, `abort`, `reload`, cobertura por test con LLVM | hecho |
 | kalku de Rust: `kalku init` para proyectos Cargo, incluido en el release | hecho |
 | **kalku de Python** — sites desde `ast`, `prepare`/`baseline`/`cast` en hijos creados con fork, `abort`, cobertura por test con `sys.monitoring`, `kalku init`, incluido en el release | hecho |
-| **kalku de Java** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call` desde `javac`, detrás del protocolo de kalku, en Java 11, 17, 21 y 25 | hecho: encuentra sites |
+| **kalku de Java** — sites para `arm`, `compare`, `connect`, `negate`, `literal`, `call`, `return` (opcional) desde `javac`, detrás del protocolo de kalku, en Java 11, 17, 21 y 25 | hecho: encuentra sites |
 | kalku de Java: `prepare`, `baseline` y `cast` en el reni para un proyecto Maven | hecho |
 | kalku de Java: `kalku init` para proyectos Maven y Gradle, incluido en el release | hecho |
 | kalku de Java: `abort`, terminando la JVM donde corren los tests | hecho |
