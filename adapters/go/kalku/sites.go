@@ -106,6 +106,7 @@ func (w *walker) decl(d ast.Decl) {
 		}
 		w.enclosing = w.pkg + "." + funcName(d)
 		w.body = w.spanOf(d.Body)
+		w.returns(d.Type, d.Body)
 		w.walk(d.Body)
 	case *ast.GenDecl:
 		if d.Tok != token.VAR && d.Tok != token.CONST {
@@ -158,6 +159,7 @@ func (w *walker) walk(root ast.Node) {
 	ast.Inspect(root, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncLit:
+			w.returns(n.Type, n.Body)
 			return true
 		case *ast.CallExpr:
 			if w.excluded(n) {
@@ -381,9 +383,9 @@ func (w *walker) uses() []use {
 	return w.idents
 }
 
-// True when the statement holds the last use of an import or of a local
+// True when the node holds the last use of an import or of a local
 // variable, which Go refuses to leave unused.
-func (w *walker) leavesUnused(stmt ast.Stmt) bool {
+func (w *walker) leavesUnused(stmt ast.Node) bool {
 	in := w.spanOf(stmt)
 	packages := map[string]bool{}
 	locals := map[*ast.Object]bool{}

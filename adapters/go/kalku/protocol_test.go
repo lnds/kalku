@@ -182,7 +182,7 @@ func TestWhatItSaysIsTheFixturesByteForByte(t *testing.T) {
 func TestAReadyReplyIsInCanonicalOrder(t *testing.T) {
 	said := Ready(1, "0.15.0", "go1.26.3 darwin/arm64", []string{"cast", "abort"})
 	want := `{"type":"ready","id":1,"protocol":1,"language":"go","adapter":"0.15.0","runtime":"go1.26.3 darwin/arm64",` +
-		`"spells":["arm","compare","connect","negate","literal","call"],"capabilities":["cast","abort"]}`
+		`"spells":["arm","compare","connect","negate","literal","call","return"],"capabilities":["cast","abort"]}`
 	if said != want {
 		t.Errorf("\n got %s\nwant %s", said, want)
 	}
