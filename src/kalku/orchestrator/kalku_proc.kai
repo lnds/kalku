@@ -167,6 +167,31 @@ fn mend(m: ReadyMsg) : String = if m.version > PROTOCOL_VERSION {
 pub fn can(m: ReadyMsg, c: Capability) : Bool = contains(m.capabilities, c)
 
 #[doc("""
+Why a run cannot ask this kalku for these spells, when it casts only some.
+
+A run that left a spell out because its kalku does not cast it would
+report a score over less than the project asked for, so it stops and says
+which instead.
+""")]
+pub fn spells_refused(m: ReadyMsg, asked: [Spell]) : Option[String] =
+  match asked |? (s => not contains(m.spells, s)) {
+    [] -> None
+    missing -> Some(
+      "the #{m.language} kalku #{m.adapter} does not cast #{join(missing | (s => "`#{spell_name(s)}`"), ", ")}:"
+        ++ " take it out of `[run] spells`, or update the kalku if a newer one does"
+    )
+  }
+
+#[doc("A run's spells checked against what the kalku said of itself when greeted.")]
+pub fn castable(reply: KalkuReply, asked: [Spell]) : Result[Unit, String] = match reply {
+  Ready(m) -> match spells_refused(m, asked) {
+    Some(why) -> Err(why)
+    None -> Ok(())
+  }
+  _ -> Ok(())
+}
+
+#[doc("""
 Kill the kalku's whole process group and reap it, so nothing it started
 outlives the run.
 

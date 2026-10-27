@@ -183,7 +183,7 @@ fn duplicates(entries: [Entry]) : [Problem] =
 fn spell_of(text: String) : Option[Spell] =
   find(all_spells(), s => spell_name(s) == text)
 
-fn all_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call, Foreign]
+fn all_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call, Return, Foreign]
 
 fn ordinal_of(text: String) : Option[Int] =
   if starts_with(text, "#") { to_int(drop_bytes(text, 1)) } else { None }

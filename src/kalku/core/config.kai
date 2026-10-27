@@ -37,8 +37,17 @@ pub type Config = {
 #[derive(Eq, Show)]
 pub type ConfigProblem = { key: String, message: String }
 
-#[doc("Every spell, which is what a run casts when the config names none.")]
+#[doc("The spells a run casts when the config names none.")]
 pub fn all_spells() : [Spell] = [Arm, Compare, Connect, Negate, Literal, Call]
+
+#[doc("""
+Every spell `[run] spells` may name: the default ones, and those a project
+asks for by name.
+
+A spell outside the default set moves a project's score when it is added,
+so it waits there until a release says it joins the default.
+""")]
+pub fn known_spells() : [Spell] = all_spells() ++ [Return]
 
 #[doc("What a run does when `.kalku.toml` is absent or empty: every spell, nothing excluded, no floor to meet.")]
 pub fn defaults() : Config = Config {
@@ -211,7 +220,7 @@ fn as_string(v: TomlValue) : [String] = match v {
   _ -> []
 }
 
-fn spell_of(name: String) : Option[Spell] = find(all_spells(), s => spell_name(s) == name)
+fn spell_of(name: String) : Option[Spell] = find(known_spells(), s => spell_name(s) == name)
 
 fn spell_list(name: String) : [Spell] = match spell_of(name) {
   Some(s) -> [s]
