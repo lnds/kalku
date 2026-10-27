@@ -231,20 +231,29 @@ def _detach_stdio() -> None:  # pragma: no cover
 
 
 def _close_inherited(keep: set[int]) -> None:  # pragma: no cover
-    """Close every descriptor the parent had open but this child's own pipe.
+    """Point every descriptor the parent had open, but this child's own pipe,
+    at /dev/null.
 
     The parent keeps the protocol on a descriptor of its own, and a child that
     inherited it could write into the conversation: a test that prints to a
     descriptor it did not open, or a wekufe that makes it do so, would corrupt
-    a channel that only the parent may speak on."""
+    a channel that only the parent may speak on.
+
+    The numbers stay taken rather than closed. A file object of the parent's,
+    such as the zipapp the interpreter runs from, still owns its number in the
+    child and closes it when it is collected: a number closed under it would be
+    handed to the next descriptor opened, pytest's own, and closed from under
+    pytest."""
     try:
         inherited = [int(name) for name in os.listdir("/dev/fd")]
     except (OSError, ValueError):
         inherited = list(range(3, 1024))
+    quiet = os.open(os.devnull, os.O_RDWR)
     for fd in inherited:
-        if fd > 2 and fd not in keep:
+        if fd > 2 and fd not in keep and fd != quiet:
             with contextlib.suppress(OSError):
-                os.close(fd)
+                os.dup2(quiet, fd)
+    os.close(quiet)
 
 
 def _forget_project(work: Path) -> None:  # pragma: no cover

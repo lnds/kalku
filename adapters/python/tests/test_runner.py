@@ -239,10 +239,30 @@ def test_a_child_cannot_reach_a_descriptor_its_parent_had_open(work, tmp_path, m
     # The parent keeps the protocol on a descriptor of its own. Anything it has
     # open, a test the child runs must not be able to write to.
     (work / "tests/test_gate.py").write_text(
-        "import os\n\n\ndef test_the_descriptor_is_closed():\n"
-        "    fd = int(os.environ['KALKU_PROBE_FD'])\n"
-        "    try:\n        os.fstat(fd)\n    except OSError:\n        return\n"
-        "    raise AssertionError('the parent descriptor is open in the child')\n"
+        "import os\n\n\ndef test_the_descriptor_goes_nowhere():\n"
+        "    os.write(int(os.environ['KALKU_PROBE_FD']), b'leaked')\n"
+    )
+    with open(tmp_path / "held", "w") as held:
+        monkeypatch.setenv("KALKU_PROBE_FD", str(held.fileno()))
+        r = run(work, "baseline")
+        events = events_of(r)
+        finish(r)
+    (result,) = [e for e in events if e["e"] == "result"]
+    assert result["outcome"] == "passed", result
+    assert (tmp_path / "held").read_text() == ""
+
+
+def test_a_descriptor_the_parent_had_open_keeps_its_number_in_the_child(
+    work, tmp_path, monkeypatch
+):
+    # A file object of the parent's closes its number when the child collects
+    # it. Were the number free, pytest would have been handed it, and a whole
+    # baseline would end with pytest restoring a descriptor that is gone.
+    (work / "tests/test_gate.py").write_text(
+        "import os\n\n\ndef test_the_number_is_taken_by_nothing():\n"
+        "    held = os.fstat(int(os.environ['KALKU_PROBE_FD']))\n"
+        "    null = os.stat(os.devnull)\n"
+        "    assert (held.st_dev, held.st_ino) == (null.st_dev, null.st_ino)\n"
     )
     with open(tmp_path / "held", "w") as held:
         monkeypatch.setenv("KALKU_PROBE_FD", str(held.fileno()))
