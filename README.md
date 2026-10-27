@@ -286,7 +286,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | Rust kalku: `prepare`, `baseline` and `cast` in the reni, `abort`, `reload`, per-test coverage with LLVM | done |
 | Rust kalku: `kalku init` for Cargo projects, shipped in the release | done |
 | **Python kalku** — sites from `ast`, `prepare`/`baseline`/`cast` in forked children, `abort`, per-test coverage with `sys.monitoring`, `kalku init`, shipped in the release | done |
-| **Java kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call` from `javac`, behind the kalku protocol, on Java 11, 17, 21 and 25 | done: finds sites |
+| **Java kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call`, `return` (opt-in) from `javac`, behind the kalku protocol, on Java 11, 17, 21 and 25 | done: finds sites |
 | Java kalku: `prepare`, `baseline` and `cast` in the reni for a Maven project | done |
 | Java kalku: `kalku init` for Maven and Gradle projects, shipped in the release | done |
 | Java kalku: `abort`, by ending the JVM the tests run in | done |

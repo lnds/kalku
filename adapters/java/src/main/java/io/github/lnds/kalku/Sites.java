@@ -9,13 +9,18 @@ import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.IfTree;
+import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
+import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TryTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.JavacTask;
@@ -34,6 +39,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -83,6 +89,8 @@ import javax.tools.ToolProvider;
  *   <li>a condition that binds a pattern variable, where negating or reconnecting it changes
  *       what is in scope and the compiler, not a test, is what objects;
  *   <li>{@code this(...)} and {@code super(...)}, which a constructor cannot go without;
+ *   <li>a {@code return} whose neutral value {@link Returns} cannot write, or that already
+ *       gives it back;
  *   <li>the arguments of a call that {@code exclude_calls} names;
  *   <li>test files, which the service refuses before it gets here.
  * </ul>
@@ -317,6 +325,13 @@ final class Sites {
     // Where the statements the walk is inside of begin, innermost first.
     private final Deque<Integer> statements = new ArrayDeque<>();
     private int anonymous;
+    // What a `return` gives back instead, for the method or lambda the walk is in, innermost
+    // first; empty where there is nothing to give back.
+    private final Deque<String> neutral = new ArrayDeque<>();
+    // How many bodies of a `try` with a `catch` the walk is in, within the innermost method or
+    // lambda.
+    private int guarded;
+    private final Set<String> imports = new HashSet<>();
     final List<Candidate> found = new ArrayList<>();
 
     Walker(Parsed parsed, Source src, Set<String> spells, List<String> exclude) {
@@ -327,6 +342,11 @@ final class Sites {
       this.exclude = exclude;
       ExpressionTree name = parsed.unit.getPackageName();
       this.pack = name == null ? "" : compact(text(name));
+      for (ImportTree i : parsed.unit.getImports()) {
+        if (!i.isStatic()) {
+          imports.add(compact(i.getQualifiedIdentifier().toString()));
+        }
+      }
     }
 
     // ---- helpers -------------------------------------------------------------
@@ -429,6 +449,21 @@ final class Sites {
       return found[0];
     }
 
+    // Whether evaluating `t` calls a method or a constructor, which may throw.
+    private static boolean calls(Tree t) {
+      boolean[] found = {false};
+      new TreeScanner<Void, Void>() {
+        @Override
+        public Void scan(Tree child, Void p) {
+          if (child instanceof MethodInvocationTree || child instanceof NewClassTree) {
+            found[0] = true;
+          }
+          return found[0] ? null : super.scan(child, p);
+        }
+      }.scan(t, null);
+      return found[0];
+    }
+
     // ---- the tree --------------------------------------------------------------
 
     @Override
@@ -517,11 +552,64 @@ final class Sites {
         skipped.put(t.getDefaultValue(), true);
       }
       scope.push(t.getName() + "(" + String.join(",", types) + ")");
+      neutral.push(
+          t.getReturnType() == null
+              ? ""
+              : Returns.neutral(t, compact(text(t.getReturnType())), imports));
+      int outer = guarded;
+      guarded = 0;
       try {
         return super.visitMethod(t, p);
       } finally {
+        guarded = outer;
+        neutral.pop();
         scope.pop();
       }
+    }
+
+    // A lambda's `return` is the lambda's own, and its type is not written down.
+    @Override
+    public Void visitLambdaExpression(LambdaExpressionTree t, Void p) {
+      neutral.push("");
+      int outer = guarded;
+      guarded = 0;
+      try {
+        return super.visitLambdaExpression(t, p);
+      } finally {
+        guarded = outer;
+        neutral.pop();
+      }
+    }
+
+    // A `catch` of a checked exception the body no longer throws does not compile, and which
+    // call throws what is not in the tree: a `return` there keeps any call it makes.
+    @Override
+    public Void visitTry(TryTree t, Void p) {
+      scan(t.getResources(), p);
+      boolean caught = !t.getCatches().isEmpty();
+      guarded += caught ? 1 : 0;
+      try {
+        scan(t.getBlock(), p);
+      } finally {
+        guarded -= caught ? 1 : 0;
+      }
+      scan(t.getCatches(), p);
+      return scan(t.getFinallyBlock(), p);
+    }
+
+    // `return`: the value a method gives back becomes the neutral one of its type.
+    @Override
+    public Void visitReturn(ReturnTree t, Void p) {
+      ExpressionTree value = t.getExpression();
+      String to = neutral.isEmpty() ? "" : neutral.peek();
+      if (value != null
+          && !to.isEmpty()
+          && placed(value)
+          && !(guarded > 0 && calls(value))
+          && !Returns.alreadyNeutral(value, compact(text(value)), to)) {
+        propose(Spell.RETURN, start(value), end(value), to);
+      }
+      return super.visitReturn(t, p);
     }
 
     // The version stamp of a serialised form is read by the runtime when an object from another

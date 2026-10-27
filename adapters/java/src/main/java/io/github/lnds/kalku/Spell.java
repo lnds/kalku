@@ -19,16 +19,19 @@ final class Spell {
   static final String NEGATE = "negate";
   static final String LITERAL = "literal";
   static final String CALL = "call";
+  static final String RETURN = "return";
 
   static final List<String> ALL =
       Collections.unmodifiableList(
           Arrays.asList(
-              ARM, COMPARE, CONNECT, NEGATE, LITERAL, CALL, "await", "supervise", "foreign"));
+              ARM, COMPARE, CONNECT, NEGATE, LITERAL, CALL, RETURN, "await", "supervise",
+              "foreign"));
 
   // What this kalku proposes. `await` and `supervise` are the BEAM's, and `foreign` is a
   // driver's; a spell is announced when it is true.
   static final List<String> CAST =
-      Collections.unmodifiableList(Arrays.asList(ARM, COMPARE, CONNECT, NEGATE, LITERAL, CALL));
+      Collections.unmodifiableList(
+          Arrays.asList(ARM, COMPARE, CONNECT, NEGATE, LITERAL, CALL, RETURN));
 
   static boolean known(String name) {
     return ALL.contains(name);

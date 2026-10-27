@@ -5,6 +5,7 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +16,10 @@ import java.util.Map;
  */
 final class Talk {
   private Talk() {}
+
+  // What a run asks for when its config names no spells: `return` waits to be named.
+  static final List<String> DEFAULT_SPELLS =
+      Arrays.asList(Spell.ARM, Spell.COMPARE, Spell.CONNECT, Spell.NEGATE, Spell.LITERAL, Spell.CALL);
 
   private static final class Heard extends ByteArrayOutputStream {
     synchronized int lines() {
