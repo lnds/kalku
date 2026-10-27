@@ -134,6 +134,6 @@ fn the_spells_it_announces_are_the_shared_names() {
 
     assert_eq!(
         v["spells"],
-        serde_json::json!(["arm", "compare", "connect", "negate", "literal"])
+        serde_json::json!(["arm", "compare", "connect", "negate", "literal", "return"])
     );
 }

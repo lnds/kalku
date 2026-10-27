@@ -282,7 +282,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **Orchestrator** — kalku pool, scheduler, timeout escalation (abort → reset → kill), restart budget, cancellation | done |
 | **Elixir kalku** — sites, `prepare`, `baseline` with per-test coverage, `cast`, `abort`, `reset`, `reload` | done: every protocol message but `delegate` |
 | **kaikai kalku** — the one kalku measures itself with | done |
-| **Rust kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal` from `syn`, behind the kalku protocol | done: finds sites |
+| **Rust kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `return` (opt-in) from `syn`, behind the kalku protocol | done: finds sites |
 | Rust kalku: `prepare`, `baseline` and `cast` in the reni, `abort`, `reload`, per-test coverage with LLVM | done |
 | Rust kalku: `kalku init` for Cargo projects, shipped in the release | done |
 | **Python kalku** — sites from `ast`, `prepare`/`baseline`/`cast` in forked children, `abort`, per-test coverage with `sys.monitoring`, `kalku init`, shipped in the release | done |

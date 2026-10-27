@@ -16,8 +16,12 @@
 //!   undefined behaviour rather than a failing test;
 //! - patterns, types and attributes, whose literals are structure, not
 //!   values — `[u8; 4]` is a type, and `4` is not a number a test can see;
-//! - the arguments of a macro, which are tokens `syn` does not parse.
+//! - the arguments of a macro, which are tokens `syn` does not parse;
+//! - for `return`, the value of a `const fn`, whose result can be computed
+//!   at compile time where a test never sees it, and a value whose type
+//!   the signature does not let `returns` name.
 
+use crate::returns;
 use crate::source::{Position, Source};
 use crate::spell::Spell;
 use proc_macro2::Span;
@@ -74,6 +78,7 @@ pub fn find(
         spells,
         exclude: exclude_calls,
         scope: Vec::new(),
+        returning: Vec::new(),
         found: Vec::new(),
     };
     walker.visit_file(&ast);
@@ -166,6 +171,9 @@ struct Walker<'a> {
     spells: &'a [Spell],
     exclude: &'a [String],
     scope: Vec<String>,
+    // The return type of each function the walk is inside, innermost last;
+    // `None` for a closure or an async block, whose `return` is its own.
+    returning: Vec<Option<syn::Type>>,
     found: Vec<Candidate>,
 }
 
@@ -213,6 +221,39 @@ impl<'a> Walker<'a> {
         });
     }
 
+    // A function's body, with its returned values as `return` sites: each
+    // `return <expr>` in it, and the expression the body ends with.
+    fn function(&mut self, sig: &syn::Signature, body: &syn::Block) {
+        let ty = match (&sig.output, &sig.constness) {
+            (syn::ReturnType::Type(_, ty), None) => Some((**ty).clone()),
+            _ => None,
+        };
+        self.returning.push(ty);
+        if let Some(syn::Stmt::Expr(tail, None)) = body.stmts.last() {
+            self.returned(tail);
+        }
+        self.visit_block(body);
+        self.returning.pop();
+    }
+
+    fn returned(&mut self, value: &Expr) {
+        if !self.wants(Spell::Return) || ends_elsewhere(value) {
+            return;
+        }
+        let Some(Some(ty)) = self.returning.last() else {
+            return;
+        };
+        if let Some(neutral) = returns::neutral(ty, value) {
+            self.propose(Spell::Return, value.span(), None, neutral);
+        }
+    }
+
+    fn apart<F: FnOnce(&mut Self)>(&mut self, body: F) {
+        self.returning.push(None);
+        body(self);
+        self.returning.pop();
+    }
+
     fn within<F: FnOnce(&mut Self)>(&mut self, name: Option<String>, body: F) {
         let pushed = name.is_some();
         if let Some(n) = name {
@@ -238,7 +279,7 @@ impl<'a, 'ast> Visit<'ast> for Walker<'a> {
             return;
         }
         self.within(Some(i.sig.ident.to_string()), |w| {
-            visit::visit_item_fn(w, i)
+            w.function(&i.sig, &i.block)
         });
     }
 
@@ -266,7 +307,7 @@ impl<'a, 'ast> Visit<'ast> for Walker<'a> {
             return;
         }
         self.within(Some(i.sig.ident.to_string()), |w| {
-            visit::visit_impl_item_fn(w, i)
+            w.function(&i.sig, &i.block)
         });
     }
 
@@ -274,8 +315,9 @@ impl<'a, 'ast> Visit<'ast> for Walker<'a> {
         if is_test_only(&i.attrs) || is_unsafe(&i.sig) {
             return;
         }
-        self.within(Some(i.sig.ident.to_string()), |w| {
-            visit::visit_trait_item_fn(w, i)
+        self.within(Some(i.sig.ident.to_string()), |w| match &i.default {
+            Some(body) => w.function(&i.sig, body),
+            None => w.apart(|w| visit::visit_trait_item_fn(w, i)),
         });
     }
 
@@ -283,7 +325,9 @@ impl<'a, 'ast> Visit<'ast> for Walker<'a> {
         if is_test_only(&i.attrs) {
             return;
         }
-        self.within(Some(i.ident.to_string()), |w| visit::visit_item_const(w, i));
+        self.within(Some(i.ident.to_string()), |w| {
+            w.apart(|w| visit::visit_item_const(w, i))
+        });
     }
 
     fn visit_item_static(&mut self, i: &'ast syn::ItemStatic) {
@@ -307,6 +351,25 @@ impl<'a, 'ast> Visit<'ast> for Walker<'a> {
         }
     }
     fn visit_attribute(&mut self, _: &'ast syn::Attribute) {}
+
+    fn visit_expr_return(&mut self, i: &'ast syn::ExprReturn) {
+        if let Some(value) = &i.expr {
+            self.returned(value);
+        }
+        visit::visit_expr_return(self, i);
+    }
+
+    fn visit_expr_closure(&mut self, i: &'ast syn::ExprClosure) {
+        self.apart(|w| visit::visit_expr_closure(w, i));
+    }
+
+    fn visit_expr_async(&mut self, i: &'ast syn::ExprAsync) {
+        self.apart(|w| visit::visit_expr_async(w, i));
+    }
+
+    fn visit_expr_const(&mut self, i: &'ast syn::ExprConst) {
+        self.apart(|w| visit::visit_expr_const(w, i));
+    }
 
     fn visit_expr_repeat(&mut self, i: &'ast ExprRepeat) {
         // The element is a value; the length is part of the type.
@@ -437,6 +500,22 @@ fn mentions(tokens: proc_macro2::TokenStream, word: &str) -> bool {
 
 fn is_unsafe(sig: &syn::Signature) -> bool {
     matches!(sig.safety, syn::Safety::Unsafe(_))
+}
+
+// A value the function never gets to return: it diverges, or another
+// `return` inside it is the site. A loop at the end of a body returns
+// through a `break` or a `return`, which is where the value is.
+fn ends_elsewhere(e: &Expr) -> bool {
+    match e {
+        Expr::Return(_) | Expr::Loop(_) | Expr::While(_) | Expr::ForLoop(_) => true,
+        Expr::Macro(m) => m.mac.path.segments.last().is_some_and(|s| {
+            matches!(
+                s.ident.to_string().as_str(),
+                "panic" | "unreachable" | "todo" | "unimplemented"
+            )
+        }),
+        _ => false,
+    }
 }
 
 // An expression that introduces a binding (`let` in a condition).
