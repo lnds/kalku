@@ -19,6 +19,7 @@ Not proposed, on purpose:
 - a `return` whose function gives back `None` whatever it returns: `__init__`,
   one annotated `-> None`, and a generator, whose `return` value only a
   `yield from` or a caught `StopIteration` reads;
+- a `return True` or `return False`, which `literal` already flips;
 - the arguments of a call that `exclude_calls` names;
 - test files, which the service refuses before it gets here: mutating the
   oracle is not a measurement of the oracle.
@@ -398,8 +399,11 @@ class _Walker(ast.NodeVisitor):
             value is not None
             and self.returning
             and self.returning[-1]
+            # `True` and `False` are `literal`'s to flip, and `False` and
+            # `None` are told apart only by an identity check.
             and not (
-                isinstance(value, ast.Constant) and (value.value is None or value.value is ...)
+                isinstance(value, ast.Constant)
+                and (value.value is None or value.value is ... or isinstance(value.value, bool))
             )
         ):
             span = self.span(value)
