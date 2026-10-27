@@ -6,7 +6,7 @@ defmodule Kalku.Walker do
   or text that only reaches a `raise`.
   """
 
-  alias Kalku.{Arms, Concurrency, Spells}
+  alias Kalku.{Arms, Concurrency, Returns, Spells}
 
   defstruct module: [],
             fun: nil,
@@ -14,6 +14,7 @@ defmodule Kalku.Walker do
             guard: false,
             pipe_rhs: false,
             no_literal: false,
+            impl: MapSet.new(),
             spells: [],
             exclude: []
 
@@ -42,8 +43,14 @@ defmodule Kalku.Walker do
   # ---- traversal ---------------------------------------------------------
 
   defp walk({:defmodule, meta, [{:__aliases__, _, parts}, body]}, ctx, src) do
-    inner = %{ctx | module: ctx.module ++ Enum.map(parts, &Atom.to_string/1), fun: nil}
     block = kw(body, :do)
+
+    inner = %{
+      ctx
+      | module: ctx.module ++ Enum.map(parts, &Atom.to_string/1),
+        fun: nil,
+        impl: Returns.impls(exprs(block))
+    }
 
     clauses =
       if "arm" in ctx.spells,
@@ -53,12 +60,13 @@ defmodule Kalku.Walker do
     clauses ++ walk(block, inner, src)
   end
 
-  defp walk({def, _, [head | body]}, ctx, src) when def in @defs do
+  defp walk({def, _, [head | body]} = node, ctx, src) when def in @defs do
     {call, guard} = split_guard(head)
     {name, args} = name_args(call)
     inner = %{ctx | fun: "#{name}/#{length(args)}"}
 
-    walk(args, %{inner | pattern: true}, src) ++
+    result(node, inner, src) ++
+      walk(args, %{inner | pattern: true}, src) ++
       walk(guard, %{inner | guard: true}, src) ++
       walk(body, inner, src)
   end
@@ -109,6 +117,17 @@ defmodule Kalku.Walker do
       Spells.candidates(spell, node, ctx, src) ++ Concurrency.candidates(spell, node, ctx, src)
     end)
   end
+
+  defp result({def, _, [head | _]} = node, ctx, src) when def in [:def, :defp] do
+    if "return" in ctx.spells and Returns.signature(head) not in ctx.impl,
+      do: Returns.result(node, ctx, src),
+      else: []
+  end
+
+  defp result(_node, _ctx, _src), do: []
+
+  defp exprs({:__block__, _, exprs}) when is_list(exprs), do: exprs
+  defp exprs(expr), do: List.wrap(expr)
 
   # ---- helpers -----------------------------------------------------------
 

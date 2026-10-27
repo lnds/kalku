@@ -6,16 +6,19 @@ defmodule Kalku.SitesTest do
   @fixtures Path.expand("fixtures", __DIR__)
   # The goldens cover the spells a default run casts. The concurrency
   # ones are opt-in and have fixtures of their own, in
-  # `concurrency_test.exs`.
-  @spells Schema.spells() -- ~w(foreign await supervise)
+  # `concurrency_test.exs`; `return` is opt-in too, and its fixtures are
+  # read for it alone.
+  @spells Schema.spells() -- ~w(foreign await supervise return)
   @exclude ["Logger.*"]
 
   # Set KALKU_UPDATE_GOLDENS=1 to rewrite the goldens after reviewing a change.
   @update System.get_env("KALKU_UPDATE_GOLDENS") == "1"
 
   defp sites(path) do
+    spells = if Path.basename(Path.dirname(path)) == "return", do: ["return"], else: @spells
+
     {:ok, sites, 0} =
-      Sites.find(Path.relative_to(path, @fixtures), File.read!(path), @spells, @exclude)
+      Sites.find(Path.relative_to(path, @fixtures), File.read!(path), spells, @exclude)
 
     sites
   end
@@ -54,7 +57,7 @@ defmodule Kalku.SitesTest do
   end
 
   defp sites_anywhere(path) do
-    {:ok, sites, _dropped} = Sites.find(path, File.read!(path), @spells, @exclude)
+    {:ok, sites, _dropped} = Sites.find(path, File.read!(path), ["return" | @spells], @exclude)
     sites
   end
 
