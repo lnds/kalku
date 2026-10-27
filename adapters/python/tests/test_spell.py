@@ -3,7 +3,7 @@ from kalku_python import spell
 
 def test_every_spell_kalku_casts_is_a_spell_of_the_shared_catalogue():
     assert set(spell.CAST) <= set(spell.ALL)
-    assert spell.CAST == ("arm", "compare", "connect", "negate", "literal", "call")
+    assert spell.CAST == ("arm", "compare", "connect", "negate", "literal", "call", "return")
 
 
 def test_a_name_is_a_spell_or_it_is_not():
