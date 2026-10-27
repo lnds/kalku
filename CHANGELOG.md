@@ -1,3 +1,20 @@
+## v0.27.0 (2026-10-27)
+
+### Added
+
+- **cpp**: cast the return spell (#484)
+- **typescript**: cast the return spell (#483)
+- **elixir**: cast the return spell (#479)
+- **rust**: cast the return spell (#482)
+- **go**: cast the return spell (#480)
+- **python**: cast the return spell (#478)
+- add the return spell to the catalogue, cast only where a project names it (#476)
+
+### Fixed
+
+- **python**: keep the numbers of inherited descriptors taken in the child (#481)
+- **elixir**: propose deleting a function clause only when arm is asked for (#477)
+
 ## v0.26.1 (2026-10-26)
 
 ### Fixed
