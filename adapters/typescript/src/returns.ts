@@ -4,11 +4,13 @@
 // own `tsc` accepts: `0` for a `number` (`1` for a `0`), `0n` for a
 // `bigint`, `""` for a `string`, `false` for a `boolean`, `[]` for an array,
 // and in an `async` function the same for what its `Promise<T>` holds.
-// Where the function declares no type it is `undefined`, and so where the
-// type it declares holds `undefined` (`any`, `unknown`, a union with
-// `undefined`). Any other declared type gets no site: the signature does not
-// say how to write its neutral value, and under a runner that checks types,
-// as ts-jest does, `undefined` would be a compile error.
+// Where the type it declares holds `undefined` (`any`, `unknown`, a union
+// with `undefined`) it is `undefined`, and so in a JavaScript file, where
+// nothing is declared. Any other declared type gets no site: the signature
+// does not say how to write its neutral value, and under a runner that
+// checks types, as ts-jest does, `undefined` would be a compile error. Nor
+// does a TypeScript function that declares no type: `tsc` infers it from the
+// value, and `undefined` changes what the function's callers are given.
 //
 // The value of a `return <expr>`, and the expression an arrow function's
 // body is, are sites. Left out:
@@ -45,7 +47,7 @@ export function returnSite(node: ts.Node, sf: ts.SourceFile): ReturnSite | undef
     return undefined;
   }
   if (fn === undefined || unread(fn)) return undefined;
-  const replacement = neutral(fn.type, isAsync(fn), value);
+  const replacement = neutral(fn.type, isAsync(fn), value, javascript(sf));
   if (replacement === undefined) return undefined;
   return { from: value.getStart(sf), to: value.getEnd(), replacement };
 }
@@ -81,11 +83,16 @@ function statementLike(body: ts.ConciseBody): boolean {
 
 // The replacement for `value` given the declared type, or undefined where no
 // wekufe is proposed.
-function neutral(type: ts.TypeNode | undefined, async: boolean, value: ts.Expression): string | undefined {
+function neutral(
+  type: ts.TypeNode | undefined,
+  async: boolean,
+  value: ts.Expression,
+  javascript: boolean,
+): string | undefined {
   const v = skipParens(value);
   if (v.kind === ts.SyntaxKind.TrueKeyword || v.kind === ts.SyntaxKind.FalseKeyword) return undefined;
   if (nothing(v)) return undefined;
-  if (type === undefined) return "undefined";
+  if (type === undefined) return javascript ? "undefined" : undefined;
   const declared = async ? promised(type) : type;
   if (declared === undefined) return undefined;
   switch (declared.kind) {
@@ -128,6 +135,10 @@ function arrayType(t: ts.TypeNode): boolean {
     ts.isIdentifier(t.typeName) &&
     (t.typeName.text === "Array" || t.typeName.text === "ReadonlyArray")
   );
+}
+
+function javascript(sf: ts.SourceFile): boolean {
+  return /\.[cm]?jsx?$/.test(sf.fileName);
 }
 
 function nothing(e: ts.Expression): boolean {
