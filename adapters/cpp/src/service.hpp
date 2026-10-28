@@ -4,6 +4,8 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <optional>
+#include <set>
 #include <string>
 
 #include "clang.hpp"
@@ -40,6 +42,8 @@ class Service {
   std::unique_ptr<Project> project_;
   bool copied_ = false;
   bool prepared_ = false;
+  // What the build compiles, when it could say.
+  std::optional<std::set<std::string>> compiled_;
 };
 
 }  // namespace kalku

@@ -213,6 +213,7 @@ std::string Service::prepare(std::int64_t id) {
     return error(id, "prepare_failed", "the project did not build: " + diagnostic(project_->named(b.output)), true);
   }
   if (!project_->list_tests(&why)) return error(id, "prepare_failed", why, true);
+  compiled_ = project_->read_by_compiles();
   prepared_ = true;
   return prepared(id, since(started), project_->translation_units());
 }
@@ -342,6 +343,13 @@ Reply Service::cast(std::int64_t id, const CastRequest& c, const std::atomic<boo
     return say(error(id, "bad_request", "`" + site.file + "` is not the text this site was found in", false));
   }
   auto started = std::chrono::steady_clock::now();
+  // A file no compile reads, as one an option leaves out of the build, is
+  // code no test can run: its wekufe passing every test says nothing.
+  if (compiled_ && !compiled_->count(site.file)) {
+    return say(cast_done(id, c.wekufe,
+                         Outcome{"no_coverage", "", "no build of the project compiles `" + site.file + "`"},
+                         since(started)));
+  }
   if (tests.empty() && rest.empty()) {
     return say(cast_done(id, c.wekufe, Outcome{"no_coverage", "", "no test was asked to judge it"}, since(started)));
   }
@@ -413,6 +421,8 @@ std::string Service::reload(std::int64_t id, const std::vector<std::string>& fil
   auto started = std::chrono::steady_clock::now();
   std::string why;
   if (!project_->copy_files(files, &why)) return error(id, "load_failed", why, true);
+  // What the files now include is not known until the next build.
+  compiled_.reset();
   return reloaded(id, files, since(started));
 }
 
