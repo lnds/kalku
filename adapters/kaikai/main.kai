@@ -249,7 +249,8 @@ fn measured(
     report_of(
       Ran {
         ...r,
-        tests: r.tests | (t => TestTiming { ...t, fingerprint: prints.print_for(t.test_id, found, r.failing) })
+        tests: r.tests
+          | (t => TestTiming { ...t, fingerprint: prints.print_for(t.test_id, found, r.failing) })
       },
       spoken(covered(r), state),
       reused
@@ -360,7 +361,7 @@ fn gather(w: Work, m: SitesMsg, sites: [Site], skipped: [Skipped]) : KalkuReply 
         w,
         SitesMsg { ...m, files: rest },
         sites,
-        skipped ++ [Skipped { file: file, reason: "unreadable", message: why }]
+        skipped ++ [Skipped { file: file, reason: "unreadable", message: why, by_design: None }]
       )
     }
   }

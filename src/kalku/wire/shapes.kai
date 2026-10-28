@@ -46,9 +46,21 @@ pub type CoverageEntry = { file: String, line: Int, tests: [String] }
 #[derive(Json, Eq, Show)]
 pub type Failure = { #[json(rename = "test")] test_id: String, message: String }
 
-#[doc("A file a kalku could not search for sites.")]
+#[doc("""
+A file a kalku did not search for sites: one it could not read or parse, or,
+`by_design`, one that is not the project's code to measure. A kalku that does
+not say is heard as one that could not search the file.
+""")]
 #[derive(Json, Eq, Show)]
-pub type Skipped = { file: String, reason: String, message: String }
+pub type Skipped = {
+  file: String,
+  reason: String,
+  message: String,
+  by_design: Option[Bool]
+}
+
+#[doc("True for a file the kalku left out as not the project's code to measure.")]
+pub fn left_by_design(s: Skipped) : Bool = s.by_design == Some(true)
 
 #[doc("One outcome relayed by a driver kalku, normalised to kalku's outcomes.")]
 #[derive(Json, Eq, Show)]

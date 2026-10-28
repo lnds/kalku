@@ -475,11 +475,15 @@ final class Protocol {
     return Json.encode(message("bye", id));
   }
 
-  static Map<String, Object> skipped(String file, String reason, String message) {
+  static Map<String, Object> skipped(
+      String file, String reason, String message, boolean byDesign) {
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("file", file);
     out.put("reason", reason);
     out.put("message", message);
+    if (byDesign) {
+      out.put("by_design", true);
+    }
     return out;
   }
 

@@ -254,7 +254,10 @@ TEST("the kalku measures a CMake project over a pipe, and leaves it as it was") 
   auto by = by_place(found);
   const auto& skipped = doc->get("skipped")->items;
   CHECK_EQ(skipped.size(), static_cast<std::size_t>(1));
-  if (!skipped.empty()) CHECK_EQ(skipped[0].get("reason")->text, std::string("test_file"));
+  if (!skipped.empty()) {
+    CHECK_EQ(skipped[0].get("reason")->text, std::string("test_file"));
+    CHECK(skipped[0].get("by_design") != nullptr && skipped[0].get("by_design")->boolean);
+  }
 
   k.send("{\"type\":\"baseline\",\"id\":4}");
   std::string baseline = k.next();

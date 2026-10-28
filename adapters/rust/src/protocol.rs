@@ -404,12 +404,14 @@ fn check_scope(scope: &Value) -> Result<(), DecodeError> {
 
 // ---- what a kalku says ------------------------------------------------------
 
-/// A file that could not be searched, and why.
+/// A file that was not searched, and why. `by_design` marks one that is not
+/// the project's code to measure, rather than one that could not be searched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Skipped {
     pub file: String,
     pub reason: String,
     pub message: String,
+    pub by_design: bool,
 }
 
 fn line(kind: &str, id: i64, fields: Vec<(&str, Value)>) -> String {
@@ -694,6 +696,9 @@ fn skipped_json(s: &Skipped) -> Value {
     m.insert("file".into(), s.file.clone().into());
     m.insert("reason".into(), s.reason.clone().into());
     m.insert("message".into(), s.message.clone().into());
+    if s.by_design {
+        m.insert("by_design".into(), true.into());
+    }
     Value::Object(m)
 }
 
@@ -1067,6 +1072,7 @@ mod tests {
             file: "a.rs".into(),
             reason: "parse_error".into(),
             message: "line 1".into(),
+            by_design: false,
         }];
 
         let found = reply(&sites_found(4, &[], &skipped));

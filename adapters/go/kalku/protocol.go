@@ -607,11 +607,14 @@ func BaselineDone(id int64, durationMS int64, tests []Timed, coverage Coverage, 
 	return o.String()
 }
 
-// Skipped is a file that yielded no sites, and why.
+// Skipped is a file that yielded no sites, and why. ByDesign marks a file
+// that is not the project's code to measure, rather than one that could not
+// be searched.
 type Skipped struct {
-	File    string
-	Reason  string
-	Message string
+	File     string
+	Reason   string
+	Message  string
+	ByDesign bool
 }
 
 // SitesFound answers `sites`.
@@ -622,7 +625,11 @@ func SitesFound(id int64, sites []Site, skipped []Skipped) string {
 	}
 	ks := make([]string, len(skipped))
 	for i, k := range skipped {
-		ks[i] = newObject().str("file", k.File).str("reason", k.Reason).str("message", k.Message).String()
+		o := newObject().str("file", k.File).str("reason", k.Reason).str("message", k.Message)
+		if k.ByDesign {
+			o.bool("by_design", true)
+		}
+		ks[i] = o.String()
 	}
 	return message("sites_found", id).objects("sites", ss).objects("skipped", ks).String()
 }

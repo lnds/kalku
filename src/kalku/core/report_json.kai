@@ -82,7 +82,12 @@ fn left_out(r: Report) : [(String, JsonValue)] = if is_empty(r.left_out.tests) {
 }
 
 fn skipped_file(s: Skipped) : JsonValue = JObj(
-  [("file", JStr(s.file)), ("reason", JStr(s.reason)), ("message", JStr(s.message))]
+  [
+    ("file", JStr(s.file)),
+    ("reason", JStr(s.reason)),
+    ("message", JStr(s.message)),
+    ...if left_by_design(s) { [("by_design", JBool(true))] } else { [] }
+  ]
 )
 
 # A survivor no coverage chose was judged by the whole suite, which is the

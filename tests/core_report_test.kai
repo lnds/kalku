@@ -338,7 +338,9 @@ test "unreached sites are counted where the change touched, and only there" {
 test "a file that was not searched is named with why, above the summary" {
   let skipped = Report {
     ...plain(),
-    skipped: [Skipped { file: "lib/b.ex", reason: "parse_error", message: "line 3" }]
+    skipped: [
+      Skipped { file: "lib/b.ex", reason: "parse_error", message: "line 3", by_design: None }
+    ]
   }
   let text = human(skipped)
 

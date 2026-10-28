@@ -11,9 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -171,9 +173,13 @@ class ServiceTest {
     }
 
     Map<String, String> why = new LinkedHashMap<>();
+    Set<String> designed = new HashSet<>();
     for (Object entry : (List<?>) found.get("skipped")) {
       Map<?, ?> skipped = (Map<?, ?>) entry;
       why.put((String) skipped.get("file"), (String) skipped.get("reason"));
+      if (Boolean.TRUE.equals(skipped.get("by_design"))) {
+        designed.add((String) skipped.get("file"));
+      }
       assertFalse(((String) skipped.get("message")).isEmpty());
     }
     Map<String, String> expected = new LinkedHashMap<>();
@@ -184,6 +190,13 @@ class ServiceTest {
     expected.put("src/main/java/a/Missing.java", "unreadable");
     expected.put("README.md", "not_java");
     assertEquals(expected, why);
+    // Only a file that is not the project's code to measure is left out by design: the score
+    // says nothing of the others, and the gate hears of them.
+    assertEquals(
+        new HashSet<>(
+            Arrays.asList(
+                "src/test/java/a/OkTest.java", "src/main/java/a/CheckTest.java", "README.md")),
+        designed);
   }
 
   @Test

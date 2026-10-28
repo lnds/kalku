@@ -275,9 +275,11 @@ A **fingerprint** says what a test runs: an opaque string that changes whenever 
 | `sites_found` | Type | Meaning |
 |---|---|---|
 | `sites` | [Site] | |
-| `skipped` | [{`file`, `reason`, `message`}] | files the kalku could not read or parse; `reason` is e.g. `parse_error` |
+| `skipped` | [{`file`, `reason`, `message`, `by_design`?}] | files the kalku did not search; `reason` is e.g. `parse_error` |
 
 A file the kalku cannot parse is reported in `skipped`, not as a request `error`.
+
+`by_design: true` marks a file the kalku leaves out because it is not the project's code to measure — a test file, a tool's config, a generated file — rather than one it could not read or parse. Such a file is kept in the report for the record, but the gate does not hear of it, since no run could ever measure it. An entry without `by_design` is one the kalku could not search.
 
 ```json
 {"type":"sites","id":4,"files":["lib/my_app/parser.ex"],"spells":["arm","compare"],"exclude_calls":["Logger.*"]}

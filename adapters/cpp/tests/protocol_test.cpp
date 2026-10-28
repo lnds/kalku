@@ -119,6 +119,8 @@ TEST("every reply this kalku writes is the canonical form of a fixture") {
       aborted(9, 5, true),
       error(5, "load_failed", "could not restore MyApp.Parser", true),
       error(5, "unknown_test", "no test test/my_app/parser_test.exs:99", false),
+      sites_found(4, {}, {}),
+      sites_found(5, {}, {Skipped{"test/my_app_test.exs", "not_source", "test files are never mutated", true}}),
   };
   std::string fixtures;
   for (const auto& f : files_in("kalku/replies")) {

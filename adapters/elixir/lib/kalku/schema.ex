@@ -33,7 +33,7 @@ defmodule Kalku.Schema do
     reuse: [test: :string, fingerprint: :string],
     coverage: [file: :string, line: :int, tests: {:list, :string}],
     failure: [test: :string, message: :string],
-    skipped: [file: :string, reason: :string, message: :string],
+    skipped: [file: :string, reason: :string, message: :string, by_design: {:opt, :bool}],
     delegated_outcome: [
       file: :string,
       enclosing: {:opt, :string},

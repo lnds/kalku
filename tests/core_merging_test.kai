@@ -52,7 +52,7 @@ fn shard_report(i: Int, n: Int, killed: Int) : Report {
       exclude_calls_added: []
     },
     troubles: [],
-    skipped: [Skipped { file: "lib/b.ex", reason: "parse_error", message: "no" }],
+    skipped: [Skipped { file: "lib/b.ex", reason: "parse_error", message: "no", by_design: None }],
     uncovered: [],
     blockers: [],
     left_out: nobody_left_out(),

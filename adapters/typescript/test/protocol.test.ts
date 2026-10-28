@@ -87,7 +87,21 @@ test("what this kalku says is the fixtures, byte for byte", { skip: !there }, ()
     reset_done: [wire.resetDone(10, true, 140)],
     prepared: [wire.prepared(2, 41200, 312)],
     progress: [wire.progress(3, 120, 480)],
-    sites_found: [wire.sitesFound(4, [], [])],
+    sites_found: [
+      wire.sitesFound(4, [], []),
+      wire.sitesFound(
+        5,
+        [],
+        [
+          {
+            file: "test/my_app_test.exs",
+            reason: "not_source",
+            message: "test files are never mutated",
+            by_design: true,
+          },
+        ],
+      ),
+    ],
     cast_done: [
       wire.castDone(
         9,

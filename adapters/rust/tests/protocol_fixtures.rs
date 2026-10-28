@@ -99,6 +99,13 @@ fn what_it_says_is_the_fixtures_byte_for_byte() {
     )));
     assert!(said("bye").contains(&protocol::bye(7)));
     assert!(said("sites_found").contains(&protocol::sites_found(4, &[], &[])));
+    let left = protocol::Skipped {
+        file: "test/my_app_test.exs".into(),
+        reason: "not_source".into(),
+        message: "test files are never mutated".into(),
+        by_design: true,
+    };
+    assert!(said("sites_found").contains(&protocol::sites_found(5, &[], &[left])));
 }
 
 // `type`, then `id`, then the fields in the order the tables list them.

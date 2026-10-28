@@ -439,15 +439,18 @@ func (s *Service) search(file string, r *SitesRequest) ([]Site, *Skipped) {
 	skip := func(reason, message string) ([]Site, *Skipped) {
 		return nil, &Skipped{File: file, Reason: reason, Message: message}
 	}
+	leave := func(reason, message string) ([]Site, *Skipped) {
+		return nil, &Skipped{File: file, Reason: reason, Message: message, ByDesign: true}
+	}
 	if !strings.HasSuffix(file, ".go") {
-		return skip("not_go", "`"+file+"` is not a Go source file")
+		return leave("not_go", "`"+file+"` is not a Go source file")
 	}
 	if strings.HasSuffix(file, "_test.go") {
-		return skip("test_file", "`"+file+"` is part of the suite, which is the oracle")
+		return leave("test_file", "`"+file+"` is part of the suite, which is the oracle")
 	}
 	root := s.hello.Root
 	if other := moduleOf(root, file); other != "" {
-		return skip("other_module", "`"+file+"` belongs to the module at "+other+", not to this one")
+		return leave("other_module", "`"+file+"` belongs to the module at "+other+", not to this one")
 	}
 	dir, name := filepath.Split(filepath.Join(root, file))
 	if ok, err := build.Default.MatchFile(dir, name); err != nil {
@@ -461,7 +464,7 @@ func (s *Service) search(file string, r *SitesRequest) ([]Site, *Skipped) {
 	}
 	sites, err := FindSites(file, string(text), r.Spells, r.ExcludeCalls)
 	if errors.Is(err, ErrGenerated) {
-		return skip("generated", err.Error())
+		return leave("generated", err.Error())
 	}
 	if err != nil {
 		return skip("parse_error", err.Error())
