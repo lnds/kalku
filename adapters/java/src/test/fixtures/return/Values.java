@@ -123,6 +123,11 @@ class Values {
     return 0;
   }
 
+  // `literal` already turns this into `""`.
+  String title() {
+    return "title";
+  }
+
   String empty() {
     return "";
   }
