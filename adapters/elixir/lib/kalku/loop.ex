@@ -335,6 +335,9 @@ defmodule Kalku.Loop do
       {:skip, reason, message} ->
         {:skip, %{"file" => file, "reason" => reason, "message" => message}}
 
+      {:leave, reason, message} ->
+        {:skip, %{"file" => file, "reason" => reason, "message" => message, "by_design" => true}}
+
       {:error, message} ->
         {:skip, %{"file" => file, "reason" => "parse_error", "message" => message}}
     end
@@ -347,11 +350,12 @@ defmodule Kalku.Loop do
     Enum.map(sites, &Map.put(&1, "reload", reload))
   end
 
-  # Tests and scripts are the oracle, not code under test.
+  # Tests and scripts are the oracle, not code under test: they are left out
+  # by design, where a file that cannot be read or parsed is skipped.
   defp source_file(file) do
     cond do
-      String.starts_with?(file, "test/") -> {:skip, "not_source", "test files are never mutated"}
-      Path.extname(file) != ".ex" -> {:skip, "not_source", "only .ex files are searched"}
+      String.starts_with?(file, "test/") -> {:leave, "not_source", "test files are never mutated"}
+      Path.extname(file) != ".ex" -> {:leave, "not_source", "only .ex files are searched"}
       true -> :ok
     end
   end

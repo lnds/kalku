@@ -239,9 +239,11 @@ func TestAFileThatYieldsNoSitesSaysWhy(t *testing.T) {
 		t.Errorf("a.go has 3 sites, got %d", n)
 	}
 	reasons := map[string]string{}
+	designed := map[string]bool{}
 	for _, k := range got["skipped"].([]any) {
 		k := k.(map[string]any)
 		reasons[k["file"].(string)] = k["reason"].(string)
+		designed[k["file"].(string)] = k["by_design"] == true
 	}
 	want := map[string]string{
 		"a_test.go": "test_file", "gen.go": "generated", "broken.go": "parse_error", "never_plan9.go": "not_built",
@@ -250,6 +252,14 @@ func TestAFileThatYieldsNoSitesSaysWhy(t *testing.T) {
 	for file, reason := range want {
 		if reasons[file] != reason {
 			t.Errorf("%s: got %q, want %q", file, reasons[file], reason)
+		}
+	}
+	// Only a file that is not the project's code to measure is left out by
+	// design: the score says nothing of the others, and the gate hears of them.
+	for file, reason := range want {
+		mine := reason == "test_file" || reason == "generated" || reason == "other_module" || reason == "not_go"
+		if designed[file] != mine {
+			t.Errorf("%s: by_design is %v, want %v", file, designed[file], mine)
 		}
 	}
 }

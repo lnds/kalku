@@ -67,6 +67,8 @@ def test_sites_are_found_and_files_that_cannot_be_searched_say_why(kalku, make_p
         "notes.md": "not_python",
         "missing.py": "unreadable",
     }
+    designed = {s["file"] for s in found["skipped"] if s.get("by_design")}
+    assert designed == {"tests/test_gate.py", "notes.md"}
 
 
 def test_a_baseline_lists_every_test_and_says_which_reached_which_line(kalku, make_project):

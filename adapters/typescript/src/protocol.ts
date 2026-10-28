@@ -384,6 +384,8 @@ export interface Skipped {
   file: string;
   reason: string;
   message: string;
+  /** Not the project's code to measure, rather than a file that could not be searched. */
+  by_design?: true;
 }
 
 export function sitesFound(id: number, sites: Site[], skipped: Skipped[]): string {

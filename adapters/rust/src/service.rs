@@ -234,6 +234,13 @@ impl Service {
                     file: file.clone(),
                     reason,
                     message,
+                    by_design: false,
+                }),
+                Err(Refusal::Leave(reason, message)) => skipped.push(Skipped {
+                    file: file.clone(),
+                    reason,
+                    message,
+                    by_design: true,
                 }),
             }
         }
@@ -551,6 +558,7 @@ impl Default for Service {
 // a thing to skip past.
 enum Refusal {
     Skip(String, String),
+    Leave(String, String),
     Fatal(String),
 }
 
@@ -561,9 +569,10 @@ fn search(
     editions: &mut dyn Editions,
 ) -> Result<Vec<sites::Site>, Refusal> {
     let skip = |reason: &str, message: String| Refusal::Skip(reason.to_string(), message);
+    let leave = |reason: &str, message: String| Refusal::Leave(reason.to_string(), message);
 
     if Path::new(file).extension().and_then(|e| e.to_str()) != Some("rs") {
-        return Err(skip(
+        return Err(leave(
             "not_rust",
             format!("`{file}` is not a Rust source file"),
         ));
@@ -572,7 +581,7 @@ fn search(
         Some(edition) if edition == editions::SUPPORTED => {}
         Some(edition) => return Err(skip("unsupported_edition", editions::unsupported(&edition))),
         None => {
-            return Err(skip(
+            return Err(leave(
                 "not_in_a_package",
                 format!("`{file}` belongs to no package of this project"),
             ));
@@ -1568,6 +1577,16 @@ mod tests {
         )
     }
 
+    fn left_by_design(said: &serde_json::Value) -> Vec<String> {
+        said["skipped"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["by_design"] == true)
+            .map(|s| s["file"].as_str().unwrap().to_string())
+            .collect()
+    }
+
     fn skipped(said: &serde_json::Value) -> Vec<(String, String)> {
         said["skipped"]
             .as_array()
@@ -1612,6 +1631,7 @@ mod tests {
                 ("src/broken.rs".to_string(), "parse_error".to_string()),
             ]
         );
+        assert_eq!(left_by_design(&said), ["README.md"]);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1624,6 +1644,7 @@ mod tests {
             skipped(&said),
             [("src/a.rs".to_string(), "not_in_a_package".to_string())]
         );
+        assert_eq!(left_by_design(&said), ["src/a.rs"]);
 
         let (fake, _) = Fake::new();
         let mut service = greeted_in(fake, "/nowhere", Ok(Some("2021".into())));

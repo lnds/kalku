@@ -272,12 +272,15 @@ std::string Service::sites(std::int64_t id, const SitesRequest& r) {
     auto skip = [&](const std::string& reason, const std::string& message) {
       skipped.push_back(Skipped{file, reason, message});
     };
+    auto leave = [&](const std::string& reason, const std::string& message) {
+      skipped.push_back(Skipped{file, reason, message, true});
+    };
     if (!is_source_file(file)) {
-      skip("not_source", "`" + file + "` is not a C or C++ source file");
+      leave("not_source", "`" + file + "` is not a C or C++ source file");
       continue;
     }
     if (is_test_file(file)) {
-      skip("test_file", "`" + file + "` is part of the suite, which is the oracle");
+      leave("test_file", "`" + file + "` is part of the suite, which is the oracle");
       continue;
     }
     if (!readable) {

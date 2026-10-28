@@ -241,7 +241,9 @@ test "a wekufe that produced nothing to score travels with its reason" {
 test "a file that was not searched travels as a line of its own, and in the JSON" {
   let skipped = Report {
     ...report_of([], one()),
-    skipped: [Skipped { file: "lib/b.ex", reason: "parse_error", message: "line 3" }]
+    skipped: [
+      Skipped { file: "lib/b.ex", reason: "parse_error", message: "line 3", by_design: None }
+    ]
   }
   let line = "{\"skipped\":\"lib/b.ex\",\"reason\":\"parse_error\",\"message\":\"line 3\"}"
 

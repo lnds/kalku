@@ -64,6 +64,13 @@ def test_what_it_says_is_the_fixtures_byte_for_byte():
     ) in said("error")
     assert protocol.bye(7) in said("bye")
     assert protocol.sites_found(4, [], []) in said("sites_found")
+    left = {
+        "file": "test/my_app_test.exs",
+        "reason": "not_source",
+        "message": "test files are never mutated",
+        "by_design": True,
+    }
+    assert protocol.sites_found(5, [], [left]) in said("sites_found")
 
 
 def test_a_ready_reply_is_in_canonical_order():

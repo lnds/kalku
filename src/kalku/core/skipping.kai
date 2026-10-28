@@ -29,13 +29,13 @@ pub fn nothing_usable(found: Int, skipped: [Skipped]) : Option[String] =
 
 #[doc("""
 Why a run that skipped files cannot be trusted as the answer to what was
-asked, for the gate to hear; `None` when nothing was skipped.
+asked, for the gate to hear; `None` when every skipped file was left out by
+design, since no run could ever measure a file that is not the project's code.
 """)]
 pub fn trouble_of(skipped: [Skipped]) : Option[String] =
-  if is_empty(skipped) {
-    None
-  } else {
-    Some(
-      "#{length(skipped)} file(s) could not be searched, so the score says nothing about them: #{join(skipped | (.file), ", ")}"
+  match skipped |? (s => not left_by_design(s)) {
+    [] -> None
+    missed -> Some(
+      "#{length(missed)} file(s) could not be searched, so the score says nothing about them: #{join(missed | (.file), ", ")}"
     )
   }

@@ -1,7 +1,10 @@
+import encoding.json
+import encoding.json_bind
 import kalku.core.skipping
 import kalku.wire.shapes
 
-fn bad(file: String) : Skipped = Skipped { file: file, reason: "parse_error", message: "line 1" }
+fn bad(file: String) : Skipped =
+  Skipped { file: file, reason: "parse_error", message: "line 1", by_design: None }
 
 test "a skipped file is told with its reason and what the kalku said" {
   assert skipped_line(bad("src/a.rs")) == "src/a.rs: parse_error: line 1"
@@ -31,4 +34,22 @@ test "the gate hears of skipped files, naming them" {
     == Some(
       "2 file(s) could not be searched, so the score says nothing about them: src/a.rs, src/b.rs"
     )
+}
+
+fn left(file: String) : Skipped =
+  Skipped { file: file, reason: "config", message: "configures the tools", by_design: Some(true) }
+
+# A Jest config at the root of a TypeScript project is matched as a source
+# file and left out by the kalku: no run could ever measure it.
+test "a file left out by design does not reach the gate" {
+  assert trouble_of([left("jest.config.cjs")]) == None
+  assert trouble_of([left("jest.config.cjs"), bad("src/a.ts")])
+    == Some("1 file(s) could not be searched, so the score says nothing about them: src/a.ts")
+}
+
+test "a kalku that does not say why it skipped a file is heard as one that could not search it" {
+  let said = json_decode("{\"file\":\"src/a.ts\",\"reason\":\"config\",\"message\":\"m\"}")
+    |> unwrap_or(JNull)
+  assert skipped_of_json(said, "")
+    == Ok(Skipped { file: "src/a.ts", reason: "config", message: "m", by_design: None })
 }

@@ -41,6 +41,11 @@ final class Service {
   private static final List<String> TEST_DIRS =
       Arrays.asList("test", "tests", "integrationTest", "testFixtures", "androidTest");
 
+  // The reasons for a file that is not the project's code to measure, rather than one that
+  // could not be searched.
+  private static final List<String> BY_DESIGN =
+      Arrays.asList("not_java", "test_file", "outside_sources");
+
   // What a build or a JVM needs of the environment this kalku was summoned in. Nothing else
   // of it is handed on; what the run adds comes in `hello`.
   private static final List<String> INHERITED =
@@ -352,7 +357,7 @@ final class Service {
     for (String file : request.files) {
       String[] why = search(file, request, found);
       if (why != null) {
-        skipped.add(Protocol.skipped(file, why[0], why[1]));
+        skipped.add(Protocol.skipped(file, why[0], why[1], BY_DESIGN.contains(why[0])));
       }
     }
     return Protocol.sitesFound(request.id, found, skipped);

@@ -148,6 +148,18 @@ class ProtocolFixturesTest {
         lines(replies.resolve("sites_found.ndjson"))
             .contains(
                 Protocol.sitesFound(4, Collections.emptyList(), Collections.emptyList())));
+    assertTrue(
+        lines(replies.resolve("sites_found.ndjson"))
+            .contains(
+                Protocol.sitesFound(
+                    5,
+                    Collections.emptyList(),
+                    Collections.singletonList(
+                        Protocol.skipped(
+                            "test/my_app_test.exs",
+                            "not_source",
+                            "test files are never mutated",
+                            true)))));
   }
 
   @Test

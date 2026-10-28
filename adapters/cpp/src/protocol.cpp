@@ -359,7 +359,10 @@ std::string sites_found(std::int64_t id, const std::vector<Site>& sites, const s
   for (const auto& s : sites) ss.push_back(s.json());
   std::vector<std::string> ks;
   for (const auto& k : skipped) {
-    ks.push_back(Writer().str("file", k.file).str("reason", k.reason).str("message", k.message).done());
+    Writer w;
+    w.str("file", k.file).str("reason", k.reason).str("message", k.message);
+    if (k.by_design) w.boolean("by_design", true);
+    ks.push_back(w.done());
   }
   return Writer::message("sites_found", id).objects("sites", ss).objects("skipped", ks).done();
 }

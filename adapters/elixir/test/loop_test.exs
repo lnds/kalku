@@ -61,6 +61,7 @@ defmodule Kalku.LoopTest do
 
     assert length(body["sites"]) == 4
     assert Enum.map(body["skipped"], & &1["reason"]) == ["not_source", "not_source", "unreadable"]
+    assert Enum.map(body["skipped"], & &1["by_design"]) == [true, true, nil]
   end
 
   test "a file that does not parse is skipped with parse_error" do

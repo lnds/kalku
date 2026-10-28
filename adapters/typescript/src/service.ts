@@ -549,28 +549,29 @@ function fileOf(root: string, id: string): string {
   return parsed === undefined ? "" : relative(root, parsed.file);
 }
 
-function search(root: string, file: string, r: SitesRequest): Site[] | Skipped {
+export function search(root: string, file: string, r: SitesRequest): Site[] | Skipped {
   const skip = (reason: string, message: string): Skipped => ({ file, reason, message });
+  const leave = (reason: string, message: string): Skipped => ({ file, reason, message, by_design: true });
   if (scriptKind(file) === undefined)
-    return skip("not_typescript", `\`${file}\` is not a TypeScript or JavaScript source file`);
+    return leave("not_typescript", `\`${file}\` is not a TypeScript or JavaScript source file`);
   // A declaration file holds no code: it has no sites, which is the whole truth about it.
   if (/\.d\.[mc]?ts$/.test(file)) return [];
-  if (testFile(file)) return skip("test_file", `\`${file}\` is part of the suite, which is the oracle`);
+  if (testFile(file)) return leave("test_file", `\`${file}\` is part of the suite, which is the oracle`);
   if (configFile(file)) {
-    return skip(
+    return leave(
       "config",
       `\`${file}\` configures the tools, which load it before any wekufe can be served in its place`,
     );
   }
   if (file.split("/").includes("node_modules"))
-    return skip("dependency", `\`${file}\` is a dependency, not the project's own code`);
+    return leave("dependency", `\`${file}\` is a dependency, not the project's own code`);
   let text: string;
   try {
     text = readFileSync(path.join(root, file), "utf8");
   } catch (e) {
     return skip("unreadable", (e as Error).message);
   }
-  if (generated(text)) return skip("generated", "the file says it is generated, and nobody edits it by hand");
+  if (generated(text)) return leave("generated", "the file says it is generated, and nobody edits it by hand");
   try {
     return findSites(file, text, r.spells, r.exclude_calls);
   } catch (e) {

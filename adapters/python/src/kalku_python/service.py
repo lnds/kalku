@@ -62,6 +62,10 @@ _WARM_LIMIT = 3000
 # to none that did not run its code.
 MAX_DEPENDENTS = 300
 
+# The reasons for a file that is not the project's code to measure, rather
+# than one that could not be searched.
+BY_DESIGN = frozenset({"not_python", "test_file"})
+
 
 @dataclass
 class _Session:
@@ -229,7 +233,10 @@ class Service:
         for file in request.files:
             reason, message = self._search(root, file, request, found)
             if reason is not None:
-                skipped.append({"file": file, "reason": reason, "message": message})
+                skip = {"file": file, "reason": reason, "message": message}
+                if reason in BY_DESIGN:
+                    skip["by_design"] = True
+                skipped.append(skip)
         return protocol.sites_found(ident, found, skipped)
 
     def _search(

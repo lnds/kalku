@@ -112,10 +112,13 @@ std::string baseline_done(std::int64_t id, std::int64_t duration_ms, const std::
                           const std::vector<Failure>& failures, const std::vector<std::string>& differences,
                           const Covered& covered = {}, const std::vector<std::string>& reused = {});
 
+// A file that was not searched, and why. `by_design` marks one that is not
+// the project's code to measure, rather than one that could not be searched.
 struct Skipped {
   std::string file;
   std::string reason;
   std::string message;
+  bool by_design = false;
 };
 
 std::string sites_found(std::int64_t id, const std::vector<Site>& sites, const std::vector<Skipped>& skipped);
