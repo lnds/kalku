@@ -362,6 +362,60 @@ fn it_prepares_measures_and_casts_in_the_reni() {
     k.leave();
 }
 
+// A module a `cfg` leaves out of every build is code no test can run. Its
+// wekufe would pass the whole suite, and that is not a survivor.
+#[test]
+fn a_wekufe_in_a_file_no_build_compiles_has_no_coverage() {
+    let lib = format!("#[cfg(feature = \"extra\")]\nmod extra;\n{TESTED}");
+    let project = Project::new(
+        "cfg_out",
+        "2024",
+        &[
+            ("src/lib.rs", lib.as_str()),
+            ("src/extra.rs", "pub fn big(a: i32) -> bool { a > 9 }\n"),
+        ],
+    );
+    let manifest = project.0.join("Cargo.toml");
+    let mut toml = fs::read_to_string(&manifest).unwrap();
+    toml.push_str("\n[features]\nextra = []\n");
+    fs::write(&manifest, toml).unwrap();
+    let mut k = Kalku::summon();
+    k.hello(&project.0);
+    let prepared = k.ask(json!({"type": "prepare", "id": 2}));
+    assert_eq!(prepared["type"], "prepared", "{prepared}");
+    let baseline = k.ask(json!({"type": "baseline", "id": 3}));
+    assert_eq!(baseline["status"], "green", "{baseline}");
+    let tests: Vec<Value> = baseline["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["test"].clone())
+        .collect();
+
+    let found = k.sites(&["src/extra.rs"]);
+    let out = found["sites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["spell"] == "compare")
+        .unwrap_or_else(|| panic!("no compare site: {found}"))
+        .clone();
+    let cast = k.ask(json!({"type": "cast", "id": 4, "wekufe": out["site_id"],
+        "site": out, "tests": tests}));
+    assert_eq!(cast["outcome"], "no_coverage", "{cast}");
+    assert_eq!(
+        cast["message"],
+        "no build of the project compiles `src/extra.rs`"
+    );
+
+    let mut weaker = site(&mut k, "compare", ">=");
+    weaker["replacement"] = ">".into();
+    let killed = k.ask(json!({"type": "cast", "id": 5, "wekufe": weaker["site_id"],
+        "site": weaker, "tests": tests}));
+    assert_eq!(killed["outcome"], "killed", "{killed}");
+    k.leave();
+}
+
 // A kalku kept between runs is told what changed instead of being summoned
 // again. The edit replaces the test that killed `>=` to `>` with one the
 // wekufe passes: a kill after the reload would be the old copy talking.

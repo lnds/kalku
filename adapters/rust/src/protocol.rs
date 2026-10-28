@@ -584,9 +584,17 @@ pub fn baseline_done(
 /// How one cast ended, as the kalku can know it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    Killed { by: String },
+    Killed {
+        by: String,
+    },
     Survived,
-    CompileError { message: String },
+    CompileError {
+        message: String,
+    },
+    /// No test can run the code the wekufe is in; the text says why.
+    NoCoverage {
+        message: String,
+    },
 }
 
 pub fn cast_done(id: i64, wekufe: &str, outcome: &Outcome, duration_ms: u64) -> String {
@@ -599,6 +607,10 @@ pub fn cast_done(id: i64, wekufe: &str, outcome: &Outcome, duration_ms: u64) -> 
         Outcome::Survived => fields.push(("outcome", "survived".into())),
         Outcome::CompileError { message } => {
             fields.push(("outcome", "compile_error".into()));
+            fields.push(("message", message.clone().into()));
+        }
+        Outcome::NoCoverage { message } => {
+            fields.push(("outcome", "no_coverage".into()));
             fields.push(("message", message.clone().into()));
         }
     }

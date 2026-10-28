@@ -14,7 +14,7 @@ use crate::coverage::{Lines, Tools, parse_lcov};
 use crate::fingerprint;
 use crate::protocol::Obj;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -98,6 +98,12 @@ pub trait Project {
     fn fingerprints(&mut self) -> io::Result<HashMap<String, String>> {
         Err(io::ErrorKind::Unsupported.into())
     }
+    /// The project's files the last build compiled, relative to the project.
+    /// A project that cannot say has none, and no file is taken for one no
+    /// build compiles.
+    fn compiled(&self) -> Option<BTreeSet<String>> {
+        None
+    }
 }
 
 pub struct Cargo {
@@ -113,6 +119,8 @@ pub struct Cargo {
     // What reads a profile, and the executables the profile is read against.
     tools: Option<Tools>,
     objects: Vec<PathBuf>,
+    // The files the last build compiled, from the compiler's dep-info.
+    compiled: Option<BTreeSet<String>>,
 }
 
 // What a build needs from the environment of whoever started the kalku;
@@ -202,6 +210,7 @@ impl Cargo {
             stop: None,
             tools: None,
             objects: Vec::new(),
+            compiled: None,
         }
     }
 
@@ -320,6 +329,7 @@ impl Project for Cargo {
         let out = capture(command, self.stop.as_ref())?;
         let stdout = String::from_utf8_lossy(&out.stdout);
         if out.status.success() {
+            self.compiled = compiled(&stdout, &self.here());
             Ok(Build::Built(artifacts(&stdout, &self.here())))
         } else {
             let errors = diagnostics(&stdout);
@@ -401,6 +411,10 @@ impl Project for Cargo {
 
     fn set_stop(&mut self, stop: Option<Stop>) {
         self.stop = stop;
+    }
+
+    fn compiled(&self) -> Option<BTreeSet<String>> {
+        self.compiled.clone()
     }
 
     fn instrument(&mut self, tools: &Tools) -> io::Result<Build> {
@@ -653,6 +667,70 @@ pub fn artifacts(stdout: &str, work: &Path) -> Vec<Target> {
     targets
 }
 
+/// The project's files that the artifacts of a build were compiled from,
+/// relative to `work`, read from the dep-info rustc leaves beside each one.
+/// `None` when no artifact has one to read: a build that says nothing about
+/// its sources has not shown that any file was left out.
+///
+/// rustc names a workspace's own files relative to the workspace's root,
+/// which is `work` or a directory above it.
+pub fn compiled(stdout: &str, work: &Path) -> Option<BTreeSet<String>> {
+    let work = fs::canonicalize(work).unwrap_or_else(|_| work.to_path_buf());
+    let resolve = |source: &Path| -> PathBuf {
+        if source.is_absolute() {
+            return source.to_path_buf();
+        }
+        work.ancestors()
+            .map(|root| root.join(source))
+            .find(|p| p.exists())
+            .unwrap_or_else(|| work.join(source))
+    };
+    let mut files = BTreeSet::new();
+    let mut read = false;
+    for message in stdout
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|m| m["reason"] == "compiler-artifact")
+    {
+        for artifact in message["filenames"].as_array().into_iter().flatten() {
+            let Some(text) = artifact.as_str().and_then(|a| dep_info(Path::new(a))) else {
+                continue;
+            };
+            read = true;
+            for source in dependencies(&text) {
+                let source = resolve(Path::new(&source));
+                let source = fs::canonicalize(&source).unwrap_or(source);
+                if let Ok(relative) = source.strip_prefix(&work) {
+                    files.insert(relative.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    read.then_some(files)
+}
+
+// The dep-info of an artifact: `foo-1a2b.d` beside `foo-1a2b` and beside
+// `libfoo-1a2b.rlib`.
+fn dep_info(artifact: &Path) -> Option<String> {
+    let dir = artifact.parent()?;
+    let stem = artifact.file_stem()?.to_str()?;
+    let bare = stem.strip_prefix("lib").unwrap_or(stem);
+    [stem, bare]
+        .iter()
+        .find_map(|s| fs::read_to_string(dir.join(format!("{s}.d"))).ok())
+}
+
+/// The files a dep-info names: rustc writes each one as a rule of its own
+/// with nothing after the colon, its spaces escaped.
+pub fn dependencies(dep_info: &str) -> Vec<String> {
+    dep_info
+        .lines()
+        .filter_map(|l| l.strip_suffix(':'))
+        .filter(|l| !l.is_empty())
+        .map(|l| l.replace("\\ ", " "))
+        .collect()
+}
+
 /// The cargo arguments that pick out one target's test executable.
 ///
 /// A library has one target whatever its `crate-type` lists — `staticlib`
@@ -819,6 +897,16 @@ mod tests {
         assert!(r[0].passed);
         assert_eq!(r[1].name, "a::quiet");
         assert!(!r[1].passed);
+    }
+
+    #[test]
+    fn a_dep_info_names_each_source_once_as_a_rule_of_its_own() {
+        let d = "/w/target/debug/deps/p-1a2b: /w/src/lib.rs /w/src/my\\ mod.rs\n\
+            \n\
+            /w/src/lib.rs:\n\
+            /w/src/my\\ mod.rs:\n";
+
+        assert_eq!(dependencies(d), ["/w/src/lib.rs", "/w/src/my mod.rs"]);
     }
 
     #[test]
