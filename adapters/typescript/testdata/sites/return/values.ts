@@ -4,6 +4,7 @@ export function count(xs: number[]): number {
   return xs.length;
 }
 
+// A returned literal is `literal`'s: `0` becomes `1`, `"many"` becomes `""`.
 export function countFromZero(): number {
   return 0;
 }
@@ -37,6 +38,7 @@ export async function fetchCount(load: () => Promise<number>): Promise<number> {
   return await load();
 }
 
+// No declared type: `tsc` infers one from the value, which `undefined` changes.
 export function untyped(a, b) {
   return a + b;
 }
