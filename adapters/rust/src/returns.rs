@@ -4,6 +4,9 @@
 //! wekufe that does not type-check costs a build and measures nothing, so
 //! a type this cannot name a value for gets no site. That leaves out `()`,
 //! generics, `Self`, `impl Trait`, and every type of the project's own.
+//!
+//! A returned `true`, `false`, `0` or string literal gets no site either:
+//! `literal` already casts the very same wekufe.
 
 use syn::{Expr, GenericArgument, Lit, PathArguments, Type};
 
@@ -14,7 +17,7 @@ pub fn neutral(ty: &Type, value: &Expr) -> Option<String> {
         Type::Paren(p) => neutral(&p.elem, value),
         Type::Group(g) => neutral(&g.elem, value),
         Type::Reference(r) if r.mutability.is_none() && is_named(&r.elem, "str") => {
-            (!is_empty_str(value)).then(|| "\"\"".to_string())
+            (!is_str(value)).then(|| "\"\"".to_string())
         }
         Type::Path(p) if p.qself.is_none() => {
             let last = p.path.segments.last()?;
@@ -24,19 +27,14 @@ pub fn neutral(ty: &Type, value: &Expr) -> Option<String> {
                 | "u128" | "usize"
                     if bare(&last.arguments) =>
                 {
-                    Some(if is_int(value, 0) { "1" } else { "0" }.to_string())
+                    (!is_int(value, 0)).then(|| "0".to_string())
                 }
                 "f32" | "f64" if bare(&last.arguments) => {
                     Some(if is_zero_float(value) { "1.0" } else { "0.0" }.to_string())
                 }
-                "bool" if bare(&last.arguments) => Some(
-                    if is_bool(value, false) {
-                        "true"
-                    } else {
-                        "false"
-                    }
-                    .to_string(),
-                ),
+                "bool" if bare(&last.arguments) => {
+                    (!is_bool(value, false) && !is_bool(value, true)).then(|| "false".to_string())
+                }
                 "String" if bare(&last.arguments) => {
                     (!is_new(value)).then(|| format!("{}::new()", written(&p.path)))
                 }
@@ -132,6 +130,14 @@ fn is_bool(e: &Expr, b: bool) -> bool {
     }
 }
 
+fn is_str(e: &Expr) -> bool {
+    match e {
+        Expr::Lit(l) => matches!(&l.lit, Lit::Str(_)),
+        Expr::Paren(p) => is_str(&p.expr),
+        _ => false,
+    }
+}
+
 fn is_empty_str(e: &Expr) -> bool {
     match e {
         Expr::Lit(l) => matches!(&l.lit, Lit::Str(s) if s.value().is_empty()),
@@ -172,17 +178,26 @@ mod tests {
     }
 
     #[test]
-    fn a_number_becomes_zero_and_zero_becomes_one() {
+    fn a_number_becomes_zero_and_a_float_zero_becomes_one() {
         assert_eq!(of("usize", "self.len"), Some("0".into()));
-        assert_eq!(of("i64", "0"), Some("1".into()));
+        assert_eq!(of("i64", "0"), None);
         assert_eq!(of("f64", "x * 2.0"), Some("0.0".into()));
         assert_eq!(of("f32", "0.0"), Some("1.0".into()));
     }
 
     #[test]
-    fn a_bool_becomes_false_and_false_becomes_true() {
+    fn a_bool_becomes_false() {
         assert_eq!(of("bool", "a > b"), Some("false".into()));
-        assert_eq!(of("bool", "false"), Some("true".into()));
+    }
+
+    #[test]
+    fn a_literal_is_left_to_the_literal_spell() {
+        assert_eq!(of("bool", "false"), None);
+        assert_eq!(of("bool", "true"), None);
+        assert_eq!(of("Result<bool, E>", "Ok(true)"), None);
+        assert_eq!(of("&'static str", "\"name\""), None);
+        assert_eq!(of("u8", "(0)"), None);
+        assert_eq!(of("u8", "7"), Some("0".into()));
     }
 
     #[test]
@@ -195,14 +210,14 @@ mod tests {
             of("alloc::vec::Vec<u8>", "out"),
             Some("alloc::vec::Vec::new()".into())
         );
-        assert_eq!(of("&'static str", "\"name\""), Some("\"\"".into()));
+        assert_eq!(of("&'static str", "name.trim()"), Some("\"\"".into()));
         assert_eq!(of("Option<u8>", "Some(1)"), Some("None".into()));
     }
 
     #[test]
     fn a_result_keeps_ok_and_empties_what_it_holds() {
         assert_eq!(of("Result<u32, Error>", "Ok(n + 1)"), Some("Ok(0)".into()));
-        assert_eq!(of("io::Result<u32>", "Ok(0)"), Some("Ok(1)".into()));
+        assert_eq!(of("io::Result<u32>", "Ok(0)"), None);
         assert_eq!(
             of("Result<String, E>", "parse(s)"),
             Some("Ok(String::new())".into())
