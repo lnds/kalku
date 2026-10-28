@@ -37,6 +37,7 @@ export async function fetchCount(load: () => Promise<number>): Promise<number> {
   return await load();
 }
 
+// No declared type: `tsc` infers one from the value, which `undefined` changes.
 export function untyped(a, b) {
   return a + b;
 }
