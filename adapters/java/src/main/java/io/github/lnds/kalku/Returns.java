@@ -31,8 +31,9 @@ import java.util.Set;
  * </ul>
  *
  * <p>Not proposed: a constructor or a {@code void} method, which return nothing; a value that
- * already is the neutral one, or {@code null}; {@code true} and {@code false}, which the {@code
- * literal} spell already flips; {@code hashCode()}, for which {@code 0} is as valid an answer
+ * already is the neutral one, or {@code null}; {@code true} and {@code false}, a string literal
+ * where the neutral value is {@code ""}, and {@code -1} where it is {@code 0}, which the {@code
+ * literal} spell already changes the same way; {@code hashCode()}, for which {@code 0} is as valid an answer
  * as any; the {@code return} of a lambda, which is the lambda's own; and, in the body of a
  * {@code try} with a {@code catch}, a value that calls a method or a constructor.
  */
@@ -144,9 +145,11 @@ final class Returns {
       case BOOLEAN_LITERAL:
         return true;
       case STRING_LITERAL:
-        return "".equals(((LiteralTree) value).getValue());
+        return neutral.equals("\"\"") || "".equals(((LiteralTree) value).getValue());
       case INT_LITERAL:
       case LONG_LITERAL:
+        long n = ((Number) ((LiteralTree) value).getValue()).longValue();
+        return n == 0 || (n == -1 && written.matches("-1[lL]?") && neutral.startsWith("0"));
       case FLOAT_LITERAL:
       case DOUBLE_LITERAL:
         return ((Number) ((LiteralTree) value).getValue()).doubleValue() == 0;
