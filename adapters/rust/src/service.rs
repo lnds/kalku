@@ -14,7 +14,7 @@ use crate::protocol::{
 use crate::sites;
 use crate::toolchain::{self, Toolchain};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -51,6 +51,8 @@ struct Session {
     listed: Vec<(String, usize, String)>,
     // A test's id to its place in `listed`.
     tests: HashMap<String, usize>,
+    // The files the build compiled, when it could say.
+    compiled: Option<BTreeSet<String>>,
 }
 
 pub struct Service {
@@ -296,6 +298,7 @@ impl Service {
             targets,
             listed,
             tests,
+            compiled: project.compiled(),
         };
         Ok(modules)
     }
@@ -479,6 +482,22 @@ impl Service {
         // A site is only valid for the text it was found in.
         if site["original"].as_str() != original.get(from..to) {
             return bad(&format!("`{file}` is not the text this site was found in"));
+        }
+        // A file no build compiles, as one a `cfg` leaves out, is code no
+        // test can run: its wekufe passing every test says nothing.
+        if self
+            .session
+            .compiled
+            .as_ref()
+            .is_some_and(|files| !files.contains(file))
+        {
+            let message = format!("no build of the project compiles `{file}`");
+            return Step::Reply(protocol::cast_done(
+                id,
+                wekufe,
+                &Outcome::NoCoverage { message },
+                0,
+            ));
         }
         let spliced = crate::source::Source::new(&original).splice(from, to, replacement);
 
