@@ -146,7 +146,7 @@ Python has mutation frameworks (`mutmut`, `cosmic-ray`), and the rule above says
 | `negate` | `not x` becomes `x`, and a condition `c` becomes `not (c)` (`if`, `elif`, `while`, a conditional expression) |
 | `literal` | `n`→`n+1` for plain decimals, `True`↔`False`, a non-empty string → `""` |
 | `call` | a call that is a whole statement, awaited or not, becomes `pass` |
-| `return` | `return x` becomes `return None`, unless `x` already is `None` or `...` |
+| `return` | `return x` becomes `return None`, unless `x` already is `None` or `...`, or is `True` or `False`, which `literal` already flips and which, for `False`, only an identity check tells from `None` |
 
 Not proposed: a `return` whose function gives back `None` whatever it returns (`__init__`, a function annotated `-> None`, a generator), docstrings and bare strings, module dunders (`__all__`, `__version__`), annotations, the type a `cast(...)` or `TypeVar(...)` names, `if TYPE_CHECKING:`, `if __name__ == "__main__":`, the patterns of a `match`, the arguments of a call `exclude_calls` names, and test files. Only `arm` can leave a file that does not parse, so only its candidates are parsed before anyone is asked to cast them.
 

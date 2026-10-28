@@ -54,3 +54,13 @@ def make_counter():
         yield 1
 
     return gen
+
+
+def is_empty(items):
+    if items:
+        return False
+    return True
+
+
+def any_left(items):
+    return len(items) > 0
