@@ -718,4 +718,54 @@ std::vector<std::string> Project::fingerprints() {
   return prints;
 }
 
+std::optional<std::set<std::string>> Project::read_by_compiles() const {
+  bool ok = false;
+  auto commands = parse_json(slurp(build_ + "/compile_commands.json", &ok));
+  if (!ok || !commands || !commands->is_array()) return std::nullopt;
+  std::string generator = cache_entry(build_, "CMAKE_GENERATOR");
+  bool ninja = starts_with(generator, "Ninja");
+  if (!ninja && generator != "Unix Makefiles") return std::nullopt;
+  auto real = [](const std::string& path) {
+    char buf[PATH_MAX];
+    return realpath(path.c_str(), buf) ? std::string(buf) : path;
+  };
+  std::string top_build = real(build_);
+  std::map<std::string, std::vector<std::string>> logged;
+  if (ninja) {
+    std::string out = reni_ + "/compiled-" + worker_ + ".txt";
+    Ran r = run_to({cache_entry(build_, "CMAKE_MAKE_PROGRAM"), "-C", build_, "-t", "deps"}, build_, env_, out);
+    logged = ninja_deps(slurp(out));
+    unlink(out.c_str());
+    if (!r.ok()) return std::nullopt;
+  }
+  std::set<std::string> read;
+  for (const auto& e : commands->items) {
+    std::string dir = text_of(e.get("directory"));
+    std::string output = text_of(e.get("output"));
+    if (output.empty()) return std::nullopt;
+    std::string object = absolute(output, top_build);
+    struct stat st;
+    if (stat(object.c_str(), &st) != 0) object = absolute(output, dir);
+    std::vector<std::string> inputs;
+    if (ninja) {
+      std::string key = starts_with(object, top_build + "/") ? object.substr(top_build.size() + 1) : object;
+      auto it = logged.find(key);
+      if (it == logged.end()) return std::nullopt;
+      inputs = it->second;
+    } else {
+      bool found = false;
+      inputs = depfile_inputs(slurp(object + ".d", &found));
+      if (!found || inputs.empty()) return std::nullopt;
+    }
+    inputs.push_back(text_of(e.get("file")));
+    for (const auto& in : inputs) read.insert(real(absolute(in, dir)));
+  }
+  std::string work = real(work_) + "/";
+  std::set<std::string> out;
+  for (const auto& path : read) {
+    if (starts_with(path, work)) out.insert(path.substr(work.size()));
+  }
+  return out;
+}
+
 }  // namespace kalku

@@ -8,6 +8,7 @@
 #include <atomic>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -131,6 +132,10 @@ class Project {
   // does not compile alone, one that compiles a file beside it.
   std::optional<Compile> compile_of(const std::string& file) const;
   int translation_units() const;
+  // Every file of the copy a compile of the build reads, relative to it:
+  // each object's source and what it included, as the compiler recorded
+  // it. None when the build keeps no such record of every object.
+  std::optional<std::set<std::string>> read_by_compiles() const;
 
   // Says a message about the copy with the project's own paths.
   std::string named(const std::string& message) const;

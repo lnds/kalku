@@ -414,6 +414,38 @@ TEST("the kalku measures a C project over a pipe, and leaves it as it was") {
   remove_tree(reni);
 }
 
+TEST("a wekufe in a file no compile of the build reads has no coverage") {
+  if (!have_cmake()) return;
+  std::string root = here("testdata/projects/c_optional");
+  std::string reni = temp_reni();
+  Kalku k(KALKU_CPP_BIN);
+  if (!started(k, root, reni)) {
+    remove_tree(reni);
+    return;
+  }
+  k.send(
+      "{\"type\":\"sites\",\"id\":3,\"files\":[\"src/core.c\",\"src/extra.c\"],"
+      "\"spells\":[\"compare\"],\"exclude_calls\":[]}");
+  auto by = by_place(k.next());
+  int id = 10;
+  judge(k, by,
+        {
+            {"src/extra.c:1 compare >", "no_coverage", ""},
+            {"src/core.c:1 compare >", "killed", "core"},
+        },
+        id, "[\"core\"]");
+  auto extra = by.find("src/extra.c:1 compare >");
+  if (extra != by.end()) {
+    k.send(cast_of(id++, extra->second, "[\"core\"]"));
+    CHECK_EQ(field(k.next(), "message"), std::string("no build of the project compiles `src/extra.c`"));
+  }
+  k.send("{\"type\":\"shutdown\",\"id\":99}");
+  CHECK_EQ(field(k.next(), "type"), std::string("bye"));
+  k.close_input();
+  CHECK_EQ(k.wait_exit(), 0);
+  remove_tree(reni);
+}
+
 TEST("a C project tested with Unity is measured one test executable at a time") {
   if (!have_cmake()) return;
   std::string root = here("testdata/projects/c_unity");
