@@ -711,6 +711,8 @@ pub fn results(stdout: &str) -> Vec<Result_> {
         .filter_map(|l| {
             let rest = l.strip_prefix("test ")?;
             let (name, status) = rest.rsplit_once(" ... ")?;
+            // A `#[should_panic]` test is printed with what it expects after its name.
+            let name = name.strip_suffix(" - should panic").unwrap_or(name);
             let passed = match status {
                 "ok" => true,
                 "FAILED" => false,
@@ -804,6 +806,19 @@ mod tests {
         assert!(!r[1].passed);
         assert!(r[1].message.contains("assertion failed"));
         assert!(!r[1].message.contains("failures:"));
+    }
+
+    #[test]
+    fn a_test_that_should_panic_is_read_by_its_own_name() {
+        let r = results(
+            "test a::oob - should panic ... ok\n\
+            test a::quiet - should panic ... FAILED\n",
+        );
+
+        assert_eq!(r[0].name, "a::oob");
+        assert!(r[0].passed);
+        assert_eq!(r[1].name, "a::quiet");
+        assert!(!r[1].passed);
     }
 
     #[test]
