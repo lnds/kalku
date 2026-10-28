@@ -4,6 +4,7 @@ export function count(xs: number[]): number {
   return xs.length;
 }
 
+// A returned literal is `literal`'s: `0` becomes `1`, `"many"` becomes `""`.
 export function countFromZero(): number {
   return 0;
 }
