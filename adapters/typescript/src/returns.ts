@@ -1,7 +1,7 @@
 // A `return` wekufe gives back a neutral value instead of what the function
 // computed. The value is read from the return type the function declares,
 // where it names one plainly, so the wekufe stays a program the project's
-// own `tsc` accepts: `0` for a `number` (`1` for a `0`), `0n` for a
+// own `tsc` accepts: `0` for a `number`, `0n` for a
 // `bigint`, `""` for a `string`, `false` for a `boolean`, `[]` for an array,
 // and in an `async` function the same for what its `Promise<T>` holds.
 // Where the type it declares holds `undefined` (`any`, `unknown`, a union
@@ -19,7 +19,8 @@
 //     as an expression: what it would lose is the effect, not a value;
 //   - a value that already is the neutral one, or is `null`, `undefined` or
 //     `void 0`, which a caller tells apart from `undefined` rarely;
-//   - `true` and `false`, which the `literal` spell already flips;
+//   - `true`, `false`, a `0` and a string literal, which the `literal`
+//     spell already changes the same way;
 //   - a function that declares `void`, `never` or `undefined`, a
 //     constructor, a `set` accessor, and a generator, whose returned value
 //     nobody reads, or reads only through `yield*`.
@@ -97,11 +98,11 @@ function neutral(
   if (declared === undefined) return undefined;
   switch (declared.kind) {
     case ts.SyntaxKind.NumberKeyword:
-      return ts.isNumericLiteral(v) && Number(v.text) === 0 ? "1" : "0";
+      return ts.isNumericLiteral(v) && Number(v.text) === 0 ? undefined : "0";
     case ts.SyntaxKind.BigIntKeyword:
       return ts.isBigIntLiteral(v) && /^0+n$/.test(v.text) ? "1n" : "0n";
     case ts.SyntaxKind.StringKeyword:
-      return emptyString(v) ? undefined : '""';
+      return emptyString(v) || ts.isStringLiteral(v) ? undefined : '""';
     case ts.SyntaxKind.BooleanKeyword:
       return "false";
   }
