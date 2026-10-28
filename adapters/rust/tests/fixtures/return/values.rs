@@ -20,16 +20,8 @@ pub fn ready(flag: bool) -> bool {
     flag
 }
 
-pub fn never() -> bool {
-    false
-}
-
 pub fn greeting(name: &str) -> String {
     format!("hello {name}")
-}
-
-pub fn label() -> &'static str {
-    "label"
 }
 
 pub fn bytes(n: u8) -> std::vec::Vec<u8> {
@@ -55,6 +47,19 @@ pub fn nothing() -> Option<u8> {
 
 pub fn empty() -> String {
     String::new()
+}
+
+// A literal is `literal`'s to change.
+pub fn never() -> bool {
+    false
+}
+
+pub fn label() -> &'static str {
+    "label"
+}
+
+pub fn zero() -> u32 {
+    0
 }
 
 // No value the signature names.
