@@ -27,6 +27,33 @@ pub fn told_by(coverage: Option[[CoverageEntry]], durations: [(String, Int)]) : 
 pub fn reaching(told: Told, file: String, line: Int) : Option[[String]] =
   told.reaching |> option.map(by_line => unwrap_or(map.get(by_line, place(file, line)), []))
 
+#[doc("""
+The tests that reach any line of a site, where that was measured.
+
+A site's first line need not be one a coverage tool credits: a match arm
+whose body starts on the next line is reached on the body's line, and never
+on the pattern's.
+""")]
+pub fn reaching_site(told: Told, site: Site) : Option[[String]] =
+  told.reaching
+    |> option.map(
+      by_line => uniq(lines_of(site) || (l => unwrap_or(map.get(by_line, place(site.file, l)), [])))
+    )
+
+#[doc("""
+The lines a site's own text is on. A line its span reaches only for the
+whitespace before what follows is not the site's, or the next arm's tests
+would judge this one.
+""")]
+pub fn lines_of(site: Site) : [Int] {
+  let from = site.span.start.line
+  let written = match site.original {
+    Some(text) -> enumerate(lines(text)) |? (l => trim(l.snd) != "") | (l => from + l.fst)
+    None -> []
+  }
+  if list.is_empty(written) { [from] } else { written }
+}
+
 #[doc("What these tests took in the baseline, in milliseconds; a test nobody timed costs nothing.")]
 pub fn cost_of(told: Told, tests: [String]) : Int =
   sum(tests | (t => unwrap_or(map.get(told.costs, t), 0)))
@@ -57,6 +84,10 @@ pub fn without(entries: [CoverageEntry], tests: [String]) : Narrowed {
       | (pair => place(pair.fst.file, pair.fst.line))
   }
 }
+
+#[doc("True when a line of a site is among `only_theirs`: tests reach it, and none that can judge.")]
+pub fn reached_only_by_them(only_theirs: [String], site: Site) : Bool =
+  list.any(lines_of(site), l => list.contains(only_theirs, place(site.file, l)))
 
 #[doc("How a line is named among `only_theirs`.")]
 pub fn place_of(file: String, line: Int) : String = place(file, line)

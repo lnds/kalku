@@ -1,3 +1,4 @@
+import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.told
 
@@ -62,4 +63,43 @@ test "a line only they reached is named apart from one nothing reaches" {
   assert narrowed.coverage
     == [covers("lib/a.ex", 3, []), covers("lib/a.ex", 4, []), covers("lib/b.ex", 3, ["t1"])]
   assert narrowed.only_theirs == [place_of("lib/a.ex", 3)]
+}
+
+fn written(text: Option[String]) : Site =
+  Site {
+    site_id: "s",
+    file: "lib/a.kai",
+    enclosing: None,
+    ordinal: None,
+    span: Span { start: Position { line: 4, col: 3, byte: 0 }, end: None },
+    spell: Arm,
+    original: text,
+    replacement: "",
+    reload: ModuleOnly
+  }
+
+test "a site's lines are those its text is on, and not the whitespace before what follows" {
+  assert lines_of(written(Some("a ->\n    b\n  "))) == [4, 5]
+  assert lines_of(written(Some("a ->\n\n    b"))) == [4, 6]
+  assert lines_of(written(Some(">="))) == [4]
+  assert lines_of(written(None)) == [4]
+}
+
+test "the tests that reach a site are those of any of its lines, once each" {
+  let told = told_by(
+    Some([
+      covers("lib/a.kai", 5, ["t1", "t2"]),
+      covers("lib/a.kai", 4, ["t1"]),
+      covers("lib/a.kai", 6, ["t3"])
+    ]),
+    []
+  )
+  assert reaching_site(told, written(Some("a ->\n    b\n  "))) == Some(["t1", "t2"])
+  assert reaching_site(told_by(None, []), written(None)) == None
+}
+
+test "a site is reached only by left-out tests when any of its lines is" {
+  let site = written(Some("a ->\n    b\n  "))
+  assert reached_only_by_them([place_of("lib/a.kai", 5)], site)
+  assert not reached_only_by_them([place_of("lib/a.kai", 6)], site)
 }
