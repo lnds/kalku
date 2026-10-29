@@ -202,6 +202,14 @@ test "the entry keeps the shape the list was written in" {
     == Ok("defp deps do\n    [\n      {:k, \"~> 1\"},\n      {:jason, \"~> 1.4\"}\n    ]\n  end\n")
 }
 
+# Elixir takes `defp deps() do` as readily as `defp deps do`, and so does
+# init.
+test "a deps function written with parentheses gets the entry too" {
+  let written =
+    with_dependency("defp deps() do\n    [{:jason, \"~> 1.4\"}]\n  end\n", "{:k, \"~> 1\"}")
+  assert written == Ok("defp deps() do\n    [{:k, \"~> 1\"}, {:jason, \"~> 1.4\"}]\n  end\n")
+}
+
 # Guessing at a build file that is not shaped like the others would be
 # worse than saying so, because the guess edits somebody's code.
 test "a build file init does not recognise is left alone, with a reason" {

@@ -648,11 +648,19 @@ fn inserted_after_deps(build_file: String, line: String) : Result[String, String
 
 # The `[` that opens the list, as a byte offset one past it.
 fn opening_of_deps(build_file: String) : Option[Int] {
-  let from = index_of(build_file, "deps do")!
+  let from = head_of_deps(build_file)!
   let rest = byte_slice(build_file, from, byte_length(build_file) - from)!
   let bracket = index_of(rest, "[")!
   Some(from + bracket + 1)
 }
+
+# Elixir takes the function with parentheses or without them.
+fn head_of_deps(build_file: String) : Option[Int] =
+  match (index_of(build_file, "deps do"), index_of(build_file, "deps() do")) {
+    (Some(bare), Some(called)) -> if bare < called { Some(bare) } else { Some(called) }
+    (None, called) -> called
+    (bare, None) -> bare
+  }
 
 # The entry keeps the shape the list already had: one line stays one
 # and a list that was empty takes neither, so what comes out reads as
