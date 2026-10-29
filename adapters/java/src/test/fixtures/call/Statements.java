@@ -58,5 +58,17 @@ class Statements extends ArrayList<String> {
     super.clear();
   }
 
+  // In the body of a `try` with a `catch`, a call may be the one thing that throws what is
+  // caught: it stays. In the `catch` and the `finally` it is a site again.
+  void close(java.io.Reader in) {
+    try {
+      in.close();
+    } catch (java.io.IOException e) {
+      seen.add("failed");
+    } finally {
+      seen.add("closed");
+    }
+  }
+
   private void notifyAll(String s) {}
 }
