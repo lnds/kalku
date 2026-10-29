@@ -12,6 +12,7 @@ import type { FileResult, TestResult } from "./results";
 import { PrepareError, type Context, type RunResult, type Runner, type Selection, wekufeOf } from "./runner";
 import { ParseError, findSites, generated, scriptKind } from "./sites";
 import { splice } from "./source";
+import { declaredSources } from "./sources";
 import { VERSION } from "./version";
 
 /** The oldest Node this kalku runs on, and runs a project's tests on. */
@@ -549,6 +550,14 @@ function fileOf(root: string, id: string): string {
   return parsed === undefined ? "" : relative(root, parsed.file);
 }
 
+// What each root's tsconfig.json includes, read once.
+const declared = new Map<string, Set<string> | undefined>();
+
+function sourcesOf(root: string): Set<string> | undefined {
+  if (!declared.has(root)) declared.set(root, declaredSources(root));
+  return declared.get(root);
+}
+
 export function search(root: string, file: string, r: SitesRequest): Site[] | Skipped {
   const skip = (reason: string, message: string): Skipped => ({ file, reason, message });
   const leave = (reason: string, message: string): Skipped => ({ file, reason, message, by_design: true });
@@ -571,6 +580,8 @@ export function search(root: string, file: string, r: SitesRequest): Site[] | Sk
   } catch (e) {
     return skip("unreadable", (e as Error).message);
   }
+  if (sourcesOf(root)?.has(file) === false)
+    return leave("outside_sources", `\`${file}\` is not among the files the project's tsconfig.json includes`);
   if (generated(text)) return leave("generated", "the file says it is generated, and nobody edits it by hand");
   try {
     return findSites(file, text, r.spells, r.exclude_calls);
