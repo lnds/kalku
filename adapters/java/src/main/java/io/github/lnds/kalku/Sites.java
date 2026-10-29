@@ -582,7 +582,8 @@ final class Sites {
     }
 
     // A `catch` of a checked exception the body no longer throws does not compile, and which
-    // call throws what is not in the tree: a `return` there keeps any call it makes.
+    // call throws what is not in the tree: a call there stays, and so does a `return` that
+    // makes one.
     @Override
     public Void visitTry(TryTree t, Void p) {
       scan(t.getResources(), p);
@@ -740,14 +741,16 @@ final class Sites {
     // `call`: a call whose value nobody takes is left out. An empty statement stands where it
     // was, so what follows it is still what follows it. Not where no empty statement can
     // stand: the header of a `for`, whose calls end without a semicolon, and the body of a
-    // `case ... ->`.
+    // `case ... ->`. Nor in the body of a `try` with a `catch`, where the call may be the one
+    // that throws what is caught.
     @Override
     public Void visitExpressionStatement(ExpressionStatementTree t, Void p) {
       ExpressionTree e = t.getExpression();
       if (e instanceof MethodInvocationTree
           && placed(t)
           && text(t).endsWith(";")
-          && !ruleBodies.containsKey(t)) {
+          && !ruleBodies.containsKey(t)
+          && guarded == 0) {
         MethodInvocationTree call = (MethodInvocationTree) e;
         String name = dotted(call.getMethodSelect());
         if (!name.equals("this") && !name.equals("super") && !excluded(call)) {

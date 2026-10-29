@@ -3,20 +3,12 @@ package io.github.lnds.kalku;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,39 +27,14 @@ class ReturnsTest {
         Sites.find(
             "Values.java", text, Collections.singleton(Spell.RETURN), Collections.emptyList());
     assertTrue(sites.size() >= 15, "only " + sites.size() + " return sites");
-    assertEquals("", errors(text, out), "the fixture itself");
+    assertEquals("", Javac.errors(text, out), "the fixture itself");
     for (Sites.Site site : sites) {
       String wekufe =
           new String(Arrays.copyOfRange(data, 0, site.start.at), StandardCharsets.UTF_8)
               + site.replacement
               + new String(
                   Arrays.copyOfRange(data, site.end.at, data.length), StandardCharsets.UTF_8);
-      assertEquals("", errors(wekufe, out), site.original + " -> " + site.replacement);
+      assertEquals("", Javac.errors(wekufe, out), site.original + " -> " + site.replacement);
     }
-  }
-
-  private static String errors(String source, Path out) {
-    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    DiagnosticCollector<JavaFileObject> said = new DiagnosticCollector<>();
-    JavaFileObject file =
-        new SimpleJavaFileObject(URI.create("string:///fx/ret/Values.java"), JavaFileObject.Kind.SOURCE) {
-          @Override
-          public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-            return source;
-          }
-        };
-    compiler
-        .getTask(
-            null,
-            null,
-            said,
-            Arrays.asList("-proc:none", "-d", out.toString()),
-            null,
-            Collections.singletonList(file))
-        .call();
-    return said.getDiagnostics().stream()
-        .filter(d -> d.getKind() == Diagnostic.Kind.ERROR)
-        .map(d -> d.getLineNumber() + ": " + d.getMessage(null))
-        .collect(Collectors.joining("\n"));
   }
 }
