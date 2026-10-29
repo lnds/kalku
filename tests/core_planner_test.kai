@@ -153,3 +153,29 @@ test "a large suite with no coverage is planned without looking each test up in 
   assert length(p.to_cast) == 400
   assert all(p.to_cast, c => c.timeout_ms == 3 * 2 * 4000)
 }
+
+# The arm `(Circle(x), Circle(y)) ->` with its body on the next line: a
+# coverage tool credits the body's line, and never the pattern's. Its span
+# runs to the next arm, over the whitespace before it.
+const ARM : Site = Site {
+  ...site_of("arm", "src/shape.kai", 4, ModuleOnly),
+  spell: Arm,
+  original: Some(
+    "(Circle(x), Circle(y)) ->\n    if x == y { \"same circle\" } else { \"two circles\" }\n  "
+  ),
+  replacement: ""
+}
+
+test "a site is reached by the tests of any line of its text, and its first line need not be one" {
+  let p = plan(
+    inputs_of(
+      [ARM],
+      Some([covers("src/shape.kai", 5, ["circles"]), covers("src/shape.kai", 6, ["squares"])])
+    ),
+    nothing_cached
+  )
+  assert p.no_coverage == []
+  assert map(p.to_cast, c => c.tests) == [["circles"]]
+  assert covering(ARM, inputs_of([ARM], Some([covers("src/shape.kai", 5, ["circles"])])))
+    == ["circles"]
+}

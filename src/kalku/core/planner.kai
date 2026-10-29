@@ -105,11 +105,13 @@ pub fn plan(inputs: Inputs, cached: (String) -> Option[Outcome]) : Plan {
   }
 }
 
-#[doc("The tests that execute a site's line, or the whole suite when coverage is unknown.")]
+#[doc("The tests that execute a line of a site, or the whole suite when coverage is unknown.")]
 pub fn covering(site: Site, inputs: Inputs) : [String] = match inputs.coverage {
   None -> inputs.all_tests
-  Some(entries) ->
-    concat(entries |? (e => e.file == site.file and e.line == site.span.start.line) | .tests)
+  Some(entries) -> {
+    let own = lines_of(site)
+    uniq(concat(entries |? (e => e.file == site.file and contains(own, e.line)) | .tests))
+  }
 }
 
 #[doc("How long a wekufe may run: a multiple of what its tests cost, never below the floor.")]
@@ -131,7 +133,7 @@ pub fn timeout_for(site: Site, tests: [String], inputs: Inputs) : Int
 type Said = { told: Told, whole_ms: Int }
 
 fn judging(site: Site, inputs: Inputs, said: Said) : [String] =
-  reaching(said.told, site.file, site.span.start.line) |> unwrap_or(inputs.all_tests)
+  reaching_site(said.told, site) |> unwrap_or(inputs.all_tests)
 
 fn budget_for(site: Site, tests: [String], inputs: Inputs, said: Said) : Int {
   let spent = if is_none(inputs.coverage) { said.whole_ms } else { cost_of(said.told, tests) }

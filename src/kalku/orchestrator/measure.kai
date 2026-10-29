@@ -832,8 +832,7 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
 
 # A site only a left-out test reaches is not a site nothing reaches: the
 # test is there, and failing.
-fn theirs_only(known: Known, s: Site) : Bool =
-  contains(known.only_theirs, place_of(s.file, s.span.start.line))
+fn theirs_only(known: Known, s: Site) : Bool = reached_only_by_them(known.only_theirs, s)
 
 #[doc("""
 The report, judged by what the project asked to be held to.
