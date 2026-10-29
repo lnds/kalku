@@ -1,3 +1,24 @@
+## v0.28.0 (2026-10-29)
+
+### Added
+
+- **java**: cast the return spell (#486)
+
+### Fixed
+
+- **init**: add the Elixir dependency when deps is written with parentheses (#507)
+- **java**: call keeps a call in the body of a try with a catch (#506)
+- a site is reached by the tests of any line of its text (#505)
+- a file a kalku leaves out by design does not block the gate (#503)
+- **cpp**: a wekufe in a file no compile reads is no_coverage (#502)
+- **rust**: a wekufe in a file no build compiles is no_coverage (#501)
+- **java**: leave returned literals to the literal spell (#499)
+- **typescript**: leave returned literals to the literal spell (#498)
+- **typescript**: give no return site to a function that declares no type (#497)
+- **rust**: leave returned literals to the literal spell (#492)
+- **rust**: read a should_panic test by its own name (#491)
+- **python**: leave a returned True or False to literal (#488)
+
 ## v0.27.0 (2026-10-27)
 
 ### Added
