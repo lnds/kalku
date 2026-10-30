@@ -161,6 +161,7 @@ fn summary_line(r: Report) : String = json_encode(
       ...weighed_field(r.weighed, r.costs),
       ...shard_field(r.shard),
       ...optional("stopped", r.stopped),
+      ...optional("log", r.log),
       ("exit", JNum(exit_code(r.blockers)))
     ]
   )

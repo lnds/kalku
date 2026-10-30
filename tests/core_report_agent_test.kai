@@ -41,6 +41,7 @@ fn survivor(file: String, line: Int, spell: Spell, tests: [String]) : Survivor =
 }
 
 fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
+  log: None,
   counts: counts,
   planned: 0,
   survivors: survivors,
@@ -331,6 +332,18 @@ test "a run that stopped short says so in the summary, and in the JSON" {
   assert field(json(stopped, 2), "stopped") == JStr(why)
   assert not has(last_line(agent(report_of([], one()), lines_of)), "stopped")
   assert not has(json(report_of([], one()), 0), "stopped")
+}
+
+# CI and agents read the JSON, and the log of the run they are reading is
+# the one place what its kalku said is kept; a run without one says nothing.
+test "a run's log is named in the summary and in the JSON, and only when there is one" {
+  let path = "/tmp/kalku/p-1/logs/run-1-0.log"
+  let logged = Report { ...report_of([], one()), log: Some(path) }
+
+  assert field(last_line(agent(logged, lines_of)), "log") == JStr(path)
+  assert field(json(logged, 0), "log") == JStr(path)
+  assert not has(last_line(agent(report_of([], one()), lines_of)), "\"log\"")
+  assert not has(json(report_of([], one()), 0), "\"log\"")
 }
 
 # An agent asked to make a suite faster starts with the few tests the

@@ -106,6 +106,20 @@ fn a_site() : Site = Site {
 
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
 
+# What a run answers with is its own answer and the log it was written to,
+# so a report can name a file that is there.
+test "a run's log path comes back with its answer, and names the log written" {
+  let reni = scratch("path")
+  emptied(reni)
+  let ran = untold(() => logged(reni, () => 7))
+  let written = dir.list_dir("#{reni}/logs")
+  emptied(reni)
+
+  assert ran.fst == 7
+  assert ran.snd == (head(written) |> option.map(n => "#{reni}/logs/#{n}"))
+  assert length(written) == 1
+}
+
 test "a reni keeps the newest logs, and makes room for the next" {
   let reni = scratch("kept")
   emptied(reni)

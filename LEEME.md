@@ -173,7 +173,8 @@ Cada corrida, además, guarda un log en la reni, nunca en el proyecto: cada
 nota con el momento de la corrida en que se hizo, y cada línea que cada
 kalku escribió en stderr. Su ruta es lo primero que dice una corrida; un
 `tail -f` sobre ella es la forma de mirar dentro de una corrida que parece
-pegada, y la reni guarda las últimas 20.
+pegada, y la reni guarda las últimas 20. El reporte JSON y el resumen del
+formato para agentes también la nombran, en `log`.
 
 Un wekufe se nombra por el texto en el que fue lanzado, así que editar su archivo lo renombra; volver a lanzar un nombre antiguo te lo dice, y un nuevo `kalku run` entrega los nuevos.
 

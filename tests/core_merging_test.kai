@@ -42,6 +42,7 @@ fn plan() : PlanMark = PlanMark { sites: 10, digest: "abc" }
 fn shard_report(i: Int, n: Int, killed: Int) : Report {
   let id = owned_by(i, n, i)
   Report {
+    log: None,
     counts: tally(repeat(Cast(Killed), killed) ++ [Cast(Survived)]),
     planned: killed + 1,
     survivors: [Survivor { site: site_at(id, 10 + i), tests: ["t#{i}"], chosen: true }],
@@ -197,6 +198,7 @@ test "a report read back is the report that was written, less its blockers" {
     },
     withheld: Some("why"),
     stopped: Some("cut"),
+    log: Some("/tmp/kalku/p-1/logs/run-1-0.log"),
     costs: [TestCost { test_id: "t1", duration_ms: 40, judges: 3 }],
     weighed: Some(
       Weighed {

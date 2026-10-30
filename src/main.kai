@@ -939,7 +939,7 @@ fn measured_over(
   # any moment of a run, and the moments that take longest — opening a
   # pool, casting — are exactly the ones it will ask about. The log is
   # around all of it too, so the client is told where to read it.
-  streamed(
+  let ran = streamed(
     e => say(e),
     () => logged(
       asking.spec.reni,
@@ -952,6 +952,7 @@ fn measured_over(
       )
     )
   )
+  ran.fst
 }
 
 fn cast_it(

@@ -18,6 +18,7 @@ measuring the wrong code.
 import kalku.wire.enums
 import kalku.wire.kalku_msg
 import kalku.core.cache
+import kalku.core.report.{logged_in}
 import kalku.orchestrator.logging
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.attending
@@ -51,13 +52,15 @@ pub fn measured_again(
   held: Option[Warm],
   now: [FileHash]
 ) : (Found, Option[Warm]) / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Ward {
-  logged(
+  let done = logged(
     asking.spec.reni,
     () => match held |> and_then(w => brought_up(w, asking.spec, now)) {
       Some(w) -> again(asking, w, now)
       None -> afresh(asking, now)
     }
   )
+  let found = done.fst.fst
+  (Found { ...found, report: logged_in(found.report, done.snd) }, done.fst.snd)
 }
 
 #[doc("""
