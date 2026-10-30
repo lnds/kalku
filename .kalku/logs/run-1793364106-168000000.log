@@ -1,6 +1,0 @@
-kalku 0.29.0, a run started 1793364106 s after the epoch
-+0.004s entered prepare
-+0.004s preparing .; this builds the project and can take minutes
-+0.005s entered baseline
-+0.005s running the suite once, for a baseline
-+0.005s the suite is green: 1 test(s)
