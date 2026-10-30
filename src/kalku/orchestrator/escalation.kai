@@ -124,7 +124,7 @@ pub fn noise(line: String, detail: String) : String =
   "wrote a line on stdout that is not a protocol message (#{detail}): #{quoted(line)}"
 
 fn quoted(line: String) : String {
-  let shown = slice(trim(line), 0, QUOTED)
+  let shown = char_slice(trim(line), 0, QUOTED)
   if shown == trim(line) { shown } else { "#{shown}…" }
 }
 

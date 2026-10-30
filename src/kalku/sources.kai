@@ -66,8 +66,16 @@ to the same nothing every time: a fingerprint that never changes is a warm
 pool that is never renewed.
 """)]
 pub fn read_hashes(files: [String]) : [FileHash] / File =
-  files | (f => FileHash { file: f, hash: hash_of(read_or_empty(f)) })
+  files | (f => FileHash { file: f, hash: hash_of(ok(read_or_empty(f)) ?? "") })
 
-#[doc("What a file holds, or nothing when there is no such file.")]
-pub fn read_or_empty(path: String) : String / File =
-  if file.exists(path) { file.read(path) } else { "" }
+#[doc("""
+What a file holds, or nothing when there is no such file. One that is there
+and cannot be read is an error, not an empty file: read as empty, it would
+be written over with what kalku could not see.
+""")]
+pub fn read_or_empty(path: String) : Result[String, String] / File =
+  if file.exists(path) {
+    file.read(path) |> map_err(why => "cannot read #{path}: #{why}")
+  } else {
+    Ok("")
+  }

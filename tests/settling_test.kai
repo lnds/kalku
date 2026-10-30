@@ -76,7 +76,7 @@ test "a project nobody set up gets its summoning in the reni, and nothing in its
   assert map(passing, .language) == Some("elixir")
   assert map(passing, .reni) == Some(reni_here(dir))
   assert map(passing, .summon) == Some("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}")
-  assert summon_is_current(file.read("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}"))
+  assert summon_is_current(ok(file.read("#{reni_here(dir)}/#{OUTSIDE_SUMMONER}")) ?? "")
   assert folders.list_dir(dir) == ["mix.exs"]
 
   gone(dir)
@@ -92,7 +92,7 @@ test "the summoning in the reni is written again by every run" {
   file.write(summon, "not a summoning")
   let _ = passing_through(dir)
 
-  assert summon_is_current(file.read(summon))
+  assert summon_is_current(ok(file.read(summon)) ?? "")
 
   gone(dir)
   gone(reni_here(dir))

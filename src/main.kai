@@ -240,7 +240,10 @@ fn measured[e](
 ) : Int / Stdout + Stderr + Env + File + Process + e {
   let shape = wanted.shape
   let found = telling(wanted.aloud, () => measure_it(asking))
-  remember(found.cast)
+  match remember(found.cast) {
+    Err(why) -> Stderr.eprint("kalku: what this run cast is not written down: #{why}")
+    Ok(_) -> ()
+  }
   match found.report {
     None -> fails(found.failure |> unwrap_or("nothing measured"))
     Some(measured_only) -> {
@@ -280,7 +283,7 @@ fn usable(c: Config, root: String) : Result[Config, String] / File {
   let path = "#{root}/#{c.summon |> unwrap_or("")}"
   if is_none(c.summon) or (not file.exists(path)) {
     Ok(c)
-  } else if summon_is_current(file.read(path)) {
+  } else if summon_is_current(ok(file.read(path)) ?? "") {
     Ok(c)
   } else {
     Err(
@@ -412,7 +415,7 @@ fn with_declared[e](
 fn declared_equivalents(root: String) : Result[[equivalent.Entry], String] / File {
   let path = if root == "." { EQUIVALENT_PATH } else { "#{root}/#{EQUIVALENT_PATH}" }
   if file.exists(path) {
-    match eqfile.parse(file.read(path)) {
+    match eqfile.parse((file.read(path) |> map_err(why => "#{path}: #{why}"))!) {
       Ok(entries) -> Ok(entries)
       Err(problems) -> Err(
         join(["#{path}:", ...problems | (p => "  line #{p.at}: #{p.message}")], "\n")
@@ -500,8 +503,10 @@ fn proposed(wekufe: String, reason: String) : Int / Stdout + Stderr + File + Env
     Some(r) -> if r.outcome != Survived {
       fails(not_a_survivor(wekufe, r))
     } else {
-      append_proposal_in(".", r, reason)
-      says("kalku: proposed, for review in #{PROPOSED_PATH}")
+      match append_proposal_in(".", r, reason) {
+        Err(why) -> fails(why)
+        Ok(_) -> says("kalku: proposed, for review in #{PROPOSED_PATH}")
+      }
     }
   }
 }
@@ -515,9 +520,9 @@ fn answered_by_hand(wekufe: String, yes: Bool, why: String) : Int / Stdout + Std
   match latest(all, wekufe) {
     None -> unheard_of(wekufe)
     Some(_) if not set_up(".") -> fails(why_not_kept("."))
-    Some(r) -> {
-      let queue = read_or_empty(PROPOSED_PATH)
-      if yes {
+    Some(r) -> match read_or_empty(PROPOSED_PATH) {
+      Err(why) -> fails(why)
+      Ok(queue) -> if yes {
         settled(
           accepted(queue, r.site, why),
           EQUIVALENT_PATH,
@@ -541,17 +546,22 @@ fn settled(
 ) : Int / Stdout + Stderr + File =
   match answer {
     Err(u) -> fails(why_not(u))
-    Ok(a) -> {
-      file.write(PROPOSED_PATH, a.queue)
-      append_line(into, a.moved)
-      says(said)
+    Ok(a) -> match moved_into(a, into) {
+      Err(why) -> fails(why)
+      Ok(_) -> says(said)
     }
   }
 
-fn append_line(path: String, line: String) : Unit / File {
-  let was = read_or_empty(path)
+fn moved_into(a: Answered, into: String) : Result[Unit, String] / File {
+  (file.write(PROPOSED_PATH, a.queue) |> map_err(why => "cannot write #{PROPOSED_PATH}: #{why}"))!
+  append_line(into, a.moved)
+}
+
+fn append_line(path: String, line: String) : Result[Unit, String] / File {
+  let was = read_or_empty(path)!
   let sep = if is_empty(trim(was)) { "" } else { "\n" }
   file.write(path, "#{trim_right(was)}#{sep}#{line}\n")
+    |> map_err(why => "cannot write #{path}: #{why}")
 }
 
 #[doc("Where proposals wait for a person. Never `.kalku/equivalent` itself.")]
@@ -566,9 +576,9 @@ something anyone can see.
 """)]
 const REJECTED_PATH : String = ".kalku/equivalent.rejected"
 
-fn append_proposal_in(root: String, r: Remembered, reason: String) : Unit / File {
+fn append_proposal_in(root: String, r: Remembered, reason: String) : Result[Unit, String] / File {
   let path = "#{root}/#{PROPOSED_PATH}"
-  file.write(path, read_or_empty(path) ++ proposal_of(r, reason))
+  file.append(path, proposal_of(r, reason)) |> map_err(why => "cannot write #{path}: #{why}")
 }
 
 fn not_a_survivor(wekufe: String, r: Remembered) : String =
@@ -713,7 +723,7 @@ fn shortened(path: String, root: String) : String =
 fn settings_in(root: String) : Result[Config, String] / Stderr + File + Env + Process {
   let path = "#{root}/#{CONFIG_PATH}"
   if file.exists(path) {
-    usable(read_settings(file.read(path))!, root)
+    usable(read_settings((file.read(path) |> map_err(why => "#{path}: #{why}"))!)!, root)
   } else {
     unsettled(root)
   }
@@ -881,8 +891,13 @@ fn proposal_written(
     Some(r) -> if r.outcome != Survived {
       refused(id, not_a_survivor(wekufe, r))
     } else {
-      append_proposal_in(root, r, reason)
-      answered(id, "proposed, for review in #{root}/#{PROPOSED_PATH}:\n#{proposal_of(r, reason)}")
+      match append_proposal_in(root, r, reason) {
+        Err(why) -> refused(id, why)
+        Ok(_) -> answered(
+          id,
+          "proposed, for review in #{root}/#{PROPOSED_PATH}:\n#{proposal_of(r, reason)}"
+        )
+      }
     }
   }
 }
@@ -890,8 +905,19 @@ fn proposal_written(
 # The agent format is what a host hands an agent: one line per survivor,
 # everything needed to act on it, and a summary.
 fn as_agent(root: String, id: Option[Int], found: Found) : String / File + Env {
-  remember_in(root, found.cast)
-  match found.report {
+  match (remember_in(root, found.cast), found.report) {
+    (Err(why), _) -> refused(id, "measured, but what was cast is not written down: #{why}")
+    (Ok(_), report) -> told_agent(root, id, found, report)
+  }
+}
+
+fn told_agent(
+  root: String,
+  id: Option[Int],
+  found: Found,
+  report: Option[Report]
+) : String / File + Env {
+  match report {
     None -> refused(id, found.failure |> unwrap_or("nothing measured"))
     Some(r) -> answered(id, agent(r, of_files(sources_of(r))))
   }

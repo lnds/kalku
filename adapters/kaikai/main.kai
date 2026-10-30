@@ -310,8 +310,11 @@ fn spoken(
     (Some(entries), None)
   } else {
     let path = "#{state.reni}/coverage-#{state.worker}.json"
-    file.write(path, text)
-    (None, Some(path))
+    # Coverage that cannot be spilled to a file still goes, inline.
+    match file.write(path, text) {
+      Ok(_) -> (None, Some(path))
+      Err(_) -> (Some(entries), None)
+    }
   }
 }
 
@@ -385,11 +388,15 @@ fn cast_one(m: CastMsg, state: Serving) : KalkuReply / File + Process = match st
   None -> refusal("not_prepared", "`prepare` has to copy the package into the reni first", false)
   Some(w) -> match splice(w, m.site) {
     Err(why) -> done(m.wekufe, CompileError, None, Some(why))
-    Ok(spliced) -> {
-      let was = splice_in(w, m.site.file, spliced)
-      let ran = judge(w, m.site.file, m.tests)
-      restore(w, m.site.file, was)
-      outcome_of(m.wekufe, ran)
+    Ok(spliced) -> match splice_in(w, m.site.file, spliced) {
+      Err(why) -> refusal("load_failed", why, true)
+      Ok(was) -> {
+        let ran = judge(w, m.site.file, m.tests)
+        match restore(w, m.site.file, was) {
+          Err(why) -> refusal("load_failed", why, true)
+          Ok(_) -> outcome_of(m.wekufe, ran)
+        }
+      }
     }
   }
 }
@@ -412,7 +419,7 @@ fn outcome_of(wekufe: String, r: Ran) : KalkuReply = match r.mishap {
 # along. That is a wekufe with more than one defect in it, which is the
 # one thing a wekufe may not be.
 fn splice(w: Work, site: Site) : Result[String, String] / File {
-  let source = source_of(w, site.file)
+  let source = source_of(w, site.file)!
   let from = site.span.start.byte
   let to = match site.span.end {
     Some(e) -> e.byte

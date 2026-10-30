@@ -51,14 +51,14 @@ pub const PROTOCOL : String = "2024-11-05"
 #[doc("Read one line from a host.")]
 pub fn asked_of(line: String) : (Option[Int], Heard) = match json_decode(line) {
   None -> (None, Garbled("not JSON"))
-  Some(v) -> (as_int(get(v, "id")), for_method(as_string(get(v, "method")) |> unwrap_or(""), v))
+  Some(v) -> (get(v, "id") || as_int, for_method((get(v, "method") || as_string) ?? "", v))
 }
 
 fn for_method(method: String, v: JsonValue) : Heard = match method {
   "initialize" -> Initialise
   "tools/list" -> ListTools
-  "tools/call" -> CallTool(call_of(get(v, "params")))
-  "notifications/cancelled" -> CalledOff(as_int(get(get(v, "params"), "requestId")))
+  "tools/call" -> CallTool(call_of(get(v, "params") ?? JNull))
+  "notifications/cancelled" -> CalledOff(get(v, "params") || (p => get(p, "requestId")) || as_int)
   "" -> Garbled("no method")
   other -> if starts_with(other, "notifications/") {
     Notice
@@ -68,15 +68,15 @@ fn for_method(method: String, v: JsonValue) : Heard = match method {
 }
 
 fn call_of(params: JsonValue) : Call {
-  let args = get(params, "arguments")
+  let args = get(params, "arguments") ?? JNull
   Call {
-    tool: as_string(get(params, "name")) |> unwrap_or(""),
-    root: as_string(get(args, "root")),
+    tool: (get(params, "name") || as_string) ?? "",
+    root: get(args, "root") || as_string,
     wekufe: wekufe_in(args),
-    reason: as_string(get(args, "reason")) |> unwrap_or(""),
-    limit: as_int(get(args, "limit")),
-    since: as_string(get(args, "since")),
-    progress: token_in(get(get(params, "_meta"), "progressToken"))
+    reason: (get(args, "reason") || as_string) ?? "",
+    limit: get(args, "limit") || as_int,
+    since: get(args, "since") || as_string,
+    progress: get(params, "_meta") || (m => get(m, "progressToken")) || token_in
   }
 }
 
@@ -87,9 +87,9 @@ fn token_in(v: JsonValue) : Option[String] = match v {
 }
 
 fn wekufe_in(args: JsonValue) : [String] = match get(args, "wekufe") {
-  JArr(items) -> flat_map(items, as_one)
-  JStr(one) -> [one]
-  _ -> flat_map(as_arr(get(args, "files")), as_one)
+  Some(JArr(items)) -> flat_map(items, as_one)
+  Some(JStr(one)) -> [one]
+  _ -> flat_map(as_arr(get(args, "files") ?? JNull), as_one)
 }
 
 fn as_one(v: JsonValue) : [String] = match as_string(v) {

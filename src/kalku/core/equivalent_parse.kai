@@ -105,7 +105,7 @@ fn split_quoted(at: Int, rest: String) : Result[(String, String), Problem] =
   } else {
     match quoted_end(chars(drop_chars(rest, 1)), 1) {
       None -> Err(Problem { at: at, message: "original text is missing its closing quote" })
-      Some(i) -> Ok((slice(rest, 0, i + 1), drop_chars(rest, i + 1)))
+      Some(i) -> Ok((char_slice(rest, 0, i + 1), drop_chars(rest, i + 1)))
     }
   }
 
@@ -120,7 +120,7 @@ fn quoted_end(rest: [Char], at: Int) : Option[Int] = match rest {
 
 fn first_token(s: String) : String = nth_or(words(s), 0)
 
-fn drop_chars(s: String, n: Int) : String = slice(s, n, char_count(s) - n)
+fn drop_chars(s: String, n: Int) : String = char_slice(s, n, char_count(s) - n)
 
 # `<file>:<line>:<spell>` — the fallback for a kalku with no enclosing
 # declaration. The file may hold colons, so the last two decide.

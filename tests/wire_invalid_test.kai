@@ -8,11 +8,14 @@ const INVALID : String = "docs/protocol/fixtures/invalid"
 
 # Each fixture line pairs a raw line with the protocol error kind it must produce.
 fn entries(name: String) : [(String, String)] / File =
-  flat_map(lines(file.read("#{INVALID}/#{name}.ndjson")), entry)
+  match file.read("#{INVALID}/#{name}.ndjson") {
+    Ok(text) -> flat_map(lines(text), entry)
+    Err(why) -> [("unreadable", "cannot read #{name}: #{why}")]
+  }
 
 fn entry(raw: String) : [(String, String)] = match json_decode(raw) {
-  Some(v) -> match as_string(get(v, "expect")) {
-    Some(kind) -> match as_string(get(v, "line")) {
+  Some(v) -> match get(v, "expect") || as_string {
+    Some(kind) -> match get(v, "line") || as_string {
       Some(line) -> [(kind, line)]
       None -> []
     }

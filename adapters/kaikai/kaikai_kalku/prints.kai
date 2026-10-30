@@ -57,7 +57,8 @@ names a file the package does not hold has none.
 """)]
 pub fn printed(head: String, sums: [(String, String)], modules: [Module]) : [Print] {
   let built = uniq(sort(flat_map(modules, m => m.sources)))
-  let shared = digest(join(sums |? (s => not contains(built, s.fst)) | (s => "#{s.fst} #{s.snd}"), "\n"))
+  let shared =
+    digest(join(sums |? (s => not contains(built, s.fst)) | (s => "#{s.fst} #{s.snd}"), "\n"))
   flat_map(modules, m => print_of(head, shared, sums, m))
 }
 
@@ -98,7 +99,9 @@ pub fn print_for(id: String, prints: Option[[Print]], failed: [String]) : Option
 # Asked of the copy: `kai` keeps a cache where it runs, and the user's tree
 # is not the place for one.
 fn modules_of(w: Work) : Option[[Module]] / Process =
-  match work.run(["/bin/sh", "-c", "cd #{work.quoted(w.copy)} && kai test --json --list --deps . 2>/dev/null"]) {
+  match work.run([
+    "/bin/sh", "-c", "cd #{work.quoted(w.copy)} && kai test --json --list --deps . 2>/dev/null"
+  ]) {
     Ok(came) -> match came.exit {
       Exited(0) -> Some(modules_in(lines(came.said)))
       _ -> None
@@ -109,18 +112,18 @@ fn modules_of(w: Work) : Option[[Module]] / Process =
 #[doc("The test modules `kai test --json --list --deps` describes, in its order.")]
 pub fn modules_in(said: [String]) : [Module] {
   let records = flat_map(said, l => (json_decode(l) |> map(v => [v]) |> unwrap_or([])))
-  let tests = records |? (v => as_string(get(v, "type")) == Some("test"))
+  let tests = records |? (v => (get(v, "type") || as_string) == Some("test"))
   flat_map(
-    records |? (v => as_string(get(v, "type")) == Some("deps")),
-    v => match as_string(get(v, "file")) {
+    records |? (v => (get(v, "type") || as_string) == Some("deps")),
+    v => match get(v, "file") || as_string {
       None -> []
       Some(f) -> [
         Module {
           file: f,
-          sources: strings_of(get(v, "sources")),
+          sources: strings_of(get(v, "sources") ?? JNull),
           ids: flat_map(
-            tests |? (t => as_string(get(t, "file")) == Some(f)),
-            t => (as_string(get(t, "id")) |> map(id => [id]) |> unwrap_or([]))
+            tests |? (t => (get(t, "file") || as_string) == Some(f)),
+            t => (get(t, "id") || as_string |> option.map(id => [id])) ?? []
           )
         }
       ]
@@ -129,13 +132,13 @@ pub fn modules_in(said: [String]) : [Module] {
 }
 
 fn strings_of(v: JsonValue) : [String] = match v {
-  JArr(items) -> flat_map(items, i => (as_string(i) |> map(s => [s]) |> unwrap_or([])))
+  JArr(items) -> flat_map(items, i => (as_string(i) | (s => [s])) ?? [])
   _ -> []
 }
 
 # A path dependency lives outside the tree and is not in the fingerprint;
 # a dependency without a lock is whatever its source holds today.
-fn pinned(root: String) : Bool / File = match read_file("#{root}/kai.toml") {
+fn pinned(root: String) : Bool / File = match file.read("#{root}/kai.toml") {
   Err(_) -> true
   Ok(text) -> match toml.decode(text) {
     None -> false
