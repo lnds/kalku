@@ -13,6 +13,8 @@ erl_crash.dump
 
 # built by `make test-kaikai`
 tests/fake_kalku/fake_kalku
+# the reni the orchestrator tests run in, where each run leaves its log
+/.kalku/
 
 # built by `make test-kaikai-kalku`
 adapters/kaikai/bin/
