@@ -44,6 +44,7 @@ import kalku.orchestrator.pool
 import kalku.orchestrator.ward
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
+import kalku.orchestrator.logging
 import kalku.orchestrator.interrupting
 import kalku.orchestrator.reuse
 import kalku.core.reusing
@@ -112,19 +113,22 @@ signal stops altogether and not only the run it happens to be in.
 pub fn measuring(
   asking: Asking
 ) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Stderr =
-  warded(
-    () => match met(asking, discovery_life()) {
-      Err(why) -> not_found(why)
-      Ok(k) -> {
-        # Watched before it is asked anything: whatever ends this run, the
-        # kalku that read the project ends with it.
-        Ward.watch(k)
-        match interview(k, asking) {
-          Err(why) -> not_found(why)
-          Ok(read) -> casting_them(asking, read.snd, kept(k, read.fst))
+  logged(
+    asking.spec.reni,
+    () => warded(
+      () => match met(asking, discovery_life()) {
+        Err(why) -> not_found(why)
+        Ok(k) -> {
+          # Watched before it is asked anything: whatever ends this run, the
+          # kalku that read the project ends with it.
+          Ward.watch(k)
+          match interview(k, asking) {
+            Err(why) -> not_found(why)
+            Ok(read) -> casting_them(asking, read.snd, kept(k, read.fst))
+          }
         }
       }
-    }
+    )
   )
 
 fn not_found(why: String) : Found = Found { report: None, failure: Some(why), cast: [] }
@@ -468,6 +472,7 @@ fn waiting_for(
     }
     Some(Cancel) -> Err("the run was cancelled")
     Some(Wire(life, what)) -> if life == k.life {
+      told_if_written(life, what)
       match from_ours(kind, what, said) {
         Over(answer) -> answer
         Longer(heard) -> waiting_for(k, kind, heard, PATIENCE_MS)

@@ -54,6 +54,8 @@ fn how_far(
     got_through(done, total, resume) -> resume((), state ++ [(done, total)])
     will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
     still_on(_worker, _what, _ms, resume) -> resume((), state)
+    kalku_wrote(_worker, _chunk, resume) -> resume((), state)
+    logging_to(_path, resume) -> resume((), state)
     return(_x) -> state
   }
 )

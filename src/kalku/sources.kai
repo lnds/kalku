@@ -10,6 +10,7 @@ one whose code is under `lib/`.
 
 import fs.dir
 import fs.file
+import path as paths
 import kalku.core.cache
 import kalku.core.setting_up
 
@@ -79,3 +80,12 @@ pub fn read_or_empty(path: String) : Result[String, String] / File =
   } else {
     Ok("")
   }
+
+#[doc("A directory and every one above it that is not there yet.")]
+pub fn made(path: String) : Unit / File = if path == "" or path == "/" or file.exists(path) {
+  ()
+} else {
+  made(paths.dirname(path))
+  let _ = dir.create_dir(path)
+  ()
+}

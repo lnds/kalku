@@ -681,6 +681,8 @@ fn streamed[a, e](
   }
   # The protocol has no event for a cast that is taking long yet.
   still_on(_worker, _what, _ms, resume) -> resume(())
+  kalku_wrote(_worker, _chunk, resume) -> resume(())
+  logging_to(_path, resume) -> resume(())
   return(x) -> x
 }
 

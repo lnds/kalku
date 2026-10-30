@@ -29,6 +29,8 @@ pub effect Telling {
   got_through(done: Int, total: Int) : Unit
   will_cost(casts: Int, estimate_ms: Int, most_ms: Int) : Unit
   still_on(worker: Int, what: String, ms: Int) : Unit
+  kalku_wrote(worker: Int, chunk: String) : Unit
+  logging_to(path: String) : Unit
 }
 
 #[doc("""
@@ -94,6 +96,14 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     Stderr.eprint("kalku: #{stalled(worker, what, ms)}")
     resume(())
   }
+  kalku_wrote(worker, chunk, resume) -> {
+    each(written_lines(chunk), l => Stderr.eprint("kalku: worker #{worker} wrote: #{l}"))
+    resume(())
+  }
+  logging_to(path, resume) -> {
+    Stderr.eprint("kalku: #{logged_at(path)}")
+    resume(())
+  }
   return(x) -> x
 }
 
@@ -106,6 +116,8 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   got_through(_done, _total, resume) -> resume(())
   will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume(())
   still_on(_worker, _what, _ms, resume) -> resume(())
+  kalku_wrote(_worker, _chunk, resume) -> resume(())
+  logging_to(_path, resume) -> resume(())
   return(x) -> x
 }
 
@@ -177,13 +189,12 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
       resume(())
     }
     still_on(worker, what, ms, resume) -> {
-      let note = "kalku: #{stalled(worker, what, ms)}"
-      if live and last != "" {
-        Stderr.eprint("#{UP_AND_CLEAR}#{note}")
-        Stderr.eprint(last)
-      } else {
-        Stderr.eprint(note)
-      }
+      above(live, last, "kalku: #{stalled(worker, what, ms)}")
+      resume(())
+    }
+    kalku_wrote(_worker, _chunk, resume) -> resume(())
+    logging_to(path, resume) -> {
+      above(live, last, "kalku: #{logged_at(path)}")
       resume(())
     }
     return(x) -> {
@@ -191,6 +202,15 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
       x
     }
   }
+}
+
+# A note that stays: on a terminal it takes the progress line's place and
+# the progress line is drawn again under it.
+fn above(live: Bool, last: String, note: String) : Unit / Stderr = if live and last != "" {
+  Stderr.eprint("#{UP_AND_CLEAR}#{note}")
+  Stderr.eprint(last)
+} else {
+  Stderr.eprint(note)
 }
 
 # The line on a terminal, drawn over the one before it when there was one.
@@ -220,6 +240,12 @@ went at, once there are some, and the estimate the baseline gave before.
 """)]
 pub fn left_ms(done: Int, total: Int, elapsed_ms: Int, estimate_ms: Int) : Int =
   if done <= 0 { estimate_ms } else { elapsed_ms * (total - done) / done }
+
+#[doc("Where a run keeps its log, said before it starts.")]
+pub fn logged_at(path: String) : String = "log at #{path}"
+
+#[doc("The lines of what a kalku wrote on stderr that hold anything.")]
+pub fn written_lines(chunk: String) : [String] = lines(chunk) |? (l => trim(l) != "")
 
 #[doc("""
 A cast that has gone on long, named so whoever is watching knows which

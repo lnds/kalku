@@ -79,7 +79,9 @@ working tree: wekufe are cast in the reni, under the temporary directory.
 While it runs it says, on stderr, which phase it is in and how far the
 casting has got, and names a cast that has gone on for 30 s or more: on a
 terminal as one line drawn in place, elsewhere as a line per phase and a
-count every 30 s. stdout carries the report alone.
+count every 30 s. stdout carries the report alone. Every run keeps a log
+in the reni, each note and every line a kalku wrote on stderr; its path is
+the first thing the run says.
 
 exit code: 0 when nothing blocks, 1 when a wekufe survived on a changed
 line or the score is under what the project holds it to, 2 when the run

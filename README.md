@@ -166,6 +166,11 @@ still on lib/green.ex:4 compare after 95 s` — which is what tells a slow
 suite from a hung one. `--verbose` says every note, a line per wekufe;
 `--quiet` says nothing until the report. stdout carries the report alone.
 
+Every run also keeps a log in the reni, never in the project: each note
+with how far into the run it was made, and every line each kalku wrote on
+stderr. Its path is the first thing a run says; `tail -f` on it is how to
+look inside a run that seems stuck, and the reni keeps the last 20.
+
 A wekufe is named by the text it was cast in, so editing its file renames it; re-casting an old name says so, and a new `kalku run` gives the new ones.
 
 Read one back, or re-cast it after writing a test:

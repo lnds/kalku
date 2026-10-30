@@ -169,6 +169,12 @@ lib/green.ex:4 compare after 95 s`), y eso es lo que distingue una suite
 lenta de una colgada. `--verbose` muestra cada nota, una línea por wekufe;
 `--quiet` no dice nada hasta el reporte. stdout lleva solo el reporte.
 
+Cada corrida, además, guarda un log en la reni, nunca en el proyecto: cada
+nota con el momento de la corrida en que se hizo, y cada línea que cada
+kalku escribió en stderr. Su ruta es lo primero que dice una corrida; un
+`tail -f` sobre ella es la forma de mirar dentro de una corrida que parece
+pegada, y la reni guarda las últimas 20.
+
 Un wekufe se nombra por el texto en el que fue lanzado, así que editar su archivo lo renombra; volver a lanzar un nombre antiguo te lo dice, y un nuevo `kalku run` entrega los nuevos.
 
 Lee uno de vuelta, o vuelve a lanzarlo después de escribir un test:

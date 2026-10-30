@@ -13,6 +13,8 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
   will_cost(casts, estimate_ms, most_ms, resume) ->
     resume((), state ++ ["#{casts} casts, #{estimate_ms}ms, at most #{most_ms}ms"])
   still_on(worker, what, ms, resume) -> resume((), state ++ [stalled(worker, what, ms)])
+  kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
+  logging_to(path, resume) -> resume((), state ++ [logged_at(path)])
   return(_x) -> state
 }
 
@@ -147,4 +149,14 @@ test "on a terminal, the count is drawn in place and cleared, and a long cast st
 
 test "a quiet run says nothing" {
   assert shown_on(false, () => untold(a_run)) == []
+}
+
+# Where the log is stays on screen; what a kalku wrote goes to the log, and
+# reaches a person only when they asked for every note.
+test "a run says where its log is, and leaves a kalku's stderr to the log" {
+  let notes = () => {
+    Telling.logging_to("/tmp/r/logs/run-1-0.log")
+    Telling.kalku_wrote(1, "compiling\n")
+  }
+  assert shown_on(false, notes) == ["kalku: log at /tmp/r/logs/run-1-0.log"]
 }

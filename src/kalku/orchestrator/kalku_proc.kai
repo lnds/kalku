@@ -92,6 +92,15 @@ pub fn summon(spec: KalkuSpec) : Result[Kalku, String] / Process =
   }
 
 #[doc("""
+Pass on what a kalku wrote on stderr, its own account of itself: the log
+keeps it whether or not the kalku ever dies.
+""")]
+pub fn told_if_written(life: Life, what: FromKalku) : Unit / Telling = match what {
+  Wrote(chunk) -> Telling.kalku_wrote(life.worker, chunk)
+  _ -> ()
+}
+
+#[doc("""
 Read the kalku's stdout for as long as it speaks, sending one message per
 line to `parent`.
 

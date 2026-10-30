@@ -118,7 +118,7 @@ pub fn tools(id: Option[Int]) : String = replying(id, JObj([("tools", JArr(tool_
 fn tool_list() : [JsonValue] = [
   tool(
     "kalku_run",
-    "Measure files: break each one in small ways and report the defects no test noticed. Slow — minutes — and it runs the project's test suite many times. Give `since` to measure only the lines a change touched, which is the quick way to check what was just written. A host that gives a `progressToken` hears each stage, how many wekufe are cast, and any cast that has gone on for 30 s or more, by worker and wekufe: what tells a slow suite from a hung one.",
+    "Measure files: break each one in small ways and report the defects no test noticed. Slow — minutes — and it runs the project's test suite many times. Give `since` to measure only the lines a change touched, which is the quick way to check what was just written. A host that gives a `progressToken` hears each stage, how many wekufe are cast, and any cast that has gone on for 30 s or more, by worker and wekufe: what tells a slow suite from a hung one. Every run keeps a log in the reni, each note and every line a kalku wrote on stderr; its path is the first progress note, and reading it shows what a run that seems stuck is doing.",
     JObj([
       (
         "files",
