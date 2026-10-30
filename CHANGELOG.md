@@ -1,3 +1,14 @@
+## v0.29.0 (2026-10-29)
+
+### Added
+
+- **run**: keep a log of every run in the reni, with each kalku's stderr (#514)
+- **run**: say how far a run has got by default, and name a cast that is taking long (#513)
+
+### Fixed
+
+- **typescript**: leave out by design a file the tsconfig.json does not include (#509)
+
 ## v0.28.0 (2026-10-29)
 
 ### Added
