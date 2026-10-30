@@ -66,7 +66,8 @@ writes nothing in it.
 
 options:
   --lang <name>    the project's language, when init should not guess
-  -y, --yes        do not ask before writing
+  -y, --yes        do not ask before writing; with no terminal to ask on,
+                   init writes nothing and fails unless given -y
 """
 
 const RUN : String = """

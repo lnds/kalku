@@ -65,6 +65,59 @@ fn a_cast(wekufe: String) : Remembered = Remembered {
   tests: []
 }
 
+# Standard input as a script or a person gives it: a terminal or not, and
+# the answers typed into it, in order.
+fn settled_with(
+  dir: String,
+  tty: Bool,
+  answers: [String]
+) : Int / Stdout + Stderr + File + Process + Env =
+  handle {
+    settle(dir, None, false)
+  } with Stdin(answers) {
+    read_line(resume) -> match state {
+      [] -> resume(None, [])
+      [a, ...rest] -> resume(Some(a), rest)
+    }
+    read_bytes(_n, resume) -> resume("", state)
+    is_tty(resume) -> resume(tty, state)
+    return(x) -> x
+  }
+
+# An agent with no terminal used to read the prompt as end of input, be
+# told nothing was written, and exit 0; its next `kalku run` then failed
+# for a `.kalku.toml` nobody had said was missing.
+test "init with no terminal to ask on writes nothing, and fails" {
+  let dir = project("unasked", "go.mod")
+  let code = settled_with(dir, false, ["y"])
+  let written = file.exists("#{dir}/#{CONFIG_PATH}")
+  gone(dir)
+
+  assert code == 2
+  assert not written
+}
+
+test "init asks on a terminal, and writes when told yes" {
+  let dir = project("asked", "go.mod")
+  let code = settled_with(dir, true, ["y"])
+  let written = file.exists("#{dir}/#{CONFIG_PATH}")
+  gone(dir)
+  gone(reni_here(dir))
+
+  assert code == 0
+  assert written
+}
+
+test "a person who answers no gets nothing written, and no failure" {
+  let dir = project("declined", "go.mod")
+  let code = settled_with(dir, true, ["n"])
+  let written = file.exists("#{dir}/#{CONFIG_PATH}")
+  gone(dir)
+
+  assert code == 0
+  assert not written
+}
+
 # Trying kalku on a project used to mean `init`, which writes two files
 # into it and a line into its build file. A run does none of that: what
 # `init` would have written is in the reni, and the project holds what it
