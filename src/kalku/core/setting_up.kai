@@ -752,6 +752,21 @@ export MIX_BUILD_PATH
 # directory goes into the reni with the rest.
 REBAR_BASE_DIR="$MIX_BUILD_PATH/rebar3"
 export REBAR_BASE_DIR
+
+# A reni with no build yet starts from the dependencies the project has
+# already built for its tests, instead of compiling every one of them
+# again. They are copied, links followed, never linked: nothing a run does
+# reaches the project's own build. Mix compiles again whichever it finds
+# stale, for another Elixir or another lock.
+if [ ! -d "$MIX_BUILD_PATH/lib" ] && [ -d _build/test/lib ] && [ -d deps ]; then
+  mkdir -p "$MIX_BUILD_PATH/lib"
+  for dep in deps/*/; do
+    name="$(basename "$dep")"
+    if [ -d "_build/test/lib/$name" ]; then
+      cp -RL "_build/test/lib/$name" "$MIX_BUILD_PATH/lib/$name" 2>/dev/null || rm -rf "${MIX_BUILD_PATH:?}/lib/$name"
+    fi
+  done
+fi
 """
 
 # What every summoning does first, said once: it is handed the reni and these
