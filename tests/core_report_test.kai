@@ -38,6 +38,7 @@ fn no_suppressions() : SuppressionChanges =
 
 fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Report =
   Report {
+    log: None,
     counts: counts,
     planned: 0,
     survivors: survivors,

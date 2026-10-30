@@ -112,8 +112,8 @@ signal stops altogether and not only the run it happens to be in.
 """)]
 pub fn measuring(
   asking: Asking
-) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Stderr =
-  logged(
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Stderr {
+  let done = logged(
     asking.spec.reni,
     () => warded(
       () => match met(asking, discovery_life()) {
@@ -130,6 +130,9 @@ pub fn measuring(
       }
     )
   )
+
+  Found { ...done.fst, report: logged_in(done.fst.report, done.snd) }
+}
 
 fn not_found(why: String) : Found = Found { report: None, failure: Some(why), cast: [] }
 
@@ -797,6 +800,7 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
   # cannot be told from a hole somebody hid.
   let declared = ready.suppressed | (_s => EquivalentBy(Declared))
   Report {
+    log: None,
     counts: tally(verdicts ++ uncovered ++ declared),
     planned: 
     # What the plan held before `--limit` cut it, so a run that measured

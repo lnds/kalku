@@ -96,8 +96,13 @@ pub type Report = {
   commit: Option[String],
   whole: Bool,
   costs: [TestCost],
-  weighed: Option[Weighed]
+  weighed: Option[Weighed],
+  log: Option[String]
 }
+
+#[doc("A run's report, naming the log the run was written to.")]
+pub fn logged_in(r: Option[Report], log: Option[String]) : Option[Report] =
+  r |> option.map(it => Report { ...it, log: log })
 
 #[doc("""
 What a run planned from, told apart from any other plan: how many sites the

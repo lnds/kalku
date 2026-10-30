@@ -44,6 +44,7 @@ pub fn json(r: Report, exit: Int) : String {
           r.shard |> map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
         ),
         ...optional("stopped", r.stopped |> map(JStr)),
+        ...optional("log", r.log |> map(JStr)),
         ("kalku", JStr(version.VERSION)),
         ("planned", JNum(r.planned)),
         ...optional("plan", r.plan |> map(p => to_json(p))),
@@ -243,6 +244,7 @@ fn written_from(v: JsonValue) : Result[Written, String] {
         shard: (json_bind_opt(json_bind_field(v, "shard"), "shard", shard_of_json)
           |> map_err(said))!,
         stopped: (json_bind_opt_string(json_bind_field(v, "stopped"), "stopped") |> map_err(said))!,
+        log: (json_bind_opt_string(json_bind_field(v, "log"), "log") |> map_err(said))!,
         plan: (json_bind_opt(json_bind_field(v, "plan"), "plan", planmark_of_json)
           |> map_err(said))!,
         commit: (json_bind_opt_string(json_bind_field(v, "commit"), "commit") |> map_err(said))!,

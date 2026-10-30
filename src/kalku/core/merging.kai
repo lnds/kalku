@@ -198,6 +198,7 @@ the tests left out) is said once.
 pub fn combined(first: Report, rest: [Report]) : Report {
   let parts = [first, ...rest]
   Report {
+    log: None,
     counts: foldl(parts | .counts, empty(), added),
     planned: sum(parts | .planned),
     survivors: parts || .survivors,

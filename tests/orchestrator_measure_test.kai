@@ -62,6 +62,7 @@ test "the kalku that read the project is the one that casts, with one worker" {
     }
     Some(r) -> {
       assert r.counts.killed == 2
+      assert starts_with(r.log ?? "", ".kalku/logs/run-")
     }
   }
 }

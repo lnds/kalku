@@ -30,18 +30,23 @@ Run with every note written to a log under `reni`, and passed on.
 The log is named by the moment the run started, so the newest sort last,
 and the oldest are removed past `KEPT_LOGS`. A log that cannot be written
 is no reason to stop a run: the run goes on, and says nothing about a log.
+What comes back with the run's own answer is the log's path, when there is
+one, so a report can name it.
 """)]
-pub fn logged[a, e](reni: String, body: () -> a / Telling + e) : a / Telling + File + Clock + e {
+pub fn logged[a, e](
+  reni: String,
+  body: () -> a / Telling + e
+) : (a, Option[String]) / Telling + File + Clock + e {
   let folder = "#{reni}/logs"
   made(folder)
   pruned(folder)
   let started = now()
   let path = "#{folder}/#{log_name(started)}"
   match file.write(path, "kalku #{VERSION}, a run started #{started.secs} s after the epoch\n") {
-    Err(_) -> body()
+    Err(_) -> (body(), None)
     Ok(_) -> {
       Telling.logging_to(path)
-      written_to(path, monotonic(), body)
+      (written_to(path, monotonic(), body), Some(path))
     }
   }
 }
