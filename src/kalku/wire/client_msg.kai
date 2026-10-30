@@ -62,6 +62,19 @@ pub type RunProgressMsg = {
   estimate_max_ms: Option[Int]
 }
 
+#[doc("""
+`still_casting`: a cast that has gone on long, and which kalku is on it.
+
+A slow suite and a hung kalku look the same from outside until something
+names the wekufe; a client with no terminal hears it here.
+""")]
+#[derive(Json, Eq, Show)]
+pub type StillCastingMsg = { worker: Int, site: Site, elapsed_ms: Int }
+
+#[doc("`log`: where the run's log is being written.")]
+#[derive(Json, Eq, Show)]
+pub type LogMsg = { path: String }
+
 #[doc("`outcome`: what happened to one wekufe.")]
 #[derive(Json, Eq, Show)]
 pub type OutcomeMsg = {
@@ -122,6 +135,8 @@ pub type CancelledMsg = { run: Int }
 pub type ServerEvent
   = PhaseEv(PhaseMsg)
   | ProgressEv(RunProgressMsg)
+  | StillCastingEv(StillCastingMsg)
+  | LogEv(LogMsg)
   | OutcomeEv(OutcomeMsg)
   | TestRejectedEv(TestRejectedMsg)
   | ReportEv(ReportMsg)

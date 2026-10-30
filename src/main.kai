@@ -31,6 +31,7 @@ import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.measure
 import kalku.orchestrator.telling
+import kalku.orchestrator.logging
 import kalku.settling
 import kalku.diffing
 import kalku.core.changed_lines
@@ -640,52 +641,6 @@ fn run_for(
 
 fn asked_temp() : String / Env = Env.get("TMPDIR") |> unwrap_or("/tmp")
 
-# The run says what it is doing as it does it, and a client hears it then
-# rather than at the end: the notes the orchestrator already makes become
-# the events the protocol has for them.
-fn streamed[a, e](
-  say: (ServerEvent) -> Unit / Actor[OrchMsg],
-  body: () -> a / Telling + e
-) : a / Actor[OrchMsg] + e = handle {
-  body()
-} with Telling {
-  tell_of(_line, resume) -> resume(())
-  entered(phase, resume) -> {
-    say(PhaseEv(PhaseMsg { phase: phase }))
-    resume(())
-  }
-  got_through(done, total, resume) -> {
-    say(
-      ProgressEv(RunProgressMsg {
-        done: done,
-        total: total,
-        estimate_ms: None,
-        estimate_max_ms: None
-      })
-    )
-    resume(())
-  }
-  # A client with no terminal hears the cost as the run's first progress:
-  # nothing cast yet, this many to cast, and this long at the rate the
-  # baseline ran.
-  will_cost(casts, estimate_ms, most_ms, resume) -> {
-    say(
-      ProgressEv(RunProgressMsg {
-        done: 0,
-        total: casts,
-        estimate_ms: Some(estimate_ms),
-        estimate_max_ms: if most_ms > estimate_ms { Some(most_ms) } else { None }
-      })
-    )
-    resume(())
-  }
-  # The protocol has no event for a cast that is taking long yet.
-  still_on(_worker, _what, _ms, resume) -> resume(())
-  kalku_wrote(_worker, _chunk, resume) -> resume(())
-  logging_to(_path, resume) -> resume(())
-  return(x) -> x
-}
-
 # A server is asked about a root rather than standing in one: the config
 # comes from there, the kalku is summoned there, and the paths a run
 # reports stay the project's own.
@@ -982,25 +937,31 @@ fn measured_over(
   # waits forever for a reply it has already discarded.
   # Around the whole of it, not only the discovery: a client can speak at
   # any moment of a run, and the moments that take longest — opening a
-  # pool, casting — are exactly the ones it will ask about.
-  attended(
-    m => answered_mid_run(p, m),
-    () => match streamed(say, () => discover(asking)) {
-      Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
-      Ok(known) -> cast_it(warm_pool(p, c, now, say), asking, known, say)
-    }
+  # pool, casting — are exactly the ones it will ask about. The log is
+  # around all of it too, so the client is told where to read it.
+  streamed(
+    e => say(e),
+    () => logged(
+      asking.spec.reni,
+      () => attended(
+        m => answered_mid_run(p, m),
+        () => match discover(asking) {
+          Err(why) -> (p, [ErrorEv(ErrorMsg { code: "not_measured", message: why, fatal: false })])
+          Ok(known) -> cast_it(warm_pool(p, c, now), asking, known)
+        }
+      )
+    )
   )
 }
 
 fn cast_it(
   p: Project,
   asking: Asking,
-  known: measure.Known,
-  say: (ServerEvent) -> Unit / Actor[OrchMsg]
-) : (Project, [ServerEvent]) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + NetUnix {
+  known: measure.Known
+) : (Project, [ServerEvent]) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + NetUnix + Telling {
   let plan_of_it = plan(inputs_for(asking, known), _id => None)
   let casts = repeated(plan_of_it.to_cast)
-  let done = streamed(say, () => cast_over(asking.spec, p.slots, casts, p.next_id))
+  let done = cast_over(asking.spec, p.slots, casts, p.next_id)
   let report = report_after(plan_of_it, casts, agreed(done.fst), known)
   (
     Project { ...p, slots: done.snd, next_id: done.trd },
@@ -1015,17 +976,16 @@ fn cast_it(
 fn warm_pool(
   p: Project,
   c: Config,
-  now: [FileHash],
-  say: (ServerEvent) -> Unit / Actor[OrchMsg]
-) : Project / Stderr + Process + Spawn + Clock + Env + Attending + Actor[OrchMsg] + Ward + NetUnix {
+  now: [FileHash]
+) : Project / Stderr + Process + Spawn + Clock + Env + Attending + Actor[OrchMsg] + Ward + NetUnix + Telling {
   let print = fingerprint(now)
   if still_warm(p, print) {
     p
-  } else if still_warm(p, p.fingerprint) and reloaded(p, now, say) {
+  } else if still_warm(p, p.fingerprint) and reloaded(p, now) {
     Project { ...p, fingerprint: print, seen: now, next_id: p.next_id + 1 }
   } else {
     each(p.slots, s => banish(s))
-    say(PhaseEv(PhaseMsg { phase: PhasePreparing }))
+    Telling.entered(PhasePreparing)
     Project {
       ...p,
       slots: open_pool(pool_at(c, p.root)),
@@ -1038,7 +998,6 @@ fn warm_pool(
 
 fn reloaded(
   p: Project,
-  now: [FileHash],
-  say: (ServerEvent) -> Unit / Actor[OrchMsg]
-) : Bool / Process + Clock + Attending + Actor[OrchMsg] + NetUnix =
-  streamed(say, () => reloaded_in_place(p.slots, p.root, p.seen, now, p.next_id)) |> is_ok
+  now: [FileHash]
+) : Bool / Process + Clock + Attending + Actor[OrchMsg] + NetUnix + Telling =
+  reloaded_in_place(p.slots, p.root, p.seen, now, p.next_id) |> is_ok

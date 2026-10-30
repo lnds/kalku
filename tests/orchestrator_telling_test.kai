@@ -1,4 +1,5 @@
 import kalku.wire.enums
+import kalku.wire.shapes
 import kalku.orchestrator.telling
 import kalku.core.costing
 
@@ -12,7 +13,7 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
   got_through(done, total, resume) -> resume((), state ++ ["#{done} of #{total}"])
   will_cost(casts, estimate_ms, most_ms, resume) ->
     resume((), state ++ ["#{casts} casts, #{estimate_ms}ms, at most #{most_ms}ms"])
-  still_on(worker, what, ms, resume) -> resume((), state ++ [stalled(worker, what, ms)])
+  still_on(worker, site, ms, resume) -> resume((), state ++ [stalled(worker, site, ms)])
   kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
   logging_to(path, resume) -> resume((), state ++ [logged_at(path)])
   return(_x) -> state
@@ -98,8 +99,19 @@ test "what is left is the rate the casts went at, and the estimate before any" {
 }
 
 test "a cast that has gone on long is named with its worker and its wekufe" {
-  assert stalled(2, "src/a.ts:41 return", 95400)
-    == "worker 2 is still on src/a.ts:41 return after 95 s"
+  assert stalled(2, a_site(), 95400) == "worker 2 is still on lib/a.kai:3 arm after 95 s"
+}
+
+fn a_site() : Site = Site {
+  site_id: "s1",
+  file: "lib/a.kai",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 3, col: 5, byte: 0 }, end: None },
+  spell: Arm,
+  original: Some("+"),
+  replacement: "-",
+  reload: ModuleOnly
 }
 
 fn shown_on(tty: Bool, body: () -> Unit / Telling) : [String] / Clock = handle {
@@ -115,7 +127,7 @@ fn a_run() : Unit / Telling {
   Telling.will_cost(10, 5000, 5000)
   Telling.tell_of("worker 1 casts lib/a.kai:3 arm against 1 test(s)")
   Telling.got_through(1, 10)
-  Telling.still_on(1, "lib/a.kai:3 arm", 31000)
+  Telling.still_on(1, a_site(), 31000)
   Telling.got_through(10, 10)
 }
 

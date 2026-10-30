@@ -217,6 +217,10 @@ The pool is thrown away the moment any source or test file changes:
 measuring with a kalku that holds yesterday's code is measuring
 yesterday's code. It serves one client at a time.
 
+A client hears where the run's log is, and which wekufe a kalku has been
+casting for 30 s or more, as events of the run (`log`, `still_casting` in
+[the protocol](docs/protocol.md)).
+
 ## For coding agents
 
 People read one run and CI gates one run per pull request. An agent

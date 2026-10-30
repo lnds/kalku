@@ -5,6 +5,7 @@ import kalku.core.session
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.server
+import kalku.orchestrator.telling
 
 fn a_run(root: String) : ClientRequest =
   RunReq(RunMsg { root: root, scope: All, format: Human, shard: None })
@@ -184,4 +185,45 @@ test "naming no files is a bad request, not the whole project" {
       assert other == Ok([])
     }
   }
+}
+
+effect Hearing {
+  heard(e: ServerEvent) : Unit
+}
+
+# What a client is sent, in order, for a run that says these notes.
+fn sent_for(body: () -> Unit / Telling + Hearing) : [ServerEvent] = handle {
+  streamed(e => Hearing.heard(e), body)
+} with Hearing([]) {
+  heard(e, resume) -> resume((), state ++ [e])
+  return(_x) -> state
+}
+
+fn slow_site() : Site = Site {
+  site_id: "s1",
+  file: "lib/a.kai",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 3, col: 5, byte: 0 }, end: None },
+  spell: Arm,
+  original: Some("+"),
+  replacement: "-",
+  reload: ModuleOnly
+}
+
+# A client with no terminal is the one that cannot tell a slow cast from a
+# hung kalku, so it hears both which wekufe is taking long and where to
+# read what the kalku said; a sentence meant for a person is not an event.
+test "a client hears where the log is and which cast is taking long" {
+  let sent = sent_for(() => {
+    Telling.logging_to("/p/_kalku/logs/run-1.log")
+    Telling.tell_of("worker 1 casts lib/a.kai:3 arm against 1 test(s)")
+    Telling.kalku_wrote(1, "compiling\n")
+    Telling.still_on(1, slow_site(), 31000)
+  })
+  assert sent
+    == [
+      LogEv(LogMsg { path: "/p/_kalku/logs/run-1.log" }),
+      StillCastingEv(StillCastingMsg { worker: 1, site: slow_site(), elapsed_ms: 31000 })
+    ]
 }

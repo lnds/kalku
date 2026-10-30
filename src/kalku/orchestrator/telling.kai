@@ -14,6 +14,7 @@ may be piping into something.
 
 import time
 import kalku.wire.enums
+import kalku.wire.shapes
 import kalku.core.costing
 
 #[doc("""
@@ -28,7 +29,7 @@ pub effect Telling {
   entered(phase: Phase) : Unit
   got_through(done: Int, total: Int) : Unit
   will_cost(casts: Int, estimate_ms: Int, most_ms: Int) : Unit
-  still_on(worker: Int, what: String, ms: Int) : Unit
+  still_on(worker: Int, site: Site, ms: Int) : Unit
   kalku_wrote(worker: Int, chunk: String) : Unit
   logging_to(path: String) : Unit
 }
@@ -92,8 +93,8 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     Stderr.eprint("kalku: #{what_it_costs(estimate_ms, most_ms)}")
     resume(())
   }
-  still_on(worker, what, ms, resume) -> {
-    Stderr.eprint("kalku: #{stalled(worker, what, ms)}")
+  still_on(worker, site, ms, resume) -> {
+    Stderr.eprint("kalku: #{stalled(worker, site, ms)}")
     resume(())
   }
   kalku_wrote(worker, chunk, resume) -> {
@@ -115,7 +116,7 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   entered(_phase, resume) -> resume(())
   got_through(_done, _total, resume) -> resume(())
   will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume(())
-  still_on(_worker, _what, _ms, resume) -> resume(())
+  still_on(_worker, _site, _ms, resume) -> resume(())
   kalku_wrote(_worker, _chunk, resume) -> resume(())
   logging_to(_path, resume) -> resume(())
   return(x) -> x
@@ -188,8 +189,8 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
       }
       resume(())
     }
-    still_on(worker, what, ms, resume) -> {
-      above(live, last, "kalku: #{stalled(worker, what, ms)}")
+    still_on(worker, site, ms, resume) -> {
+      above(live, last, "kalku: #{stalled(worker, site, ms)}")
       resume(())
     }
     kalku_wrote(_worker, _chunk, resume) -> resume(())
@@ -252,5 +253,9 @@ A cast that has gone on long, named so whoever is watching knows which
 kalku and which file to look at: a slow suite and a hung cast look the
 same from the outside until this line says which wekufe it is.
 """)]
-pub fn stalled(worker: Int, what: String, ms: Int) : String =
-  "worker #{worker} is still on #{what} after #{ms / 1000} s"
+pub fn stalled(worker: Int, site: Site, ms: Int) : String =
+  "worker #{worker} is still on #{about_site(site)} after #{ms / 1000} s"
+
+#[doc("A site as a person looks for it: the file, the line, and the spell.")]
+pub fn about_site(site: Site) : String =
+  "#{site.file}:#{site.span.start.line} #{spell_name(site.spell)}"

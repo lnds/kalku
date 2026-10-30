@@ -22,6 +22,7 @@ import kalku.core.session
 import kalku.core.cache.{FileHash}
 import kalku.orchestrator.pool
 import kalku.wire.envelope
+import kalku.orchestrator.telling
 
 #[doc("What a server is doing: which socket it holds, and which projects it knows.")]
 pub type Serving = { path: String, sessions: [Project] }
@@ -228,3 +229,57 @@ pub fn refusal_for(r: ClientRequest, uid_ok: Bool) : Option[ServerEvent] = if no
 
 #[doc("One line as it goes to a client: an event, framed.")]
 pub fn said(id: Int, e: ServerEvent) : String = frame(encode_event(id, e))
+
+#[doc("""
+Run with each note the protocol has an event for said to a client as it
+happens, rather than at the end.
+
+The notes the orchestrator already makes become the events: a phase, how
+far the casting has got and what it will cost, a cast that is taking long,
+and where the run's log is. Sentences meant for a person are dropped.
+""")]
+pub fn streamed[a, e](say: (ServerEvent) -> Unit / e, body: () -> a / Telling + e) : a / e =
+  handle {
+    body()
+  } with Telling {
+    tell_of(_line, resume) -> resume(())
+    entered(phase, resume) -> {
+      say(PhaseEv(PhaseMsg { phase: phase }))
+      resume(())
+    }
+    got_through(done, total, resume) -> {
+      say(
+        ProgressEv(RunProgressMsg {
+          done: done,
+          total: total,
+          estimate_ms: None,
+          estimate_max_ms: None
+        })
+      )
+      resume(())
+    }
+    # A client with no terminal hears the cost as the run's first progress:
+    # nothing cast yet, this many to cast, and this long at the rate the
+    # baseline ran.
+    will_cost(casts, estimate_ms, most_ms, resume) -> {
+      say(
+        ProgressEv(RunProgressMsg {
+          done: 0,
+          total: casts,
+          estimate_ms: Some(estimate_ms),
+          estimate_max_ms: if most_ms > estimate_ms { Some(most_ms) } else { None }
+        })
+      )
+      resume(())
+    }
+    still_on(worker, site, ms, resume) -> {
+      say(StillCastingEv(StillCastingMsg { worker: worker, site: site, elapsed_ms: ms }))
+      resume(())
+    }
+    kalku_wrote(_worker, _chunk, resume) -> resume(())
+    logging_to(path, resume) -> {
+      say(LogEv(LogMsg { path: path }))
+      resume(())
+    }
+    return(x) -> x
+  }

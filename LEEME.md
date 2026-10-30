@@ -221,6 +221,10 @@ El pool se descarta en el momento en que cambia cualquier archivo de código
 o de tests: medir con un kalku que tiene el código de ayer es medir el
 código de ayer. Atiende a un cliente a la vez.
 
+Un cliente recibe dónde está el log de la corrida, y qué wekufe lleva 30 s o más
+en un kalku, como eventos de la corrida (`log`,
+`still_casting` en [el protocolo](docs/protocol.md)).
+
 ## Para agentes de código
 
 Las personas leen una corrida y CI controla una corrida por pull request. Un

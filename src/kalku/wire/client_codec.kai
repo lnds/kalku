@@ -59,6 +59,8 @@ fn check_client_request(r: ClientRequest) : Result[Unit, ProtocolError] = match 
 pub fn encode_event(id: Int, e: ServerEvent) : String {
   case id, PhaseEv(m) -> envelope("phase", id, to_json(m))
   case id, ProgressEv(m) -> envelope("progress", id, to_json(m))
+  case id, StillCastingEv(m) -> envelope("still_casting", id, to_json(m))
+  case id, LogEv(m) -> envelope("log", id, to_json(m))
   case id, OutcomeEv(m) -> envelope("outcome", id, to_json(m))
   case id, TestRejectedEv(m) -> envelope("test_rejected", id, to_json(m))
   case id, ReportEv(m) -> envelope("report", id, to_json(m))
@@ -80,6 +82,8 @@ pub fn decode_event(line: String) : Result[Msg[ServerEvent], ProtocolError] {
 fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] = match kind {
   "phase" -> body(phasemsg_of_json(v, ""), PhaseEv)
   "progress" -> body(runprogressmsg_of_json(v, ""), ProgressEv)
+  "still_casting" -> body(stillcastingmsg_of_json(v, ""), StillCastingEv)
+  "log" -> body(logmsg_of_json(v, ""), LogEv)
   "outcome" -> body(outcomemsg_of_json(v, ""), OutcomeEv)
   "test_rejected" -> body(testrejectedmsg_of_json(v, ""), TestRejectedEv)
   "report" -> body(reportmsg_of_json(v, ""), ReportEv)
@@ -92,7 +96,7 @@ fn event_body(kind: String, v: JsonValue) : Result[ServerEvent, ProtocolError] =
 }
 
 # A site is absent exactly when the wekufe is gone, and a run never
-# counted or estimated its way below zero.
+# counted, estimated or waited its way below zero.
 fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
   OutcomeEv(m) ->
     require(
@@ -109,6 +113,12 @@ fn check_event(e: ServerEvent) : Result[Unit, ProtocolError] = match e {
       "progress: estimate_max_ms goes with estimate_ms and is not below it"
     )
   }
+  StillCastingEv(m) ->
+    require(
+      m.worker >= 1 and m.elapsed_ms >= 0,
+      "still_casting: worker is 1-based and elapsed_ms is not negative"
+    )
+  LogEv(m) -> require(not is_empty(m.path), "log: path must not be empty")
   _ -> Ok(())
 }
 

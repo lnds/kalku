@@ -486,6 +486,20 @@ Events, terminal event `report`:
 
 Unlike the kalku protocol's `progress`, which reports how far one long request has got, this one is about the casting.
 
+| `still_casting` | Type | Meaning |
+|---|---|---|
+| `worker` | int | 1-based: which kalku is on it |
+| `site` | Site | the wekufe it is casting |
+| `elapsed_ms` | int | how long the cast has gone on so far |
+
+Sent for a cast that has gone on for 30 s, and again every 30 s while it goes on. A slow suite and a hung kalku look the same from outside until something names the wekufe; a client with no terminal to watch hears it here, and can show it or cancel the run.
+
+| `log` | Type | Meaning |
+|---|---|---|
+| `path` | string | absolute path of the run's log in the reni |
+
+Sent once, at the start of a run whose log could be written: every note the run makes, timed from its start, and every line each kalku wrote on stderr. A run whose log cannot be written goes on without one, and sends no `log`.
+
 | `outcome` | Type | Meaning |
 |---|---|---|
 | `wekufe` | string | |
@@ -511,6 +525,7 @@ Unlike the kalku protocol's `progress`, which reports how far one long request h
 
 ```json
 {"type":"run","id":1,"root":"/home/u/my_app","scope":{"since":"main"},"format":"json"}
+{"type":"log","id":1,"path":"/tmp/kalku/my_app-3f9a1c/logs/run-1761800000-000000000.log"}
 {"type":"phase","id":1,"phase":"baseline"}
 {"type":"phase","id":1,"phase":"cast"}
 {"type":"progress","id":1,"done":0,"total":480,"estimate_ms":540000}
