@@ -22,6 +22,7 @@ import encoding.json
 import encoding.json_bind
 import kalku.diffing
 import kalku.settling
+import kalku.sources
 import kalku.core.reusing
 import kalku.core.setting_up
 
@@ -102,14 +103,6 @@ pub fn save(path: String, store: Store) : Result[Unit, String] / File {
   let beside = "#{path}.#{setting_of("", "", "", text)}"
   file.write(beside, text)!
   file.rename(beside, path)
-}
-
-fn made(path: String) : Unit / File = if path == "" or path == "/" or file.exists(path) {
-  ()
-} else {
-  made(paths.dirname(path))
-  let _ = dir.create_dir(path)
-  ()
 }
 
 fn unreadable(path: String, why: String) : String =

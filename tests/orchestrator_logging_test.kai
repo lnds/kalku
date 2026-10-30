@@ -1,0 +1,125 @@
+import fs.dir
+import fs.file
+import os.process as proc
+import time
+import kalku.wire.enums
+import kalku.orchestrator.telling
+import kalku.orchestrator.logging
+
+# A real reni on disk, because what is under test is the file a person
+# reads after a run: what is in it, and how many of them are kept.
+
+# Two `kai test` runs at once share a TMPDIR, so a scratch reni is named
+# after the process that owns it.
+fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $PPID"]) {
+  Err(_) -> "0"
+  Ok(child) -> {
+    let out = match proc.read_stdout(child) {
+      Ok(chunk) -> chunk
+      Err(_) -> ""
+    }
+    let _ = proc.wait(child)
+    trim(out)
+  }
+}
+
+fn scratch(name: String) : String / Env + Process {
+  let base = Env.get("TMPDIR") ?? "/tmp"
+  let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
+  "#{dir}/kalku_logging_#{own_pid()}_#{name}"
+}
+
+fn emptied(dir: String) : Unit / Process {
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", dir]) |> result.map(c => proc.wait(c))
+  ()
+}
+
+# What the listener hears, in order, so a test can tell the log passed
+# every note on.
+fn heard_through(reni: String, body: () -> Unit / Telling) : [String] / File + Clock = handle {
+  logged(reni, body)
+} with Telling([]) {
+  tell_of(line, resume) -> resume((), state ++ [line])
+  entered(phase, resume) -> resume((), state ++ ["entered #{phase_name(phase)}"])
+  got_through(done, total, resume) -> resume((), state ++ ["#{done} of #{total}"])
+  will_cost(casts, _estimate_ms, _most_ms, resume) -> resume((), state ++ ["#{casts} casts"])
+  still_on(worker, what, ms, resume) -> resume((), state ++ [stalled(worker, what, ms)])
+  kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
+  logging_to(path, resume) -> resume((), state ++ [logged_at(path)])
+  return(_x) -> state
+}
+
+fn a_run() : Unit / Telling {
+  Telling.entered(PhaseCasting)
+  Telling.tell_of("worker 1 casts lib/a.kai:3 arm against 1 test(s)")
+  Telling.kalku_wrote(1, "compiling\n\npanic: out of fibers\n")
+  Telling.still_on(1, "lib/a.kai:3 arm", 31000)
+  Telling.got_through(1, 1)
+}
+
+fn the_log(reni: String) : String / File {
+  let names = dir.list_dir("#{reni}/logs")
+  match names {
+    [one] -> ok(file.read("#{reni}/logs/#{one}")) ?? ""
+    _ -> "#{length(names)} logs"
+  }
+}
+
+# The log keeps what a run said and what its kalku wrote, which a run that
+# hangs has nowhere else; and the listener hears the same run it would
+# have heard without one, told first where the log is.
+test "a run's notes and its kalku's stderr are written to the log, and passed on" {
+  let reni = scratch("notes")
+  emptied(reni)
+  let heard = heard_through(reni, a_run)
+  let log = the_log(reni)
+  emptied(reni)
+
+  assert starts_with((heard |> head) ?? "", "log at #{reni}/logs/run-")
+  assert drop(heard, 1)
+    == [
+      "entered #{phase_name(PhaseCasting)}",
+      "worker 1 casts lib/a.kai:3 arm against 1 test(s)",
+      "1 wrote compiling\n\npanic: out of fibers\n",
+      stalled(1, "lib/a.kai:3 arm", 31000),
+      "1 of 1"
+    ]
+  assert has(log, " entered #{phase_name(PhaseCasting)}\n")
+  assert has(log, " worker 1 wrote: compiling\n")
+  assert has(log, " worker 1 wrote: panic: out of fibers\n")
+  assert has(log, " #{stalled(1, "lib/a.kai:3 arm", 31000)}\n")
+  assert not has(log, "wrote: \n")
+}
+
+fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))
+
+test "a reni keeps the newest logs, and makes room for the next" {
+  let reni = scratch("kept")
+  emptied(reni)
+  let _ = proc.pipe_errs("/bin/mkdir", ["-p", "#{reni}/logs"]) |> result.map(c => proc.wait(c))
+  each(enumerate(repeat(0, KEPT_LOGS + 5)), i => {
+    let _ =
+      file.write("#{reni}/logs/run-100000000#{pad_left("#{i.fst}", 2, '0')}-000000000.log", "")
+    ()
+  })
+  let _ = heard_through(reni, a_run)
+  let kept = length(dir.list_dir("#{reni}/logs"))
+  emptied(reni)
+
+  assert kept == KEPT_LOGS
+}
+
+test "the logs to remove are the oldest, and only logs" {
+  let names = ["notes.txt", ...enumerate(repeat(0, KEPT_LOGS)) | (i => "run-#{10 + i.fst}-0.log")]
+  assert stale_logs(names) == ["run-10-0.log"]
+  assert stale_logs(["run-1-0.log", "notes.txt"]) == []
+}
+
+test "a log line says how far into the run it was written" {
+  assert elapsed_mark(12345) == "+12.345s"
+  assert elapsed_mark(7) == "+0.007s"
+}
+
+test "a log is named so that the newest sorts last" {
+  assert log_name(WallTime { secs: 1700000000, nanos: 42 }) == "run-1700000000-000000042.log"
+}

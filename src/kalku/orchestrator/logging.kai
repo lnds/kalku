@@ -1,0 +1,118 @@
+#[doc("""
+Keeping a log of a run, in the reni.
+
+What a run says while it runs is gone once it has scrolled past, and what
+a kalku writes on stderr is only ever quoted when the kalku dies. A run
+that hangs, or ends in a way nobody can explain, needs both afterwards:
+every note with when it was made, and every line each kalku wrote. The
+log is that, one file per run, under the reni and never in the project.
+
+It sits between the run and whoever listens to it: every note is written
+down and then passed on unchanged, so what a person or a host hears does
+not depend on whether there is a log.
+""")]
+
+import fs.file
+import fs.dir
+import time
+import kalku.version
+import kalku.sources
+import kalku.wire.enums
+import kalku.core.costing
+import kalku.orchestrator.telling
+
+#[doc("How many runs' logs a reni keeps, the newest.")]
+pub const KEPT_LOGS : Int = 20
+
+#[doc("""
+Run with every note written to a log under `reni`, and passed on.
+
+The log is named by the moment the run started, so the newest sort last,
+and the oldest are removed past `KEPT_LOGS`. A log that cannot be written
+is no reason to stop a run: the run goes on, and says nothing about a log.
+""")]
+pub fn logged[a, e](reni: String, body: () -> a / Telling + e) : a / Telling + File + Clock + e {
+  let folder = "#{reni}/logs"
+  made(folder)
+  pruned(folder)
+  let started = now()
+  let path = "#{folder}/#{log_name(started)}"
+  match file.write(path, "kalku #{VERSION}, a run started #{started.secs} s after the epoch\n") {
+    Err(_) -> body()
+    Ok(_) -> {
+      Telling.logging_to(path)
+      written_to(path, monotonic(), body)
+    }
+  }
+}
+
+fn written_to[a, e](
+  path: String,
+  began: Instant,
+  body: () -> a / Telling + e
+) : a / Telling + File + Clock + e = handle {
+  body()
+} with Telling {
+  tell_of(line, resume) -> {
+    noted(path, began, line)
+    Telling.tell_of(line)
+    resume(())
+  }
+  entered(phase, resume) -> {
+    noted(path, began, "entered #{phase_name(phase)}")
+    Telling.entered(phase)
+    resume(())
+  }
+  got_through(done, total, resume) -> {
+    noted(path, began, "#{done} of #{total}")
+    Telling.got_through(done, total)
+    resume(())
+  }
+  will_cost(casts, estimate_ms, most_ms, resume) -> {
+    noted(path, began, "#{casts} casts: #{what_it_costs(estimate_ms, most_ms)}")
+    Telling.will_cost(casts, estimate_ms, most_ms)
+    resume(())
+  }
+  still_on(worker, what, ms, resume) -> {
+    noted(path, began, stalled(worker, what, ms))
+    Telling.still_on(worker, what, ms)
+    resume(())
+  }
+  kalku_wrote(worker, chunk, resume) -> {
+    each(written_lines(chunk), l => noted(path, began, "worker #{worker} wrote: #{l}"))
+    Telling.kalku_wrote(worker, chunk)
+    resume(())
+  }
+  logging_to(other, resume) -> {
+    Telling.logging_to(other)
+    resume(())
+  }
+  return(x) -> x
+}
+
+# A line the log could not take is lost, not the run.
+fn noted(path: String, began: Instant, line: String) : Unit / File + Clock {
+  let ms = duration_to_nanos(elapsed_since(began, monotonic())) / 1000000
+  let _ = file.append(path, "#{elapsed_mark(ms)} #{line}\n")
+  ()
+}
+
+#[doc("How long into the run a line was written: `+12.345s`.")]
+pub fn elapsed_mark(ms: Int) : String = "+#{ms / 1000}.#{pad_left("#{ms % 1000}", 3, '0')}s"
+
+#[doc("A log's name, which sorts by when its run started.")]
+pub fn log_name(started: WallTime) : String =
+  "run-#{started.secs}-#{pad_left("#{started.nanos}", 9, '0')}.log"
+
+# Room for the log about to be written, and `KEPT_LOGS` in all.
+fn pruned(folder: String) : Unit / File =
+  each(stale_logs(dir.list_dir(folder)), name => {
+    let _ = file.delete("#{folder}/#{name}")
+    ()
+  })
+
+#[doc("The logs among `names` to remove so that a new one makes `KEPT_LOGS`.")]
+pub fn stale_logs(names: [String]) : [String] {
+  let logs = sort(names |? (n => starts_with(n, "run-") and ends_with(n, ".log")))
+  take(logs, length(logs) - (KEPT_LOGS - 1))
+}
