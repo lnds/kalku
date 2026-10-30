@@ -31,6 +31,7 @@ pub effect Telling {
   will_cost(casts: Int, estimate_ms: Int, most_ms: Int) : Unit
   still_on(worker: Int, site: Site, ms: Int) : Unit
   kalku_wrote(worker: Int, chunk: String) : Unit
+  kalku_at(worker: Int, done: Int, total: Int) : Unit
   logging_to(path: String) : Unit
 }
 
@@ -101,6 +102,10 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     each(written_lines(chunk), l => Stderr.eprint("kalku: worker #{worker} wrote: #{l}"))
     resume(())
   }
+  kalku_at(worker, done, total, resume) -> {
+    Stderr.eprint("kalku: #{so_far(worker, done, total)}")
+    resume(())
+  }
   logging_to(path, resume) -> {
     Stderr.eprint("kalku: #{logged_at(path)}")
     resume(())
@@ -118,6 +123,7 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume(())
   still_on(_worker, _site, _ms, resume) -> resume(())
   kalku_wrote(_worker, _chunk, resume) -> resume(())
+  kalku_at(_worker, _done, _total, resume) -> resume(())
   logging_to(_path, resume) -> resume(())
   return(x) -> x
 }
@@ -153,11 +159,13 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
   var began := monotonic()
   var said_at := monotonic()
   var estimate := 0
+  var phase_now := ""
   handle {
     body()
   } with Telling {
     tell_of(_line, resume) -> resume(())
     entered(phase, resume) -> {
+      phase_now := phase_name(phase)
       if live {
         last := drawn(last, phase_name(phase))
       } else {
@@ -179,14 +187,9 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
     got_through(done, total, resume) -> {
       let now = monotonic()
       let line = counted(done, total, left_ms(done, total, ms_between(began, now), estimate))
-      if live {
-        last := drawn(last, line)
-      } else if done >= total or ms_between(said_at, now) >= PLAIN_EVERY_MS {
-        said_at := now
-        Stderr.eprint("kalku: #{line}")
-      } else {
-        ()
-      }
+      let next = paced(live, (last, said_at), now, line, done >= total)
+      last := next.fst
+      said_at := next.snd
       resume(())
     }
     still_on(worker, site, ms, resume) -> {
@@ -194,6 +197,13 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
       resume(())
     }
     kalku_wrote(_worker, _chunk, resume) -> resume(())
+    kalku_at(_worker, done, total, resume) -> {
+      let next =
+        paced(live, (last, said_at), monotonic(), "#{phase_now} #{done} of #{total}", done >= total)
+      last := next.fst
+      said_at := next.snd
+      resume(())
+    }
     logging_to(path, resume) -> {
       above(live, last, "kalku: #{logged_at(path)}")
       resume(())
@@ -203,6 +213,24 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
       x
     }
   }
+}
+
+# A count: on a terminal drawn in place, elsewhere said at its end and
+# every `PLAIN_EVERY_MS` before it. What comes back is the line on screen
+# and when a count was last said.
+fn paced(
+  live: Bool,
+  shown: (String, Instant),
+  now: Instant,
+  line: String,
+  ended: Bool
+) : (String, Instant) / Stderr = if live {
+  (drawn(shown.fst, line), shown.snd)
+} else if ended or ms_between(shown.snd, now) >= PLAIN_EVERY_MS {
+  Stderr.eprint("kalku: #{line}")
+  (shown.fst, now)
+} else {
+  shown
 }
 
 # A note that stays: on a terminal it takes the progress line's place and
@@ -255,6 +283,12 @@ same from the outside until this line says which wekufe it is.
 """)]
 pub fn stalled(worker: Int, site: Site, ms: Int) : String =
   "worker #{worker} is still on #{about_site(site)} after #{ms / 1000} s"
+
+#[doc("""
+How far one kalku has got with a long request, as it says itself:
+`worker 1: 1200 of 5000`.
+""")]
+pub fn so_far(worker: Int, done: Int, total: Int) : String = "worker #{worker}: #{done} of #{total}"
 
 #[doc("A site as a person looks for it: the file, the line, and the spell.")]
 pub fn about_site(site: Site) : String =

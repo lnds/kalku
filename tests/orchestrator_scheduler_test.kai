@@ -55,6 +55,7 @@ fn how_far(
     will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
     still_on(_worker, _site, _ms, resume) -> resume((), state)
     kalku_wrote(_worker, _chunk, resume) -> resume((), state)
+    kalku_at(_worker, _done, _total, resume) -> resume((), state)
     logging_to(_path, resume) -> resume((), state)
     return(_x) -> state
   }
