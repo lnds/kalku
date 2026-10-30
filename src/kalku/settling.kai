@@ -92,6 +92,26 @@ pub fn absolute(root: String) : String / Env = if paths.is_absolute(root) {
   "#{Env.get("PWD") |> unwrap_or("")}/#{root}"
 }
 
+#[doc("""
+What to say when a project keeps its environment in a direnv `.envrc` and
+direnv is not loaded where this run started, or nothing.
+
+A kalku gets the environment kalku was started with and nothing else: a
+file that runs shell is not run on anyone's behalf. A project whose build
+or tests need what `.envrc` sets then fails in a way that does not name it,
+so the run names it first.
+""")]
+pub fn unloaded_envrc(has_envrc: Bool, direnv_dir: Option[String]) : Option[String] =
+  if has_envrc and is_none(direnv_dir) {
+    Some(
+      "kalku: this project has a .envrc, and direnv is not loaded here: the kalku gets only"
+        ++ " the environment kalku was started with. If the build or the tests need it, run"
+        ++ " `direnv exec . kalku …`."
+    )
+  } else {
+    None
+  }
+
 #[doc("A project nobody set up: its language, the summoning a run wrote for it, and the configuration `init` would have written.")]
 pub type Passing = { language: String, summon: String, reni: String, config: String }
 

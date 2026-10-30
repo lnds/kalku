@@ -104,7 +104,13 @@ fn with_settings[e](
   body: (Config) -> Int / Stderr + e
 ) : Int / Stderr + Env + File + Process + e = match settings() {
   Err(why) -> fails(why)
-  Ok(c) -> body(c)
+  Ok(c) -> {
+    match unloaded_envrc(file.exists(".envrc"), Env.get("DIRENV_DIR")) {
+      Some(note) -> Stderr.eprint(note)
+      None -> ()
+    }
+    body(c)
+  }
 }
 
 # Asked for everything, it says everything; asked for quiet, nothing; by
