@@ -71,7 +71,7 @@ not recognise, and `init` replaces an old one instead of keeping it.
 
 Bumped when the script's obligations change, not when its wording does.
 """)]
-pub const SUMMON_CONTRACT : Int = 1
+pub const SUMMON_CONTRACT : Int = 2
 
 #[doc("The line that says which contract a summoning was written against.")]
 pub fn contract_line(n: Int) : String = "# kalku-summon-contract: #{n}"
@@ -389,7 +389,7 @@ pub fn outside_text(known: Known) : String = trim_left(known.outside)
 # of the pipe, with no shell left to outlive it.
 fn elixir_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the Elixir kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol, so the build's output goes to stderr
@@ -419,7 +419,7 @@ exec mix kalku.serve "$@"
 # for whoever is working on the kalku itself.
 fn elixir_outside() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the Elixir kalku for a project that was not set up for it.
 # Written by `kalku run` into the reni, and again by every run.
 #
@@ -445,7 +445,7 @@ exec sh "$KALKU/bin/kalku-elixir" "$@"
 
 fn kaikai_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the kaikai kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol, so anything the toolchain prints on
@@ -462,7 +462,7 @@ exec kalku-kaikai "$@"
 # nothing on the way up.
 fn python_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the Python kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. The kalku runs in the project's own
@@ -496,7 +496,7 @@ exec "$PY" "$APP" "$@"
 # started as it is.
 fn rust_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the Rust kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. Nothing is built here: cargo runs
@@ -514,7 +514,7 @@ exec kalku-rust "$@"
 # here, Maven or Gradle runs inside `prepare`.
 fn java_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the Java kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. Nothing is built here: Maven or Gradle
@@ -541,7 +541,7 @@ exec kalku-java "$@"
 # Nothing is built here: `prepare` is where the tests are compiled.
 fn go_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the Go kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. Nothing is built here: `go test` runs
@@ -563,7 +563,7 @@ exec kalku-go "$@"
 # the project. Nothing is built here: the runner transforms the code itself.
 fn typescript_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the TypeScript kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. Nothing is built here: the project's
@@ -584,7 +584,7 @@ exec kalku-typescript "$@"
 # Nothing is built here: `prepare` is where cmake runs.
 fn cpp_summoner() : String = """
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the C and C++ kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. Nothing is built here: cmake configures

@@ -242,6 +242,24 @@ test "a summoning says which contract it was written against" {
   assert summon_is_current(plan.summoner)
 }
 
+# A summoning written before rebar3's cache went into the reni compiles
+# the project's dependencies with rebar3 writing under `deps/`, in the
+# user's tree. It says the contract it was written against, and a run
+# refuses it rather than running it.
+test "a summoning from before rebar3's cache went into the reni is refused" {
+  let before =
+    "#!/bin/sh\n# kalku-summon-contract: 1\nset -eu\nRENI=\"$1\"\nMIX_ENV=test\nMIX_BUILD_PATH=\"$RENI/build\"\nexport MIX_ENV MIX_BUILD_PATH\nmix deps.compile >&2 </dev/null\nmix compile >&2 </dev/null\nexec mix kalku.serve \"$@\"\n"
+
+  assert contract_of(before) == Some(1)
+  assert not summon_is_current(before)
+}
+
+test "an Elixir summoning keeps rebar3's cache in the reni" {
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir()), "/r")
+
+  assert has(plan.summoner, "REBAR_BASE_DIR=\"$MIX_BUILD_PATH/rebar3\"")
+}
+
 test "every language's summoning declares one" {
   each(catalogue(), k => {
     let plan = plan_for(k, "/r")
