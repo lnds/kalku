@@ -368,3 +368,31 @@ test "a run asking for a spell its kalku does not cast is refused, naming the sp
   assert is_some(index_of(why, "python kalku 0.26.1 does not cast `return`"))
   assert is_some(index_of(why, "`[run] spells`"))
 }
+
+# What a kalku says of itself on the way, as notes in the order it said them.
+fn noted_from(whats: [FromKalku]) : [String] = handle {
+  each(whats, w => told_if_written(Life { worker: 2, summons: 1 }, w))
+} with Telling([]) {
+  tell_of(line, resume) -> resume((), state ++ [line])
+  entered(_phase, resume) -> resume((), state)
+  got_through(_done, _total, resume) -> resume((), state)
+  will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
+  still_on(_worker, _site, _ms, resume) -> resume((), state)
+  kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
+  kalku_at(worker, done, total, resume) -> resume((), state ++ [so_far(worker, done, total)])
+  logging_to(_path, resume) -> resume((), state)
+  return(_x) -> state
+}
+
+# A kalku's `progress` is how far a long request has got, and the one sign
+# a baseline over thousands of tests is moving; a reply is not a note.
+test "a kalku's progress and its stderr are told, and a reply is not" {
+  assert noted_from(
+    [
+      Said("{\"type\":\"progress\",\"id\":3,\"done\":120,\"total\":480}"),
+      Wrote("compiling\n"),
+      Said("{\"type\":\"bye\",\"id\":4}")
+    ]
+  )
+    == ["worker 2: 120 of 480", "2 wrote compiling\n"]
+}

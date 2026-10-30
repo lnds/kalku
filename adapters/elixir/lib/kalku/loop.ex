@@ -148,7 +148,8 @@ defmodule Kalku.Loop do
   @doc """
   Handles one request line. Returns `{:reply, line, state}` to continue or
   `{:stop, line}` after `shutdown`. Pure apart from reading the files a
-  `sites` request names.
+  `sites` request names, and the `progress` a `baseline` sends on the
+  channel while it runs.
   """
   def handle(line, state) do
     case Protocol.decode(line, :request) do
@@ -193,7 +194,8 @@ defmodule Kalku.Loop do
     case Baseline.run(root,
            reni: state.reni,
            inline_limit_bytes: state.inline_limit,
-           reuse: body["reuse"] || []
+           reuse: body["reuse"] || [],
+           told: fn done, total -> emit(progress(id, done, total)) end
          ) do
       {:ok, body} -> {:reply, reply("baseline_done", id, body), state}
       {:error, code, message} -> {:reply, error(id, code, message, true), state}
@@ -368,6 +370,9 @@ defmodule Kalku.Loop do
   end
 
   defp reply(type, id, body), do: Protocol.encode(:reply, type, id, body)
+
+  defp progress(id, done, total),
+    do: Protocol.encode(:reply, "progress", id, %{"done" => done, "total" => total})
 
   defp error(id, code, message, fatal),
     do: reply("error", id, %{"code" => code, "message" => message, "fatal" => fatal})

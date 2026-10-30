@@ -26,6 +26,20 @@ defmodule Kalku.BaselineTest do
       assert Enum.all?(done["tests"], &(&1["duration_ms"] >= 0))
     end
 
+    # The pass that runs each test alone is minutes long on a large suite,
+    # and `progress` is how the run that asked for it can say it is moving.
+    test "a baseline says how far its per-test pass has got, before it answers", %{reni: reni} do
+      lines = run(reni, "green", ["baseline"])
+      types = Enum.map(lines, fn l -> elem(Kalku.Json.decode(l), 1)["type"] end)
+      progress = reply(lines, "progress")
+
+      assert progress["done"] == 5
+      assert progress["total"] == 5
+
+      assert Enum.find_index(types, &(&1 == "progress")) <
+               Enum.find_index(types, &(&1 == "baseline_done"))
+    end
+
     # A mocking library sets itself up in `test_helper.exs` and tidies up in
     # an `after_suite` callback, which ExUnit runs at the end of every
     # `ExUnit.run`. The baseline runs the suite once whole and then once per

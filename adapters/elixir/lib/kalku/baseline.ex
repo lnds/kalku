@@ -34,7 +34,8 @@ defmodule Kalku.Baseline do
          {:ok, modules} <- load(root, files),
          prints = fingerprints(modules, measuring, root),
          {reused, running} = reusable(modules, prints, Keyword.get(opts, :reuse, []), root),
-         {:ok, {measured, doubt}} <- through(running, reused, measuring) do
+         {:ok, {measured, doubt}} <-
+           through(running, reused, measuring, Keyword.get(opts, :told, &nobody/2)) do
       Kalku.Runtime.mark(Mix.Project.config()[:app])
       elapsed = System.monotonic_time(:millisecond) - started
       report(measured, doubt, elapsed, root, opts, {prints, reused_ids(reused, root)})
@@ -72,8 +73,10 @@ defmodule Kalku.Baseline do
   # down: a project that stops applications on its way out, reached from a
   # test, stops the one running it. That is a suite that could not be run,
   # and it is said like any other, not left for the pipe closing to say.
-  defp through(modules, reused, measuring) do
-    {:ok, ran(modules, reused, measuring)}
+  defp nobody(_done, _total), do: :ok
+
+  defp through(modules, reused, measuring, told) do
+    {:ok, ran(modules, reused, measuring, told)}
   rescue
     e -> could_not_run(Exception.message(e))
   catch
@@ -83,7 +86,7 @@ defmodule Kalku.Baseline do
     Cover.stop()
   end
 
-  defp ran(modules, reused, measuring) do
+  defp ran(modules, reused, measuring, told) do
     if measuring, do: Cover.reset()
     leaving_out(reused, fn -> seen_through(modules) end)
     # What the suite as a whole reached. Per-test attribution has to add
@@ -92,7 +95,7 @@ defmodule Kalku.Baseline do
     tests = Collector.taken()
 
     if measuring and judged_by_some?(tests),
-      do: attributed(tests, modules, whole),
+      do: attributed(tests, modules, whole, told),
       else: {tests, nil}
   end
 
@@ -177,8 +180,8 @@ defmodule Kalku.Baseline do
   # where none of them notices, against every other test before it calls
   # the wekufe a survivor. The lines no test is credited with go to all of
   # them.
-  defp attributed(tests, modules, whole) do
-    {measured, doubt} = reconcile(measure_each(tests, modules), whole)
+  defp attributed(tests, modules, whole, told) do
+    {measured, doubt} = reconcile(measure_each(tests, modules, told), whole)
     {Started.credit(measured), doubt}
   end
 
@@ -229,7 +232,7 @@ defmodule Kalku.Baseline do
   run of the suite, once, and buys casting each wekufe against the few
   tests that reach its line instead of all of them.
   """
-  def measure_each(tests, modules) do
+  def measure_each(tests, modules, told \\ &nobody/2) do
     started = now()
     Cover.reset()
     Calls.start(:cover.modules())
@@ -247,7 +250,7 @@ defmodule Kalku.Baseline do
               Enum.uniq(Calls.taken() ++ lines)
             end)
 
-          {%{test | lines: lines}, told(progress, {running, finding, reading}, started)}
+          {%{test | lines: lines}, counted(progress, {running, finding, reading}, started, told)}
       end)
 
     Calls.stop()
@@ -257,9 +260,10 @@ defmodule Kalku.Baseline do
   @every_ms 10_000
 
   # A large suite takes minutes here, and a run that says nothing for
-  # minutes cannot be told from one that hangs. Where the time went is said
-  # too, because it is the first thing asked of a pass that is slow.
-  defp told(progress, {running, finding, reading}, started) do
+  # minutes cannot be told from one that hangs. How far it has got goes to
+  # whoever is running it, as `progress`; where the time went goes to
+  # stderr too, because it is the first thing asked of a pass that is slow.
+  defp counted(progress, {running, finding, reading}, started, told) do
     {ran, found, read} = progress.spent
 
     progress = %{
@@ -268,7 +272,8 @@ defmodule Kalku.Baseline do
         spent: {ran + running, found + finding, read + reading}
     }
 
-    if now() - progress.said >= @every_ms do
+    if now() - progress.said >= @every_ms or progress.done == progress.of do
+      told.(progress.done, progress.of)
       IO.puts(:stderr, so_far(progress, now() - started))
       %{progress | said: now()}
     else

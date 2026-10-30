@@ -46,6 +46,7 @@ fn heard_through(reni: String, body: () -> Unit / Telling) : [String] / File + C
   will_cost(casts, _estimate_ms, _most_ms, resume) -> resume((), state ++ ["#{casts} casts"])
   still_on(worker, site, ms, resume) -> resume((), state ++ [stalled(worker, site, ms)])
   kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
+  kalku_at(worker, done, total, resume) -> resume((), state ++ [so_far(worker, done, total)])
   logging_to(path, resume) -> resume((), state ++ [logged_at(path)])
   return(_x) -> state
 }
