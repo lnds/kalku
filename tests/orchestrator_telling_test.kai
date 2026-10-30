@@ -1,5 +1,6 @@
 import kalku.wire.enums
 import kalku.orchestrator.telling
+import kalku.core.costing
 
 # Reading the account back is what a handler is for: no process, no
 # stderr, and the lines in the order they were said in.
@@ -11,6 +12,7 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
   got_through(done, total, resume) -> resume((), state ++ ["#{done} of #{total}"])
   will_cost(casts, estimate_ms, most_ms, resume) ->
     resume((), state ++ ["#{casts} casts, #{estimate_ms}ms, at most #{most_ms}ms"])
+  still_on(worker, what, ms, resume) -> resume((), state ++ [stalled(worker, what, ms)])
   return(_x) -> state
 }
 
@@ -76,4 +78,73 @@ test "a quiet run drops the account and keeps the answer" {
     42
   })
     == 42
+}
+
+# A person watching a run reads how far it has got and how long is left,
+# and a figure under a second says nothing worth reading.
+test "how far the casting has got says how long is left once that says anything" {
+  assert counted(120, 446, 480000) == "casting 120 of 446, 8 minutes left"
+  assert counted(446, 446, 480000) == "casting 446 of 446"
+  assert counted(3, 10, 500) == "casting 3 of 10"
+}
+
+# The baseline's estimate stands until a cast has finished; after that the
+# casts' own rate is the better guess.
+test "what is left is the rate the casts went at, and the estimate before any" {
+  assert left_ms(0, 10, 0, 9000) == 9000
+  assert left_ms(2, 10, 4000, 9000) == 16000
+}
+
+test "a cast that has gone on long is named with its worker and its wekufe" {
+  assert stalled(2, "src/a.ts:41 return", 95400)
+    == "worker 2 is still on src/a.ts:41 return after 95 s"
+}
+
+fn shown_on(tty: Bool, body: () -> Unit / Telling) : [String] / Clock = handle {
+  shown(body)
+} with Stderr([]) {
+  eprint(s, resume) -> resume((), state ++ [s])
+  is_tty(resume) -> resume(tty, state)
+  return(_x) -> state
+}
+
+fn a_run() : Unit / Telling {
+  Telling.entered(PhaseCasting)
+  Telling.will_cost(10, 5000, 5000)
+  Telling.tell_of("worker 1 casts lib/a.kai:3 arm against 1 test(s)")
+  Telling.got_through(1, 10)
+  Telling.still_on(1, "lib/a.kai:3 arm", 31000)
+  Telling.got_through(10, 10)
+}
+
+# A CI log is read after the fact: each phase, a cast that hung, and where
+# the run ended, with nothing rewritten and no sentence per wekufe.
+test "off a terminal, a run says each phase, a cast that is taking long, and the last count" {
+  assert shown_on(false, a_run)
+    == [
+      "kalku: #{phase_name(PhaseCasting)}",
+      "kalku: #{what_it_costs(5000, 5000)}",
+      "kalku: worker 1 is still on lib/a.kai:3 arm after 31 s",
+      "kalku: casting 10 of 10"
+    ]
+}
+
+# On a terminal the count is one line drawn over itself; a cast taking long
+# goes above it and stays, and the line is gone before the report.
+test "on a terminal, the count is drawn in place and cleared, and a long cast stays above it" {
+  let up = "\x1b[1A\x1b[2K"
+  assert shown_on(true, a_run)
+    == [
+      "kalku: #{phase_name(PhaseCasting)}",
+      "#{up}kalku: casting 0 of 10, under a minute left",
+      "#{up}kalku: casting 1 of 10",
+      "#{up}kalku: worker 1 is still on lib/a.kai:3 arm after 31 s",
+      "kalku: casting 1 of 10",
+      "#{up}kalku: casting 10 of 10",
+      "#{up}\x1b[1A"
+    ]
+}
+
+test "a quiet run says nothing" {
+  assert shown_on(false, () => untold(a_run)) == []
 }

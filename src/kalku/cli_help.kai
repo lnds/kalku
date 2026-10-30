@@ -76,6 +76,11 @@ Cast wekufe over those files and report the ones that survived, each with
 its file, line, spell, diff and a hint. Nothing is written in the project's
 working tree: wekufe are cast in the reni, under the temporary directory.
 
+While it runs it says, on stderr, which phase it is in and how far the
+casting has got, and names a cast that has gone on for 30 s or more: on a
+terminal as one line drawn in place, elsewhere as a line per phase and a
+count every 30 s. stdout carries the report alone.
+
 exit code: 0 when nothing blocks, 1 when a wekufe survived on a changed
 line or the score is under what the project holds it to, 2 when the run
 could not measure.
@@ -95,18 +100,20 @@ options:
   --watch          run again every time a source or test file changes, until
                    interrupted; the exit code is the last run's
   --format <name>  human (the default), agent, json, or github
-  -v, --verbose    say what the run is doing while it does it
+  -v, --verbose    say everything the run is doing, a line per wekufe
+  -q, --quiet      say nothing until the report
 """
 
 const CAST : String = """
-usage: kalku cast <wekufe>... [--format <name>] [-v]
+usage: kalku cast <wekufe>... [--format <name>] [-v | -q]
 
 Re-cast these wekufe, after a test was written for them. A wekufe is named
 as a run named it. What comes back is what a run reports, for these alone.
 
 options:
   --format <name>  human (the default), agent, json, or github
-  -v, --verbose    say what the run is doing while it does it
+  -v, --verbose    say everything the run is doing, a line per wekufe
+  -q, --quiet      say nothing until the report
 """
 
 const MERGE : String = """

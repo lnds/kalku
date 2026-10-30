@@ -87,7 +87,8 @@ changed since it, and needs no file named; `limit` caps how many wekufe are
 cast, 100 unless told otherwise and all of them under `since`.
 
 A host that asks to hear of a call, by giving it a `progressToken`, is told
-how the run is going as it goes: each stage, and how many wekufe are cast.
+how the run is going as it goes: each stage, how many wekufe are cast,
+and any cast that has gone on for 30 s or more, by worker and wekufe.
 A run is silent for minutes otherwise, and a host counts that as dead.
 
 A host that calls a run off (`notifications/cancelled`) ends it and goes on
@@ -156,6 +157,14 @@ against those tests alone. A site no test reaches is `no_coverage`, never
 a kill — and neither is a timeout, a crash, or a wekufe that did not
 compile. The score is `killed / (killed + survived)` and nothing else
 moves it.
+
+While it runs, kalku says on stderr which phase it is in and how far the
+casting has got, with an estimate of what is left: on a terminal as one
+line drawn in place, in a CI log as a line per phase and a count every
+30 s. A cast that has gone on for 30 s or more is named — `worker 2 is
+still on lib/green.ex:4 compare after 95 s` — which is what tells a slow
+suite from a hung one. `--verbose` says every note, a line per wekufe;
+`--quiet` says nothing until the report. stdout carries the report alone.
 
 A wekufe is named by the text it was cast in, so editing its file renames it; re-casting an old name says so, and a new `kalku run` gives the new ones.
 
