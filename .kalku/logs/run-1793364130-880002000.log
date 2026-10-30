@@ -1,0 +1,11 @@
+kalku 0.29.0, a run started 1793364130 s after the epoch
++0.000s entered baseline
++0.000s running the suite once, for a baseline
++0.000s the suite is green: 1 test(s)
++0.000s entered cast
++0.000s 1 site(s) found; casting 1 with 1 worker(s)
++0.000s 1 casts: this should be quick
++0.000s worker 0 casts lib/a.ex:9 compare against 1 test(s)
++0.000s worker 0: s9 survived
++0.000s 1 of 1
++0.000s entered report
