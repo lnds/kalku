@@ -1,3 +1,9 @@
+## v0.30.1 (2026-10-30)
+
+### Fixed
+
+- **init**: refuse a summoning written before rebar3's cache went into the reni (#525)
+
 ## v0.30.0 (2026-10-30)
 
 ### Added
