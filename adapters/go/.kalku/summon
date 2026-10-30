@@ -1,5 +1,5 @@
 #!/bin/sh
-# kalku-summon-contract: 1
+# kalku-summon-contract: 2
 # Summons the Go kalku for this project. Written by `kalku init`.
 #
 # stdout carries the kalku protocol. Nothing is built here: `go test` runs
