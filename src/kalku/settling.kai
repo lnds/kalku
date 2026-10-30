@@ -54,7 +54,7 @@ fn which_language(root: String, language: Option[String]) : Result[Known, Puzzle
 # does not say, the project's files are walked to find out.
 fn detect_here(root: String, markers: [String]) : Result[Known, Puzzle] / File =
   if contains(markers, "CMakeLists.txt") {
-    let cmake = file.read("#{root}/CMakeLists.txt")
+    let cmake = ok(read_or_empty("#{root}/CMakeLists.txt")) ?? ""
     let files = match (languages_of(cmake), named("cpp")) {
       (None, Ok(cpp)) -> every_source(root, cpp)
       _ -> []
@@ -106,7 +106,8 @@ pub fn passing_through(root: String) : Option[Passing] / File + Env + Process =
       let _ = dir.create_dir(above(reni))
       let _ = dir.create_dir(reni)
       let summon = "#{reni}/#{OUTSIDE_SUMMONER}"
-      file.write(summon, outside_text(known))
+      # A summoner that could not be written is no way to pass through.
+      ok(file.write(summon, outside_text(known)))!
       runnable_now(summon)
       Some(Passing {
         language: known.language,
@@ -201,40 +202,55 @@ fn write_it(
   plan: Plan,
   wanted: Option[String]
 ) : Int / Stdout + Stderr + File + Process {
-  let config = "#{root}/#{CONFIG_PATH}"
+  match written_out(root, plan, wanted) {
+    Err(why) -> {
+      Stderr.eprint("kalku: #{why}")
+      2
+    }
+    Ok(_) -> 0
+  }
+}
+
+fn written_out(
+  root: String,
+  plan: Plan,
+  wanted: Option[String]
+) : Result[Unit, String] / Stdout + File + Process {
   let summoner = "#{root}/#{SUMMONER_PATH}"
-  keep(config, plan.config)
+  keep("#{root}/#{CONFIG_PATH}", plan.config)!
   let _ = dir.create_dir("#{root}/.kalku")
-  refresh(summoner, plan.summoner)
+  refresh(summoner, plan.summoner)!
   make_runnable(summoner)
   declare_dependency(root, plan, wanted)
-  0
 }
 
 # The summoning is the one file `init` will write over, and only when the
 # one that is there was written against a contract this kalku no longer
 # speaks. Keeping it would mean a project set up a year ago never receives
 # a fix to the summoning, which is how a fixed bug goes on being reported.
-fn refresh(path: String, content: String) : Unit / Stdout + File =
+fn refresh(path: String, content: String) : Result[Unit, String] / Stdout + File =
   if not file.exists(path) {
     put(path, content, "wrote  ")
-  } else if summon_is_current(file.read(path)) {
+  } else if summon_is_current(ok(file.read(path)) ?? "") {
     told("kept   ", "#{path} (already there)")
+    Ok(())
   } else {
     put(path, content, "renewed")
   }
 
 # A project already set up is left alone: whoever edited these files meant
 # it, and overwriting them is not something an `init` should do twice.
-fn keep(path: String, content: String) : Unit / Stdout + File = if file.exists(path) {
-  told("kept   ", "#{path} (already there)")
-} else {
-  put(path, content, "wrote  ")
-}
+fn keep(path: String, content: String) : Result[Unit, String] / Stdout + File =
+  if file.exists(path) {
+    told("kept   ", "#{path} (already there)")
+    Ok(())
+  } else {
+    put(path, content, "wrote  ")
+  }
 
-fn put(path: String, content: String, verb: String) : Unit / Stdout + File {
-  file.write(path, content)
-  told(verb, path)
+fn put(path: String, content: String, verb: String) : Result[Unit, String] / Stdout + File {
+  (file.write(path, content) |> map_err(why => "cannot write #{path}: #{why}"))!
+  Ok(told(verb, path))
 }
 
 fn told(verb: String, what: String) : Unit / Stdout = Stdout.print("  #{verb} #{what}")
@@ -250,7 +266,7 @@ fn make_runnable(path: String) : Unit / Process {
 # kalku is a dependency, and a build file that does not name it yet.
 fn dependency_wanted(root: String, plan: Plan) : Option[String] / File = plan.dependency
   |> and_then(
-    line => if depends_already(plan.known, build_file_of(root, plan.known)) {
+    line => if depends_already(plan.known, ok(build_file_of(root, plan.known)) ?? "") {
       None
     } else {
       Some(line)
@@ -261,17 +277,17 @@ fn declare_dependency(
   root: String,
   plan: Plan,
   wanted: Option[String]
-) : Unit / Stdout + File = match wanted {
-  None -> Stdout.print("\nkalku: ready. Try `kalku run <file>`.")
+) : Result[Unit, String] / Stdout + File = match wanted {
+  None -> Ok(Stdout.print("\nkalku: ready. Try `kalku run <file>`."))
   Some(line) -> {
     let path = "#{root}/#{plan.known.marker}"
-    match with_dependency(build_file_of(root, plan.known), line) {
+    match with_dependency(build_file_of(root, plan.known)!, line) {
       Ok(declared) -> {
-        file.write(path, declared)
+        (file.write(path, declared) |> map_err(why => "cannot write #{path}: #{why}"))!
         Stdout.print("  wrote   #{path} (the dependency, in `deps`)")
-        Stdout.print("\nkalku: ready. Run `mix deps.get`, then `kalku run <file>`.")
+        Ok(Stdout.print("\nkalku: ready. Run `mix deps.get`, then `kalku run <file>`."))
       }
-      Err(why) -> by_hand(plan, line, why)
+      Err(why) -> Ok(by_hand(plan, line, why))
     }
   }
 }
@@ -295,9 +311,9 @@ fn by_hand(plan: Plan, line: String, why: String) : Unit / Stdout = Stdout.print
   )
 )
 
-fn build_file_of(root: String, known: Known) : String / File {
+fn build_file_of(root: String, known: Known) : Result[String, String] / File {
   let path = "#{root}/#{known.marker}"
-  if file.exists(path) { file.read(path) } else { "" }
+  read_or_empty(path)
 }
 
 # ---- a project nobody set up --------------------------------------------

@@ -45,7 +45,11 @@ pub fn held_to(policy: Policy, wanted: Wanted) : Policy / Stderr = match wanted.
 pub fn ratcheted(c: Config, wanted: Wanted) : Result[Policy, String] / File = held_by_ratchet(
   c,
   wanted,
-  if file.exists(BASELINE_PATH) { Some(file.read(BASELINE_PATH)) } else { None }
+  if file.exists(BASELINE_PATH) {
+    Some((file.read(BASELINE_PATH) |> map_err(why => "cannot read #{BASELINE_PATH}: #{why}"))!)
+  } else {
+    None
+  }
 )
 
 #[doc("The same, given what the baseline file holds, or `None` when there is no file.")]
@@ -75,11 +79,9 @@ pub fn held_by_ratchet(c: Config, wanted: Wanted, stored: Option[String]) : Resu
 pub fn keep_baseline(r: Report, code: Int) : Unit / Stderr + File = if code != 0 {
   Stderr.eprint("kalku: baseline not stored: this run did not end clean")
 } else {
-  let was = if file.exists(BASELINE_PATH) {
-    ratchet.read(file.read(BASELINE_PATH)) |> ok
-  } else {
-    None
+  let was = ok(file.read(BASELINE_PATH)) || (text => ok(ratchet.read(text)))
+  match file.write(BASELINE_PATH, written(stored_of(r.counts))) {
+    Err(why) -> Stderr.eprint("kalku: baseline not stored: cannot write #{BASELINE_PATH}: #{why}")
+    Ok(_) -> Stderr.eprint("kalku: #{moved(was, stored_of(r.counts))}")
   }
-  file.write(BASELINE_PATH, written(stored_of(r.counts)))
-  Stderr.eprint("kalku: #{moved(was, stored_of(r.counts))}")
 }

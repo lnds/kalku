@@ -52,7 +52,7 @@ fn outcome_of(said: [String], wekufe: String) : String = match find(
 }
 
 fn field(line: String, name: String) : String = match json_decode(line) {
-  Some(v) -> as_string(get(v, name)) |> unwrap_or("")
+  Some(v) -> (get(v, name) || as_string) ?? ""
   None -> ""
 }
 
@@ -148,7 +148,7 @@ test "coverage over the inline limit is written to a file" {
   let path = field(line, "coverage_path")
   assert path == "#{reni()}/coverage-0.json"
   assert not has(line, "\"coverage\":")
-  assert has(file.read(path), "clamp keeps a positive number")
+  assert has(ok(file.read(path)) ?? "", "clamp keeps a positive number")
 }
 
 # Thousands of covered lines are said as surely as a handful: the kalku
@@ -166,7 +166,7 @@ test "a baseline with thousands of covered lines is said in full" {
   assert field(line, "status") == "green"
   let path = field(line, "coverage_path")
   assert path == "#{reni()}/wide/coverage-0.json"
-  assert has(file.read(path), "{\"file\":\"wide.kai\",\"line\":3004,")
+  assert has(ok(file.read(path)) ?? "", "{\"file\":\"wide.kai\",\"line\":3004,")
 }
 
 test "sites come from kaikai's own parser, with the span and text to match" {
@@ -259,7 +259,7 @@ fn orphaned(requests: [String]) : [String] / Process + File + Clock {
 
 # The program the slow suite started, once it has said which.
 fn started(pidfile: String, tries: Int) : Option[String] / File + Clock {
-  let said = if file.exists(pidfile) { trim(file.read(pidfile)) } else { "" }
+  let said = trim(ok(file.read(pidfile)) ?? "")
   if not is_empty(said) {
     Some(said)
   } else if tries == 0 {
@@ -331,9 +331,11 @@ test "a kalku whose run is gone ends in the middle of a cast, and the package is
 }
 
 fn error_of(said: [String]) : String =
-  find(said, l => has(l, "\"type\":\"error\"")) |> map(
-    l => "#{field(l, "code")}: #{field(l, "message")}"
-  ) |> unwrap_or("no error")
+  find(said, l => has(l, "\"type\":\"error\""))
+    |> map(
+      l => "#{field(l, "code")}: #{field(l, "message")}"
+    )
+    |> unwrap_or("no error")
 
 # An oracle is any command, judged by its exit status alone. `kai test`
 # exits non-zero when a test fails, so as an oracle it kills what the
@@ -435,7 +437,7 @@ fn baseline_of_package(root: String, reni: String, reuse: String) : String / Pro
 
 fn of_each_test(line: String, name: String) : [String] = match json_decode(line) {
   Some(v) -> match get(v, "tests") {
-    JArr(tests) -> tests | (t => unwrap_or(as_string(get(t, name)), ""))
+    Some(JArr(tests)) -> tests | (t => (get(t, name) || as_string) ?? "")
     _ -> []
   }
   None -> []
@@ -443,7 +445,7 @@ fn of_each_test(line: String, name: String) : [String] = match json_decode(line)
 
 fn reused_of(line: String) : [String] = match json_decode(line) {
   Some(v) -> match get(v, "reused") {
-    JArr(ids) -> ids | (i => unwrap_or(as_string(i), ""))
+    Some(JArr(ids)) -> ids | (i => as_string(i) ?? "")
     _ -> []
   }
   None -> []
@@ -528,20 +530,23 @@ test "a change to a source runs again only the module built from it" {
 # developer does between two runs of a watch.
 fn told_around(
   first: [String],
-  edit: () -> Unit / File,
+  edit: () -> Result[Unit, String] / File,
   then: [String]
 ) : [String] / Process + File = match proc.start_piped(KALKU, []) {
   Err(e) -> ["cannot start the kalku: #{e}"]
   Ok(child) -> {
     let _ = proc.write_stdin(child, join(first, "\n") ++ "\n")
     let before = until_prepared(child, "")
-    edit()
+    let edited = edit()
     let rest = then ++ ["{\"type\":\"shutdown\",\"id\":99}"]
     let _ = proc.write_stdin(child, join(rest, "\n") ++ "\n")
     let _ = proc.close_stdin(child)
     let out = drain(child, before)
     let _ = proc.wait(child)
-    lines(out)
+    match edited {
+      Ok(_) -> lines(out)
+      Err(why) -> ["cannot edit the package: #{why}"]
+    }
   }
 }
 
@@ -566,7 +571,7 @@ test "a reloaded file is the one the next cast builds" {
   let _ = proc.wait(proc.start("/bin/cp", ["-R", TINY, root]))
   let said = told_around(
     [reuse_hello(root, "#{reni()}/reload-reni"), "{\"type\":\"prepare\",\"id\":2}"],
-    () => file.write("#{root}/tiny.kai", file.read("#{root}/tiny.kai") ++ "\nfn broken( : Int = 0\n"),
+    () => file.append("#{root}/tiny.kai", "\nfn broken( : Int = 0\n"),
     ["{\"type\":\"reload\",\"id\":3,\"files\":[\"tiny.kai\"]}", cast(4, "covered", 305, 307, ">")]
   )
 

@@ -11,6 +11,7 @@ A project that was set up keeps it. One that was not is left as it is, and
 the ledger goes where the rest of its runs go, in the reni.
 """)]
 
+import kalku.sources
 import fs.file
 import kalku.wire.shapes
 import kalku.core.remembering
@@ -29,7 +30,7 @@ fn ledger_of(root: String) : String / File + Env = if set_up(root) {
 #[doc("What a project's runs wrote down, or nothing when none has run.")]
 pub fn ledger_in(root: String) : [Remembered] / File + Env {
   let path = ledger_of(root)
-  if file.exists(path) { read_all(file.read(path)) } else { [] }
+  read_all(ok(read_or_empty(path)) ?? "")
 }
 
 #[doc("What the runs of the project in the current directory wrote down.")]
@@ -41,14 +42,13 @@ Write down what a run cast, in the project it was asked about.
 Also when the run stopped short: those wekufe were measured, and a later
 `cast` or `show` has to know them.
 """)]
-pub fn remember_in(root: String, rs: [Remembered]) : Unit / File + Env =
+pub fn remember_in(root: String, rs: [Remembered]) : Result[Unit, String] / File + Env =
   if is_empty(rs) {
-    ()
+    Ok(())
   } else {
     let path = ledger_of(root)
-    let was = if file.exists(path) { file.read(path) } else { "" }
-    file.write(path, appended(was, rs))
+    file.append(path, appended("", rs)) |> map_err(why => "cannot write #{path}: #{why}")
   }
 
 #[doc("Write down what a run cast, in the current directory's project.")]
-pub fn remember(rs: [Remembered]) : Unit / File + Env = remember_in(".", rs)
+pub fn remember(rs: [Remembered]) : Result[Unit, String] / File + Env = remember_in(".", rs)

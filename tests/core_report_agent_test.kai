@@ -74,7 +74,7 @@ fn first_line(text: String) : String = head(lines(text)) |> unwrap_or("")
 fn last_line(text: String) : String = last(lines(text)) |> unwrap_or("")
 
 fn field(line: String, name: String) : JsonValue = match json_decode(line) {
-  Some(v) -> get(v, name)
+  Some(v) -> get(v, name) ?? JNull
   None -> JNull
 }
 
@@ -183,7 +183,7 @@ test "the summary closes the report, with the score and what to exit with" {
   assert field(summary, "score") == JReal(0.5)
   assert field(summary, "survivors_on_changed_lines") == JNum(0)
   assert field(summary, "exit") == JNum(0)
-  assert get(field(summary, "counts"), "survived") == JNum(1)
+  assert get(field(summary, "counts"), "survived") == Some(JNum(1))
 }
 
 # A score that does not exist is absent, not zero: nothing could have
@@ -210,8 +210,9 @@ test "suppressions travel only when a change made some" {
   }
   let loud = last(lines(agent(noisy, lines_of))) |> unwrap_or("")
 
-  assert get(field(loud, "suppression_changes"), "equivalent_added") == JNum(2)
-  assert get(field(loud, "suppression_changes"), "exclude_added") == JArr([JStr("lib/gen/**")])
+  assert get(field(loud, "suppression_changes"), "equivalent_added") == Some(JNum(2))
+  assert get(field(loud, "suppression_changes"), "exclude_added")
+    == Some(JArr([JStr("lib/gen/**")]))
   assert not has(loud, "exclude_calls_added")
 }
 
@@ -326,7 +327,7 @@ test "a run that stopped short says so in the summary, and in the JSON" {
 
   assert field(summary, "stopped") == JStr(why)
   assert field(summary, "exit") == JNum(2)
-  assert get(field(summary, "counts"), "killed") == JNum(1)
+  assert get(field(summary, "counts"), "killed") == Some(JNum(1))
   assert field(json(stopped, 2), "stopped") == JStr(why)
   assert not has(last_line(agent(report_of([], one()), lines_of)), "stopped")
   assert not has(json(report_of([], one()), 0), "stopped")
@@ -342,7 +343,7 @@ test "an agent is told the few tests the casting spends most on" {
   match field(summary, "dearest_tests") {
     JArr(listed) -> {
       assert length(listed) == COSTLY_FOR_AGENT
-      assert get(listed |> head |> unwrap_or(JNull), "casting_ms") == JNum(70)
+      assert get((listed |> head) ?? JNull, "casting_ms") == Some(JNum(70))
     }
     _ -> {
       assert false
@@ -363,10 +364,10 @@ test "an agent is told which tests kill nothing, when the run asked for every ki
   let summary = last_line(agent(Report { ...report_of([], one()), weighed: Some(w) }, lines_of))
   let weights = field(summary, "test_weights")
 
-  assert get(weights, "kill_nothing") == JArr([JStr("t1")])
-  assert get(weights, "kill_nothing_count") == JNum(1)
-  assert get(weights, "reach_nothing_count") == JNum(2)
-  assert get(weights, "unsure") == JNum(1)
-  assert get(weights, "redundant_count") == JNum(0)
+  assert get(weights, "kill_nothing") == Some(JArr([JStr("t1")]))
+  assert get(weights, "kill_nothing_count") == Some(JNum(1))
+  assert get(weights, "reach_nothing_count") == Some(JNum(2))
+  assert get(weights, "unsure") == Some(JNum(1))
+  assert get(weights, "redundant_count") == Some(JNum(0))
   assert not has(last_line(agent(report_of([], one()), lines_of)), "test_weights")
 }

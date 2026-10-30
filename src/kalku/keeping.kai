@@ -77,7 +77,7 @@ says why when there is one nobody can read — which a run tells, and then
 measures the whole suite as if there were none.
 """)]
 pub fn load(path: String) : Result[Option[Store], String] / File = if file.exists(path) {
-  match json_decode(file.read(path)) {
+  match json_decode((file.read(path) |> map_err(why => unreadable(path, why)))!) {
     None -> Err(unreadable(path, "it is not JSON"))
     Some(v) -> match store_of_json(v, "") {
       Ok(store) -> Ok(Some(store))
@@ -100,7 +100,7 @@ pub fn save(path: String, store: Store) : Result[Unit, String] / File {
   let text = json_encode(to_json(store))
   made(paths.dirname(path))
   let beside = "#{path}.#{setting_of("", "", "", text)}"
-  file.write(beside, text)
+  file.write(beside, text)!
   file.rename(beside, path)
 }
 

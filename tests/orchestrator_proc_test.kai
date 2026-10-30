@@ -44,8 +44,6 @@ fn launcher_apart(pidfile: String) : KalkuSpec = KalkuSpec {
   args: ["-c", "set -m; sleep 60 & echo $! > #{pidfile}; wait"]
 }
 
-# `file.read` panics on a file that is not there, and a launcher that never
-# wrote one is a test failure with a reason rather than a crash.
 fn temp_under() : String / Env {
   let dir = Env.get("TMPDIR") |> unwrap_or("/tmp")
   if ends_with(dir, "/") { slice(dir, 0, length(dir) - 1) } else { dir }
@@ -65,8 +63,8 @@ fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $
   }
 }
 
-fn launched(pidfile: String) : Option[Int] / File =
-  if file.exists(pidfile) { to_int(trim(file.read(pidfile))) } else { None }
+# A launcher that never wrote its pid is a test failure with a reason.
+fn launched(pidfile: String) : Option[Int] / File = ok(file.read(pidfile)) || (t => to_int(trim(t)))
 
 fn still_running(pid: Int) : Bool / Process = match proc.kill(Child { pid: pid }, 0) {
   Ok(_) -> true

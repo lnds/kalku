@@ -8,7 +8,7 @@ const FIXTURES : String = "docs/protocol/fixtures"
 fn fixture_files(sub: String) : [String] / File =
   sort(dir.list_dir("#{FIXTURES}/#{sub}")) | (f => "#{FIXTURES}/#{sub}/#{f}")
 
-fn lines_in(path: String) : [String] / File = lines(file.read(path))
+fn lines_in(path: String) : [String] / File = fixture_lines(path)
 
 # A valid line must decode and re-encode to itself, byte for byte.
 fn request_problem(line: String) : Option[String] = match decode_request(line) {
@@ -90,4 +90,11 @@ test "a coverage file that is not an array of entries is refused" {
   assert is_err(decode_coverage("{\"file\":\"lib/a.ex\"}"))
   assert is_err(decode_coverage("not json at all"))
   assert is_err(decode_coverage("[{\"file\":\"lib/a.ex\"}]"))
+}
+
+# A fixture that cannot be read is a line no check accepts, so the test
+# fails naming it instead of passing over nothing.
+fn fixture_lines(path: String) : [String] / File = match file.read(path) {
+  Ok(text) -> lines(text)
+  Err(why) -> ["cannot read #{path}: #{why}"]
 }

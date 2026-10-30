@@ -100,7 +100,7 @@ fn say(reply: Option[JsonValue], id: Int) : Unit / Stdout = match reply {
 # Only `type` and `id` are read: the fake relays whatever the script says,
 # including a reply the protocol would reject.
 fn head_of(line: String) : (String, Int) = match json_decode(line) {
-  Some(v) -> (as_string(get(v, "type")) |> unwrap_or(""), as_int(get(v, "id")) |> unwrap_or(0))
+  Some(v) -> ((get(v, "type") || as_string) ?? "", (get(v, "id") || as_int) ?? 0)
   None -> ("", 0)
 }
 

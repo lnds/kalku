@@ -163,6 +163,12 @@ released in `finally`, never by a line at the end of a function.
 - **Pipes**: `|>` applies, `|` maps, `||` flat-maps, `|?` filters. The
   map pipe is not for `Option` or `Result`: use a `match` or
   `|> option.map(f)`.
+- **`??` is the default of an `Option`**: `get(v, "id") || as_int ?? 0`
+  is wrong, because `??` binds tighter than the pipes; write
+  `(get(v, "id") || as_int) ?? 0`. A `Result` takes a default through
+  `ok(r) ?? d`, so the place an error is dropped stays visible. Never
+  `unwrap_or_else(... panic ...)`: an error worth stopping for is
+  propagated with `!` or said where it happened.
 - **No UFCS.** kaikai has no method form `x.f(a)`: write
   `x |> f(a)` and chain with more pipes:
   `found |> map(.tests) |> unwrap_or([])`. Field access (`r.field`) and

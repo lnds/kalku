@@ -68,14 +68,14 @@ test "an over-long line is not buffered while it grows" {
 }
 
 test "the framing fixtures hold" {
-  let cases = lines(file.read("docs/protocol/fixtures/invalid/framing.ndjson"))
+  let cases = fixture_lines("docs/protocol/fixtures/invalid/framing.ndjson")
   assert all(cases, fixture_holds)
 }
 
 fn fixture_holds(raw: String) : Bool = match json_decode(raw) {
-  Some(v) -> match as_string(get(v, "expect")) {
-    Some(expect) -> match as_int(get(v, "max")) {
-      Some(max) -> match as_string(get(v, "input")) {
+  Some(v) -> match get(v, "expect") || as_string {
+    Some(expect) -> match get(v, "max") || as_int {
+      Some(max) -> match get(v, "input") || as_string {
         Some(input) -> matches(expect, frames_of(input, max, 5))
         None -> false
       }
@@ -139,4 +139,11 @@ check "a line arrives whole or not at all, never truncated into one that parses"
 # the wire that a slow implementation would be felt through.
 bench "framing a hundred protocol lines" {
   feed(framer(4096), repeat("{\"type\":\"cast_done\",\"id\":1,\"outcome\":\"killed\"}\n", 100))
+}
+
+# A fixture that cannot be read is a line no check accepts, so the test
+# fails naming it instead of passing over nothing.
+fn fixture_lines(path: String) : [String] / File = match file.read(path) {
+  Ok(text) -> lines(text)
+  Err(why) -> ["cannot read #{path}: #{why}"]
 }

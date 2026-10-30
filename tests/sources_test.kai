@@ -36,7 +36,8 @@ fn make(dir: String, paths: [String]) : Unit / Process + File {
     p => {
       let parent = join(reverse(drop(reverse(split("#{dir}/#{p}", "/")), 1)), "/")
       let _ = proc.pipe_errs("/bin/mkdir", ["-p", parent]) |> map(c => proc.wait(c))
-      file.write("#{dir}/#{p}", "x\n")
+      # A file the fixture could not write is a file the assertions miss.
+      let _ = file.write("#{dir}/#{p}", "x\n")
     }
   )
 }

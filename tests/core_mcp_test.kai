@@ -8,7 +8,7 @@ fn call(json: String) : Heard = asked_of(json).snd
 
 fn tool_names() : [String] = match json_decode(tools(Some(1))) {
   None -> []
-  Some(v) -> flat_map(as_arr(get(get(v, "result"), "tools")), named_tool)
+  Some(v) -> flat_map(as_arr((get(v, "result") || (r => get(r, "tools"))) ?? JNull), named_tool)
 }
 
 fn as_arr(v: JsonValue) : [JsonValue] = match v {
@@ -16,7 +16,7 @@ fn as_arr(v: JsonValue) : [JsonValue] = match v {
   _ -> []
 }
 
-fn named_tool(v: JsonValue) : [String] = match as_string(get(v, "name")) {
+fn named_tool(v: JsonValue) : [String] = match get(v, "name") || as_string {
   Some(n) -> [n]
   None -> []
 }

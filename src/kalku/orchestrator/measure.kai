@@ -337,15 +337,13 @@ fn coverage_from(reply: KalkuReply) : Result[Option[[CoverageEntry]], String] / 
 fn spilled_coverage(
   path: String,
   decoded: (String) -> Result[[CoverageEntry], ProtocolError]
-) : Result[Option[[CoverageEntry]], String] / File =
-  if file.exists(path) {
-    match decoded(file.read(path)) {
-      Ok(entries) -> Ok(Some(entries))
-      Err(e) -> Err("the coverage file #{path} could not be read: #{e.detail}")
-    }
-  } else {
-    Err("the kalku named a coverage file that is not there: #{path}")
-  }
+) : Result[Option[[CoverageEntry]], String] / File {
+  let text = (file.read(path)
+    |> map_err(why => "the coverage file #{path} the kalku named could not be read: #{why}"))!
+  let entries =
+    (decoded(text) |> map_err(e => "the coverage file #{path} could not be read: #{e.detail}"))!
+  Ok(Some(entries))
+}
 
 # What each test costs, which is what a wekufe's deadline is built from:
 # a cast is given a few times the time the tests it runs took.

@@ -30,7 +30,7 @@ pub fn sources_of(r: Report) : [(String, [String])] / File =
   uniq(r.survivors | .site.file) | (path => (path, read_lines(path)))
 
 fn read_lines(path: String) : [String] / File =
-  if file.exists(path) { lines(file.read(path)) } else { [] }
+  lines(ok(file.read(path)) ?? "")
 
 #[doc("A lookup of a file's lines among those read; none for a file that was not.")]
 pub fn of_files(sources: [(String, [String])]) : (String) -> [String] =
