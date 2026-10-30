@@ -46,7 +46,7 @@ pub fn serve_at[e](
 ) : Result[Unit, String] / NetUnix + File + Stderr + Spawn + Actor[OrchMsg] + e {
   let _ = dir.create_dir(holding(path))
   let _ = if file.exists(path) { clear_stale(path) } else { () }
-  match NetUnix.listen(path, sock.owner_only) {
+  match NetUnix.listen(path, sock.OWNER_ONLY) {
     Err(e) -> Err("cannot listen on #{path}: #{e}")
     Ok(l) -> {
       Stderr.eprint("kalku: serving on #{path}")
