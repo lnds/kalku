@@ -324,14 +324,14 @@ fn named_if_long(run: Run) : Run / Clock + Telling {
   if instant_lt(now, run.stall_at) {
     run
   } else {
-    each(lingering(run.slots, now), l => Telling.still_on(l.worker, l.what, l.ms))
+    each(lingering(run.slots, now), l => Telling.still_on(l.worker, l.site, l.ms))
     Run { ...run, stall_at: stall_from(now) }
   }
 }
 
 #[doc("A cast that has gone on for `STALL_MS` or more: who, on what, and for how long.")]
 #[derive(Eq, Show)]
-pub type Lingering = { worker: Int, what: String, ms: Int }
+pub type Lingering = { worker: Int, site: Site, ms: Int }
 
 #[doc("The casts that have gone on for `STALL_MS` or more at `now`.")]
 pub fn lingering(slots: [Slot], now: Instant) : [Lingering] = flat_map(
@@ -340,7 +340,7 @@ pub fn lingering(slots: [Slot], now: Instant) : [Lingering] = flat_map(
     Working(job) -> {
       let ms = duration_to_nanos(elapsed_since(job.began, now)) / 1000000
       if ms >= STALL_MS {
-        [Lingering { worker: s.worker, what: about(job.cast.site), ms: ms }]
+        [Lingering { worker: s.worker, site: job.cast.site, ms: ms }]
       } else {
         []
       }
@@ -348,8 +348,6 @@ pub fn lingering(slots: [Slot], now: Instant) : [Lingering] = flat_map(
     _ -> []
   }
 )
-
-fn about(site: Site) : String = "#{site.file}:#{site.span.start.line} #{spell_name(site.spell)}"
 
 # A run is over when nothing is left to cast and nobody is still working,
 # or when there is no kalku left to cast with.
@@ -407,7 +405,7 @@ fn hand(run: Run, slot: Slot, c: Wekufe, again: Bool) : Run / Process + Clock + 
     })
   )
   Telling.tell_of(
-    "worker #{slot.worker} casts #{about(c.site)} against #{length(c.tests)} test(s)#{and_then(c.rest)}"
+    "worker #{slot.worker} casts #{about_site(c.site)} against #{length(c.tests)} test(s)#{and_then(c.rest)}"
   )
   let job = Job {
     id: id,

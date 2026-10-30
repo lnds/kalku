@@ -2,3 +2,5 @@
 {"expect":"bad_field","line":"{\"type\":\"phase\",\"id\":1,\"phase\":\"summon\"}"}
 {"expect":"bad_field","line":"{\"type\":\"sessions\",\"id\":2,\"sessions\":[{\"root\":\"/r\",\"state\":\"asleep\",\"kalku\":1,\"idle_s\":0}]}"}
 {"expect":"invalid","line":"{\"type\":\"outcome\",\"id\":1,\"wekufe\":\"w\",\"outcome\":\"survived\"}"}
+{"expect":"invalid","line":"{\"type\":\"still_casting\",\"id\":1,\"worker\":0,\"site\":{\"site_id\":\"s\",\"file\":\"a.ex\",\"span\":{\"start\":{\"line\":1,\"col\":1,\"byte\":0}},\"spell\":\"compare\",\"replacement\":\">\",\"reload\":\"module\"},\"elapsed_ms\":31000}"}
+{"expect":"invalid","line":"{\"type\":\"log\",\"id\":1,\"path\":\"\"}"}

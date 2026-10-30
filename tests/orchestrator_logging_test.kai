@@ -3,6 +3,7 @@ import fs.file
 import os.process as proc
 import time
 import kalku.wire.enums
+import kalku.wire.shapes
 import kalku.orchestrator.telling
 import kalku.orchestrator.logging
 
@@ -43,7 +44,7 @@ fn heard_through(reni: String, body: () -> Unit / Telling) : [String] / File + C
   entered(phase, resume) -> resume((), state ++ ["entered #{phase_name(phase)}"])
   got_through(done, total, resume) -> resume((), state ++ ["#{done} of #{total}"])
   will_cost(casts, _estimate_ms, _most_ms, resume) -> resume((), state ++ ["#{casts} casts"])
-  still_on(worker, what, ms, resume) -> resume((), state ++ [stalled(worker, what, ms)])
+  still_on(worker, site, ms, resume) -> resume((), state ++ [stalled(worker, site, ms)])
   kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
   logging_to(path, resume) -> resume((), state ++ [logged_at(path)])
   return(_x) -> state
@@ -53,7 +54,7 @@ fn a_run() : Unit / Telling {
   Telling.entered(PhaseCasting)
   Telling.tell_of("worker 1 casts lib/a.kai:3 arm against 1 test(s)")
   Telling.kalku_wrote(1, "compiling\n\npanic: out of fibers\n")
-  Telling.still_on(1, "lib/a.kai:3 arm", 31000)
+  Telling.still_on(1, a_site(), 31000)
   Telling.got_through(1, 1)
 }
 
@@ -81,14 +82,26 @@ test "a run's notes and its kalku's stderr are written to the log, and passed on
       "entered #{phase_name(PhaseCasting)}",
       "worker 1 casts lib/a.kai:3 arm against 1 test(s)",
       "1 wrote compiling\n\npanic: out of fibers\n",
-      stalled(1, "lib/a.kai:3 arm", 31000),
+      stalled(1, a_site(), 31000),
       "1 of 1"
     ]
   assert has(log, " entered #{phase_name(PhaseCasting)}\n")
   assert has(log, " worker 1 wrote: compiling\n")
   assert has(log, " worker 1 wrote: panic: out of fibers\n")
-  assert has(log, " #{stalled(1, "lib/a.kai:3 arm", 31000)}\n")
+  assert has(log, " #{stalled(1, a_site(), 31000)}\n")
   assert not has(log, "wrote: \n")
+}
+
+fn a_site() : Site = Site {
+  site_id: "s1",
+  file: "lib/a.kai",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 3, col: 5, byte: 0 }, end: None },
+  spell: Arm,
+  original: Some("+"),
+  replacement: "-",
+  reload: ModuleOnly
 }
 
 fn has(text: String, needle: String) : Bool = is_some(index_of(text, needle))

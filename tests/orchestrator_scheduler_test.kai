@@ -53,7 +53,7 @@ fn how_far(
     entered(_phase, resume) -> resume((), state)
     got_through(done, total, resume) -> resume((), state ++ [(done, total)])
     will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
-    still_on(_worker, _what, _ms, resume) -> resume((), state)
+    still_on(_worker, _site, _ms, resume) -> resume((), state)
     kalku_wrote(_worker, _chunk, resume) -> resume((), state)
     logging_to(_path, resume) -> resume((), state)
     return(_x) -> state
@@ -427,5 +427,5 @@ test "a cast that has gone on for STALL_MS is named, and a younger one is not" {
   let now = instant_of_nanos(100 * 1000000000)
   let idle = Slot { ...working_since(3, 0), doing: Idle }
   assert lingering([working_since(1, 40), working_since(2, 95), idle], now)
-    == [Lingering { worker: 1, what: "lib/a.kai:12 arm", ms: 60000 }]
+    == [Lingering { worker: 1, site: site_named("w1"), ms: 60000 }]
 }

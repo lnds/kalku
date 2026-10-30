@@ -64,7 +64,7 @@ test "every server event fixture round-trips byte for byte" {
 
 test "there is a fixture file for every client message type" {
   assert length(fixture_files("client/requests")) == 6
-  assert length(fixture_files("client/events")) == 10
+  assert length(fixture_files("client/events")) == 12
 }
 
 fn progress_with(estimate: Option[Int], most: Option[Int]) : Result[Unit, ProtocolError] =

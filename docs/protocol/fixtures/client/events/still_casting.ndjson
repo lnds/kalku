@@ -1,0 +1,1 @@
+{"type":"still_casting","id":1,"worker":2,"site":{"site_id":"c1f37a90e2b4","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.next_token/2","ordinal":1,"span":{"start":{"line":42,"col":7,"byte":1180},"end":{"line":42,"col":9,"byte":1182}},"spell":"compare","original":">=","replacement":">","reload":"module"},"elapsed_ms":95400}

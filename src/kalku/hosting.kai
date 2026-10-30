@@ -208,9 +208,9 @@ fn told_to_host[a, e](progress: Option[String], body: () -> a / Telling + e) : a
           Stdout.print(progress_note(token, count, what_it_costs(estimate_ms, most_ms)))
           resume(())
         }
-        still_on(worker, what, ms, resume) -> {
+        still_on(worker, site, ms, resume) -> {
           count := count + 1
-          Stdout.print(progress_note(token, count, stalled(worker, what, ms)))
+          Stdout.print(progress_note(token, count, stalled(worker, site, ms)))
           resume(())
         }
         kalku_wrote(_worker, _chunk, resume) -> resume(())
