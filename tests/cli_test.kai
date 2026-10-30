@@ -103,6 +103,7 @@ test "run takes the files to measure, and how much of them" {
         files: ["lib/a.ex", "lib/b.ex"],
         limit: None,
         aloud: false,
+        quiet: false,
         shape: AsHuman,
         since: None,
         all: false,
@@ -117,6 +118,7 @@ test "run takes the files to measure, and how much of them" {
       files: ["lib/a.ex"],
       limit: Some(6),
       aloud: true,
+      quiet: false,
       shape: AsHuman,
       since: None,
       all: false,
@@ -127,6 +129,13 @@ test "run takes the files to measure, and how much of them" {
     })
 }
 
+# A run says how far it has got by default; asked for quiet, it says
+# nothing until the report.
+test "run takes -q and --quiet to say nothing until the report" {
+  assert cli.parse_args(["run", "-q"]) == Measure(Wanted { ...nothing_wanted(), quiet: true })
+  assert cli.parse_args(["run", "--quiet"]) == Measure(Wanted { ...nothing_wanted(), quiet: true })
+}
+
 # The files a run measures come from the config when none are named.
 test "run with nothing named is still a run" {
   assert cli.parse_args(["run"])
@@ -134,6 +143,7 @@ test "run with nothing named is still a run" {
       files: [],
       limit: None,
       aloud: false,
+      quiet: false,
       shape: AsHuman,
       since: None,
       all: false,
@@ -163,6 +173,7 @@ test "run takes the shape it should print in" {
       files: ["lib/a.ex"],
       limit: None,
       aloud: false,
+      quiet: false,
       shape: AsAgent,
       since: None,
       all: false,
@@ -176,6 +187,7 @@ test "run takes the shape it should print in" {
       files: ["lib/a.ex"],
       limit: None,
       aloud: false,
+      quiet: false,
       shape: AsGithub,
       since: None,
       all: false,
@@ -199,6 +211,7 @@ test "cast names wekufe, show names one, and both need a name" {
         files: ["w1", "w2"],
         limit: None,
         aloud: false,
+        quiet: false,
         shape: AsHuman,
         since: None,
         all: false,
@@ -234,6 +247,7 @@ test "run takes the ref a change started from" {
         files: [],
         limit: None,
         aloud: false,
+        quiet: false,
         shape: AsHuman,
         since: Some("origin/main"),
         all: false,
@@ -249,6 +263,7 @@ test "run takes the ref a change started from" {
         files: ["lib/a.ex"],
         limit: None,
         aloud: false,
+        quiet: false,
         shape: AsGithub,
         since: Some("main"),
         all: false,

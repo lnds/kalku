@@ -127,7 +127,8 @@ pub fn cast_over(
     next_id: from_id,
     failure: no_kalku(slots, casts),
     cancelled: false,
-    weigh_at: monotonic()
+    weigh_at: monotonic(),
+    stall_at: stall_from(monotonic())
   })
   (
     Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled },
@@ -151,7 +152,8 @@ fn run_plan(
     next_id: 1,
     failure: no_kalku(slots, casts),
     cancelled: false,
-    weigh_at: monotonic()
+    weigh_at: monotonic(),
+    stall_at: stall_from(monotonic())
   })
   dismiss_all(done.slots, 0)
   banish_all(done.slots)
@@ -302,13 +304,52 @@ type Run = {
   next_id: Int,
   failure: Option[String],
   cancelled: Bool,
-  weigh_at: Instant
+  weigh_at: Instant,
+  stall_at: Instant
 }
 
 fn turn(run: Run) : Run / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
   let busy = dispatch(run)
-  if over(busy) { busy } else { turn(listen(watched(busy))) }
+  if over(busy) { busy } else { turn(listen(watched(named_if_long(busy)))) }
 }
+
+fn stall_from(now: Instant) : Instant = instant_add_duration(now, millis(STALL_MS))
+
+# A cast that has gone on for `STALL_MS` is named, and named again each
+# `STALL_MS` it goes on: whoever is watching a run that has stopped moving
+# hears which kalku is on which wekufe, and since when. Looked at on the
+# loop's own clock, which wakes at least once a second.
+fn named_if_long(run: Run) : Run / Clock + Telling {
+  let now = monotonic()
+  if instant_lt(now, run.stall_at) {
+    run
+  } else {
+    each(lingering(run.slots, now), l => Telling.still_on(l.worker, l.what, l.ms))
+    Run { ...run, stall_at: stall_from(now) }
+  }
+}
+
+#[doc("A cast that has gone on for `STALL_MS` or more: who, on what, and for how long.")]
+#[derive(Eq, Show)]
+pub type Lingering = { worker: Int, what: String, ms: Int }
+
+#[doc("The casts that have gone on for `STALL_MS` or more at `now`.")]
+pub fn lingering(slots: [Slot], now: Instant) : [Lingering] = flat_map(
+  slots,
+  s => match s.doing {
+    Working(job) -> {
+      let ms = duration_to_nanos(elapsed_since(job.began, now)) / 1000000
+      if ms >= STALL_MS {
+        [Lingering { worker: s.worker, what: about(job.cast.site), ms: ms }]
+      } else {
+        []
+      }
+    }
+    _ -> []
+  }
+)
+
+fn about(site: Site) : String = "#{site.file}:#{site.span.start.line} #{spell_name(site.spell)}"
 
 # A run is over when nothing is left to cast and nobody is still working,
 # or when there is no kalku left to cast with.
@@ -366,12 +407,13 @@ fn hand(run: Run, slot: Slot, c: Wekufe, again: Bool) : Run / Process + Clock + 
     })
   )
   Telling.tell_of(
-    "worker #{slot.worker} casts #{c.site.file}:#{c.site.span.start.line} #{spell_name(c.site.spell)} against #{length(c.tests)} test(s)#{and_then(c.rest)}"
+    "worker #{slot.worker} casts #{about(c.site)} against #{length(c.tests)} test(s)#{and_then(c.rest)}"
   )
   let job = Job {
     id: id,
     wekufe: c.site.site_id,
     tests: c.tests ++ c.rest,
+    began: monotonic(),
     deadline: deadline_in(millis(c.timeout_ms)),
     awaiting: AwaitingCast,
     cast: c,

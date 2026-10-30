@@ -10,6 +10,8 @@ import kalku.orchestrator.pool
 import kalku.orchestrator.attending
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
+import kalku.orchestrator.escalation
+import time
 
 const FAKE : String = "./tests/fake_kalku/fake_kalku"
 
@@ -51,6 +53,7 @@ fn how_far(
     entered(_phase, resume) -> resume((), state)
     got_through(done, total, resume) -> resume((), state ++ [(done, total)])
     will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
+    still_on(_worker, _what, _ms, resume) -> resume((), state)
     return(_x) -> state
   }
 )
@@ -387,4 +390,40 @@ test "a wekufe that does not want every kill is cast once" {
     casting(pool_of("pool_every_kill.ndjson", 1, 1), [chased_cast(["t1", "t2", "t3"], false)])
   }
   assert (done.verdicts | (v => (v.killed_by, v.again))) == [(Some("t1"), false)]
+}
+
+fn working_since(worker: Int, began_s: Int) : Slot = Slot {
+  worker: worker,
+  kalku: None,
+  caps: [],
+  doing: Working(Job {
+    id: worker,
+    wekufe: "w#{worker}",
+    tests: [],
+    began: instant_of_nanos(began_s * 1000000000),
+    deadline: instant_of_nanos(3600 * 1000000000),
+    awaiting: AwaitingCast,
+    cast: Wekufe {
+      site: site_named("w#{worker}"),
+      tests: ["test/a_test.kai"],
+      rest: [],
+      timeout_ms: 1000,
+      casts: 1,
+      every_kill: false
+    },
+    again: false,
+    killed_by: None
+  }),
+  summons: 1,
+  in_a_row: 0,
+  wrote: ""
+}
+
+# What tells a hung cast from a slow suite is which kalku is on which
+# wekufe, and since when; a cast younger than `STALL_MS` is not named.
+test "a cast that has gone on for STALL_MS is named, and a younger one is not" {
+  let now = instant_of_nanos(100 * 1000000000)
+  let idle = Slot { ...working_since(3, 0), doing: Idle }
+  assert lingering([working_since(1, 40), working_since(2, 95), idle], now)
+    == [Lingering { worker: 1, what: "lib/a.kai:12 arm", ms: 60000 }]
 }

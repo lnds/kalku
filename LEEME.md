@@ -89,8 +89,9 @@ fija cuántos wekufe se lanzan como máximo, 100 si no dices otra cosa y
 todos cuando hay `since`.
 
 Un host que pide enterarse de una llamada, entregándole un `progressToken`,
-recibe cómo va la corrida mientras avanza: cada etapa y cuántos wekufe se
-han lanzado. Sin eso una corrida calla por minutos, y un host la da por
+recibe cómo va la corrida mientras avanza: cada etapa, cuántos wekufe se
+han lanzado y cualquier lanzamiento que lleve 30 s o más, con su worker y su
+wekufe. Sin eso una corrida calla por minutos, y un host la da por
 muerta.
 
 Un host que cancela una corrida (`notifications/cancelled`) la termina y
@@ -159,6 +160,14 @@ línea base registra qué tests alcanzan qué líneas, y un wekufe se lanza solo
 contra esos tests. Un site que ningún test alcanza es `no_coverage`, nunca
 un kill; tampoco lo es un timeout, una caída, ni un wekufe que no compiló.
 El puntaje es `killed / (killed + survived)` y nada más lo mueve.
+
+Mientras corre, kalku dice en stderr en qué fase va y cuánto lleva lanzado,
+con una estimación de lo que falta: en una terminal, una sola línea que se
+redibuja en su lugar; en un log de CI, una línea por fase y un conteo cada
+30 s. Un lanzamiento que lleva 30 s o más se nombra (`worker 2 is still on
+lib/green.ex:4 compare after 95 s`), y eso es lo que distingue una suite
+lenta de una colgada. `--verbose` muestra cada nota, una línea por wekufe;
+`--quiet` no dice nada hasta el reporte. stdout lleva solo el reporte.
 
 Un wekufe se nombra por el texto en el que fue lanzado, así que editar su archivo lo renombra; volver a lanzar un nombre antiguo te lo dice, y un nuevo `kalku run` entrega los nuevos.
 

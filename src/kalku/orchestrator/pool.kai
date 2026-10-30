@@ -26,11 +26,12 @@ import kalku.core.planner
 # `tests` travels with the job because the verdict has to say what judged
 # it, and the plan that chose them is out of reach once the cast is out.
 # So does the wekufe itself, which a run that wants every kill casts again.
-#[doc("One cast a kalku is working on, and when its patience runs out.")]
+#[doc("One cast a kalku is working on, since when, and when its patience runs out.")]
 pub type Job = {
   id: Int,
   wekufe: String,
   tests: [String],
+  began: Instant,
   deadline: Instant,
   awaiting: Awaiting,
   cast: Wekufe,

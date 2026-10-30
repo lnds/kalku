@@ -12,6 +12,7 @@ stderr and never to stdout, because stdout carries the report a caller
 may be piping into something.
 """)]
 
+import time
 import kalku.wire.enums
 import kalku.core.costing
 
@@ -27,7 +28,27 @@ pub effect Telling {
   entered(phase: Phase) : Unit
   got_through(done: Int, total: Int) : Unit
   will_cost(casts: Int, estimate_ms: Int, most_ms: Int) : Unit
+  still_on(worker: Int, what: String, ms: Int) : Unit
 }
+
+#[doc("""
+How much of what a run says reaches the person who started it: nothing,
+the phase and how far it has got, or every note.
+""")]
+#[derive(Eq, Show)]
+pub type Voice = Quiet | Shown | Aloud
+
+#[doc("""
+How long a cast goes before the run names it, and how often after that.
+
+Long enough that a suite which is merely slow is not called stuck, short
+enough that someone watching a run that has stopped moving hears why
+before they give up on it.
+""")]
+pub const STALL_MS : Int = 30000
+
+#[doc("How long a run that is not on a terminal goes between counts.")]
+pub const PLAIN_EVERY_MS : Int = 30000
 
 #[doc("""
 Whether a run has got far enough for another note.
@@ -69,6 +90,10 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     Stderr.eprint("kalku: #{what_it_costs(estimate_ms, most_ms)}")
     resume(())
   }
+  still_on(worker, what, ms, resume) -> {
+    Stderr.eprint("kalku: #{stalled(worker, what, ms)}")
+    resume(())
+  }
   return(x) -> x
 }
 
@@ -80,9 +105,126 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   entered(_phase, resume) -> resume(())
   got_through(_done, _total, resume) -> resume(())
   will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume(())
+  still_on(_worker, _what, _ms, resume) -> resume(())
   return(x) -> x
 }
 
-#[doc("Run either way, so a caller can decide without two call sites.")]
-pub fn telling[a, e](aloud: Bool, body: () -> a / Telling + e) : a / Stderr + e =
-  if aloud { told(body) } else { untold(body) }
+#[doc("Run in the voice asked for, so a caller decides without three call sites.")]
+pub fn voiced[a, e](voice: Voice, body: () -> a / Telling + e) : a / Stderr + Clock + e =
+  match voice {
+    Quiet -> untold(body)
+    Shown -> shown(body)
+    Aloud -> told(body)
+  }
+
+# Moves up to the line last drawn and clears it, so what is printed next
+# takes its place.
+const UP_AND_CLEAR : String = "\x1b[1A\x1b[2K"
+
+# Clears the line last drawn and leaves the cursor at its start.
+const CLEARED : String = "\x1b[1A\x1b[2K\x1b[1A"
+
+#[doc("""
+Run with a person's share of the notes on stderr: the phase, how far the
+casting has got and how long is left, and a cast that is taking long.
+
+On a terminal that is one line, drawn again in place and cleared before
+the report; a cast taking long is a line of its own above it, so it stays
+on screen. Elsewhere, a CI log, it is a line per phase and a count every
+`PLAIN_EVERY_MS`, so a log shows a run that is still alive and nothing it
+would have to scroll past.
+""")]
+pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
+  let live = Stderr.is_tty()
+  var last := ""
+  var began := monotonic()
+  var said_at := monotonic()
+  var estimate := 0
+  handle {
+    body()
+  } with Telling {
+    tell_of(_line, resume) -> resume(())
+    entered(phase, resume) -> {
+      if live {
+        last := drawn(last, phase_name(phase))
+      } else {
+        Stderr.eprint("kalku: #{phase_name(phase)}")
+      }
+      resume(())
+    }
+    will_cost(casts, estimate_ms, most_ms, resume) -> {
+      began := monotonic()
+      said_at := began
+      estimate := estimate_ms
+      if live {
+        last := drawn(last, counted(0, casts, estimate_ms))
+      } else {
+        Stderr.eprint("kalku: #{what_it_costs(estimate_ms, most_ms)}")
+      }
+      resume(())
+    }
+    got_through(done, total, resume) -> {
+      let now = monotonic()
+      let line = counted(done, total, left_ms(done, total, ms_between(began, now), estimate))
+      if live {
+        last := drawn(last, line)
+      } else if done >= total or ms_between(said_at, now) >= PLAIN_EVERY_MS {
+        said_at := now
+        Stderr.eprint("kalku: #{line}")
+      } else {
+        ()
+      }
+      resume(())
+    }
+    still_on(worker, what, ms, resume) -> {
+      let note = "kalku: #{stalled(worker, what, ms)}"
+      if live and last != "" {
+        Stderr.eprint("#{UP_AND_CLEAR}#{note}")
+        Stderr.eprint(last)
+      } else {
+        Stderr.eprint(note)
+      }
+      resume(())
+    }
+    return(x) -> {
+      if live and last != "" { Stderr.eprint(CLEARED) } else { () }
+      x
+    }
+  }
+}
+
+# The line on a terminal, drawn over the one before it when there was one.
+fn drawn(last: String, line: String) : String / Stderr {
+  let now = "kalku: #{line}"
+  Stderr.eprint(if last == "" { now } else { "#{UP_AND_CLEAR}#{now}" })
+  now
+}
+
+fn ms_between(from: Instant, to: Instant) : Int =
+  duration_to_nanos(elapsed_since(from, to)) / 1000000
+
+#[doc("""
+How far the casting has got, and how long is left when that says
+anything: `casting 120 of 446, 8 minutes left`.
+""")]
+pub fn counted(done: Int, total: Int, left: Int) : String =
+  if done >= total or left < 1000 {
+    "casting #{done} of #{total}"
+  } else {
+    "casting #{done} of #{total}, #{how_long(left)} left"
+  }
+
+#[doc("""
+How long the rest of the casting will take: the rate the casts so far
+went at, once there are some, and the estimate the baseline gave before.
+""")]
+pub fn left_ms(done: Int, total: Int, elapsed_ms: Int, estimate_ms: Int) : Int =
+  if done <= 0 { estimate_ms } else { elapsed_ms * (total - done) / done }
+
+#[doc("""
+A cast that has gone on long, named so whoever is watching knows which
+kalku and which file to look at: a slow suite and a hung cast look the
+same from the outside until this line says which wekufe it is.
+""")]
+pub fn stalled(worker: Int, what: String, ms: Int) : String =
+  "worker #{worker} is still on #{what} after #{ms / 1000} s"

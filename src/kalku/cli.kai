@@ -37,6 +37,7 @@ pub type Wanted = {
   files: [String],
   limit: Option[Int],
   aloud: Bool,
+  quiet: Bool,
   shape: Shape,
   since: Option[String],
   all: Bool,
@@ -137,6 +138,7 @@ pub fn nothing_wanted() : Wanted = Wanted {
   files: [],
   limit: None,
   aloud: false,
+  quiet: false,
   shape: AsHuman,
   since: None,
   all: false,
@@ -175,6 +177,8 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   }
   ["--verbose", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
   ["-v", ...rest] -> read_wanted(rest, Wanted { ...so_far, aloud: true })
+  ["--quiet", ...rest] -> read_wanted(rest, Wanted { ...so_far, quiet: true })
+  ["-q", ...rest] -> read_wanted(rest, Wanted { ...so_far, quiet: true })
   [other, ...rest] -> if starts_with(other, "-") {
     Misused("`kalku run` does not take #{other}")
   } else {
@@ -416,7 +420,8 @@ options:
   --json           print an info topic as JSON
   --snippet        print only the lines an agent pastes into CLAUDE.md
   --reason <why>   why a wekufe cannot be told apart from the original
-  -v, --verbose    say what the run is doing while it does it
+  -v, --verbose    say everything the run is doing, a line per wekufe
+  -q, --quiet      say nothing until the report
   -h, --help       show this help; after a command, what that command does
   -V, --version    show the version
 """
