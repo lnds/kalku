@@ -1,3 +1,10 @@
+## v0.30.0 (2026-10-30)
+
+### Added
+
+- **report**: name the run's log in the JSON report and the agent summary (#521)
+- **serve**: tell a client which cast is taking long, and where the run's log is (#520)
+
 ## v0.29.0 (2026-10-29)
 
 ### Added
