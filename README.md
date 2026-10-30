@@ -134,6 +134,11 @@ Start with one file and a limit. A first whole-project run on a real
 codebase is long, and there is nothing to learn from it that a single
 file does not already show.
 
+The kalku runs with the environment kalku was started in, and nothing
+else. A project that sets its environment with direnv gets it from a shell
+where direnv is loaded, or with `direnv exec . kalku run lib/thing.ex`; a
+run started without it says so.
+
 ## What a run tells you
 
 ```sh

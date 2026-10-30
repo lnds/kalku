@@ -138,6 +138,11 @@ Empieza con un archivo y un límite. La primera corrida sobre un proyecto
 completo, en una base de código real, es larga, y no enseña nada que un solo
 archivo no muestre ya.
 
+El kalku corre con el entorno con el que se inició kalku, y nada más. Un
+proyecto que fija su entorno con direnv lo recibe desde una shell donde
+direnv está cargado, o con `direnv exec . kalku run lib/thing.ex`; una
+corrida iniciada sin él lo avisa.
+
 ## Qué te dice una corrida
 
 ```sh
