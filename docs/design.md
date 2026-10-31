@@ -352,7 +352,7 @@ The server keys sessions by canonical project root. A new root opens a session i
 
 ### 3. Prepare the reni
 
-The project is compiled into the reni with the language's own tooling, redirected away from the user's artefacts. For Elixir: `MIX_BUILD_PATH` points into the reni, `MIX_ENV=test`, protocol consolidation disabled so a mutated `defimpl` can take effect. The user's `_build` and working tree are never written.
+The project is compiled into the reni with the language's own tooling, redirected away from the user's artefacts. For Elixir: `MIX_BUILD_PATH` points into the reni, `MIX_ENV=test`, protocol consolidation disabled so a mutated `defimpl` can take effect. The user's `_build` and working tree are never written. A reni with no build yet starts from a copy of the dependencies the project already built for its tests (`_build/test/lib`), links followed and never linked back, and Mix compiles again whichever it finds stale. On a project with 34 dependencies this took a first run from 33 s to 22 s; rebar3 dependencies still compile again, since their cache lives in the reni.
 
 ### 4. Summon the kalku
 

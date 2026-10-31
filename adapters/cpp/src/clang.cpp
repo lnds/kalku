@@ -60,6 +60,8 @@ std::vector<std::string> candidates() {
   for (int v = 22; v >= 14; v--) {
     out.push_back("/usr/lib/llvm-" + std::to_string(v) + "/lib/libclang.so");
     out.push_back("/usr/lib/llvm-" + std::to_string(v) + "/lib/libclang.so.1");
+    // Ubuntu 26.04 ships only the versioned name.
+    out.push_back("/usr/lib/llvm-" + std::to_string(v) + "/lib/libclang-" + std::to_string(v) + ".so.1");
   }
   out.emplace_back("libclang.so.1");
 #endif
