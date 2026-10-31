@@ -260,6 +260,18 @@ test "an Elixir summoning keeps rebar3's cache in the reni" {
   assert has(plan.summoner, "REBAR_BASE_DIR=\"$MIX_BUILD_PATH/rebar3\"")
 }
 
+# A first run on a project with many dependencies spent most of its time
+# compiling them again in the reni. It starts from a copy of what the
+# project built for its tests, and a copy is all: a link would let the run
+# write into the project's own build.
+test "an Elixir summoning starts the reni's build from a copy of the project's" {
+  let plan = plan_for(find(catalogue(), k => k.language == "elixir") |> unwrap_or(elixir()), "/r")
+
+  assert has(plan.summoner, "cp -RL \"_build/test/lib/$name\" \"$MIX_BUILD_PATH/lib/$name\"")
+  assert has(plan.summoner, "if [ ! -d \"$MIX_BUILD_PATH/lib\" ]")
+  assert not has(plan.summoner, "ln -s")
+}
+
 test "every language's summoning declares one" {
   each(catalogue(), k => {
     let plan = plan_for(k, "/r")
