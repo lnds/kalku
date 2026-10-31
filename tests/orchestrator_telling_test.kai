@@ -15,6 +15,7 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
     resume((), state ++ ["#{casts} casts, #{estimate_ms}ms, at most #{most_ms}ms"])
   still_on(worker, site, ms, resume) -> resume((), state ++ [stalled(worker, site, ms)])
   kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
+  kalku_at(worker, done, total, resume) -> resume((), state ++ [so_far(worker, done, total)])
   logging_to(path, resume) -> resume((), state ++ [logged_at(path)])
   return(_x) -> state
 }
@@ -157,6 +158,28 @@ test "on a terminal, the count is drawn in place and cleared, and a long cast st
       "#{up}kalku: casting 10 of 10",
       "#{up}\x1b[1A"
     ]
+}
+
+fn a_long_baseline() : Unit / Telling {
+  Telling.entered(PhaseBaselining)
+  Telling.kalku_at(1, 1200, 5000)
+  Telling.kalku_at(1, 5000, 5000)
+}
+
+# A baseline over thousands of tests is minutes long, and a kalku that says
+# how far it has got is the one thing that tells it from a hung one: the
+# count is on screen in place, and in a CI log at its end.
+test "how far a kalku has got with a baseline is shown with the phase" {
+  let up = "\x1b[1A\x1b[2K"
+  assert shown_on(true, a_long_baseline)
+    == [
+      "kalku: #{phase_name(PhaseBaselining)}",
+      "#{up}kalku: baseline 1200 of 5000",
+      "#{up}kalku: baseline 5000 of 5000",
+      "#{up}\x1b[1A"
+    ]
+  assert shown_on(false, a_long_baseline)
+    == ["kalku: #{phase_name(PhaseBaselining)}", "kalku: baseline 5000 of 5000"]
 }
 
 test "a quiet run says nothing" {

@@ -92,11 +92,16 @@ pub fn summon(spec: KalkuSpec) : Result[Kalku, String] / Process =
   }
 
 #[doc("""
-Pass on what a kalku wrote on stderr, its own account of itself: the log
-keeps it whether or not the kalku ever dies.
+Pass on what a kalku says of itself while a request runs: what it wrote
+on stderr, which the log keeps whether or not the kalku ever dies, and
+how far it has got, which is what tells a long baseline from a hung one.
 """)]
 pub fn told_if_written(life: Life, what: FromKalku) : Unit / Telling = match what {
   Wrote(chunk) -> Telling.kalku_wrote(life.worker, chunk)
+  Said(line) -> match heard(line) {
+    Ok(Msg { id: _, body: Progress(p) }) -> Telling.kalku_at(life.worker, p.done, p.total)
+    _ -> ()
+  }
   _ -> ()
 }
 

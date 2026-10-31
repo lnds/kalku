@@ -214,6 +214,11 @@ fn told_to_host[a, e](progress: Option[String], body: () -> a / Telling + e) : a
           resume(())
         }
         kalku_wrote(_worker, _chunk, resume) -> resume(())
+        kalku_at(worker, done, total, resume) -> {
+          count := count + 1
+          Stdout.print(progress_note(token, count, so_far(worker, done, total)))
+          resume(())
+        }
         logging_to(path, resume) -> {
           count := count + 1
           Stdout.print(progress_note(token, count, logged_at(path)))

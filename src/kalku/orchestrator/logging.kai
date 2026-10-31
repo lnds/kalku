@@ -88,6 +88,11 @@ fn written_to[a, e](
     Telling.kalku_wrote(worker, chunk)
     resume(())
   }
+  kalku_at(worker, done, total, resume) -> {
+    noted(path, began, so_far(worker, done, total))
+    Telling.kalku_at(worker, done, total)
+    resume(())
+  }
   logging_to(other, resume) -> {
     Telling.logging_to(other)
     resume(())

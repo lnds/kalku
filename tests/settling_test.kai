@@ -233,3 +233,12 @@ test "two projects whose folders share a name do not share a reni" {
   assert reni_here("/a/b/proj") != reni_here("/a/c/proj")
   assert is_some(index_of(reni_here("/a/b/proj"), "/kalku/proj-"))
 }
+
+# A project that sets its environment with direnv builds and tests with it
+# from the person's shell, and without it from an agent's; a run started
+# without it says so before it fails for a reason that does not name it.
+test "a run is told when the project's .envrc is not loaded" {
+  assert is_some(unloaded_envrc(true, None))
+  assert unloaded_envrc(true, Some("-/home/u/app")) == None
+  assert unloaded_envrc(false, None) == None
+}
