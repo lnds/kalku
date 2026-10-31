@@ -73,9 +73,17 @@ pub type PreparedMsg = { duration_ms: Int, modules: Int }
 #[derive(Json, Eq, Show)]
 pub type Reuse = { #[json(rename = "test")] test_id: String, fingerprint: String }
 
-#[doc("`baseline`: run the suite, leaving out the tests whose fingerprint has not changed.")]
+#[doc("""
+`baseline`: run the suite, leaving out the tests whose fingerprint has not
+changed, and, to a kalku that scopes, the tests that cannot reach
+`for_files` or are not in `only`.
+""")]
 #[derive(Json, Eq, Show)]
-pub type BaselineMsg = { reuse: Option[[Reuse]] }
+pub type BaselineMsg = {
+  reuse: Option[[Reuse]],
+  for_files: Option[[String]],
+  only: Option[[String]]
+}
 
 #[doc("`baseline_done`: the suite ran once, all of it or what was not reused.")]
 #[derive(Json, Eq, Show)]
@@ -90,7 +98,8 @@ pub type BaselineDoneMsg = {
   coverage_doubted: Option[String],
   failures: [Failure],
   differences: Option[[String]],
-  reused: Option[[String]]
+  reused: Option[[String]],
+  deferred: Option[[String]]
 }
 
 #[doc("`sites_found`: the sites in the requested files.")]

@@ -26,8 +26,10 @@ defmodule Kalku.LoopTest do
     # A capability is claimed only once it works: `cast` because this is a
     # native kalku, `per_test_coverage` because `baseline` measures it,
     # `code_hash` and `hot_load` because a cast reports one and does the
-    # other, and `partial_baseline` because a baseline fingerprints its
-    # test modules and leaves out the ones offered unchanged.
+    # other, `partial_baseline` because a baseline fingerprints its test
+    # modules and leaves out the ones offered unchanged, and
+    # `scoped_baseline` because it runs the modules that may reach the
+    # files it is asked about and defers the rest.
     assert msg.body["capabilities"] ==
              [
                "cast",
@@ -38,7 +40,8 @@ defmodule Kalku.LoopTest do
                "reset",
                "recompile_dependents",
                "cast_after_baseline",
-               "partial_baseline"
+               "partial_baseline",
+               "scoped_baseline"
              ]
 
     assert msg.body["spells"] ==

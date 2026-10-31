@@ -123,7 +123,7 @@ A `site_id` names one wekufe. If a `sites_found` lists the same `site_id` twice 
 |---|---|
 | Spell | `arm` `compare` `connect` `negate` `literal` `call` `return` `await` `supervise` `foreign` (drivers only) |
 | Outcome | `killed` `survived` `timeout` `no_coverage` `compile_error` `crashed` `nondeterministic` `equivalent` |
-| Capability | `cast` `delegate` `per_test_coverage` `hot_load` `recompile_dependents` `abort` `reset` `code_hash` `cast_after_baseline` — unknown values ignored |
+| Capability | `cast` `delegate` `per_test_coverage` `hot_load` `recompile_dependents` `abort` `reset` `code_hash` `cast_after_baseline` `partial_baseline` `scoped_baseline` — unknown values ignored |
 | Format | `human` `json` `github` `agent` |
 | Phase | `prepare` `baseline` `plan` `cast` `report` |
 | Session state | `cold` `preparing` `baseline` `ready` `running` `failed` `closed` |
@@ -186,6 +186,7 @@ First message after summoning.
 | `code_hash` | `cast_done` carries `code_hash` and may prove `equivalent` | no trivial compiler equivalence |
 | `cast_after_baseline` | the kalku that answered `baseline` can go on to `cast`, and judges a wekufe as a kalku that was only prepared would | it is banished once it has answered `sites`, and another is summoned and prepared in its place |
 | `partial_baseline` | `baseline_done` gives each test a `fingerprint`, and `baseline` takes `reuse`: a test whose fingerprint has not changed is not run again | every baseline runs the whole suite |
+| `scoped_baseline` | `baseline` takes `for_files` and `only`, and `baseline_done` names in `deferred` the tests it did not run | every baseline runs the whole suite |
 
 Rule: `ready` announces **exactly one** of `cast` or `delegate`; otherwise `invalid`.
 
@@ -205,11 +206,13 @@ Compile the project into the reni and start the test environment. `prepare` has 
 
 ### `baseline` → `baseline_done`
 
-Run the full suite, with per-test coverage when capable.
+Run the full suite, with per-test coverage when capable; to a kalku that scopes, only the part a run is about.
 
 | `baseline` | Type | Meaning |
 |---|---|---|
 | `reuse`? | [{`test`, `fingerprint`}] | tests the kaikai side holds a passing result and the coverage of, with the fingerprint each had then; only to a kalku with `partial_baseline` |
+| `for_files`? | [string] | source files the run is about: run the tests that may reach them, and defer the rest; only to a kalku with `scoped_baseline` |
+| `only`? | [test id] | run these tests and no other: the tests a baseline before deferred; only to a kalku with `scoped_baseline` |
 
 | `baseline_done` | Type | Meaning |
 |---|---|---|
@@ -224,6 +227,7 @@ Run the full suite, with per-test coverage when capable.
 | `coverage_doubted`? | string | why the coverage reported may be missing a test, in the kalku's own words |
 | `failures` | [{`test`, `message`}] | empty when green |
 | `differences`? | [string] | how this run of the suite was unlike the project's own test command, one sentence each |
+| `deferred`? | [test id] | the tests a baseline asked about `for_files` did not run, because nothing tells they may reach those files |
 
 Rules: at most one of `coverage` / `coverage_path` / `coverage_packed_path` (none when the kalku lacks `per_test_coverage`); none of them beside `coverage_withheld`, and one of them beside `coverage_doubted`; `status: "red"` requires at least one failure, `"green"` requires none. A test in `failures` judges nothing: the kaikai side sends it with no cast, drops it from the coverage, and names it in every report. A `red` suite in which no test passes aborts the run, and so does a `green` one with no test in it: nothing could judge a wekufe, and a run that went on would read as clean.
 
@@ -244,11 +248,16 @@ A **fingerprint** says what a test runs: an opaque string that changes whenever 
 
 `reuse` is how a baseline runs only what changed. The kalku computes, for each test it names, the fingerprint the test has now. If it is the one given, the test is not run and is listed in `reused`. Every other test runs as in a full baseline: one that is new, one whose fingerprint differs, and one that is not in `reuse` at all. A reused test is in neither `tests` nor `failures`, and the coverage covers only the tests that ran; the kaikai side has the rest, and merges it. `status` is about the tests that ran. A test in `reused` that was not in `reuse` is `invalid`.
 
+`for_files` is how a run over a few files does not wait for the whole suite. The kalku runs the tests that may reach one of the files, by what it knows statically of what each test runs, and lists every other test in `deferred`, unrun. A test it cannot tell about runs. When no test would run, it runs the whole suite and defers nothing: a baseline judges with the tests it runs. A deferred test is in none of `tests`, `failures` or `reused`, and judges nothing until a later baseline runs it: `only` names exactly the tests to run, and is what the kaikai side sends with the tests a baseline deferred, before it calls any wekufe of those files a survivor or a site uncovered. `for_files` and `only` are not sent together; a kalku given both uses `only`. A deferred test that is in `tests`, `failures` or `reused` is `invalid`.
+
 `differences` is what a test could tell: a copy of the project in place of the tree, a build kept somewhere else, a suite run serially. Only the kalku knows which of these is so, and the kaikai side quotes the sentences as they are when it refuses a red suite — a test that fails for one of them fails under the kalku and not in the project.
 
 ```json
 {"type":"baseline","id":3}
 {"type":"baseline","id":3,"reuse":[{"test":"test/my_app/parser_test.exs:18","fingerprint":"9f2c41d07a6e"}]}
+{"type":"baseline","id":3,"for_files":["lib/my_app/parser.ex"]}
+{"type":"baseline_done","id":3,"status":"green","duration_ms":2100,"tests":[{"test":"test/my_app/parser_test.exs:18","file":"test/my_app/parser_test.exs","duration_ms":12}],"coverage":[{"file":"lib/my_app/parser.ex","line":42,"tests":["test/my_app/parser_test.exs:18"]}],"failures":[],"deferred":["test/my_app/lexer_test.exs:5"]}
+{"type":"baseline","id":6,"only":["test/my_app/lexer_test.exs:5"]}
 {"type":"baseline_done","id":3,"status":"green","duration_ms":4100,"tests":[{"test":"test/my_app/lexer_test.exs:5","file":"test/my_app/lexer_test.exs","duration_ms":9,"fingerprint":"51be0c3a9d24"}],"coverage":[{"file":"lib/my_app/lexer.ex","line":12,"tests":["test/my_app/lexer_test.exs:5"]}],"failures":[],"reused":["test/my_app/parser_test.exs:18"]}
 {"type":"baseline_done","id":3,"status":"green","duration_ms":18300,"tests":[{"test":"test/my_app/parser_test.exs:18","file":"test/my_app/parser_test.exs","duration_ms":12}],"coverage":[{"file":"lib/my_app/parser.ex","line":42,"tests":["test/my_app/parser_test.exs:18"]}],"failures":[]}
 ```

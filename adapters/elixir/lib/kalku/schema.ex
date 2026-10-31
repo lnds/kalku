@@ -59,7 +59,11 @@ defmodule Kalku.Schema do
       options: {:opt, :object}
     ],
     "prepare" => [],
-    "baseline" => [reuse: {:opt, {:list, {:shape, :reuse}}}],
+    "baseline" => [
+      reuse: {:opt, {:list, {:shape, :reuse}}},
+      for_files: {:opt, {:list, :string}},
+      only: {:opt, {:list, :string}}
+    ],
     "sites" => [
       files: {:list, :string},
       spells: {:list, {:enum, :spell}},
@@ -99,7 +103,8 @@ defmodule Kalku.Schema do
       coverage_doubted: {:opt, :string},
       failures: {:list, {:shape, :failure}},
       differences: {:opt, {:list, :string}},
-      reused: {:opt, {:list, :string}}
+      reused: {:opt, {:list, :string}},
+      deferred: {:opt, {:list, :string}}
     ],
     "progress" => [done: :int, total: :int],
     "sites_found" => [sites: {:list, {:shape, :site}}, skipped: {:list, {:shape, :skipped}}],

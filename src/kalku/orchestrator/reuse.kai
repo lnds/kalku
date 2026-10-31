@@ -75,7 +75,11 @@ pub fn offer_of(keeping: Option[Keeping]) : [Reuse] = match keeping {
 
 #[doc("The `baseline` request that makes this offer.")]
 pub fn asked_with(offer: [Reuse]) : KalkuRequest =
-  Baseline(BaselineMsg { reuse: if is_empty(offer) { None } else { Some(offer) } })
+  Baseline(BaselineMsg {
+    reuse: if is_empty(offer) { None } else { Some(offer) },
+    for_files: None,
+    only: None
+  })
 
 #[doc("""
 What the kept store says of the tests the kalku reused; an error when it
