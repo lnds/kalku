@@ -39,8 +39,17 @@ fn check_baseline(m: BaselineDoneMsg) : Result[Unit, ProtocolError] {
       or given(m.coverage) + given(m.coverage_path) + given(m.coverage_packed_path) == 1,
     "baseline_done: coverage_doubted is said of a coverage, and none was reported"
   )!
-  require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")
+  require((m.status == Red) == (m.failures != []), "baseline_done: red needs failures, green none")!
+  require(
+    not any(m.deferred ?? [], d => ran_or_reused(m, d)),
+    "baseline_done: a deferred test is in none of tests, failures, reused"
+  )
 }
+
+fn ran_or_reused(m: BaselineDoneMsg, id: String) : Bool =
+  any(m.tests, t => t.test_id == id)
+    or any(m.failures, f => f.test_id == id)
+    or contains(m.reused ?? [], id)
 
 fn check_cast_done(m: CastDoneMsg) : Result[Unit, ProtocolError] {
   let allowed = [Killed, Survived, CompileError, Equivalent, NoCoverage, Crashed]

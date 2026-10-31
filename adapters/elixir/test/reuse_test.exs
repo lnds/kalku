@@ -113,6 +113,62 @@ defmodule Kalku.ReuseTest do
     end
   end
 
+  # A baseline asked about a few files runs the test modules that may reach
+  # them and defers the rest, so a run over one file does not wait for the
+  # whole suite; a later baseline asked for exactly those runs them.
+  describe "a baseline scoped to some files" do
+    setup :a_reni
+
+    test "runs the modules that name a file, and defers the others", %{reni: reni} do
+      done = asked(a_copy(), reni, %{"for_files" => ["lib/bell.ex"]})
+
+      assert done["status"] == "green"
+      assert Enum.map(done["tests"], & &1["test"]) == ["test/bell_test.exs:4"]
+
+      assert Enum.sort(done["deferred"]) ==
+               ["test/chime_test.exs:4", "test/door_test.exs:4", "test/door_test.exs:8"]
+
+      assert Enum.all?(done["coverage"], &(&1["tests"] == ["test/bell_test.exs:4"]))
+    end
+
+    test "follows what a test file names down to the file asked about", %{reni: reni} do
+      done = asked(a_copy(), reni, %{"for_files" => ["lib/greeter.ex"]})
+
+      assert Enum.sort(Enum.map(done["tests"], & &1["test"])) ==
+               ["test/door_test.exs:4", "test/door_test.exs:8"]
+
+      assert Enum.sort(done["deferred"]) == ["test/bell_test.exs:4", "test/chime_test.exs:4"]
+    end
+
+    # Nothing the compiler can see reaches the ringer: the chime calls it
+    # through the configuration. Running no test would judge nothing.
+    test "runs the whole suite when no module would be run", %{reni: reni} do
+      done = asked(a_copy(), reni, %{"for_files" => ["lib/ringer.ex"]})
+
+      assert length(done["tests"]) == 4
+      refute Map.has_key?(done, "deferred")
+    end
+
+    test "runs exactly the tests it is asked for, and defers nothing", %{reni: reni} do
+      dir = a_copy()
+      first = asked(dir, reni, %{"for_files" => ["lib/bell.ex"]})
+      done = asked(dir, reni, %{"only" => first["deferred"]})
+
+      assert Enum.sort(Enum.map(done["tests"], & &1["test"])) == Enum.sort(first["deferred"])
+      refute Map.has_key?(done, "deferred")
+      refute Enum.any?(done["coverage"], &("test/bell_test.exs:4" in &1["tests"]))
+    end
+  end
+
+  defp asked(dir, reni, body) do
+    line = Kalku.Json.encode(Map.merge(%{"type" => "baseline", "id" => 3}, body))
+
+    lines =
+      drive_in(dir, reni, [hello(reni), request("prepare", 2), line, request("shutdown", 4)])
+
+    reply(lines, "baseline_done")
+  end
+
   defp baseline(dir, reni, reuse) do
     asked =
       case reuse do

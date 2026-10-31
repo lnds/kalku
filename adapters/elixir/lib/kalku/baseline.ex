@@ -33,14 +33,66 @@ defmodule Kalku.Baseline do
          :ok <- start_exunit(measuring),
          {:ok, modules} <- load(root, files),
          prints = fingerprints(modules, measuring, root),
-         {reused, running} = reusable(modules, prints, Keyword.get(opts, :reuse, []), root),
+         {reused, offered} = reusable(modules, prints, Keyword.get(opts, :reuse, []), root),
+         {running, deferred, unasked} = scoped(offered, prints, opts, root),
          {:ok, {measured, doubt}} <-
-           through(running, reused, measuring, Keyword.get(opts, :told, &nobody/2)) do
+           through(
+             running,
+             reused ++ deferred ++ unasked,
+             measuring,
+             Keyword.get(opts, :told, &nobody/2)
+           ) do
       Kalku.Runtime.mark(Mix.Project.config()[:app])
       elapsed = System.monotonic_time(:millisecond) - started
-      report(measured, doubt, elapsed, root, opts, {prints, reused_ids(reused, root)})
+
+      report(
+        measured,
+        doubt,
+        elapsed,
+        root,
+        opts,
+        {prints, reused_ids(reused, root), reused_ids(deferred, root)}
+      )
     end
   end
+
+  @doc """
+  Which modules this baseline runs, which it defers, and which it was not
+  asked about.
+
+  `only` names the tests to run, from a baseline that deferred them; every
+  other module is left alone. `for_files` runs the modules whose tests may
+  reach one of those files, by what the compiler says each test file names
+  and what those depend on, and defers the rest. A module with no
+  fingerprint to tell is run, and so is the whole suite when no module
+  would be: a baseline judges with the tests it runs, and running none
+  judges nothing. A run that does not count lines has no way to tell, and
+  defers nothing.
+  """
+  def scoped(modules, prints, opts, root) do
+    case {Keyword.get(opts, :only), Keyword.get(opts, :for_files)} do
+      {only, _} when is_list(only) ->
+        asked = MapSet.new(only)
+
+        {run, unasked} =
+          Enum.split_with(modules, fn m ->
+            Enum.any?(ids_of(m, root), &MapSet.member?(asked, &1))
+          end)
+
+        {run, [], unasked}
+
+      {nil, files} when is_list(files) and files != [] and prints != %{} ->
+        wanted = MapSet.new(files)
+        {run, deferred} = Enum.split_with(modules, &may_reach?(prints[&1], wanted))
+        if run == [], do: {modules, [], []}, else: {run, deferred, []}
+
+      _ ->
+        {modules, [], []}
+    end
+  end
+
+  defp may_reach?(nil, _wanted), do: true
+  defp may_reach?(%{covers: covers}, wanted), do: not MapSet.disjoint?(covers, wanted)
 
   # The modules each loaded test file names, as the compiler saw it name them.
   @references {__MODULE__, :references}
@@ -341,7 +393,7 @@ defmodule Kalku.Baseline do
   # A test is named by where it is written, relative to the project: an
   # absolute path would name this machine, and every kalku in the pool
   # would call the same test something different.
-  defp report(tests, doubt, duration_ms, root, opts, {prints, reused}) do
+  defp report(tests, doubt, duration_ms, root, opts, {prints, reused, deferred}) do
     named = for t <- tests, do: {test_id(t.file, t.line, root), t}
 
     failures = for {id, t} <- named, t.failure != nil, do: %{"test" => id, "message" => t.failure}
@@ -363,9 +415,10 @@ defmodule Kalku.Baseline do
 
     {:ok,
      body
-     |> Map.merge(coverage_field(named, root, opts, reused != []))
+     |> Map.merge(coverage_field(named, root, opts, reused != [] or deferred != []))
      |> Map.merge(doubted_field(doubt))
-     |> Map.merge(if(reused == [], do: %{}, else: %{"reused" => reused}))}
+     |> Map.merge(if(reused == [], do: %{}, else: %{"reused" => reused}))
+     |> Map.merge(if(deferred == [], do: %{}, else: %{"deferred" => deferred}))}
   end
 
   # The fingerprint of each module whose tests all passed and stayed inside

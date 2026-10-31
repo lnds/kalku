@@ -195,6 +195,8 @@ defmodule Kalku.Loop do
            reni: state.reni,
            inline_limit_bytes: state.inline_limit,
            reuse: body["reuse"] || [],
+           for_files: body["for_files"],
+           only: body["only"],
            told: fn done, total -> emit(progress(id, done, total)) end
          ) do
       {:ok, body} -> {:reply, reply("baseline_done", id, body), state}
@@ -304,7 +306,8 @@ defmodule Kalku.Loop do
         "reset",
         "recompile_dependents",
         "cast_after_baseline",
-        "partial_baseline"
+        "partial_baseline",
+        "scoped_baseline"
       ]
     }
   end
