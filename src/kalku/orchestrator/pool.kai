@@ -139,7 +139,7 @@ throw that away — which is exactly the explanation a failed run owes a
 person. The ward kills and reaps whatever is left when the run ends, so
 no child outlives it.
 """)]
-pub fn banish(slot: Slot) : Unit / Process + Ward = match slot.kalku {
+pub fn banish(slot: Slot) : Unit / Process = match slot.kalku {
   Some(k) -> silence(k)
   None -> ()
 }
@@ -149,7 +149,7 @@ pub fn dismiss_all(slots: [Slot], id: Int) : Unit / Process =
   each(slots, s => tell(s, id, Shutdown))
 
 #[doc("Stop every kalku in the pool.")]
-pub fn banish_all(slots: [Slot]) : Unit / Process + Ward = each(slots, s => banish(s))
+pub fn banish_all(slots: [Slot]) : Unit / Process = each(slots, s => banish(s))
 
 #[doc("Send one request to a slot's kalku, if it still has one.")]
 pub fn tell(slot: Slot, id: Int, request: KalkuRequest) : Unit / Process = match slot.kalku {
