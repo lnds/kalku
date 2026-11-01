@@ -142,7 +142,7 @@ pub fn run_for_host(
   asking: Asking,
   id: Option[Int],
   progress: Option[String]
-) : (Found, Ending) / Stdout + Stderr + Process + Spawn + Clock + File + Actor[OrchMsg] {
+) : (Found, Ending) / Stdout + Process + Spawn + Clock + File + Actor[OrchMsg] {
   var ending := RanToTheEnd
   let found = attended(
     m => match stopped_mid_run(m, id) {
