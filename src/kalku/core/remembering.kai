@@ -16,6 +16,7 @@ import encoding.json
 import encoding.json_bind
 import kalku.wire.enums
 import kalku.wire.shapes
+import kalku.core.lookup
 
 #[doc("One cast, as it is written down.")]
 #[derive(Json, Eq, Show)]
@@ -69,17 +70,26 @@ pub fn history(all: [Remembered], wekufe: String) : [Outcome] =
   filter(all, r => r.wekufe == wekufe) | .outcome
 
 #[doc("The sites named by these wekufe, in the order they were named.")]
-pub fn sites_for(all: [Remembered], wekufe: [String]) : [Site] = flat_map(
-  wekufe,
-  w => match latest(all, w) {
-    Some(r) -> [r.site]
-    None -> []
-  }
-)
+pub fn sites_for(all: [Remembered], wekufe: [String]) : [Site] {
+  let newest = newest_of(all)
+  flat_map(
+    wekufe,
+    w => match newest(w) {
+      Some(r) -> [r.site]
+      None -> []
+    }
+  )
+}
 
 #[doc("Which of these wekufe the ledger has never heard of.")]
-pub fn strangers(all: [Remembered], wekufe: [String]) : [String] =
-  filter(wekufe, w => is_none(latest(all, w)))
+pub fn strangers(all: [Remembered], wekufe: [String]) : [String] {
+  let newest = newest_of(all)
+  filter(wekufe, w => is_none(newest(w)))
+}
+
+# The ledger grows with every run, so a question asked of many wekufe
+# indexes it once, newest first.
+fn newest_of(all: [Remembered]) : (String) -> Option[Remembered] = finder(reverse(all), .wekufe)
 
 #[doc("""
 Which of the named wekufe no site found now carries.
@@ -90,7 +100,7 @@ would measure nothing and say so with a score of `n/a`, which reads as
 "nothing to break"; this is how it is told apart.
 """)]
 pub fn gone(named: [String], found: [Site]) : [String] =
-  filter(named, w => not contains(found | .site_id, w))
+  except(named, found | .site_id)
 
 fn last(rs: [Remembered]) : Option[Remembered] = match reverse(rs) {
   [] -> None

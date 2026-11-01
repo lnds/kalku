@@ -19,6 +19,7 @@ import kalku.core.reusing
 import kalku.keeping
 import kalku.orchestrator.pool
 import kalku.orchestrator.telling
+import kalku.core.lookup
 
 #[doc("Where a run keeps its baseline, the setting it is measured in, and what was kept there before.")]
 pub type Keeping = { path: String, setting: String, store: Option[Store] }
@@ -105,7 +106,8 @@ pub fn unanswered(keeping: Option[Keeping], scope: BaselineScope, reply: KalkuRe
     (Whole, _, _) -> []
     (_, Some(Some(store)), BaselineDone(m)) -> {
       let answered = (m.tests | .test_id) ++ (m.failures | .test_id) ++ (m.reused ?? [])
-      store.tests |? (t => not contains(answered, t.test_id))
+      let was_answered = member_of(answered)
+      store.tests |? (t => not was_answered(t.test_id))
     }
     _ -> []
   }

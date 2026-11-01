@@ -23,6 +23,7 @@ import kalku.core.skipping
 import kalku.core.blaming
 import kalku.core.costing
 import kalku.core.kills
+import kalku.core.lookup
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
@@ -263,7 +264,7 @@ fn redundant_lines(tests: [Redundant], costs: [TestCost]) : [String] = if is_emp
   [
     "#{length(tests)} test(s) only repeat kills other tests make: any one of them can go without a wekufe living, though several at once may not, and a test may still catch what no spell models:",
     ...take(tests, IDLE_SHOWN)
-      | (t => "  #{seconds(cost_of_test(costs, t.test_id))}  #{t.test_id}  #{covered_how(t)}"),
+      | (t => "  #{seconds(cost_by(costs)(t.test_id))}  #{t.test_id}  #{covered_how(t)}"),
     ...more_than(length(tests), IDLE_SHOWN)
   ]
 }
@@ -490,12 +491,15 @@ fn equivalents(e: EquivalentCounts) : [String] {
 The redundant tests, those that cost the casting most first: what taking
 one out would save is what a reader acts on.
 """)]
-pub fn dearest_redundant(tests: [Redundant], costs: [TestCost]) : [Redundant] = sort_by(
-  tests,
-  (a, b) => cost_of_test(costs, b.test_id) - cost_of_test(costs, a.test_id)
-)
+pub fn dearest_redundant(tests: [Redundant], costs: [TestCost]) : [Redundant] {
+  let cost = cost_by(costs)
+  sort_by(tests, (a, b) => cost(b.test_id) - cost(a.test_id))
+}
 
-fn cost_of_test(costs: [TestCost], id: String) : Int = match find(costs, c => c.test_id == id) {
-  Some(c) -> casting_ms(c)
-  None -> 0
+fn cost_by(costs: [TestCost]) : (String) -> Int {
+  let find_cost = finder(costs, .test_id)
+  id => match find_cost(id) {
+    Some(c) -> casting_ms(c)
+    None -> 0
+  }
 }
