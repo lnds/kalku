@@ -63,21 +63,22 @@ fn words(text: String) : [String] = split(
 
 # Each `project(...)` and `enable_language(...)`, with what is between its
 # parentheses.
-fn calls_in(ws: [String]) : [(String, [String])] = match ws {
-  [] -> []
-  [name, "(", ...rest] -> match to_lower(name) {
-    "project" -> [("project", inside(rest))] ++ calls_in(rest)
-    "enable_language" -> [("enable_language", inside(rest))] ++ calls_in(rest)
-    _ -> calls_in(rest)
-  }
-  [_, ...rest] -> calls_in(rest)
+fn calls_in(ws: [String]) : [(String, [String])] = reverse(calls_from(ws, []))
+
+fn calls_from(ws: [String], found: [(String, [String])]) : [(String, [String])] = match ws {
+  [] -> found
+  [name, "(", ...rest] -> calls_from(rest, called(to_lower(name), rest, found))
+  [_, ...rest] -> calls_from(rest, found)
 }
 
-fn inside(ws: [String]) : [String] = match ws {
-  [] -> []
-  [")", ..._] -> []
-  [w, ...rest] -> [w] ++ inside(rest)
-}
+fn called(command: String, rest: [String], found: [(String, [String])]) : [(String, [String])] =
+  if command == "project" or command == "enable_language" {
+    [(command, inside(rest)), ...found]
+  } else {
+    found
+  }
+
+fn inside(ws: [String]) : [String] = take_while(ws, w => w != ")")
 
 fn asked_by(command: String, args: [String]) : [String] = match command {
   "enable_language" -> args |? (a => not starts_with(a, "OPTIONAL"))
@@ -104,7 +105,4 @@ fn after(ws: [String], word: String) : [String] = match ws {
   [w, ...rest] -> if w == word { rest } else { after(rest, word) }
 }
 
-fn until_keyword(ws: [String]) : [String] = match ws {
-  [] -> []
-  [w, ...rest] -> if contains(KEYWORDS, w) { [] } else { [w] ++ until_keyword(rest) }
-}
+fn until_keyword(ws: [String]) : [String] = take_while(ws, w => not contains(KEYWORDS, w))
