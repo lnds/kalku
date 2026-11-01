@@ -15,6 +15,7 @@ import kalku.wire.kalku_msg
 import kalku.core.planner
 import kalku.orchestrator.scheduler
 import kalku.core.distinct
+import kalku.core.lookup
 
 #[doc("What the tests that ran first left open: the wekufe they did not kill, and the sites they did not reach.")]
 #[derive(Eq, Show)]
@@ -37,23 +38,28 @@ A wekufe the scoped tests did not kill faces only the deferred ones: the
 others already had their turn at it. One no deferred test reaches either
 stays what it was. A site nothing reached is cast as the plan has it now.
 """)]
-pub fn rejudged(casts: [Wekufe], open: Open, deferred: [String]) : [Wekufe] = flat_map(
-  casts,
-  c => if contains(open.survived, c.site.site_id) {
-    facing(c, deferred)
-  } else if contains(open.unreached, c.site.site_id) {
-    [c]
-  } else {
-    []
-  }
-)
+pub fn rejudged(casts: [Wekufe], open: Open, deferred: [String]) : [Wekufe] {
+  let survived = member_of(open.survived)
+  let unreached = member_of(open.unreached)
+  let is_deferred = member_of(deferred)
+  flat_map(
+    casts,
+    c => if survived(c.site.site_id) {
+      facing(c, is_deferred)
+    } else if unreached(c.site.site_id) {
+      [c]
+    } else {
+      []
+    }
+  )
+}
 
 # Where none of the deferred tests is credited with the wekufe's lines but
 # it is to face them anyway, it faces them as its tests: a cast with no
 # test to run is a wekufe nothing reaches, which is not what it is.
-fn facing(c: Wekufe, deferred: [String]) : [Wekufe] {
-  let tests = c.tests |? (t => contains(deferred, t))
-  let rest = c.rest |? (t => contains(deferred, t))
+fn facing(c: Wekufe, is_deferred: (String) -> Bool) : [Wekufe] {
+  let tests = c.tests |? is_deferred
+  let rest = c.rest |? is_deferred
   if is_empty(tests) and is_empty(rest) {
     []
   } else if is_empty(tests) {
@@ -74,33 +80,40 @@ not reaching it changes nothing about that.
 """)]
 pub fn joined(first: Casting, again: [Wekufe], second: Casting) : Casting {
   let ids = distinct(again | .site.site_id)
+  let cast_again = member_of(ids)
+  let before = finder(grouped(first.verdicts, .wekufe), .fst)
+  let now = finder(grouped(second.verdicts, .wekufe), .fst)
   Casting {
-    verdicts: (first.verdicts |? (v => not contains(ids, v.wekufe)))
-      ++ flat_map(ids, id => judged_again(id, first.verdicts, second.verdicts)),
+    verdicts: (first.verdicts |? (v => not cast_again(v.wekufe)))
+      ++ flat_map(ids, id => judged_again(verdicts_in(before(id)), verdicts_in(now(id)))),
     failure: second.failure,
     cancelled: second.cancelled
   }
 }
 
-fn judged_again(id: String, first: [Verdict], second: [Verdict]) : [Verdict] {
-  let before = first |? (v => v.wekufe == id)
-  let now = second |? (v => v.wekufe == id)
+fn verdicts_in(group: Option[(String, [Verdict])]) : [Verdict] = match group {
+  Some(g) -> g.snd
+  None -> []
+}
+
+fn judged_again(before: [Verdict], now: [Verdict]) : [Verdict] =
   if (not is_empty(before)) and (not is_empty(now)) and all(now, v => v.outcome == NoCoverage) {
     before
   } else {
     now
   }
-}
 
 #[doc("Every cast of a run that was cast twice: the first's, less what was cast again, and the second's.")]
 pub fn joined_casts(first: [Wekufe], again: [Wekufe]) : [Wekufe] {
-  let ids = again | .site.site_id
-  (first |? (c => not contains(ids, c.site.site_id))) ++ again
+  let cast_again = member_of(again | .site.site_id)
+  (first |? (c => not cast_again(c.site.site_id))) ++ again
 }
 
 #[doc("""
 The kept tests worth offering a baseline of only `tests`: an offer of
 anything else is one the kalku has no use for.
 """)]
-pub fn offered_of(offer: [Reuse], tests: [String]) : [Reuse] =
-  offer |? (r => contains(tests, r.test_id))
+pub fn offered_of(offer: [Reuse], tests: [String]) : [Reuse] {
+  let wanted = member_of(tests)
+  offer |? (r => wanted(r.test_id))
+}

@@ -14,6 +14,7 @@ import kalku.wire.packed
 import kalku.wire.kalku_codec
 import kalku.core.blaming
 import kalku.orchestrator.reuse
+import kalku.core.lookup
 
 # The suite as the kalku enumerated it. Which of those tests judge a
 # given wekufe is the coverage's business; without coverage, all of them
@@ -86,8 +87,7 @@ pub fn doubted_of(reply: KalkuReply) : Option[String] = match reply {
 }
 
 pub fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
-  let gone = failing | .test_id
-  suite_of(reply) |? (t => not contains(gone, t))
+  except(suite_of(reply), failing | .test_id)
 }
 
 # A suite in which nothing passes ends the run, whether its tests all fail

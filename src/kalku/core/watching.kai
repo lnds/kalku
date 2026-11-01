@@ -12,6 +12,7 @@ once the project has read the same twice in a row.
 
 import kalku.core.cache
 import kalku.core.distinct
+import kalku.core.lookup
 
 #[doc("""
 How often a watched project is read again, in milliseconds.
@@ -64,7 +65,7 @@ The files that differ between two reads: changed, added, or gone, in path
 order.
 """)]
 pub fn differing(before: [FileHash], after: [FileHash]) : [String] {
-  let gone = before |? (f => not any(after, a => a.file == f.file)) | .file
+  let gone = except(before | .file, after | .file)
   sort(distinct(changed(before, after) ++ gone))
 }
 

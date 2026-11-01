@@ -13,6 +13,7 @@ changed file would be trusted because it was touched a moment ago.
 
 import kalku.wire.enums
 import kalku.wire.shapes
+import kalku.core.lookup
 
 #[doc("A file and what is in it, as the cache knows it.")]
 #[derive(Eq, Show)]
@@ -87,8 +88,16 @@ The files whose contents changed between two runs.
 What a warm run reloads, and what decides which wekufe have to be cast
 again rather than read from the cache.
 """)]
-pub fn changed(before: [FileHash], now: [FileHash]) : [String] =
-  flat_map(now, f => if is_unchanged(before, f) { [] } else { [f.file] })
+pub fn changed(before: [FileHash], now: [FileHash]) : [String] {
+  let old = finder(before, .file)
+  flat_map(
+    now,
+    f => match old(f.file) {
+      Some(o) -> if o.hash == f.hash { [] } else { [f.file] }
+      None -> [f.file]
+    }
+  )
+}
 
 #[doc("""
 One short name for the state of a set of files.
