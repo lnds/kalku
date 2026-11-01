@@ -40,6 +40,10 @@ pub fn json(r: Report, exit: Int) : String {
         ...optional("coverage_doubted", r.doubted |> map(JStr)),
         ...optional("baseline_reused", if r.reused > 0 { Some(JNum(r.reused)) } else { None }),
         ...optional(
+          "baseline_deferred",
+          if r.deferred > 0 { Some(JNum(r.deferred)) } else { None }
+        ),
+        ...optional(
           "shard",
           r.shard |> map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
         ),
@@ -241,6 +245,12 @@ fn written_from(v: JsonValue) : Result[Written, String] {
           |> unwrap_or(
             0
           ),
+        deferred: ((json_bind_opt_int(
+          json_bind_field(v, "baseline_deferred"),
+          "baseline_deferred"
+        )
+          |> map_err(said))!)
+          |> unwrap_or(0),
         shard: (json_bind_opt(json_bind_field(v, "shard"), "shard", shard_of_json)
           |> map_err(said))!,
         stopped: (json_bind_opt_string(json_bind_field(v, "stopped"), "stopped") |> map_err(said))!,

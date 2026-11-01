@@ -28,6 +28,7 @@ import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
 import kalku.orchestrator.measure
 import kalku.orchestrator.hearing
+import kalku.orchestrator.reuse
 
 #[doc("""
 A pool between runs: its kalku, what the first of them said when it was
@@ -183,7 +184,7 @@ fn again(
   now: [FileHash]
 ) : (Found, Option[Warm]) / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Ward {
   let read = match first_reader(w.slots) {
-    Some(k) -> read_by(k, asking, w.hello)
+    Some(k) -> read_by(k, asking, w.hello, Whole)
     None -> discover(asking)
   }
   match read {
@@ -232,7 +233,7 @@ fn read_afresh(
   asking: Asking
 ) : Result[(KalkuReply, Known), String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   let hello = introduced(k, asking)!
-  Ok((hello, read_by(k, asking, hello)!))
+  Ok((hello, read_by(k, asking, hello, Whole)!))
 }
 
 fn cast_kept(

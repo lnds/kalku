@@ -399,12 +399,13 @@ fn asking_of(
   shard: None,
   store: None,
   reuse: false,
-  every_kill: false
+  every_kill: false,
+  whole: false
 }
 
 fn kept_at(asking: Asking, c: Config, root: String, whole: Bool) : Asking / Env + Process {
   let (store, reuse) = keeping_for(root, c.language, whole)
-  Asking { ...asking, store: store, reuse: reuse }
+  Asking { ...asking, store: store, reuse: reuse, whole: whole }
 }
 
 #[doc("Where a project writes down what it has decided cannot be told apart.")]

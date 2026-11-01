@@ -42,7 +42,8 @@ fn asking_of(spec: PoolSpec) : Asking = Asking {
   shard: None,
   store: None,
   reuse: false,
-  every_kill: false
+  every_kill: false,
+  whole: false
 }
 
 fn after_writing(said: [String], from: Int, upto: Int) : [String] = if from >= upto {

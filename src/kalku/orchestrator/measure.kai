@@ -46,6 +46,7 @@ import kalku.orchestrator.interrupting
 import kalku.orchestrator.reuse
 import kalku.orchestrator.baselining
 import kalku.orchestrator.hearing
+import kalku.orchestrator.deferring
 import kalku.core.reusing
 
 #[doc("What to measure, and with what.")]
@@ -64,7 +65,8 @@ pub type Asking = {
   shard: Option[Shard],
   store: Option[String],
   reuse: Bool,
-  every_kill: Bool
+  every_kill: Bool,
+  whole: Bool
 }
 
 # `durations` holds pairs, which have no `Eq`, so this record derives
@@ -81,7 +83,8 @@ pub type Known = {
   only_theirs: [String],
   withheld: Option[String],
   doubted: Option[String],
-  reused: Int
+  reused: Int,
+  deferred: [String]
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -122,7 +125,7 @@ pub fn measuring(
           Ward.watch(k)
           match interview(k, asking) {
             Err(why) -> not_found(why)
-            Ok(read) -> casting_them(asking, read.snd, kept(k, read.fst))
+            Ok(read) -> casting_them(asking, read, kept(k, ok(able(read.fst)) ?? []))
           }
         }
       }
@@ -214,10 +217,23 @@ fn able(reply: KalkuReply) : Result[[Capability], String] = match reply {
 fn interview(
   k: Kalku,
   asking: Asking
-) : Result[([Capability], Known), String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
+) : Result[(KalkuReply, Known), String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   let hello = introduced(k, asking)!
-  Ok((able(hello)!, read_by(k, asking, hello)!))
+  Ok((hello, read_by(k, asking, hello, scope_of(asking, able(hello)!))!))
 }
+
+# A run over some files asks a kalku that can for the tests that may reach
+# them, and leaves the rest until something is left for them to judge. Only
+# where the kalku can run that rest later, in place, before the pool it
+# casts in is gone.
+fn scope_of(asking: Asking, caps: [Capability]) : BaselineScope =
+  if asking.whole
+    or (not contains(caps, ScopedBaseline))
+    or (not contains(caps, CastAfterBaseline)) {
+    Whole
+  } else {
+    ForFiles(asking.files)
+  }
 
 #[doc("""
 Greet a kalku and have it build the project: what it said of itself, or
@@ -242,20 +258,21 @@ What a prepared kalku says the project holds: its suite, run once, and the
 sites in the files asked about.
 
 `hello` is what the kalku said when it was greeted, which decides what
-it is offered to reuse.
+it is offered to reuse; `scope`, which tests the baseline runs.
 """)]
 pub fn read_by(
   k: Kalku,
   asking: Asking,
-  hello: KalkuReply
+  hello: KalkuReply,
+  scope: BaselineScope
 ) : Result[Known, String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   let caps = able(hello)!
   castable(hello, asking.spells)!
   let keeping = keeping_of(asking.store, asking.reuse, caps, hello, asking.spec)
   let offer = offer_of(keeping)
   Telling.entered(PhaseBaselining)
-  Telling.tell_of("running the suite once, for a baseline")
-  tell(k, 3, asked_with(offer))!
+  Telling.tell_of(baselining_line(scope))
+  tell(k, 3, asked_with(offer, scope))!
   let baseline = await_kind(k, "baseline_done")!
   let kept = brought(keeping, offer, baseline)!
   let failing = failures_of(baseline)
@@ -269,6 +286,8 @@ pub fn read_by(
     }
   )
   if is_empty(kept) { () } else { Telling.tell_of(reused_line(length(kept), length(suite))) }
+  let deferred = deferred_of(baseline)
+  if is_empty(deferred) { () } else { Telling.tell_of(deferred_line(length(deferred))) }
   tell(
     k,
     4,
@@ -292,7 +311,7 @@ pub fn read_by(
     )
   })!
   let reported = coverage_from(baseline)!
-  keep(keeping, baseline, reported, kept)
+  keep(keeping, baseline, reported, kept ++ unanswered(keeping, scope, baseline))
   let narrowed =
     reported |> map(entries => told.without(entries ++ coverage_of(kept), failing | .test_id))
   Ok(
@@ -307,7 +326,8 @@ pub fn read_by(
       only_theirs: narrowed |> map(.only_theirs) |> unwrap_or([]),
       withheld: withheld_of(baseline),
       doubted: doubted_of(baseline),
-      reused: length(kept)
+      reused: length(kept),
+      deferred: deferred
     }
   )
 }
@@ -335,18 +355,130 @@ fn wanted_only(asking: Asking, known: Known) : Known = if is_empty(asking.only) 
 
 fn casting_them(
   asking: Asking,
-  all_known: Known,
+  read: (KalkuReply, Known),
   warm: Option[Slot]
-) : Found / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
-  let p = planned(asking, all_known)
-  found_after(
-    asking,
-    p,
-    match warm {
-      Some(first) -> cast_beside(asking.spec, first, p.casts)
-      None -> cast_all(asking.spec, p.casts)
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Ward + Telling {
+  let p = planned(asking, read.snd)
+  if is_empty(read.snd.deferred) {
+    found_after(
+      asking,
+      p,
+      match warm {
+        Some(first) -> cast_beside(asking.spec, first, p.casts)
+        None -> cast_all(asking.spec, p.casts)
+      }
+    )
+  } else {
+    let spec = with_ceiling(asking.spec)
+    let slots = match warm {
+      Some(first) -> fill_around(spec, first)
+      None -> fill(spec)
     }
-  )
+    let first = cast_over(spec, slots, p.casts, 1)
+    let open = left_open(p.ready, agreed(first.fst).verdicts)
+    if nothing_open(open) or is_some(first.fst.failure) or first.fst.cancelled {
+      found_after(asking, p, wound_up(first.fst, first.snd))
+    } else {
+      judged_by_the_rest(Asking { ...asking, spec: spec }, read.fst, p, first, open)
+    }
+  }
+}
+
+# The deferred tests run in a kalku of the pool that cast the rest, which
+# is warm and can go on casting after a baseline; then what was left open
+# is cast again against them alone, in the same pool.
+fn judged_by_the_rest(
+  asking: Asking,
+  hello: KalkuReply,
+  p: Planned,
+  first: (Casting, [Slot], Int),
+  open: Open
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Ward + Telling {
+  let read = match reader_among(first.snd) {
+    Some(k) -> rest_read(k, asking, hello, p.known)
+    None -> Err(
+      "the tests the baseline left for later could not run: no kalku that can is left in the pool"
+    )
+  }
+  match read {
+    Err(why) -> {
+      wound_up(first.fst, first.snd) |> ignore
+      not_found(why)
+    }
+    Ok(known) -> {
+      let p2 = plan_for(asking, known)
+      let again = rejudged(p2.casts, open, p.known.deferred)
+      Telling.tell_of(
+        "casting #{length(uniq(again | .site.site_id))} wekufe again, against the tests that ran later"
+      )
+      let second = cast_over(asking.spec, first.snd, again, first.trd)
+      found_after(
+        asking,
+        Planned { ...p2, casts: joined_casts(p.casts, again) },
+        wound_up(joined(first.fst, again, second.fst), second.snd)
+      )
+    }
+  }
+}
+
+fn reader_among(slots: [Slot]) : Option[Kalku] =
+  find(slots, s => contains(s.caps, CastAfterBaseline) and is_some(s.kalku)) |> and_then(.kalku)
+
+# The tests a scoped baseline deferred, run now, and what they say added to
+# what the first baseline said.
+fn rest_read(
+  k: Kalku,
+  asking: Asking,
+  hello: KalkuReply,
+  known: Known
+) : Result[Known, String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
+  let caps = able(hello)!
+  let keeping = keeping_of(asking.store, asking.reuse, caps, hello, asking.spec)
+  let offer = offered_of(offer_of(keeping), known.deferred)
+  let scope = Only(known.deferred)
+  Telling.tell_of(baselining_line(scope))
+  tell(k, 3, asked_with(offer, scope))!
+  let baseline = await_kind(k, "baseline_done")!
+  let kept = brought(keeping, offer, baseline)!
+  let reported = coverage_from(baseline)!
+  keep(keeping, baseline, reported, kept ++ unanswered(keeping, scope, baseline))
+  Ok(added(known, baseline, kept, reported))
+}
+
+# What a later baseline adds to a run's: its tests, their cost and coverage,
+# and what failed in it. A line only a failing test reached stops being one
+# once a passing test of the later baseline reaches it.
+fn added(
+  known: Known,
+  baseline: KalkuReply,
+  kept: [Kept],
+  reported: Option[[CoverageEntry]]
+) : Known {
+  let failing = failures_of(baseline)
+  let narrowed =
+    reported |> map(entries => told.without(entries ++ coverage_of(kept), failing | .test_id))
+  let coverage = match (known.coverage, narrowed) {
+    (Some(before), Some(now)) -> Some(before ++ now.coverage)
+    _ -> None
+  }
+  let reached =
+    (coverage ?? []) |? (e => not is_empty(e.tests)) | (e => told.place_of(e.file, e.line))
+  Known {
+    ...known,
+    tests: known.tests ++ judging_of(baseline, failing) ++ (kept | .test_id),
+    coverage: coverage,
+    durations: known.durations
+      ++ durations_of(baseline)
+      ++ (timings_of(kept) | (t => (t.test_id, t.duration_ms))),
+    left_out: known.left_out ++ failing,
+    differences: known.differences ++ differences_of(baseline),
+    only_theirs: (known.only_theirs ++ ((narrowed |> map(.only_theirs)) ?? []))
+      |? (place => not contains(reached, place)),
+    withheld: known.withheld |> or_else(() => withheld_of(baseline)),
+    doubted: known.doubted |> or_else(() => doubted_of(baseline)),
+    reused: known.reused + length(kept),
+    deferred: []
+  }
 }
 
 #[doc("What a run is about to cast: the plan, every cast in it, and what the plan was made from.")]
@@ -354,22 +486,28 @@ pub type Planned = { ready: Plan, casts: [Wekufe], known: Known, whole: Plan }
 
 #[doc("The plan for what a kalku read, said aloud with what it will cost.")]
 pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
+  let p = plan_for(asking, all_known)
+  Telling.entered(PhaseCasting)
+  Telling.tell_of(
+    "#{length(p.known.sites)} site(s) found; casting #{length(p.casts)} with #{asking.spec.workers} worker(s)"
+  )
+  let workers = asking.spec.workers
+  Telling.will_cost(
+    length(p.casts),
+    estimate_ms(p.casts, p.known.durations, workers),
+    most_ms(p.casts, p.known.durations, workers)
+  )
+  p
+}
+
+#[doc("The plan for what a kalku read.")]
+pub fn plan_for(asking: Asking, all_known: Known) : Planned {
   let known = wanted_only(asking, all_known)
   let whole = plan(inputs_for(asking, known), _id => None)
   let ready = doubting(part_of(whole, asking.shard), known)
   let casts =
     repeated(limited(ready.to_cast, asking.limit))
       | (c => Wekufe { ...c, every_kill: asking.every_kill })
-  Telling.entered(PhaseCasting)
-  Telling.tell_of(
-    "#{length(known.sites)} site(s) found; casting #{length(casts)} with #{asking.spec.workers} worker(s)"
-  )
-  let workers = asking.spec.workers
-  Telling.will_cost(
-    length(casts),
-    estimate_ms(casts, known.durations, workers),
-    most_ms(casts, known.durations, workers)
-  )
   Planned { ready: ready, casts: casts, known: known, whole: whole }
 }
 
@@ -572,6 +710,7 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     withheld: known.withheld,
     doubted: known.doubted,
     reused: known.reused,
+    deferred: length(known.deferred),
     shard: None,
     stopped: None,
     plan: None,

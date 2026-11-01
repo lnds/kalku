@@ -220,6 +220,7 @@ pub fn combined(first: Report, rest: [Report]) : Report {
     # a reader of the merged report can be told without adding up tests
     # that are the same tests.
     max(parts | .reused) |> unwrap_or(0),
+    deferred: max(parts | .deferred) |> unwrap_or(0),
     shard: None,
     stopped: None,
     plan: first.plan,

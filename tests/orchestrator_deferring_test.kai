@@ -1,0 +1,181 @@
+import actor
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.report
+import kalku.core.gate
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.attending
+import kalku.orchestrator.telling
+import kalku.orchestrator.measure
+
+import kalku.core.planner
+import kalku.orchestrator.scheduler
+import kalku.orchestrator.deferring
+
+const FAKE : String = "./tests/fake_kalku/fake_kalku"
+
+fn asking_of(script: String) : Asking = Asking {
+  spec: PoolSpec {
+    command: FAKE,
+    args: ["tests/fixtures/scripts/#{script}"],
+    workers: 1,
+    root: ".",
+    reni: ".kalku",
+    inline_limit_bytes: 65536,
+    env: StrMap { entries: [] },
+    options: None,
+    greeting_ms: 5000,
+    summons_allowed: 1,
+    memory_mb: 0
+  },
+  files: ["lib/a.ex"],
+  only: [],
+  spells: [],
+  exclude_calls: [],
+  exclude: [],
+  equivalents: [],
+  limit: 0,
+  timeout_floor_ms: 5000,
+  touched: None,
+  shard: None,
+  store: None,
+  reuse: false,
+  every_kill: false,
+  whole: false
+}
+
+fn measured(script: String) : Found / Process + Spawn + Clock + File + Stderr =
+  with_mailbox { alone(() => untold(() => measuring(asking_of(script)))) }
+
+# In the order of the wekufe's names: the order a plan casts in is the
+# planner's business.
+fn outcomes(found: Found) : [(String, Outcome)] =
+  sort_by(
+    found.cast,
+    (a, b) => if a.wekufe < b.wekufe { -1 } else if a.wekufe > b.wekufe { 1 } else { 0 }
+  )
+    | (c => (c.wekufe, c.outcome))
+
+fn deferred(found: Found) : Int = (found.report |> option.map(.deferred)) ?? (-1)
+
+fn killed(found: Found) : Int = (found.report |> option.map(r => r.counts.killed)) ?? (-1)
+
+fn survived(found: Found) : Int = (found.report |> option.map(r => r.counts.survived)) ?? (-1)
+
+fn uncovered(found: Found) : Int = (found.report |> option.map(r => length(r.uncovered))) ?? (-1)
+
+# Each script's first `baseline` is served only when it names the files, and
+# its second only when it names the tests: a run that asked otherwise would
+# meet a fake that dies of it.
+test "a run over a file whose own tests settle every wekufe never runs the rest" {
+  let found = measured("scoped_settled.ndjson")
+
+  assert found.failure == None
+  assert outcomes(found) == [("s3", Killed), ("s7", Killed)]
+  assert deferred(found) == 1
+}
+
+test "what the file's own tests leave open is cast again once the rest has run" {
+  let found = measured("scoped_then_rest.ndjson")
+  println(
+    "DEBUG #{outcomes(found)} k=#{killed(found)} d=#{deferred(found)} u=#{uncovered(found)} f=#{found.failure}"
+  )
+
+  assert found.failure == None
+  assert outcomes(found) == [("s3", Killed), ("s7", Killed)]
+  assert killed(found) == 2
+  assert deferred(found) == 0
+  assert uncovered(found) == 0
+}
+
+test "a survivor no test that ran later reaches stays a survivor, without a cast" {
+  let found = measured("scoped_rest_misses.ndjson")
+
+  assert found.failure == None
+  assert outcomes(found) == [("s3", Survived), ("s7", Killed)]
+  assert survived(found) == 1
+  assert deferred(found) == 0
+}
+
+# ---- what is left open, and what faces it --------------------------------
+
+fn site(id: String) : Site = Site {
+  site_id: id,
+  file: "lib/a.ex",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 1, col: 1, byte: 0 }, end: None },
+  spell: Compare,
+  original: None,
+  replacement: "",
+  reload: ModuleOnly
+}
+
+fn cast_of(id: String, tests: [String], rest: [String]) : Wekufe =
+  Wekufe { site: site(id), tests: tests, rest: rest, timeout_ms: 1000, casts: 1, every_kill: false }
+
+fn verdict(id: String, outcome: Outcome) : Verdict =
+  Verdict { wekufe: id, outcome: outcome, tests: [], said: None, killed_by: None, again: false }
+
+test "what is left open is what nothing killed, and what nothing reached" {
+  let ready = Plan { to_cast: [], no_coverage: [site("s9")], suppressed: [], cached: [] }
+  let open = left_open(
+    ready,
+    [
+      verdict("s1", Killed),
+      verdict("s2", Survived),
+      verdict("s3", Timeout),
+      verdict("s4", NoCoverage)
+    ]
+  )
+
+  assert open == Open { survived: ["s2", "s4"], unreached: ["s9"] }
+  assert not nothing_open(open)
+  assert nothing_open(Open { survived: [], unreached: [] })
+}
+
+test "a survivor faces only the tests that ran later, as its tests where none is credited, and none if they do not reach it" {
+  let open = Open { survived: ["s1", "s2", "s5"], unreached: ["s3"] }
+  let casts = [
+    cast_of("s1", ["a", "b"], ["c"]),
+    cast_of("s2", ["a"], []),
+    cast_of("s3", ["a", "b"], []),
+    cast_of("s4", ["b"], []),
+    cast_of("s5", ["a"], ["c"])
+  ]
+  let again = rejudged(casts, open, ["b", "c"])
+
+  assert (again | (c => (c.site.site_id, c.tests, c.rest)))
+    == [("s1", ["b"], ["c"]), ("s3", ["a", "b"], []), ("s5", ["c"], [])]
+}
+
+test "a survivor no test that ran later entered stays a survivor" {
+  let again = [cast_of("s2", ["b"], [])]
+  let both = joined(
+    Casting { verdicts: [verdict("s2", Survived)], failure: None, cancelled: false },
+    again,
+    Casting { verdicts: [verdict("s2", NoCoverage)], failure: None, cancelled: false }
+  )
+
+  assert (both.verdicts | (v => (v.wekufe, v.outcome))) == [("s2", Survived)]
+}
+
+test "a wekufe cast again is judged by its second casting alone" {
+  let again = [cast_of("s2", ["b"], [])]
+  let both = joined(
+    Casting {
+      verdicts: [verdict("s1", Killed), verdict("s2", Survived)],
+      failure: None,
+      cancelled: false
+    },
+    again,
+    Casting { verdicts: [verdict("s2", Killed)], failure: Some("gone"), cancelled: false }
+  )
+
+  assert (both.verdicts | (v => (v.wekufe, v.outcome))) == [("s1", Killed), ("s2", Killed)]
+  assert both.failure == Some("gone")
+  assert (joined_casts([cast_of("s1", ["a"], []), cast_of("s2", ["a"], [])], again)
+    | (c => c.site.site_id))
+    == ["s1", "s2"]
+}

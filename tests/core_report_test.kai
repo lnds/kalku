@@ -51,6 +51,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     left_out: nobody_left_out(),
     withheld: None,
     reused: 0,
+    deferred: 0,
     doubted: None,
     shard: None,
     stopped: None,
@@ -603,4 +604,18 @@ test "redundant tests are named dearest first, with what covers each" {
     "\"redundant_tests\":[{\"test\":\"t/dear_test.exs:1\",\"kills\":2,\"killed_also_by\":\"t/wide_test.exs:1\"}"
   )
   assert not has(json(plain(), 0), "redundant_tests")
+}
+
+test "a run whose deferred tests never ran says how many, and carries the count in its JSON" {
+  let r = Report { ...plain(), deferred: 3 }
+
+  assert has(human(r), "3 test(s) never ran: the tests that reach these files killed every wekufe")
+  assert not has(human(plain()), "never ran")
+  assert has(
+    human(Report { ...r, stopped: Some("cancelled") }),
+    "a survivor here has not faced them"
+  )
+  assert has(json(r, 0), "\"baseline_deferred\":3")
+  assert not has(json(plain(), 0), "baseline_deferred")
+  assert (read_report(json(r, 0)) |> map(w => w.report.deferred)) == Ok(3)
 }

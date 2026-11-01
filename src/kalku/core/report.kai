@@ -90,6 +90,7 @@ pub type Report = {
   withheld: Option[String],
   doubted: Option[String],
   reused: Int,
+  deferred: Int,
   shard: Option[Shard],
   stopped: Option[String],
   plan: Option[PlanMark],
@@ -136,6 +137,7 @@ pub fn human(r: Report) : String = join(
     ...withheld_block(r.withheld),
     ...doubted_block(r.doubted),
     ...reused_block(r.reused),
+    ...deferred_block(r.deferred, is_some(r.stopped)),
     ...costly_block(r.costs, r.reused),
     ...weighed_block(r.weighed, r.costs),
     summary_line(r),
@@ -171,6 +173,22 @@ fn doubted_block(why: Option[String]) : [String] = match why {
 
 # A baseline that ran only what changed says so where the score is read:
 # a reader of the score alone would take it for a run of the whole suite.
+# A run over a few files that never needed the rest of the suite says so
+# beside the score, which the tests that reach those files settled alone.
+fn deferred_block(deferred: Int, stopped: Bool) : [String] = if deferred == 0 {
+  []
+} else if stopped {
+  [
+    "#{deferred} test(s) never ran: the run stopped before they could judge what the tests that reach these files left, so a survivor here has not faced them.",
+    ""
+  ]
+} else {
+  [
+    "#{deferred} test(s) never ran: the tests that reach these files killed every wekufe and reached every site, so nothing was left for the rest to judge.",
+    ""
+  ]
+}
+
 fn reused_block(reused: Int) : [String] = if reused == 0 {
   []
 } else {

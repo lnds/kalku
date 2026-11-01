@@ -13,6 +13,7 @@ import kalku.wire.envelope
 import kalku.wire.packed
 import kalku.wire.kalku_codec
 import kalku.core.blaming
+import kalku.orchestrator.reuse
 
 # The suite as the kalku enumerated it. Which of those tests judge a
 # given wekufe is the coverage's business; without coverage, all of them
@@ -109,3 +110,20 @@ kept baseline answered for, out of the suite, and why that is honest.
 """)]
 pub fn reused_line(reused: Int, of: Int) : String =
   "#{reused} of the #{of} were not run again: a kept baseline answered for them, and the kalku says nothing they run has changed"
+
+#[doc("The tests a baseline scoped to some files did not run, and left for a later one.")]
+pub fn deferred_of(reply: KalkuReply) : [String] = match reply {
+  BaselineDone(m) -> m.deferred ?? []
+  _ -> []
+}
+
+#[doc("What a run says as it asks for a baseline of this scope.")]
+pub fn baselining_line(scope: BaselineScope) : String = match scope {
+  Whole -> "running the suite once, for a baseline"
+  ForFiles(_) -> "running the tests that may reach the files asked about, for a baseline"
+  Only(tests) -> "running the #{length(tests)} test(s) the baseline left for later"
+}
+
+#[doc("How a run says that its baseline left tests for later.")]
+pub fn deferred_line(deferred: Int) : String =
+  "#{deferred} other test(s) wait: they run only if the ones that reach these files leave a wekufe unkilled or a site unreached"

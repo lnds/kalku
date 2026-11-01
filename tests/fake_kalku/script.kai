@@ -26,7 +26,8 @@ pub type Step = {
   stderr: Option[String],
   spawn: Option[String],
   repeat: Int,
-  optional: Bool
+  optional: Bool,
+  holding: Option[String]
 }
 
 #[doc("Read a script; `Err` names the line that is not a JSON object.")]
@@ -38,6 +39,14 @@ pub fn reply_text(s: Step) : String = match s.reply {
   Some(r) -> json_encode(r)
   None -> ""
 }
+
+#[doc("True when a step serves a request of this type that holds these fields.")]
+pub fn serves(s: Step, kind: String, fields: [String]) : Bool =
+  (is_wildcard(s) or s.expect == kind)
+    and (match s.holding {
+      Some(field) -> contains(fields, field)
+      None -> true
+    })
 
 #[doc("True when a step serves any request, not one named type.")]
 pub fn is_wildcard(s: Step) : Bool = s.expect == "*"
@@ -75,7 +84,8 @@ fn read_step(v: JsonValue) : Step = Step {
   stderr: get(v, "stderr") || as_string,
   spawn: get(v, "spawn") || as_string,
   repeat: (get(v, "repeat") || as_int) ?? 1,
-  optional: (get(v, "optional") || as_bool) ?? false
+  optional: (get(v, "optional") || as_bool) ?? false,
+  holding: get(v, "holding") || as_string
 }
 
 fn value_at(v: JsonValue, key: String) : Option[JsonValue] = match get(v, key) {
