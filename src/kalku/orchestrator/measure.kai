@@ -97,7 +97,7 @@ would be a number nobody should believe.
 """)]
 pub fn measure(
   asking: Asking
-) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Signal + Stderr =
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Signal =
   # A run arranges not to be orphaned before it summons anything: the
   # kalku it is about to start lead their own process groups, so an
   # interrupt reaches this fiber and nothing else.
@@ -109,7 +109,7 @@ signal stops altogether and not only the run it happens to be in.
 """)]
 pub fn measuring(
   asking: Asking
-) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Stderr {
+) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling {
   let done = logged(
     asking.spec.reni,
     () => warded(
