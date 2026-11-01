@@ -123,3 +123,14 @@ test "a test with a kill of its own, or none at all, is not redundant" {
   assert (found | .test_id) == ["t2"]
   assert redundant(weights([("t1", ["a"]), ("t2", ["b"])])) == []
 }
+
+# One test that kills thousands of wekufe is credited with all of them, in
+# the order they were cast, without paying the square of their number.
+test "a test that kills many wekufe is credited with each, in order" {
+  let ids = enumerate(list.repeat(0, 5000)) | (p => "w#{p.fst}")
+  let w = weighed(ids || (id => [killed(id, ["t1", "t2"], "t1"), lived(id, ["t2"])]), [])
+
+  assert w.unsure == 0
+  assert (weight_of(w, "t1") |> map(.kills)) == Some(ids)
+  assert (redundant(w) | .test_id) == []
+}
