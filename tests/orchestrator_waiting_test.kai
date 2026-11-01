@@ -5,6 +5,7 @@ import kalku.orchestrator.pool
 import kalku.orchestrator.attending
 import kalku.orchestrator.telling
 import kalku.orchestrator.measure
+import kalku.orchestrator.hearing
 
 const LINES : Int = 60000
 
