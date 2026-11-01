@@ -98,5 +98,5 @@ defmodule Kalku.Cast.Tests do
     end
   end
 
-  defp reset, do: ExUnit.configure(exclude: [], include: [], max_failures: :infinity)
+  defp reset, do: Kalku.Runtime.restore_run()
 end

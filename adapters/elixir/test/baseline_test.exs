@@ -40,6 +40,28 @@ defmodule Kalku.BaselineTest do
                Enum.find_index(types, &(&1 == "baseline_done"))
     end
 
+    # The deferred baseline of a scoped run, and every baseline of
+    # `--watch`, come after the first in the same kalku. Each has to leave
+    # out what `test_helper.exs` leaves out, as `mix test` does.
+    test "every baseline leaves out the tests test_helper.exs excludes", %{reni: reni} do
+      lines = run(reni, "excluding", ["baseline", "baseline"])
+
+      dones =
+        lines
+        |> Enum.map(&Kalku.Json.decode/1)
+        |> Enum.flat_map(fn
+          {:ok, %{"type" => "baseline_done"} = body} -> [body]
+          _ -> []
+        end)
+
+      assert length(dones) == 2
+
+      for done <- dones do
+        assert done["status"] == "green"
+        assert Enum.map(done["tests"], & &1["test"]) == ["test/excluding_test.exs:4"]
+      end
+    end
+
     # A mocking library sets itself up in `test_helper.exs` and tidies up in
     # an `after_suite` callback, which ExUnit runs at the end of every
     # `ExUnit.run`. The baseline runs the suite once whole and then once per
