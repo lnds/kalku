@@ -13,6 +13,7 @@ its `filter` and `contains` with it, over the lists' own.
 
 import collections.map
 import kalku.wire.shapes
+import kalku.core.distinct
 
 #[doc("A baseline's coverage and durations, indexed. `reaching` is absent when there was no coverage.")]
 pub type Told = { reaching: Option[Map[String, [String]]], costs: Map[String, Int] }
@@ -37,7 +38,9 @@ on the pattern's.
 pub fn reaching_site(told: Told, site: Site) : Option[[String]] =
   told.reaching
     |> option.map(
-      by_line => uniq(lines_of(site) || (l => unwrap_or(map.get(by_line, place(site.file, l)), [])))
+      by_line => distinct(
+        lines_of(site) || (l => unwrap_or(map.get(by_line, place(site.file, l)), []))
+      )
     )
 
 #[doc("""

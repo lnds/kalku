@@ -11,6 +11,7 @@ once the project has read the same twice in a row.
 """)]
 
 import kalku.core.cache
+import kalku.core.distinct
 
 #[doc("""
 How often a watched project is read again, in milliseconds.
@@ -64,7 +65,7 @@ order.
 """)]
 pub fn differing(before: [FileHash], after: [FileHash]) : [String] {
   let gone = before |? (f => not any(after, a => a.file == f.file)) | .file
-  sort(uniq(changed(before, after) ++ gone))
+  sort(distinct(changed(before, after) ++ gone))
 }
 
 #[doc("The line printed before a run that a change started, naming the change.")]

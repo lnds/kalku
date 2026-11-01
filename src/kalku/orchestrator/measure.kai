@@ -48,6 +48,7 @@ import kalku.orchestrator.baselining
 import kalku.orchestrator.hearing
 import kalku.orchestrator.deferring
 import kalku.core.reusing
+import kalku.core.distinct
 
 #[doc("What to measure, and with what.")]
 #[derive(Eq, Show)]
@@ -409,7 +410,7 @@ fn judged_by_the_rest(
       let p2 = plan_for(asking, known)
       let again = rejudged(p2.casts, open, p.known.deferred)
       Telling.tell_of(
-        "casting #{length(uniq(again | .site.site_id))} wekufe again, against the tests that ran later"
+        "casting #{length(distinct(again | .site.site_id))} wekufe again, against the tests that ran later"
       )
       let second = cast_over(asking.spec, first.snd, again, first.trd)
       found_after(
@@ -662,8 +663,8 @@ stopped travels in the report, and blocks it.
 pub fn report_after(ready: Plan, casts: [Wekufe], casting: Casting, known: Known) : Report {
   let stopped = stopped_short(
     what_ended(casting.failure, casting.cancelled),
-    length(uniq(casting.verdicts | .wekufe)),
-    length(uniq(casts | .site.site_id))
+    length(distinct(casting.verdicts | .wekufe)),
+    length(distinct(casts | .site.site_id))
   )
   Report {
     ...report_of(ready, casting, known),
@@ -826,7 +827,7 @@ fn max_casts(n: Int) : Int = if n < 1 { 1 } else { n }
 # measurement of it.
 pub fn agreed(casting: Casting) : Casting = Casting {
   ...casting,
-  verdicts: uniq(casting.verdicts | .wekufe) | (w => settled(casting.verdicts, w))
+  verdicts: distinct(casting.verdicts | .wekufe) | (w => settled(casting.verdicts, w))
 }
 
 fn settled(verdicts: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {
@@ -848,7 +849,7 @@ fn settled(verdicts: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {
         ...one,
         outcome: Nondeterministic,
         said: Some(
-          "cast #{length(mine)} times: #{join(uniq(mine | (v => outcome_name(v.outcome))), ", ")}"
+          "cast #{length(mine)} times: #{join(distinct(mine | (v => outcome_name(v.outcome))), ", ")}"
         )
       }
     }

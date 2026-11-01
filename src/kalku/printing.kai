@@ -7,6 +7,7 @@ import kalku.core.report
 import kalku.core.report_agent
 import kalku.core.report_json
 import kalku.core.report_github
+import kalku.core.distinct
 
 #[doc("""
 The report in the shape asked for. Each format is a different reader: a
@@ -27,7 +28,7 @@ at; the files are read here and looked up purely, which is what makes the
 format testable without a filesystem.
 """)]
 pub fn sources_of(r: Report) : [(String, [String])] / File =
-  uniq(r.survivors | .site.file) | (path => (path, read_lines(path)))
+  distinct(r.survivors | .site.file) | (path => (path, read_lines(path)))
 
 fn read_lines(path: String) : [String] / File =
   lines(ok(file.read(path)) ?? "")

@@ -16,6 +16,7 @@ not that the test is useless.
 
 import collections.map
 import kalku.wire.enums
+import kalku.core.distinct
 
 #[doc("""
 One cast of a wekufe, in the order the chase made them: the first is the
@@ -47,7 +48,7 @@ Only a chase that settled counts: one that began with a survivor, or with
 a kill whose last cast was a survivor or left no test to cast against.
 """)]
 pub fn weighed(attempts: [Attempt], unreaching: [String]) : Weighed {
-  let chases = list.uniq(attempts | .wekufe) | (w => list.filter(attempts, a => a.wekufe == w))
+  let chases = distinct(attempts | .wekufe) | (w => list.filter(attempts, a => a.wekufe == w))
   let known = chases |? judged |? settled
   let faced = list.foldl(
     known || first_tests,
@@ -174,7 +175,7 @@ fn redundant_one(
   if not list.all(t.kills, w => not list.is_empty(others_of(killers_of, w, me))) {
     []
   } else {
-    let covers = list.uniq(list.flat_map(t.kills, w => others_of(killers_of, w, me)))
+    let covers = distinct(list.flat_map(t.kills, w => others_of(killers_of, w, me)))
       |? (o => holds(kills_by(o), t.kills))
     let wider = covers |? (o => not holds(t.kills, kills_by(o)))
     let same = covers |? (o => o < me and holds(t.kills, kills_by(o)))

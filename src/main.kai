@@ -48,6 +48,7 @@ import kalku.wire.client_msg
 import kalku.wire.shapes
 import kalku.orchestrator.ward
 import kalku.orchestrator.warming
+import kalku.core.distinct
 
 fn main() : Int / Stdin + Stdout + Stderr + Env + File + Process + Spawn + Clock + NetUnix + Signal {
   match cli.parse_args(args.argv()) {
@@ -501,7 +502,7 @@ fn asking_again(
   sites: [Site],
   declared: [equivalent.Entry]
 ) : Asking / Env + Process = Asking {
-  ...kept_at(asking_of(c, pool_of(c), uniq(sites | .file), declared), c, ".", false),
+  ...kept_at(asking_of(c, pool_of(c), distinct(sites | .file), declared), c, ".", false),
   only: sites | .site_id
 }
 
@@ -900,7 +901,7 @@ fn narrowed(
   sites: [Site],
   declared: [equivalent.Entry]
 ) : Asking / Env + Process = Asking {
-  ...asking_at(cfg, root, uniq(sites | .file), declared, false),
+  ...asking_at(cfg, root, distinct(sites | .file), declared, false),
   only: sites | .site_id
 }
 

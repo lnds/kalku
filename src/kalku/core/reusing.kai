@@ -22,6 +22,7 @@ import encoding.json
 import encoding.json_bind
 import kalku.wire.shapes
 import kalku.wire.kalku_msg
+import kalku.core.distinct
 
 #[doc("The lines of one file a test reached, as runs: `3-7,9`.")]
 #[derive(Json, Eq, Show)]
@@ -151,7 +152,7 @@ fn grouped(places: [(String, Int)]) : [Reached] {
 }
 
 #[doc("Lines as runs: `[3, 4, 5, 9]` is `3-5,9`.")]
-pub fn runs(lines: [Int]) : String = join(spans(uniq(sort(lines))) | span_text, ",")
+pub fn runs(lines: [Int]) : String = join(spans(distinct(sort(lines))) | span_text, ",")
 
 fn spans(lines: [Int]) : [(Int, Int)] = reverse(foldl(lines, [], extend))
 
