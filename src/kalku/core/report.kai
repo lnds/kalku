@@ -175,7 +175,7 @@ fn reused_block(reused: Int) : [String] = if reused == 0 {
   []
 } else {
   [
-    "#{reused} test(s) of the baseline were not run again: a kept baseline answered for them, because the kalku says nothing they run has changed. `--all` runs every one.",
+    "#{reused} test(s) of the baseline were not run again: a kept baseline answered for them, because the kalku says nothing they run has changed.",
     ""
   ]
 }
