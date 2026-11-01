@@ -113,9 +113,9 @@ fn all_entries(
   at: Int,
   so_far: [CoverageEntry]
 ) : Result[[CoverageEntry], ProtocolError] = match items {
-  [] -> Ok(so_far)
+  [] -> Ok(reverse(so_far))
   [first, ...rest] -> match body(coverageentry_of_json(first, "coverage[#{at}]"), e => e) {
     Err(e) -> Err(e)
-    Ok(entry) -> all_entries(rest, at + 1, so_far ++ [entry])
+    Ok(entry) -> all_entries(rest, at + 1, [entry, ...so_far])
   }
 }
