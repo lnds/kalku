@@ -1,0 +1,15 @@
+#[doc("""
+Dropping repeats from a list in O(n log n).
+
+The standard library's `uniq` has only equality to go on and searches what
+it has kept for every element: the square of the list. What the kaikai side
+deduplicates is ordered, so a set does it instead.
+
+A module of its own because importing a set brings its `filter` and
+`contains` with it, over the lists' own.
+""")]
+
+import collections.set
+
+#[doc("These values with repeats dropped, each where it first appears. Not for records: a set cannot order them.")]
+pub fn distinct(xs: [a]) : [a] = set.to_list(set.from(xs))

@@ -17,6 +17,7 @@ import kalku.core.report_json
 import kalku.core.shard
 import kalku.core.blaming
 import kalku.core.verdict
+import kalku.core.distinct
 
 #[doc("""
 The report of the whole project, from the reports its shards wrote, each
@@ -210,7 +211,7 @@ pub fn combined(first: Report, rest: [Report]) : Report {
     blockers: [],
     left_out: LeftOut {
       tests: uniq(parts || .left_out.tests),
-      differences: uniq(parts || .left_out.differences),
+      differences: distinct(parts || .left_out.differences),
       sites: parts || .left_out.sites
     },
     withheld: first_some(parts | .withheld),

@@ -20,6 +20,7 @@ bigger claim than any single equivalent.
 
 import kalku.wire.enums
 import kalku.wire.shapes
+import kalku.core.distinct
 
 #[doc("A call that many surviving wekufe have in common, and how many.")]
 #[derive(Eq, Show)]
@@ -66,7 +67,8 @@ pub fn repeated_calls(sites: [Site], least: Int) : [Recurring] {
       None -> []
     }
   )
-  let groups = uniq(names) | (n => Recurring { call: n, count: length(filter(names, m => m == n)) })
+  let groups =
+    distinct(names) | (n => Recurring { call: n, count: length(filter(names, m => m == n)) })
   # Most first, and ties by name, so one run's advice reads the same as
   # the next one's.
   sort_by(

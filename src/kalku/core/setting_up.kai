@@ -18,6 +18,7 @@ import crypto.hash
 import kalku.core.cmake
 import encoding.hex
 import kalku.version
+import kalku.core.distinct
 
 #[doc("""
 A language kalku can set a project up for.
@@ -309,7 +310,7 @@ pub fn explain(p: Puzzle) : String {
 
 fn languages() : String = join(catalogue() | .language, ", ")
 
-fn markers() : String = join(uniq(catalogue() | .marker), " or ")
+fn markers() : String = join(distinct(catalogue() | .marker), " or ")
 
 #[doc("Everything init would write, given the language and where the reni goes.")]
 pub fn plan_for(known: Known, reni: String) : Plan = Plan {

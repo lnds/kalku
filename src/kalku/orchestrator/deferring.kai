@@ -14,6 +14,7 @@ import kalku.wire.shapes
 import kalku.wire.kalku_msg
 import kalku.core.planner
 import kalku.orchestrator.scheduler
+import kalku.core.distinct
 
 #[doc("What the tests that ran first left open: the wekufe they did not kill, and the sites they did not reach.")]
 #[derive(Eq, Show)]
@@ -21,7 +22,7 @@ pub type Open = { survived: [String], unreached: [String] }
 
 #[doc("What a plan cast with the scoped tests left open, from what each wekufe came to.")]
 pub fn left_open(ready: Plan, verdicts: [Verdict]) : Open = Open {
-  survived: uniq(verdicts |? (v => v.outcome == Survived or v.outcome == NoCoverage) | .wekufe),
+  survived: distinct(verdicts |? (v => v.outcome == Survived or v.outcome == NoCoverage) | .wekufe),
   unreached: ready.no_coverage | .site_id
 }
 
@@ -72,7 +73,7 @@ it was: the tests that ran first reached it, and the ones that ran later
 not reaching it changes nothing about that.
 """)]
 pub fn joined(first: Casting, again: [Wekufe], second: Casting) : Casting {
-  let ids = uniq(again | .site.site_id)
+  let ids = distinct(again | .site.site_id)
   Casting {
     verdicts: (first.verdicts |? (v => not contains(ids, v.wekufe)))
       ++ flat_map(ids, id => judged_again(id, first.verdicts, second.verdicts)),

@@ -1,0 +1,14 @@
+import kalku.core.distinct
+
+test "repeats are dropped and each value stays where it first appears" {
+  assert distinct(["b", "a", "b", "c", "a"]) == ["b", "a", "c"]
+  assert distinct([3, 1, 3, 2]) == [3, 1, 2]
+  assert distinct([]) == []
+}
+
+# A line reached by every test of a large suite is deduplicated once per
+# site, so this has to stay well under the square of the list.
+test "a long list with few distinct values is deduplicated" {
+  let xs = enumerate(list.repeat(0, 50000)) | (p => p.fst % 100)
+  assert length(distinct(xs)) == 100
+}
