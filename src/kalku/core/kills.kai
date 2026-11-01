@@ -17,6 +17,7 @@ not that the test is useless.
 import collections.map
 import kalku.wire.enums
 import kalku.core.distinct
+import kalku.core.lookup
 
 #[doc("""
 One cast of a wekufe, in the order the chase made them: the first is the
@@ -48,7 +49,7 @@ Only a chase that settled counts: one that began with a survivor, or with
 a kill whose last cast was a survivor or left no test to cast against.
 """)]
 pub fn weighed(attempts: [Attempt], unreaching: [String]) : Weighed {
-  let chases = distinct(attempts | .wekufe) | (w => list.filter(attempts, a => a.wekufe == w))
+  let chases = grouped(attempts, .wekufe) | .snd
   let known = chases |? judged |? settled
   let faced = list.foldl(
     known || first_tests,
@@ -58,14 +59,14 @@ pub fn weighed(attempts: [Attempt], unreaching: [String]) : Weighed {
   let kills = list.foldl(
     known || killers,
     map.empty(),
-    (by, kw) => map.update(by, kw.fst, [kw.snd], ws => ws ++ [kw.snd])
+    (by, kw) => map.update(by, kw.fst, [kw.snd], ws => [kw.snd, ...ws])
   )
   Weighed {
     tests: map.to_pairs(faced)
       | (p => Weight {
         test_id: p.fst,
         faced: p.snd,
-        kills: unwrap_or(map.get(kills, p.fst), [])
+        kills: list.reverse(unwrap_or(map.get(kills, p.fst), []))
       }),
     unsure: list.length(chases |? judged) - list.length(known),
     unreaching: unreaching
@@ -75,7 +76,8 @@ pub fn weighed(attempts: [Attempt], unreaching: [String]) : Weighed {
 #[doc("The tests of a suite that judge none of the wekufe planned, less those already failing.")]
 pub fn unreaching(planned: [[String]], suite: [String], failing: [String]) : [String] {
   let reaching = list.foldl(planned || (ts => ts), map.empty(), (seen, t) => map.put(seen, t, true))
-  suite |? (t => (not map.contains(reaching, t)) and (not list.contains(failing, t)))
+  let failed = member_of(failing)
+  suite |? (t => (not map.contains(reaching, t)) and (not failed(t)))
 }
 
 #[doc("The tests that faced fully known wekufe and killed none of them.")]
@@ -98,8 +100,10 @@ pub fn added_weights(parts: [Weighed]) : Weighed {
     unsure: list.sum(parts | .unsure),
     unreaching: match parts {
       [] -> []
-      [first, ...rest] ->
-        first.unreaching |? (t => list.all(rest, p => list.contains(p.unreaching, t)))
+      [first, ...rest] -> {
+        let in_rest = rest | (p => member_of(p.unreaching))
+        first.unreaching |? (t => list.all(in_rest, in_part => in_part(t)))
+      }
     }
   }
 }
@@ -159,7 +163,7 @@ pub fn redundant(w: Weighed) : [Redundant] {
   let killers_of = list.foldl(
     killing || (t => (t.kills | (k => (k, t.test_id)))),
     map.empty(),
-    (by, kt) => map.update(by, kt.fst, [kt.snd], ts => ts ++ [kt.snd])
+    (by, kt) => map.update(by, kt.fst, [kt.snd], ts => [kt.snd, ...ts])
   )
   let kills_of = map.from(killing | (t => (t.test_id, t.kills)))
   killing || (t => redundant_one(t, killers_of, kills_of))
@@ -190,7 +194,7 @@ fn redundant_one(
 }
 
 fn others_of(killers_of: Map[String, [String]], w: String, me: String) : [String] =
-  unwrap_or(map.get(killers_of, w), []) |? (o => o != me)
+  list.reverse(unwrap_or(map.get(killers_of, w), [])) |? (o => o != me)
 
 # Whether `big` holds every wekufe of `small`.
-fn holds(big: [String], small: [String]) : Bool = list.all(small, w => list.contains(big, w))
+fn holds(big: [String], small: [String]) : Bool = list.all(small, member_of(big))
