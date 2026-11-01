@@ -80,6 +80,20 @@ test "coverage spilled to a file decodes to the same entries as inline" {
     ])
 }
 
+# A coverage file is how a large project's coverage arrives, so reading it
+# has to stay linear in its entries.
+test "a coverage file of many entries decodes them all, in order" {
+  let n = 20000
+  let items =
+    enumerate(list.repeat(0, n))
+      | (p => "{\"file\":\"lib/a.ex\",\"line\":#{p.fst + 1},\"tests\":[\"t:1\"]}")
+  let decoded = decode_coverage("[" ++ join(items, ",") ++ "]") |> unwrap_or([])
+
+  assert length(decoded) == n
+  assert (head(decoded) |> map(.line)) == Some(1)
+  assert (last(decoded) |> map(.line)) == Some(n)
+}
+
 test "an empty coverage file is no coverage, not a failure" {
   assert decode_coverage("[]") == Ok([])
 }
