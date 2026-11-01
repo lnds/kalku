@@ -151,15 +151,17 @@ defmodule Kalku.Baseline do
       else: {tests, nil}
   end
 
+  defp own_excludes, do: Keyword.get(Kalku.Runtime.own_run(), :exclude, [])
+
   # ExUnit runs every module loaded since its last run, beside the ones it
   # is handed, so a module reused is left out by name.
   defp leaving_out([], run), do: run.()
 
   defp leaving_out(reused, run) do
-    ExUnit.configure(exclude: Enum.map(reused, &{:module, &1}))
+    ExUnit.configure(exclude: own_excludes() ++ Enum.map(reused, &{:module, &1}))
     run.()
   after
-    ExUnit.configure(exclude: [])
+    Kalku.Runtime.restore_run()
   end
 
   @doc """
@@ -355,7 +357,7 @@ defmodule Kalku.Baseline do
 
     seen_through(holding(test, modules))
   after
-    ExUnit.configure(exclude: [], include: [])
+    Kalku.Runtime.restore_run()
   end
 
   @doc """
@@ -600,7 +602,10 @@ defmodule Kalku.Baseline do
   # `reload` would load as no tests at all: they are unrequired first.
   defp load_files(root, files) do
     helper = Path.join(root, "test/test_helper.exs")
-    if File.exists?(helper), do: Code.require_file(helper)
+    # Required once per runtime: what it configured is recorded then.
+    if File.exists?(helper) and Code.require_file(helper) != nil,
+      do: Kalku.Runtime.keep_own_run()
+
     Code.unrequire_files(Enum.map(files, &Path.expand/1))
 
     {required, named} =

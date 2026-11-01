@@ -24,10 +24,31 @@ defmodule Kalku.Runtime do
   @mark {__MODULE__, :mark}
   @outside {__MODULE__, :outside}
   @unended {__MODULE__, :unended}
+  @own_run {__MODULE__, :own_run}
 
   # What the kalku itself sets before every run: no measure of what a cast
   # changed.
   @per_run [:include, :exclude, :max_cases, :max_failures]
+
+  @doc """
+  Record ExUnit's per-run settings as the project's `test_helper.exs` left
+  them.
+
+  The kalku sets its own before a run and puts these back afterwards, not
+  empty ones: emptied, the project's excludes are gone, and every later run
+  runs the tests `mix test` leaves out.
+  """
+  def keep_own_run do
+    :persistent_term.put(@own_run, Keyword.take(ExUnit.configuration(), @per_run))
+    :ok
+  end
+
+  @doc "The project's own per-run settings, as `keep_own_run/0` recorded them."
+  def own_run,
+    do: :persistent_term.get(@own_run, exclude: [], include: [], max_failures: :infinity)
+
+  @doc "Puts ExUnit's per-run settings back the way the project left them."
+  def restore_run, do: ExUnit.configure(own_run())
 
   @doc """
   Record what a clean runtime looks like.
