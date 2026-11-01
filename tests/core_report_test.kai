@@ -494,6 +494,17 @@ test "the tests the casting went to are named, dearest first, with the arithmeti
   )
 }
 
+test "a baseline a kept one partly answered says how many tests it did not run, and names no flag" {
+  let text = human(Report { ...plain(), reused: 2 })
+
+  assert has(
+    text,
+    "2 test(s) of the baseline were not run again: a kept baseline answered for them"
+  )
+  assert not has(text, "--all")
+  assert not has(human(plain()), "were not run again")
+}
+
 test "a run whose casting took no time to speak of does not list where it went" {
   let r = Report { ...plain(), costs: [TestCost { test_id: "t", duration_ms: 3, judges: 10 }] }
 
