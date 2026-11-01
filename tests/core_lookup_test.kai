@@ -1,0 +1,28 @@
+import kalku.core.lookup
+
+test "membership, difference and intersection keep the order of the list asked about" {
+  let seen = member_of(["a", "c"])
+  assert seen("a")
+  assert not seen("b")
+  assert except(["d", "a", "b", "c"], ["c", "a"]) == ["d", "b"]
+  assert among(["d", "a", "b", "c"], ["c", "a"]) == ["a", "c"]
+}
+
+test "a finder answers with the first value that has the key" {
+  let find_it = finder([("x", 1), ("y", 2), ("x", 3)], p => p.fst)
+  assert find_it("x") == Some(("x", 1))
+  assert find_it("y") == Some(("y", 2))
+  assert find_it("z") == None
+}
+
+test "grouping keeps each key where it first appears, and its values in order" {
+  let groups = grouped([("b", 1), ("a", 2), ("b", 3)], p => p.fst)
+  assert groups == [("b", [("b", 1), ("b", 3)]), ("a", [("a", 2)])]
+}
+
+# Thousands of tests checked against thousands of others, once per wekufe,
+# has to stay well under their product.
+test "a long difference stays cheap" {
+  let xs = enumerate(list.repeat(0, 50000)) | (p => "t#{p.fst}")
+  assert length(except(xs, xs)) == 0
+}

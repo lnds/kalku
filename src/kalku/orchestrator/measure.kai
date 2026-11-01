@@ -49,6 +49,7 @@ import kalku.orchestrator.hearing
 import kalku.orchestrator.deferring
 import kalku.core.reusing
 import kalku.core.distinct
+import kalku.core.lookup
 
 #[doc("What to measure, and with what.")]
 #[derive(Eq, Show)]
@@ -558,20 +559,23 @@ fn unreaching_in(whole: Plan, known: Known) : [String] =
 
 # What a run leaves for the next question: every wekufe it cast, where it
 # was, what came of it, and which tests judged it.
-fn written_down(casting: Casting, known: Known) : [Remembered] = flat_map(
-  casting.verdicts,
-  v => match find(known.sites, s => s.site_id == v.wekufe) {
-    Some(cast_at) -> [
-      Remembered {
-        wekufe: v.wekufe,
-        site: cast_at,
-        outcome: v.outcome,
-        tests: v.tests
-      }
-    ]
-    None -> []
-  }
-)
+fn written_down(casting: Casting, known: Known) : [Remembered] {
+  let site_at = finder(known.sites, .site_id)
+  flat_map(
+    casting.verdicts,
+    v => match site_at(v.wekufe) {
+      Some(cast_at) -> [
+        Remembered {
+          wekufe: v.wekufe,
+          site: cast_at,
+          outcome: v.outcome,
+          tests: v.tests
+        }
+      ]
+      None -> []
+    }
+  )
+}
 
 # With coverage, the plan casts each wekufe against the tests that reach
 # its line; without it, against all of them. Both are honest — guessing
@@ -621,7 +625,7 @@ pub fn doubting(ready: Plan, known: Known) : Plan = match known.doubted {
     to_cast: ready.to_cast
       | (w => Wekufe {
         ...w,
-        rest: filter(known.tests, t => not contains(w.tests, t)),
+        rest: except(known.tests, w.tests),
         timeout_ms: longer(w.timeout_ms, whole_budget(known))
       })
   }
@@ -771,37 +775,40 @@ fn was_partial(r: Report) : Bool = r.planned > 0 and answered(r.counts) < r.plan
 # An outcome outside the score is carried with whatever the kalku said
 # about it: a `compile_error` a reader cannot explain is the one result
 # that helps nobody.
-fn troubles_of(casting: Casting, known: Known) : [Trouble] = flat_map(
-  casting.verdicts,
-  v => if scoring(v.outcome) {
-    []
-  } else {
-    [
-      Trouble {
-        wekufe: v.wekufe,
-        at: find(known.sites, s => s.site_id == v.wekufe),
-        outcome: v.outcome,
-        said: v.said
-      }
-    ]
-  }
-)
+fn troubles_of(casting: Casting, known: Known) : [Trouble] {
+  let site_at = finder(known.sites, .site_id)
+  flat_map(
+    casting.verdicts,
+    v => if scoring(v.outcome) {
+      []
+    } else {
+      [
+        Trouble {
+          wekufe: v.wekufe,
+          at: site_at(v.wekufe),
+          outcome: v.outcome,
+          said: v.said
+        }
+      ]
+    }
+  )
+}
 
 fn scoring(o: Outcome) : Bool = o == Killed or o == Survived or o == Equivalent
 
-fn survivors_of(casting: Casting, known: Known) : [Survivor] = flat_map(
-  casting.verdicts,
-  v => if v.outcome == Survived { site_named(known, v.wekufe, v.tests) } else { [] }
-)
+fn survivors_of(casting: Casting, known: Known) : [Survivor] {
+  let site_at = finder(known.sites, .site_id)
+  flat_map(
+    casting.verdicts,
+    v => if v.outcome == Survived { site_named(known, site_at(v.wekufe), v.tests) } else { [] }
+  )
+}
 
 # The tests that judged it are the ones the plan sent with it, which is
 # what the coverage chose — or the whole suite, where there is none.
 # Reporting none would read as "nothing looked", which is the opposite of
 # what happened.
-fn site_named(known: Known, wekufe: String, tests: [String]) : [Survivor] = match find(
-  known.sites,
-  s => s.site_id == wekufe
-) {
+fn site_named(known: Known, at: Option[Site], tests: [String]) : [Survivor] = match at {
   Some(s) -> [
     Survivor {
       site: s,
@@ -827,11 +834,10 @@ fn max_casts(n: Int) : Int = if n < 1 { 1 } else { n }
 # measurement of it.
 pub fn agreed(casting: Casting) : Casting = Casting {
   ...casting,
-  verdicts: distinct(casting.verdicts | .wekufe) | (w => settled(casting.verdicts, w))
+  verdicts: grouped(casting.verdicts, .wekufe) | (g => settled(g.snd, g.fst))
 }
 
-fn settled(verdicts: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {
-  let mine = filter(verdicts, v => v.wekufe == wekufe)
+fn settled(mine: [scheduler.Verdict], wekufe: String) : scheduler.Verdict {
   let first = head(mine)
   match first {
     None -> scheduler.Verdict {

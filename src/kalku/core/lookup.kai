@@ -1,0 +1,45 @@
+#[doc("""
+Looking one list up from another without walking it every time.
+
+A run asks the same question of every site, verdict or test: is this one
+among those, which site has this id, which verdicts are this wekufe's.
+Asked of a list, each answer walks it, and the run pays the product of
+their sizes. These index the side being looked up once.
+
+A module of its own because importing a map or a set brings its `filter`
+and `contains` with it, over the lists' own.
+""")]
+
+import collections.map
+import collections.set
+
+#[doc("A test for membership in these values, built once and asked many times.")]
+pub fn member_of(xs: [a]) : (a) -> Bool {
+  let s = set.from(xs)
+  x => set.contains(s, x)
+}
+
+#[doc("These values without any of `gone`, in their order.")]
+pub fn except(xs: [a], gone: [a]) : [a] {
+  let out = member_of(gone)
+  list.filter(xs, x => not out(x))
+}
+
+#[doc("These values that are also among `kept`, in their order.")]
+pub fn among(xs: [a], kept: [a]) : [a] {
+  let keep = member_of(kept)
+  list.filter(xs, keep)
+}
+
+#[doc("The first of these values with each key, found by key; built once and asked many times.")]
+pub fn finder(xs: [a], key: (a) -> String) : (String) -> Option[a] {
+  let by = list.foldl(xs, map.empty(), (m, x) => map.update(m, key(x), x, first => first))
+  k => map.get(by, k)
+}
+
+#[doc("These values grouped by key: each key once, where it first appears, with its values in their order.")]
+pub fn grouped(xs: [a], key: (a) -> String) : [(String, [a])] {
+  let by = list.foldl(xs, map.empty(), (m, x) => map.update(m, key(x), [x], ys => [x, ...ys]))
+  set.to_list(set.from(list.map(xs, key)))
+    |> list.map(k => (k, list.reverse(unwrap_or(map.get(by, k), []))))
+}
