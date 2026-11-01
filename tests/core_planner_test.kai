@@ -176,6 +176,7 @@ test "a site is reached by the tests of any line of its text, and its first line
   )
   assert p.no_coverage == []
   assert map(p.to_cast, c => c.tests) == [["circles"]]
-  assert covering(ARM, inputs_of([ARM], Some([covers("src/shape.kai", 5, ["circles"])])))
-    == ["circles"]
+  let first_only =
+    plan(inputs_of([ARM], Some([covers("src/shape.kai", 5, ["circles"])])), nothing_cached)
+  assert map(first_only.to_cast, c => c.tests) == [["circles"]]
 }

@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-15
             platform: darwin-arm64
           # 24.04, not an older LTS: kaikai's own binary needs GLIBC
           # 2.38, so the compiler does not start on 22.04 and the
