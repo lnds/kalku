@@ -1,0 +1,105 @@
+#[doc("""
+What the tests a scoped baseline deferred are still needed for.
+
+A baseline over a few files runs the tests that may reach them first, and
+the casting that follows settles most wekufe with those alone: a kill is a
+kill whatever the rest of the suite would say. What it leaves open is a
+wekufe nothing killed and a site nothing reached, because a deferred test
+is exactly one the kalku could not see reaching the files. Only those are
+cast again, once the deferred tests have run, and only against those tests.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.core.planner
+import kalku.orchestrator.scheduler
+
+#[doc("What the tests that ran first left open: the wekufe they did not kill, and the sites they did not reach.")]
+#[derive(Eq, Show)]
+pub type Open = { survived: [String], unreached: [String] }
+
+#[doc("What a plan cast with the scoped tests left open, from what each wekufe came to.")]
+pub fn left_open(ready: Plan, verdicts: [Verdict]) : Open = Open {
+  survived: uniq(verdicts |? (v => v.outcome == Survived or v.outcome == NoCoverage) | .wekufe),
+  unreached: ready.no_coverage | .site_id
+}
+
+#[doc("True when nothing is left open, and the deferred tests have nothing to judge.")]
+pub fn nothing_open(open: Open) : Bool = is_empty(open.survived) and is_empty(open.unreached)
+
+#[doc("""
+The casts that put what was left open before the deferred tests, from a
+plan made once they ran.
+
+A wekufe the scoped tests did not kill faces only the deferred ones: the
+others already had their turn at it. One no deferred test reaches either
+stays what it was. A site nothing reached is cast as the plan has it now.
+""")]
+pub fn rejudged(casts: [Wekufe], open: Open, deferred: [String]) : [Wekufe] = flat_map(
+  casts,
+  c => if contains(open.survived, c.site.site_id) {
+    facing(c, deferred)
+  } else if contains(open.unreached, c.site.site_id) {
+    [c]
+  } else {
+    []
+  }
+)
+
+# Where none of the deferred tests is credited with the wekufe's lines but
+# it is to face them anyway, it faces them as its tests: a cast with no
+# test to run is a wekufe nothing reaches, which is not what it is.
+fn facing(c: Wekufe, deferred: [String]) : [Wekufe] {
+  let tests = c.tests |? (t => contains(deferred, t))
+  let rest = c.rest |? (t => contains(deferred, t))
+  if is_empty(tests) and is_empty(rest) {
+    []
+  } else if is_empty(tests) {
+    [Wekufe { ...c, tests: rest, rest: [] }]
+  } else {
+    [Wekufe { ...c, tests: tests, rest: rest }]
+  }
+}
+
+#[doc("""
+Both castings as one: the first's verdicts on everything that was not cast
+again, and the second's on what was. How the second ended is how the whole
+ended.
+
+A wekufe the second casting found no test running is what the first said
+it was: the tests that ran first reached it, and the ones that ran later
+not reaching it changes nothing about that.
+""")]
+pub fn joined(first: Casting, again: [Wekufe], second: Casting) : Casting {
+  let ids = uniq(again | .site.site_id)
+  Casting {
+    verdicts: (first.verdicts |? (v => not contains(ids, v.wekufe)))
+      ++ flat_map(ids, id => judged_again(id, first.verdicts, second.verdicts)),
+    failure: second.failure,
+    cancelled: second.cancelled
+  }
+}
+
+fn judged_again(id: String, first: [Verdict], second: [Verdict]) : [Verdict] {
+  let before = first |? (v => v.wekufe == id)
+  let now = second |? (v => v.wekufe == id)
+  if (not is_empty(before)) and (not is_empty(now)) and all(now, v => v.outcome == NoCoverage) {
+    before
+  } else {
+    now
+  }
+}
+
+#[doc("Every cast of a run that was cast twice: the first's, less what was cast again, and the second's.")]
+pub fn joined_casts(first: [Wekufe], again: [Wekufe]) : [Wekufe] {
+  let ids = again | .site.site_id
+  (first |? (c => not contains(ids, c.site.site_id))) ++ again
+}
+
+#[doc("""
+The kept tests worth offering a baseline of only `tests`: an offer of
+anything else is one the kalku has no use for.
+""")]
+pub fn offered_of(offer: [Reuse], tests: [String]) : [Reuse] =
+  offer |? (r => contains(tests, r.test_id))

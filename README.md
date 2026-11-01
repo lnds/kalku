@@ -325,6 +325,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **C and C++ kalku** — sites for `arm`, `compare`, `connect`, `negate`, `literal`, `call`, `return` (opt-in) from Clang's parser, in C and C++ sources and headers; `prepare`, `baseline` and `cast` with the project's own CMake build and CTest in the reni, `abort`, `kalku init` for projects with a `CMakeLists.txt`, telling C from C++ by what it asks CMake for, shipped in the release | done, with coverage per test under Clang and a baseline that runs only what changed; projects built without CMake are not yet |
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java, Go, TypeScript, kaikai |
 | **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go, Elixir, TypeScript, Python, Rust, kaikai, Java, C and C++ |
+| **A baseline scoped to the files a run is about** — the tests that may reach them run first, and the rest of the suite only when a wekufe is left unkilled or a site unreached | done: Elixir |
 | Parallel workers in an Elixir project (one build path, so one worker) | not yet |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | **`--watch`** — run again on every save, until interrupted; the kalku stay warm between runs and reload what each save changed, and the incremental baseline keeps the suite to what the change can reach | done |

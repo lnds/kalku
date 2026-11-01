@@ -60,6 +60,7 @@ fn shard_report(i: Int, n: Int, killed: Int) : Report {
     withheld: None,
     doubted: None,
     reused: i,
+    deferred: 0,
     shard: Some(Shard { index: i, count: n }),
     stopped: None,
     plan: Some(plan()),

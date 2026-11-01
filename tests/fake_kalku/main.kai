@@ -10,7 +10,8 @@ a test gives a kalku a child that does something the kalku would not.
 
 A step may be `optional`: a request that is not the one it expects passes it
 by. That is how one script serves a kalku that is asked for a baseline and
-another that never is.
+another that never is. A step `holding` a field serves only a request that
+holds it, which is how a script tells two baselines apart.
 
 A request the script did not expect is the fake's own failure: it says so
 on stderr and exits 3, so an orchestrator bug surfaces as a failed test
@@ -45,25 +46,25 @@ fn serve(steps: [Step], deaf: Bool) : Int / Stdin + Stdout + Stderr + Clock + Pr
     None -> 0
     Some(line) -> {
       let req = head_of(line)
-      if deaf and req.fst == "abort" { serve(steps, deaf) } else { dispatch(steps, deaf, req) }
+      if deaf and req.kind == "abort" { serve(steps, deaf) } else { dispatch(steps, deaf, req) }
     }
   }
 
 fn dispatch(
   steps: [Step],
   deaf: Bool,
-  req: (String, Int)
+  req: Request
 ) : Int / Stdin + Stdout + Stderr + Clock + Process = match steps {
-  [] -> die("no step left for `#{req.fst}`")
-  [s, ...rest] -> if is_wildcard(s) or s.expect == req.fst {
+  [] -> die("no step left for `#{req.kind}`")
+  [s, ...rest] -> if serves(s, req.kind, req.fields) {
     {
-      act(s, req.snd)
+      act(s, req.id)
       serve(spend(s) ++ rest, deaf or s.ignore_abort)
     }
   } else if s.optional {
     dispatch(rest, deaf, req)
   } else {
-    die("expected `#{s.expect}`, got `#{req.fst}`")
+    die("expected `#{s.expect}`, got `#{req.kind}`")
   }
 }
 
@@ -97,11 +98,20 @@ fn say(reply: Option[JsonValue], id: Int) : Unit / Stdout = match reply {
 
 # ---- the envelope ------------------------------------------------------
 
-# Only `type` and `id` are read: the fake relays whatever the script says,
-# including a reply the protocol would reject.
-fn head_of(line: String) : (String, Int) = match json_decode(line) {
-  Some(v) -> ((get(v, "type") || as_string) ?? "", (get(v, "id") || as_int) ?? 0)
-  None -> ("", 0)
+type Request = { kind: String, id: Int, fields: [String] }
+
+# Only `type`, `id` and which fields are there are read: the fake relays
+# whatever the script says, including a reply the protocol would reject.
+fn head_of(line: String) : Request = match json_decode(line) {
+  Some(v) -> Request {
+    kind: (get(v, "type") || as_string) ?? "",
+    id: (get(v, "id") || as_int) ?? 0,
+    fields: match v {
+      JObj(fields) -> fields |? (f => f.snd != JNull) | .fst
+      _ -> []
+    }
+  }
+  None -> Request { kind: "", id: 0, fields: [] }
 }
 
 fn with_id(reply: JsonValue, id: Int) : JsonValue = match reply {

@@ -40,7 +40,7 @@ test "a step with no expectation serves any request" {
 
 test "a repeated step is spent one use at a time" {
   let s = head(steps_of("{\"expect\":\"cast\",\"repeat\":3}\n")) |> unwrap_or(no_step())
-  assert (spend(s) | (.repeat)) == [2]
+  assert (spend(s) | .repeat) == [2]
   assert spend(Step { ...s, repeat: 1 }) == []
 }
 
@@ -60,7 +60,8 @@ fn no_step() : Step = Step {
   stderr: None,
   spawn: None,
   repeat: 0,
-  optional: false
+  optional: false,
+  holding: None
 }
 
 test "a step is expected unless it says it is optional" {
@@ -68,4 +69,13 @@ test "a step is expected unless it says it is optional" {
   let may = head(steps_of("{\"expect\":\"baseline\",\"optional\":true}\n")) |> unwrap_or(no_step())
   assert not asked.optional
   assert may.optional
+}
+
+test "a step holding a field serves only a request that holds it" {
+  let steps = steps_of("{\"expect\":\"baseline\",\"holding\":\"only\"}")
+
+  assert any(steps, s => serves(s, "baseline", ["type", "id", "only"]))
+  assert not any(steps, s => serves(s, "baseline", ["type", "id", "for_files"]))
+  assert not any(steps, s => serves(s, "sites", ["type", "id", "only"]))
+  assert length(steps) == 1
 }

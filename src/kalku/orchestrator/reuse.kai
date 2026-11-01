@@ -73,13 +73,42 @@ pub fn offer_of(keeping: Option[Keeping]) : [Reuse] = match keeping {
   None -> []
 }
 
-#[doc("The `baseline` request that makes this offer.")]
-pub fn asked_with(offer: [Reuse]) : KalkuRequest =
+#[doc("The `baseline` request that makes this offer, over the whole suite or the part `scope` names.")]
+pub fn asked_with(offer: [Reuse], scope: BaselineScope) : KalkuRequest =
   Baseline(BaselineMsg {
     reuse: if is_empty(offer) { None } else { Some(offer) },
-    for_files: None,
-    only: None
+    for_files: match scope {
+      ForFiles(files) -> Some(files)
+      _ -> None
+    },
+    only: match scope {
+      Only(tests) -> Some(tests)
+      _ -> None
+    }
   })
+
+#[doc("""
+Which tests a baseline runs: the whole suite, the ones that may reach some
+files (the kalku defers the rest), or exactly these.
+""")]
+#[derive(Eq, Show)]
+pub type BaselineScope = Whole | ForFiles([String]) | Only([String])
+
+#[doc("""
+What the kept store says of the tests a baseline did not answer for: the
+ones it deferred, or was not asked about. A baseline of part of the suite
+keeps them as they were kept, so the next run can still be offered them;
+the kalku checks each one's fingerprint before it reuses it.
+""")]
+pub fn unanswered(keeping: Option[Keeping], scope: BaselineScope, reply: KalkuReply) : [Kept] =
+  match (scope, keeping |> option.map(.store), reply) {
+    (Whole, _, _) -> []
+    (_, Some(Some(store)), BaselineDone(m)) -> {
+      let answered = (m.tests | .test_id) ++ (m.failures | .test_id) ++ (m.reused ?? [])
+      store.tests |? (t => not contains(answered, t.test_id))
+    }
+    _ -> []
+  }
 
 #[doc("""
 What the kept store says of the tests the kalku reused; an error when it

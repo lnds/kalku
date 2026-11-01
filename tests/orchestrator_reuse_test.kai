@@ -41,7 +41,8 @@ fn asking_of(script: String, store: String) : Asking = Asking {
   shard: None,
   store: Some(store),
   reuse: true,
-  every_kill: false
+  every_kill: false,
+  whole: false
 }
 
 fn measured(script: String, store: String) : Found / Process + Spawn + Clock + File + Stderr =
@@ -98,6 +99,33 @@ test "a baseline keeps what it measured, and the next one reuses what did not ch
 
 # A kalku that names a test it was never offered does not know what it is
 # saying: the coverage of that test cannot come from anywhere.
+# A baseline over one file leaves the rest of the suite for later, and a run
+# whose own tests settled everything never runs it. What was kept of those
+# tests stays kept: the next run can still be offered them.
+test "a baseline scoped to a file keeps what it was not asked to run" {
+  let store = store_at("scoped")
+  gone(store)
+  let first = measured("fingerprints.ndjson", store)
+  let second = measured("scoped_keeps.ndjson", store)
+
+  assert first.failure == None
+  assert second.failure == None
+  assert map(second.report, .deferred) == Some(1)
+  match load(store) {
+    Ok(Some(kept)) -> {
+      assert sort(kept.tests | (t => "#{t.test_id} #{t.fingerprint}"))
+        == [
+          "test/a_test.exs:3 f1",
+          "test/a_test.exs:9 f2b"
+        ]
+    }
+    _ -> {
+      assert false
+    }
+  }
+  gone(store)
+}
+
 test "a kalku that reuses a test it was never offered stops the run" {
   let store = store_at("unoffered")
   gone(store)

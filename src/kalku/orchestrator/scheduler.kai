@@ -137,6 +137,20 @@ pub fn cast_over(
   )
 }
 
+#[doc("""
+End a pool that `cast_over` handed back: every kalku dismissed and
+banished, and, where none of them is left, what they said last is why
+the casting stopped.
+""")]
+pub fn wound_up(
+  cast: Casting,
+  slots: [Slot]
+) : Casting / Process + Clock + Attending + Actor[OrchMsg] {
+  dismiss_all(slots, 0)
+  banish_all(slots)
+  Casting { ...cast, failure: said_in_full(cast.failure, hear_last_words(slots)) }
+}
+
 fn run_plan(
   spec: PoolSpec,
   slots: [Slot],
@@ -155,14 +169,10 @@ fn run_plan(
     weigh_at: monotonic(),
     stall_at: stall_from(monotonic())
   })
-  dismiss_all(done.slots, 0)
-  banish_all(done.slots)
-  let heard = hear_last_words(done.slots)
-  Casting {
-    verdicts: done.verdicts,
-    failure: said_in_full(done, heard),
-    cancelled: done.cancelled
-  }
+  wound_up(
+    Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled },
+    done.slots
+  )
 }
 
 #[doc("How long the run waits for its readers to notice that their kalku is gone.")]
@@ -255,11 +265,11 @@ fn wrote_it(slots: [Slot], life: Life) : Option[Slot] = match slot_living(slots,
 # Composed here rather than where the slot was given up on: what a kalku
 # wrote about itself arrives after its death is noticed, so a sentence
 # written at that moment would quote a silence that was not one.
-fn said_in_full(done: Run, heard: [Slot]) : Option[String] =
+fn said_in_full(failure: Option[String], heard: [Slot]) : Option[String] =
   if (not is_empty(heard)) and all_gone(heard) {
     Some(join(epitaphs(heard), "; "))
   } else {
-    done.failure
+    failure
   }
 
 fn spoke_last(what: FromKalku) : Bool = match what {
