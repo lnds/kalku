@@ -2,6 +2,6 @@
 
 namespace kalku {
 
-inline constexpr const char* VERSION = "0.30.1";
+inline constexpr const char* VERSION = "0.31.0";
 
 }  // namespace kalku

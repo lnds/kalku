@@ -105,27 +105,6 @@ pub fn plan(inputs: Inputs, cached: (String) -> Option[Outcome]) : Plan {
   }
 }
 
-#[doc("The tests that execute a line of a site, or the whole suite when coverage is unknown.")]
-pub fn covering(site: Site, inputs: Inputs) : [String] = match inputs.coverage {
-  None -> inputs.all_tests
-  Some(entries) -> {
-    let own = lines_of(site)
-    uniq(concat(entries |? (e => e.file == site.file and contains(own, e.line)) | .tests))
-  }
-}
-
-#[doc("How long a wekufe may run: a multiple of what its tests cost, never below the floor.")]
-pub fn timeout_for(site: Site, tests: [String], inputs: Inputs) : Int
-  ensures result >= inputs.timeout_floor_ms
-{
-  let budget = TIMEOUT_FACTOR * sum(tests | (t => duration_of(t, inputs.durations)))
-  let floor = max_int(budget, inputs.timeout_floor_ms)
-  match site.reload {
-    Dependents -> floor * DEPENDENTS_FACTOR
-    ModuleOnly -> floor
-  }
-}
-
 # ---- buckets -----------------------------------------------------------
 
 # The baseline, indexed once for the whole plan, and what the whole suite
@@ -227,12 +206,6 @@ fn compare_casts(left: (Int, Wekufe), right: (Int, Wekufe)) : Int {
 }
 
 fn compare_text(a: String, b: String) : Int = if a == b { 0 } else if a < b { 0 - 1 } else { 1 }
-
-fn duration_of(test_id: String, durations: [(String, Int)]) : Int =
-  match find(durations, d => d.fst == test_id) {
-    Some(d) -> d.snd
-    None -> 0
-  }
 
 fn max_int(a: Int, b: Int) : Int = if a > b { a } else { b }
 

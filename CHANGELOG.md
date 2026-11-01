@@ -1,3 +1,26 @@
+## v0.31.0 (2026-11-01)
+
+### Added
+
+- **run**: run the tests a file's own did not settle only when something is left open (#548)
+- **protocol**: a baseline scoped to the files a run is about (#537)
+- **run**: say how far a kalku has got with a long baseline (#535)
+
+### Fixed
+
+- **elixir**: keep the excludes test_helper.exs sets across baselines (#549)
+- **report**: stop pointing a run over files at --all for a full baseline (#544)
+- **cpp**: find libclang where Ubuntu 26.04 puts it (#539)
+- **run**: say when the project's .envrc is not loaded (#532)
+- **init**: with no terminal to ask on, write nothing and fail (#531)
+
+### Changed
+
+- wait for a kalku's answer in a module of its own (#546)
+- read a baseline's reply in a module of its own (#545)
+- build without warnings from our own code (#543)
+- **elixir**: start a new reni's build from a copy of the project's test build (#533)
+
 ## v0.30.1 (2026-10-30)
 
 ### Fixed
