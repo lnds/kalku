@@ -1,0 +1,111 @@
+#[doc("""
+What a kalku's `baseline_done` says: the suite it ran, what each test
+costs, which failed, and the coverage, inline or in a file in the reni.
+Read the same way whichever baseline it answers, the first of a run or
+one asked for later.
+""")]
+
+import fs.file
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.wire.envelope
+import kalku.wire.packed
+import kalku.wire.kalku_codec
+import kalku.core.blaming
+
+# The suite as the kalku enumerated it. Which of those tests judge a
+# given wekufe is the coverage's business; without coverage, all of them
+# do — slow, and the only honest reading of "this kalku cannot say".
+pub fn suite_of(reply: KalkuReply) : [String] = match reply {
+  BaselineDone(m) -> m.tests | .test_id
+  _ -> []
+}
+
+# Coverage arrives one of two ways: inline when it is small, and in a
+# file in the reni when it is not, which is every project big enough to
+# be worth measuring. Reading only the inline form loses the coverage of
+# exactly those projects, silently, and a run then casts every wekufe
+# against the whole suite while reporting that suite as the tests that
+# cover it.
+pub fn coverage_from(reply: KalkuReply) : Result[Option[[CoverageEntry]], String] / File =
+  match reply {
+    BaselineDone(m) -> match (m.coverage, m.coverage_path, m.coverage_packed_path) {
+      (Some(entries), _, _) -> Ok(Some(entries))
+      (None, Some(path), _) -> spilled_coverage(path, decode_coverage)
+      (None, None, Some(path)) -> spilled_coverage(path, decode_packed)
+      _ -> Ok(None)
+    }
+    _ -> Ok(None)
+  }
+
+# A coverage file the kalku named and this side cannot read is a fault
+# worth stopping for: carrying on would measure the whole suite and call
+# it coverage.
+pub fn spilled_coverage(
+  path: String,
+  decoded: (String) -> Result[[CoverageEntry], ProtocolError]
+) : Result[Option[[CoverageEntry]], String] / File {
+  let text = (file.read(path)
+    |> map_err(why => "the coverage file #{path} the kalku named could not be read: #{why}"))!
+  let entries =
+    (decoded(text) |> map_err(e => "the coverage file #{path} could not be read: #{e.detail}"))!
+  Ok(Some(entries))
+}
+
+# What each test costs, which is what a wekufe's deadline is built from:
+# a cast is given a few times the time the tests it runs took.
+pub fn durations_of(reply: KalkuReply) : [(String, Int)] = match reply {
+  BaselineDone(m) -> m.tests | (t => (t.test_id, t.duration_ms))
+  _ -> []
+}
+
+# A test that already fails judges nothing: it would fail against every
+# wekufe it was sent with, and each of those would be a kill nobody made.
+# So it is taken out here, once, of everything a cast is ever handed: the
+# suite, and the coverage that chooses from it.
+pub fn failures_of(reply: KalkuReply) : [Failure] = match reply {
+  BaselineDone(m) -> m.failures
+  _ -> []
+}
+
+pub fn differences_of(reply: KalkuReply) : [String] = match reply {
+  BaselineDone(m) -> m.differences |> unwrap_or([])
+  _ -> []
+}
+
+pub fn withheld_of(reply: KalkuReply) : Option[String] = match reply {
+  BaselineDone(m) -> m.coverage_withheld
+  _ -> None
+}
+
+pub fn doubted_of(reply: KalkuReply) : Option[String] = match reply {
+  BaselineDone(m) -> m.coverage_doubted
+  _ -> None
+}
+
+pub fn judging_of(reply: KalkuReply, failing: [Failure]) : [String] {
+  let gone = failing | .test_id
+  suite_of(reply) |? (t => not contains(gone, t))
+}
+
+# A suite in which nothing passes ends the run, whether its tests all fail
+# or it has none: there is nothing to measure with, and pretending
+# otherwise is the one thing a measuring tool must never do.
+pub fn refuse_unjudged(reply: KalkuReply, judging: [String]) : Result[Unit, String] = match reply {
+  BaselineDone(m) -> if not is_empty(judging) {
+    Ok(())
+  } else if m.status == Red {
+    Err(red_suite(m.failures, m.differences |> unwrap_or([])))
+  } else {
+    Err(empty_suite(m.differences |> unwrap_or([])))
+  }
+  _ -> Ok(())
+}
+
+#[doc("""
+How a run says that part of its baseline was not run: how many tests a
+kept baseline answered for, out of the suite, and why that is honest.
+""")]
+pub fn reused_line(reused: Int, of: Int) : String =
+  "#{reused} of the #{of} were not run again: a kept baseline answered for them, and the kalku says nothing they run has changed"
