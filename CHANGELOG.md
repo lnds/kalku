@@ -1,3 +1,14 @@
+## v0.31.1 (2026-11-01)
+
+### Changed
+
+- index the side a lookup asks about in deferring, baselining, reuse, remembering, report and watch (#563)
+- **kills**: group attempts and kills in one pass (#562)
+- **run**: index the sites, verdicts and tests measure looks up (#561)
+- deduplicate lists through a set (#559)
+- **protocol**: decode a coverage file in time linear in its entries (#557)
+- **planner**: remove the unindexed covering and timeout_for (#558)
+
 ## v0.31.0 (2026-11-01)
 
 ### Added
