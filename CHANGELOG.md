@@ -1,3 +1,9 @@
+## v0.31.2 (2026-11-02)
+
+### Changed
+
+- **elixir**: drop three quadratic passes from the Elixir kalku (#568)
+
 ## v0.31.1 (2026-11-01)
 
 ### Changed
