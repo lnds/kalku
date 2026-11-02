@@ -29,6 +29,8 @@ import kalku.wire.version
 import kaikai_kalku.work
 import kaikai_kalku.prints
 import kaikai_kalku.prints.{Print}
+import kaikai_kalku.coverage
+import kalku.core.lookup
 
 type Serving = {
   root: String,
@@ -228,7 +230,7 @@ fn baseline_of(state: Serving, reuse: [Reuse]) : KalkuReply / Process + File = m
     let every = flat_map(found |> unwrap_or([]), p => p.ids)
     match prints.reusable(reuse, found) {
       [] -> measured(test_all(w), found, [], state)
-      reused -> match every |? (id => not contains(reused, id)) {
+      reused -> match lookup.except(every, reused) {
         [] -> all_reused(reused)
         rest -> measured(test_some(w, rest), found, reused, state)
       }
@@ -246,13 +248,10 @@ fn measured(
 ) : KalkuReply / File = match r.mishap {
   Some(_) -> report_of(r, (None, None), [])
   None -> {
+    let print_for = prints.fingerprints(found, r.failing)
     report_of(
-      Ran {
-        ...r,
-        tests: r.tests
-          | (t => TestTiming { ...t, fingerprint: prints.print_for(t.test_id, found, r.failing) })
-      },
-      spoken(covered(r), state),
+      Ran { ...r, tests: r.tests | (t => TestTiming { ...t, fingerprint: print_for(t.test_id) }) },
+      spoken(coverage.covered(r), state),
       reused
     )
   }
@@ -272,33 +271,6 @@ fn all_reused(reused: [String]) : KalkuReply = BaselineDone(BaselineDoneMsg {
   reused: Some(reused),
   deferred: None
 })
-
-# Which tests ran each line, one entry a line. Only the tests the run
-# reported count: a record about anything else names nothing a cast can
-# select.
-fn covered(r: Ran) : [CoverageEntry] {
-  let known = r.tests | .test_id
-  let reached = r.reached |? (x => contains(known, x.test_id))
-  let places = uniq(sort(flat_map(reached, x => (x.lines | (l => "#{x.file}\u{0}#{pad(l)}")))))
-  places | (p => entry_at(p, reached))
-}
-
-# Lines sort as numbers once they are all the same width.
-fn pad(n: Int) : String {
-  let s = "#{n}"
-  "#{repeat("0", 9 - length(s))}#{s}"
-}
-
-fn entry_at(place: String, reached: [Reach]) : CoverageEntry {
-  let parts = split(place, "\u{0}")
-  let file = head(parts) |> unwrap_or("")
-  let line = to_int(last(parts) |> unwrap_or("0")) |> unwrap_or(0)
-  CoverageEntry {
-    file: file,
-    line: line,
-    tests: reached |? (x => x.file == file and contains(x.lines, line)) | .test_id
-  }
-}
 
 # Inline when it fits under the limit `hello` set, and in a file in the
 # reni when it does not.

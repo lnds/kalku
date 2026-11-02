@@ -128,10 +128,24 @@ export function instrument(
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  edits.sort((a, b) => b.at - a.at);
-  let out = text;
-  for (const e of edits) out = out.slice(0, e.at) + e.text + out.slice(e.at);
-  return { text: out, owned: owners(sf, spans) };
+  return { text: splice(text, edits), owned: owners(sf, spans) };
+}
+
+/**
+ * The text with each edit's text inserted at its offset, in one pass. Of the
+ * edits at one offset, the one made last comes first in the text.
+ */
+export function splice(text: string, edits: readonly { at: number; text: string }[]): string {
+  const order = edits.map((e, i) => ({ at: e.at, text: e.text, i }));
+  order.sort((a, b) => a.at - b.at || b.i - a.i);
+  const pieces: string[] = [];
+  let from = 0;
+  for (const e of order) {
+    pieces.push(text.slice(from, e.at), e.text);
+    from = e.at;
+  }
+  pieces.push(text.slice(from));
+  return pieces.join("");
 }
 
 type FunctionLike =

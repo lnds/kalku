@@ -112,3 +112,20 @@ TEST("a test that left no profile is credited with every line") {
   CHECK_EQ(reached[0].get("lines")->items.size(), static_cast<std::size_t>(2));
   CHECK_EQ(reached[0].get("tests")->items.size(), static_cast<std::size_t>(2));
 }
+
+TEST("coverage goes inline while its entries fit the limit, and packed past it") {
+  Reach r({"a", "b"});
+  r.add(0, {{"src/x.c", {1, 2, 3}}});
+  r.add(1, {{"src/x.c", {3}}, {"src/y.c", {1}}});
+  r.close({{"src/x.c", 4}, {"src/y.c", 2}});
+  std::string entries = r.entries();
+  auto size = static_cast<std::int64_t>(entries.size());
+  Reach::Form fits = r.form(size);
+  CHECK(!fits.packed);
+  CHECK_EQ(fits.text, entries);
+  for (std::int64_t limit : {size - 1, std::int64_t{10}, std::int64_t{0}, std::int64_t{-1}}) {
+    Reach::Form over = r.form(limit);
+    CHECK(over.packed);
+    CHECK_EQ(over.text, r.packed());
+  }
+}
