@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import ts from "typescript";
-import { credited, entries, instrument, packed } from "../src/coverage";
+import { credited, entries, instrument, packed, splice } from "../src/coverage";
 
 // What a type checker says of a file, as ts-jest would ask it: an
 // instrumented file must say nothing the original did not.
@@ -136,4 +136,56 @@ test("tests that share their titles are credited with what either ran", () => {
   assert.deepEqual(entries(byFile), [
     { file: "src/a.ts", line: 4, tests: ["test/a.test.ts:same name", "test/a.test.ts:same name (2)"] },
   ]);
+});
+
+// Inserting each edit into the whole text, the last offset first: what
+// `splice` does in one pass.
+function spliceOneByOne(text: string, edits: { at: number; text: string }[]): string {
+  let out = text;
+  for (const e of [...edits].sort((a, b) => b.at - a.at)) out = out.slice(0, e.at) + e.text + out.slice(e.at);
+  return out;
+}
+
+test("edits at one offset are spliced with the one made last first", () => {
+  const edits = [
+    { at: 3, text: "a" },
+    { at: 0, text: "<" },
+    { at: 3, text: "b" },
+    { at: 6, text: ">" },
+    { at: 3, text: "c" },
+  ];
+  assert.equal(splice("abcdef", edits), "<abccbadef>");
+  assert.equal(splice("abcdef", edits), spliceOneByOne("abcdef", edits));
+  assert.equal(splice("abc", []), "abc");
+});
+
+test("splicing in one pass gives the text edits inserted one by one give", () => {
+  let seed = 7;
+  const next = (n: number): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % n;
+  };
+  for (let round = 0; round < 200; round++) {
+    const text = "x".repeat(next(30));
+    const edits = Array.from({ length: next(12) }, (_, i) => ({ at: next(text.length + 1), text: `[${i}]` }));
+    assert.equal(splice(text, edits), spliceOneByOne(text, edits));
+  }
+});
+
+test("a function whose first statement opens its body has the statement's counter before the header's", () => {
+  const done = instrument("f.ts", "function f(){g()}", ts.ScriptKind.TS, 0)!;
+  assert.equal(done.text, "function f(){;(globalThis as any).__kalku?.h(1);;(globalThis as any).__kalku?.h(0);g()}");
+});
+
+test("a large file is instrumented in time that grows with its size", () => {
+  const source = Array.from(
+    { length: 20000 },
+    (_, i) => `export function f${i}(a: number) { const b = a + ${i}; return () => b * 2; }`,
+  ).join("\n");
+  const started = Date.now();
+  const done = instrument("big.ts", source, ts.ScriptKind.TS, 0)!;
+  const took = Date.now() - started;
+  assert.equal(done.text.split("\n").length, 20000);
+  assert.equal(done.owned.length, 20000 * 4);
+  assert.ok(took < 20000, `took ${took} ms`);
 });
