@@ -107,6 +107,34 @@ defmodule Kalku.SitesTest do
     assert ids == Enum.uniq(ids)
   end
 
+  # Where a result ends is found by parsing, and parsing from the start at
+  # every place it might end costs the square of a long result.
+  test "a long result is found where it ends, without parsing it over and over" do
+    arms = Enum.map_join(1..2000, "\n", &"      #{&1} -> x + #{&1}")
+    wide = Enum.map_join(1..20_000, ", ", &"x + #{&1}")
+
+    text = """
+    defmodule Long do
+      def pick(x) do
+        case x do
+    #{arms}
+        end
+      end
+
+      def wide(x) do
+        [#{wide}]
+      end
+    end
+    """
+
+    {:ok, sites, 0} = Sites.find("lib/long.ex", text, ["return"], [])
+
+    assert Enum.map(sites, &{&1["enclosing"], &1["original"]}) == [
+             {"Long.pick/1", "case x do\n#{arms}\n    end"},
+             {"Long.wide/1", "[#{wide}]"}
+           ]
+  end
+
   test "a file that does not parse is an error, not a crash" do
     assert {:error, message} =
              Sites.find("lib/broken.ex", "defmodule X do\n  def f(, do: 1\nend\n", @spells, [])

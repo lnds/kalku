@@ -67,6 +67,27 @@ defmodule Kalku.LoopTest do
     assert Enum.map(body["skipped"], & &1["by_design"]) == [true, true, nil]
   end
 
+  test "sites_found keeps the order of the files asked about, and of the skipped ones" do
+    files = ["connect/connectives.ex", "x.exs", "compare/guards_and_exprs.ex", "nope.ex"]
+
+    req =
+      Kalku.Json.encode(%{
+        "type" => "sites",
+        "id" => 2,
+        "files" => files,
+        "spells" => ["connect", "compare"],
+        "exclude_calls" => []
+      })
+
+    {:reply, line, _} = Loop.handle(req, ready_state())
+    %{type: "sites_found", body: body} = reply!(line)
+
+    assert body["sites"] |> Enum.map(& &1["file"]) |> Enum.dedup() ==
+             ["connect/connectives.ex", "compare/guards_and_exprs.ex"]
+
+    assert Enum.map(body["skipped"], & &1["file"]) == ["x.exs", "nope.ex"]
+  end
+
   test "a file that does not parse is skipped with parse_error" do
     dir = Path.join(System.tmp_dir!(), "kalku-loop-#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join(dir, "lib"))

@@ -316,12 +316,15 @@ defmodule Kalku.Loop do
     {found, skipped} =
       Enum.reduce(files, {[], []}, fn file, {found, skipped} ->
         case sites_in(root, file, spells, exclude) do
-          {:ok, sites} -> {found ++ sites, skipped}
-          {:skip, entry} -> {found, skipped ++ [entry]}
+          {:ok, sites} -> {[sites | found], skipped}
+          {:skip, entry} -> {found, [entry | skipped]}
         end
       end)
 
-    %{"sites" => found, "skipped" => skipped}
+    %{
+      "sites" => found |> Enum.reverse() |> Enum.concat(),
+      "skipped" => Enum.reverse(skipped)
+    }
   end
 
   defp sites_in(root, file, spells, exclude) do
