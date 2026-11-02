@@ -1,7 +1,6 @@
 package io.github.lnds.kalku.runner;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Writer;
@@ -104,6 +103,7 @@ public final class KalkuCoverage {
       analysed.addAll(Files.readAllLines(Paths.get(args[4]), StandardCharsets.UTF_8));
     }
     Initialisers initialisers = new Initialisers(analysed);
+    ClassFiles files = new ClassFiles();
 
     // Which lines have code at all, from the classes alone.
     Map<String, BitSet> coded = new HashMap<>();
@@ -120,7 +120,7 @@ public final class KalkuCoverage {
     // What ran outside any one test: what a suite sets up, before and between its tests.
     Path outside = dumps.resolve("outside.exec");
     if (Files.isRegularFile(outside)) {
-      Seen seen = seen(outside, analysed, initialisers);
+      Seen seen = seen(outside, analysed, initialisers, files);
       credit(places, seen.lines, place -> place.all = true);
     }
 
@@ -133,14 +133,14 @@ public final class KalkuCoverage {
       if (part.length < 2 || part[1].isEmpty()) {
         continue;
       }
-      Seen seen = seen(dumps.resolve(part[0]), analysed, initialisers);
+      Seen seen = seen(dumps.resolve(part[0]), analysed, initialisers, files);
       byTest.put(part[0], seen);
       credit(places, seen.everyone, place -> place.all = true);
       credit(places, seen.lines, place -> place.tests.add(part[1]));
     }
 
     if (args.length > 5) {
-      ran(dumps, tests, byTest, Paths.get(args[4]), Paths.get(args[5]));
+      ran(dumps, tests, byTest, Paths.get(args[4]), Paths.get(args[5]), files);
     }
 
     try (Writer out = Files.newBufferedWriter(Paths.get(args[3]), StandardCharsets.UTF_8)) {
@@ -184,7 +184,12 @@ public final class KalkuCoverage {
   // Lines of `test`, a class directory, and the name of a class in it the test ran; `*` for
   // the test when every test may depend on the class.
   private static void ran(
-      Path dumps, List<String> tests, Map<String, Seen> byTest, Path listed, Path out)
+      Path dumps,
+      List<String> tests,
+      Map<String, Seen> byTest,
+      Path listed,
+      Path out,
+      ClassFiles files)
       throws IOException {
     List<String> directories = Files.readAllLines(listed, StandardCharsets.UTF_8);
     try (Writer w = Files.newBufferedWriter(out, StandardCharsets.UTF_8)) {
@@ -195,24 +200,25 @@ public final class KalkuCoverage {
       }
       Path outside = dumps.resolve("outside.exec");
       if (Files.isRegularFile(outside)) {
-        written(w, ALL, hits(outside), directories);
+        written(w, ALL, hits(outside), directories, files);
       }
       for (String line : tests) {
         String[] part = line.split("\t", 2);
         if (part.length == 2 && !part[1].isEmpty()) {
           Seen seen = byTest.get(part[0]);
-          written(w, ALL, seen.shared, directories);
-          written(w, part[1], hits(dumps.resolve(part[0])), directories);
+          written(w, ALL, seen.shared, directories, files);
+          written(w, part[1], seen.hits, directories, files);
         }
       }
     }
   }
 
-  private static void written(Writer w, String test, Set<String> names, List<String> directories)
+  private static void written(
+      Writer w, String test, Set<String> names, List<String> directories, ClassFiles files)
       throws IOException {
     for (String name : names) {
       for (String directory : directories) {
-        if (new File(directory, name + ".class").isFile()) {
+        if (files.of(directory, name) != null) {
           w.write(test + "\t" + directory + "\t" + name + "\n");
         }
       }
@@ -271,29 +277,57 @@ public final class KalkuCoverage {
     final Map<String, BitSet> everyone = new HashMap<>();
     // The classes those lines are in, for the fingerprints.
     final Set<String> shared = new LinkedHashSet<>();
+    // The classes something ran in, by their names in the counts.
+    final Set<String> hits = new LinkedHashSet<>();
+  }
+
+  /**
+   * The bytes of a class directory's class files, read once: every test asks for the same
+   * classes over again.
+   */
+  private static final class ClassFiles {
+    private static final byte[] NONE = new byte[0];
+    private final Map<String, Map<String, byte[]>> byDirectory = new HashMap<>();
+
+    // The bytes of `name` in `directory`, or null when it has no such class file.
+    byte[] of(String directory, String name) throws IOException {
+      Map<String, byte[]> known = byDirectory.computeIfAbsent(directory, d -> new HashMap<>());
+      byte[] bytes = known.get(name);
+      if (bytes == null) {
+        File file = new File(directory, name + ".class");
+        bytes = file.isFile() ? Files.readAllBytes(file.toPath()) : NONE;
+        known.put(name, bytes);
+      }
+      return bytes == NONE ? null : bytes;
+    }
   }
 
   // The lines of each source file that ran in what one file of counts holds, and which of them
   // a class's initialiser may have run. A class whose initialiser ran here was first used here,
   // and what its initialiser reaches is told from its bytecode: a test that was first to use a
   // class is not the only one that depends on what the class did then.
-  private static Seen seen(Path counted, Set<String> directories, Initialisers initialisers)
+  private static Seen seen(
+      Path counted, Set<String> directories, Initialisers initialisers, ClassFiles files)
       throws IOException {
     ExecFileLoader loader = new ExecFileLoader();
     loader.load(counted.toFile());
     ExecutionDataStore store = loader.getExecutionDataStore();
+    Seen seen = new Seen();
+    // Only the classes something ran in: the counts say which.
+    for (ExecutionData data : store.getContents()) {
+      if (data.hasHits()) {
+        seen.hits.add(data.getName());
+      }
+    }
     Map<String, List<IClassCoverage>> byDirectory = new HashMap<>();
     Set<String> initialised = new HashSet<>();
     for (String directory : directories) {
       CoverageBuilder builder = new CoverageBuilder();
       Analyzer analyzer = new Analyzer(store, builder);
-      // Only the classes something ran in: the counts say which.
-      for (ExecutionData data : store.getContents()) {
-        File file = new File(directory, data.getName() + ".class");
-        if (data.hasHits() && file.isFile()) {
-          try (InputStream in = new FileInputStream(file)) {
-            analyzer.analyzeClass(in, data.getName());
-          }
+      for (String name : seen.hits) {
+        byte[] bytes = files.of(directory, name);
+        if (bytes != null) {
+          analyzer.analyzeClass(bytes, name);
         }
       }
       List<IClassCoverage> classes = new ArrayList<>(builder.getClasses());
@@ -307,7 +341,6 @@ public final class KalkuCoverage {
       }
     }
     Initialisers.Reach reach = initialisers.of(initialised);
-    Seen seen = new Seen();
     for (Map.Entry<String, List<IClassCoverage>> each : byDirectory.entrySet()) {
       for (IClassCoverage c : each.getValue()) {
         if (c.getSourceFileName() == null) {
@@ -377,6 +410,8 @@ public final class KalkuCoverage {
     private final Map<String, ClassNode> classes = new HashMap<>();
     private final Map<String, List<String>> subtypes = new HashMap<>();
     private final Map<String, Reach> reaches = new HashMap<>();
+    private final Map<String, Collection<String>> aboves = new HashMap<>();
+    private final Map<String, Collection<String>> belows = new HashMap<>();
 
     Initialisers(Collection<String> directories) throws IOException {
       for (String directory : directories) {
@@ -591,8 +626,12 @@ public final class KalkuCoverage {
     }
 
     // The class and its supertypes, as far as the project has them.
-    private List<String> above(String name) {
-      List<String> out = new ArrayList<>();
+    private Collection<String> above(String name) {
+      return aboves.computeIfAbsent(name, this::supertypesOf);
+    }
+
+    private Collection<String> supertypesOf(String name) {
+      Set<String> out = new LinkedHashSet<>();
       Deque<String> todo = new ArrayDeque<>();
       todo.add(name);
       while (!todo.isEmpty()) {
@@ -611,13 +650,16 @@ public final class KalkuCoverage {
     }
 
     // Every class of the project below this one, which may override what it declares.
-    private List<String> below(String name) {
-      List<String> out = new ArrayList<>();
+    private Collection<String> below(String name) {
+      return belows.computeIfAbsent(name, this::subtypesOf);
+    }
+
+    private Collection<String> subtypesOf(String name) {
+      Set<String> out = new LinkedHashSet<>();
       Deque<String> todo = new ArrayDeque<>(subtypes.getOrDefault(name, new ArrayList<>()));
       while (!todo.isEmpty()) {
         String type = todo.pop();
-        if (!out.contains(type)) {
-          out.add(type);
+        if (out.add(type)) {
           todo.addAll(subtypes.getOrDefault(type, new ArrayList<>()));
         }
       }

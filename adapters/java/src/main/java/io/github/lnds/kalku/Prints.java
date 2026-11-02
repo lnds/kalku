@@ -64,6 +64,11 @@ final class Prints {
   private final Path kept;
   private final String setting;
   private final Map<Maven.Build, String> around = new HashMap<>();
+  // Files of the project are read once while nothing runs: a class every test runs goes into
+  // every fingerprint, and a used module's files into the fingerprint of every module using it.
+  private final Map<Path, String> digests = new HashMap<>();
+  private final Map<Maven.Build, List<Path>> data = new HashMap<>();
+  private List<Path> buildFiles;
   // Jars outside the project, by path, size and time: hashed once for as long as this lives.
   private final Map<String, String> jars;
 
@@ -90,9 +95,16 @@ final class Prints {
     line(h, "tests " + module.name + " " + owner);
     for (String file : new TreeSet<>(classes)) {
       Path at = project.root.resolve(file);
-      line(h, file + " " + (Files.isRegularFile(at) ? digest(at) : "-"));
+      line(h, file + " " + classDigest(at));
     }
     return hex(h.digest()).substring(0, 32);
+  }
+
+  /** Reads the project's files afresh from here on: something ran, and may have written them. */
+  void forget() {
+    digests.clear();
+    data.clear();
+    buildFiles = null;
   }
 
   /** Keeps which tests and classes a fingerprint was taken over. */
@@ -138,7 +150,7 @@ final class Prints {
     line(h, new java.util.TreeMap<>(module.environment).toString());
     line(h, "reruns " + module.reruns);
     for (Path file : buildFiles()) {
-      line(h, "build " + relative(file) + " " + digest(file));
+      line(h, "build " + relative(file) + " " + digested(file));
     }
     List<Path> classpath = new ArrayList<>(module.libraries);
     if (module.launcher != null && !classpath.contains(module.launcher)) {
@@ -158,7 +170,7 @@ final class Prints {
       for (Path file : files(dir)) {
         String name = dir.relativize(file).toString().replace('\\', '/');
         // A class goes in by its name: its bytes go in only where a test ran it.
-        line(h, name.endsWith(".class") ? "class " + name : "resource " + name + " " + digest(file));
+        line(h, name.endsWith(".class") ? "class " + name : "resource " + name + " " + digested(file));
       }
     }
     List<Maven.Build> read = new ArrayList<>();
@@ -166,7 +178,7 @@ final class Prints {
     read.addAll(module.uses);
     for (Maven.Build each : read) {
       for (Path file : data(each)) {
-        line(h, "data " + relative(file) + " " + digest(file));
+        line(h, "data " + relative(file) + " " + digested(file));
       }
     }
     String done = hex(h.digest());
@@ -188,7 +200,7 @@ final class Prints {
     if (Files.isDirectory(library)) {
       MessageDigest h = sha256();
       for (Path file : files(library)) {
-        line(h, library.relativize(file) + " " + digest(file));
+        line(h, library.relativize(file) + " " + digested(file));
       }
       return hex(h.digest());
     }
@@ -207,6 +219,9 @@ final class Prints {
 
   // The files of the project that say how it is built, wherever they are in it.
   private List<Path> buildFiles() throws IOException {
+    if (buildFiles != null) {
+      return buildFiles;
+    }
     List<Path> out = new ArrayList<>();
     try (Stream<Path> all = Files.walk(project.root)) {
       for (Path p : (Iterable<Path>) all::iterator) {
@@ -219,12 +234,17 @@ final class Prints {
       }
     }
     out.sort(null);
+    buildFiles = out;
     return out;
   }
 
   // What a module's tests may read by its path: the module's files that are neither compiled
   // sources nor what a build wrote, nor in another module.
   private List<Path> data(Maven.Build module) throws IOException {
+    List<Path> known = data.get(module);
+    if (known != null) {
+      return known;
+    }
     List<Path> roots = new ArrayList<>(module.sources);
     roots.addAll(module.testSources);
     List<Path> out = new ArrayList<>();
@@ -242,6 +262,7 @@ final class Prints {
       }
     }
     out.sort(null);
+    data.put(module, out);
     return out;
   }
 
@@ -294,6 +315,25 @@ final class Prints {
   private static void line(MessageDigest h, String text) {
     h.update(text.getBytes(StandardCharsets.UTF_8));
     h.update((byte) '\n');
+  }
+
+  // A class file's digest, or `-` where there is none.
+  private String classDigest(Path file) throws IOException {
+    String known = digests.get(file);
+    if (known == null) {
+      known = Files.isRegularFile(file) ? digest(file) : "-";
+      digests.put(file, known);
+    }
+    return known;
+  }
+
+  private String digested(Path file) throws IOException {
+    String known = digests.get(file);
+    if (known == null) {
+      known = digest(file);
+      digests.put(file, known);
+    }
+    return known;
   }
 
   static String digest(Path file) throws IOException {
