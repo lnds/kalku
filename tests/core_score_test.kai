@@ -84,7 +84,7 @@ check "a score is a share: between nothing and everything" with k: Int, s: Int {
   let killed = abs(k) % 50
   let survived = abs(s) % 50
   killed + survived == 0
-    or score_of(killed, survived, []) >= 0.0 and score_of(killed, survived, []) <= 1.0
+    or (score_of(killed, survived, []) >= 0.0 and score_of(killed, survived, []) <= 1.0)
 }
 
 check "nothing that never entered the score can move it" with k: Int, s: Int, n: Int {
