@@ -304,7 +304,7 @@ fn in_a_group(cmd: String, args: [String]) : Result[Came, String] / Process =
   match proc.start_in_group(cmd, args, true, true, false) {
     Err(e) -> Err(e)
     Ok(child) -> handle {
-      drain(child, "")
+      drain(child, [])
     } with Group {
       finally {
         let _ = proc.kill_group(child, SIGKILL)
@@ -315,17 +315,18 @@ fn in_a_group(cmd: String, args: [String]) : Result[Came, String] / Process =
 
 # How the process ended is kept, not discarded: a runtime that a wekufe
 # took down writes nothing about it, and the exit status is all there is
-# to tell that apart from a suite that simply passed.
-fn drain(child: Child, so_far: String) : Result[Came, String] / Process =
+# to tell that apart from a suite that simply passed. The chunks are joined
+# once at the end: appending each to all before it is quadratic.
+fn drain(child: Child, so_far: [String]) : Result[Came, String] / Process =
   match proc.read_stdout(child) {
     Err(e) -> Err(e)
     Ok(chunk) -> if is_empty(chunk) {
       match proc.wait(child) {
         Err(e) -> Err(e)
-        Ok(exit) -> Ok(Came { said: so_far, exit: exit })
+        Ok(exit) -> Ok(Came { said: join(reverse(so_far), ""), exit: exit })
       }
     } else {
-      drain(child, so_far ++ chunk)
+      drain(child, [chunk, ...so_far])
     }
   }
 

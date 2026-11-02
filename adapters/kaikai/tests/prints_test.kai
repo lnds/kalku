@@ -15,7 +15,8 @@ fn copied(name: String) : String / Process {
   root
 }
 
-fn print_of(found: Option[[Print]], id: String) : Option[String] = prints.print_for(id, found, [])
+fn print_of(found: Option[[Print]], id: String) : Option[String] =
+  prints.fingerprints(found, [])(id)
 
 const ALPHA : String = "tests/alpha_test.kai:next counts up"
 
@@ -29,13 +30,14 @@ test "what kai test lists is read into one module per test file" {
     "not json"
   ]
 
-  assert prints.modules_in(said) == [
-    Module {
-      file: "tests/a_test.kai",
-      sources: ["kai.toml", "a.kai", "tests/a_test.kai"],
-      ids: ["tests/a_test.kai:one", "tests/a_test.kai:two"]
-    }
-  ]
+  assert prints.modules_in(said)
+    == [
+      Module {
+        file: "tests/a_test.kai",
+        sources: ["kai.toml", "a.kai", "tests/a_test.kai"],
+        ids: ["tests/a_test.kai:one", "tests/a_test.kai:two"]
+      }
+    ]
 }
 
 # Asked of a copy, as the kalku asks: `kai test --list` keeps a cache where
@@ -44,7 +46,8 @@ test "each test module of a package has a fingerprint of its own" {
   let root = copied("split_each")
   let found = prints.of_package(at(root))
 
-  assert (found |> unwrap_or([]) | .ids) == [[ALPHA], [BETA, "tests/beta_test.kai:twice keeps zero"]]
+  assert (found |> unwrap_or([]) | .ids)
+    == [[ALPHA], [BETA, "tests/beta_test.kai:twice keeps zero"]]
   assert is_some(print_of(found, ALPHA))
   assert print_of(found, ALPHA) != print_of(found, BETA)
   assert found == prints.of_package(at(root))
@@ -103,10 +106,31 @@ test "a module is fingerprinted by its tests whatever their order" {
   assert length(head(one) |> map(p => p.print) |> unwrap_or("")) == 24
 }
 
+# The digests themselves are pinned: a fingerprint that changes for no
+# reason re-runs every suite measured before it.
+test "a module's fingerprint is the digest of what builds it and what it holds" {
+  let modules = [module(["y", "x"], ["a.kai", "b.kai"]), module(["z"], ["b.kai"])]
+
+  assert prints.printed("kai", SUMS, modules)
+    == [
+      Print { ids: ["y", "x"], print: "6025d4004abbab5ce5bd14f2" },
+      Print { ids: ["z"], print: "303b2a5793d6c577ff057c22" }
+    ]
+}
+
+test "a module whose file is digested twice has no fingerprint" {
+  let sums = SUMS ++ [("b.kai", "2b")]
+
+  let found = prints.printed("kai", sums, [module(["z"], ["b.kai"]), module(["x"], ["a.kai"])])
+
+  assert (found | .ids) == [["x"]]
+}
+
 fn offer(ids: [String], print: String) : [Reuse] =
   ids | (id => Reuse { test_id: id, fingerprint: print })
 
-const PRINTS : [Print] = [Print { ids: ["a1", "a2"], print: "pa" }, Print { ids: ["b1"], print: "pb" }]
+const PRINTS : [Print] =
+  [Print { ids: ["a1", "a2"], print: "pa" }, Print { ids: ["b1"], print: "pb" }]
 
 test "a module offered whole with the fingerprint it has now is reused" {
   assert prints.reusable(offer(["a2", "a1"], "pa") ++ offer(["b1"], "old"), Some(PRINTS))
@@ -123,9 +147,17 @@ test "a module offered in part is not reused" {
 }
 
 test "a test of a module in which one failed has no fingerprint" {
-  assert prints.print_for("a1", Some(PRINTS), []) == Some("pa")
-  assert prints.print_for("a1", Some(PRINTS), ["a2"]) == None
-  assert prints.print_for("b1", Some(PRINTS), ["a2"]) == Some("pb")
-  assert prints.print_for("c1", Some(PRINTS), []) == None
-  assert prints.print_for("a1", None, []) == None
+  assert prints.fingerprints(Some(PRINTS), [])("a1") == Some("pa")
+  assert prints.fingerprints(Some(PRINTS), ["a2"])("a1") == None
+  assert prints.fingerprints(Some(PRINTS), ["a2"])("b1") == Some("pb")
+  assert prints.fingerprints(Some(PRINTS), [])("c1") == None
+  assert prints.fingerprints(None, [])("a1") == None
+}
+
+test "every test of a module gets the same fingerprint, the first module naming it wins" {
+  let print_for =
+    prints.fingerprints(Some(PRINTS ++ [Print { ids: ["b1", "c1"], print: "pc" }]), ["c1"])
+
+  assert (["a1", "a2", "b1", "c1", "zz"] | print_for)
+    == [Some("pa"), Some("pa"), Some("pb"), None, None]
 }
