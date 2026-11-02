@@ -988,3 +988,71 @@ def test_the_direct_importers_are_credited_when_they_are_exactly_the_limit(tmp_p
     got = attributed(tmp_path, IMPORTERS, monkeypatch, limit=1)
     assert got["tests/test_direct.py::t"]["lib.py"] == {1}
     assert "lib.py" not in got["tests/test_a.py::t"]
+
+
+def write_tree(root, files):
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+
+def test_a_large_project_is_attributed_through_its_dependents(tmp_path):
+    # 2,000 modules and 20,000 tests in 200 directories, each with a conftest
+    # that imports a tenth of the modules.
+    shares = {k: {f"src/m{i}.py" for i in range(k, 2000, 200)} for k in range(200)}
+    files = {f"src/m{i}.py": "X = 1\n" for i in range(2000)}
+    for k in range(200):
+        files[f"tests/d{k}/conftest.py"] = ""
+        files[f"tests/d{k}/test_{k}.py"] = ""
+    write_tree(tmp_path, files)
+    graph = dependency.Graph(imports={f"tests/d{k}/conftest.py": shares[k] for k in range(200)})
+    ids = [f"tests/d{k}/test_{k}.py::t{n}" for k in range(200) for n in range(100)]
+    tests = [{"test": i, "file": i.partition("::")[0], "duration_ms": 1} for i in ids]
+    got = service.Service(0, Out())._attributed(tmp_path, graph, tests, {i: {} for i in ids})
+    for k in range(200):
+        expected = {m: {1} for m in shares[k]}
+        assert all(got[f"tests/d{k}/test_{k}.py::t{n}"] == expected for n in range(100))
+
+
+def test_many_conftests_that_share_every_module_credit_it_to_every_test(tmp_path):
+    # 250 conftests that all import each of 1,000 modules, with their tests a
+    # directory below them.
+    every = {f"m{i}.py" for i in range(1000)}
+    files = dict.fromkeys(every, "X = 1\n")
+    for k in range(250):
+        files[f"tests/d{k}/conftest.py"] = ""
+        files[f"tests/d{k}/inner/test_{k}.py"] = ""
+    write_tree(tmp_path, files)
+    graph = dependency.Graph(imports={f"tests/d{k}/conftest.py": every for k in range(250)})
+    ids = [f"tests/d{k}/inner/test_{k}.py::t" for k in range(250)]
+    tests = [{"test": i, "file": i.partition("::")[0], "duration_ms": 1} for i in ids]
+    got = service.Service(0, Out())._attributed(tmp_path, graph, tests, {i: {} for i in ids})
+    expected = {m: {1} for m in every}
+    assert all(got[t] == expected for t in ids)
+
+
+def test_a_large_test_file_is_fingerprinted_once(tmp_path):
+    # 3,000 tests in one file, and as many imported modules as a fingerprint
+    # may name, each importing 50 others that no closure explains.
+    from kalku_python import fingerprint
+
+    imported = [f"u{j}.py" for j in range(fingerprint.MAX_UNEXPLAINED)]
+    files = {"tests/test_a.py": "", "tests/test_b.py": ""}
+    for j in range(fingerprint.MAX_UNEXPLAINED):
+        files[f"u{j}.py"] = "".join(f"import c{j}_{s}\n" for s in range(50))
+        files.update({f"c{j}_{s}.py": "X = 1\n" for s in range(50)})
+    write_tree(tmp_path, files)
+    prints = fingerprint.Prints(tmp_path, dependency.build(tmp_path), "env")
+    ids = [f"tests/test_a.py::t{n}" for n in range(3000)] + ["tests/test_b.py::t"]
+    svc = service.Service(0, Out())
+    svc.session = service._Session(
+        ids=ids, files={i: i.partition("::")[0] for i in ids}, prepared=True
+    )
+    tests = [{"test": i, "file": i.partition("::")[0], "duration_ms": 1} for i in ids]
+    per_test = {i: {"u0.py": {1}, "c0_0.py": {1}} for i in ids}
+    per_test["tests/test_b.py::t"] = {"elsewhere.py": {1}}
+    svc._fingerprint(prints, [{"e": "done", "imported": imported}], tests, [], per_test)
+    given = prints.of("tests/test_a.py", tuple(sorted(imported)))
+    assert all(t["fingerprint"] == given for t in tests[:-1])
+    assert "fingerprint" not in tests[-1]

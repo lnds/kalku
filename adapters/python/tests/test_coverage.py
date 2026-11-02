@@ -275,3 +275,19 @@ def test_a_rule_cannot_be_changed_once_made():
 
 def test_a_test_that_ran_only_the_first_line_of_a_module_is_credited_with_the_rest():
     assert lines_of("A = 1\nB = 2\n", {1}) == {1, 2}
+
+
+def test_a_large_suite_is_credited_by_the_tests_of_each_dependent_alone():
+    # 2,000 modules and 20,000 tests in 100 files: each module goes to the
+    # 200 tests of the one file that depends on it, and to no other.
+    per_test = {f"tests/test_{k}.py::t{n}": {} for k in range(100) for n in range(200)}
+    modules = [f"m{i}.py" for i in range(2000)]
+    got = coverage.expand(
+        per_test,
+        lambda f: "X = 1\n",
+        depends=lambda f: {f"tests/test_{int(f[1:-3]) % 100}.py"},
+        files=modules,
+    )
+    expected = [{f"m{i}.py": {1} for i in range(k, 2000, 100)} for k in range(100)]
+    for test, lines in got.items():
+        assert lines == expected[int(test.partition("::")[0][len("tests/test_") : -3])]

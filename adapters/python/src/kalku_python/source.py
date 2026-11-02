@@ -31,6 +31,8 @@ class Source:
         starts = [0]
         starts.extend(m.end() for m in _LINE_END.finditer(self.data))
         self._starts = starts
+        ends = [*starts[1:], len(self.data)]
+        self._ascii = [self.data[s:e].isascii() for s, e in zip(starts, ends, strict=True)]
 
     def byte_at(self, line: int, byte_col: int) -> int | None:
         """The byte offset of what `ast` calls `(line, col_offset)`."""
@@ -49,7 +51,10 @@ class Source:
             else:
                 hi = mid - 1
         start = self._starts[lo]
-        col = len(self.data[start:byte].decode("utf-8", errors="replace")) + 1
+        if self._ascii[lo] and start <= byte <= len(self.data):
+            col = byte - start + 1
+        else:
+            col = len(self.data[start:byte].decode("utf-8", errors="replace")) + 1
         return Position(line=lo + 1, col=col, byte=byte)
 
     def slice(self, start: int, end: int) -> str | None:

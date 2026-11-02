@@ -3,6 +3,16 @@ import pytest
 from kalku_python.source import Position, Source
 
 
+def test_positions_along_a_long_line_are_counted_in_characters():
+    text = "x = [" + "1, " * 100_000 + "]\nyé = 2\n"
+    src = Source(text)
+    first = len(text.encode()) - len("yé = 2\n".encode())
+    assert [src.position(b).col for b in range(0, first, 3)] == list(range(1, first + 1, 3))
+    assert src.position(first + 2) == Position(2, 3, first + 2)
+    assert src.position(first + 3) == Position(2, 3, first + 3)
+    assert src.position(first + 4) == Position(2, 4, first + 4)
+
+
 def test_a_column_is_counted_in_characters_and_a_byte_in_bytes():
     # `é` is two bytes and one character: the counts part company here.
     src = Source("x = 'é'; y = 1\n")
