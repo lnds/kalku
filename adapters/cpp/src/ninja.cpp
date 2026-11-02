@@ -106,17 +106,6 @@ std::uint64_t rapidhash(const std::string& s) {
   return mix(a ^ secret[0] ^ len, b ^ secret[1]);
 }
 
-std::string rewritten(std::string s, const Rewrites& rw) {
-  for (const auto& r : rw) {
-    std::size_t at = 0;
-    while ((at = s.find(r.first, at)) != std::string::npos) {
-      s.replace(at, r.first.size(), r.second);
-      at += r.second.size();
-    }
-  }
-  return s;
-}
-
 void put32(std::string& out, std::uint32_t v) {
   for (int i = 0; i < 4; i++) out += static_cast<char>(v >> (8 * i) & 0xff);
 }
@@ -194,6 +183,27 @@ std::optional<std::string> rebase_ninja_deps(const std::string& deps, const Rewr
     at += 4 + size;
   }
   return out;
+}
+
+// One pass over the text per rewrite, building a new string: replacing in
+// place shifts the rest of the text at every match.
+std::string rewritten(std::string s, const Rewrites& rw) {
+  for (const auto& r : rw) {
+    if (r.first.empty()) continue;
+    std::size_t at = s.find(r.first);
+    if (at == std::string::npos) continue;
+    std::string out;
+    out.reserve(s.size());
+    std::size_t from = 0;
+    for (; at != std::string::npos; at = s.find(r.first, from)) {
+      out.append(s, from, at - from);
+      out += r.second;
+      from = at + r.first.size();
+    }
+    out.append(s, from, std::string::npos);
+    s = std::move(out);
+  }
+  return s;
 }
 
 }  // namespace kalku

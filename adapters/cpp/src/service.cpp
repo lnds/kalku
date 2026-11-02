@@ -268,6 +268,7 @@ std::string Service::sites(std::int64_t id, const SitesRequest& r) {
   std::vector<Skipped> skipped;
   std::string why;
   bool readable = ready_to_read(&why);
+  auto compiles = readable ? project_->compile_index() : std::nullopt;
   for (const auto& file : r.files) {
     auto skip = [&](const std::string& reason, const std::string& message) {
       skipped.push_back(Skipped{file, reason, message});
@@ -297,7 +298,7 @@ std::string Service::sites(std::int64_t id, const SitesRequest& r) {
     std::size_t n;
     while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
     std::fclose(f);
-    auto compile = project_->compile_of(file);
+    auto compile = compiles ? project_->compile_of(file, *compiles) : std::nullopt;
     if (!compile) {
       skip("not_built", "no compile command builds `" + file + "` or a file beside it");
       continue;
