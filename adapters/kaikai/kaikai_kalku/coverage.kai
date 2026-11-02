@@ -1,0 +1,74 @@
+#[doc("""
+Which tests ran each line of the package, from the records `kai test
+--coverage` writes: one record a test and a file, naming its lines.
+
+A suite of thousands of tests over thousands of lines writes millions of
+those pairs, so each file's are dealt into one slot a line, in a single
+pass, rather than looked up line by line.
+""")]
+
+import collections.vec
+import kalku.core.lookup
+import kalku.wire.shapes
+import kaikai_kalku.work
+
+#[doc("""
+Which tests ran each line, one entry a line, by file and then by line;
+each line's tests in the order the run reported them. Only the tests the
+run reported count: a record about anything else names nothing a cast can
+select.
+""")]
+pub fn covered(r: Ran) : [CoverageEntry] {
+  let known = lookup.member_of(r.tests | .test_id)
+  let by_file = lookup.grouped(r.reached |? (x => known(x.test_id)), x => x.file)
+  sort_by(by_file, (a, b) => order(a.fst, b.fst)) || (g => in_file(g.fst, g.snd))
+}
+
+fn order(a: String, b: String) : Int = if a < b { -1 } else if a > b { 1 } else { 0 }
+
+# A slot per line from the file's first to its last, filled walking the
+# records backwards so that each slot ends in the run's order. `seen`
+# holds the last record to fill a slot: a record that names a line twice
+# still ran it once. The slots are threaded through, never captured, so
+# that each write is in place.
+type Slots = { low: Int, tests: Vec[[String]], seen: Vec[Int] }
+
+fn in_file(file: String, records: [Reach]) : [CoverageEntry] {
+  let all = records || .lines
+  match all {
+    [] -> []
+    [first, ..._] -> {
+      let low = list.foldl(all, first, (m, l) => if l < m { l } else { m })
+      let high = list.foldl(all, first, (m, l) => if l > m { l } else { m })
+      let size = high - low + 1
+      let empty = Slots { low: low, tests: vec.make(size, []), seen: vec.make(size, -1) }
+      let tests = deal(reverse(records), 0, empty).tests
+      [0..(size - 1)]
+        || (i => match vec.get(tests, i) {
+          [] -> []
+          ts -> [CoverageEntry { file: file, line: i + low, tests: ts }]
+        })
+    }
+  }
+}
+
+fn deal(records: [Reach], n: Int, s: Slots) : Slots = match records {
+  [] -> s
+  [x, ...rest] -> deal(rest, n + 1, mark(x.lines, n, x.test_id, s))
+}
+
+fn mark(lines: [Int], n: Int, id: String, s: Slots) : Slots = match lines {
+  [] -> s
+  [l, ...rest] -> {
+    let i = l - s.low
+    if vec.get(s.seen, i) == n {
+      mark(rest, n, id, s)
+    } else {
+      mark(rest, n, id, Slots {
+        low: s.low,
+        tests: vec.set(s.tests, i, [id, ...vec.get(s.tests, i)]),
+        seen: vec.set(s.seen, i, n)
+      })
+    }
+  }
+}
