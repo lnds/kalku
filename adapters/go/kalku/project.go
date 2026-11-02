@@ -525,8 +525,13 @@ func (p *Project) Build(ctx context.Context) (int, error) {
 	// in the order of its packages, each package's tests as it lists them.
 	listed := ran.listed()
 	sort.SliceStable(listed, func(i, j int) bool { return listed[i][0] < listed[j][0] })
+	funcs := map[string]map[string]string{}
 	for _, pt := range listed {
-		file := p.fileOf(dirOf[pt[0]], pt[1])
+		dir := dirOf[pt[0]]
+		if _, ok := funcs[dir]; !ok {
+			funcs[dir] = p.testFuncs(dir)
+		}
+		file := funcs[dir][pt[1]]
 		if file == "" {
 			file = p.relative(dirOf[pt[0]])
 		}
@@ -565,11 +570,13 @@ func (p *Project) relative(dir string) string {
 	return filepath.ToSlash(rel)
 }
 
-// The file of a package's directory that declares a test function.
-func (p *Project) fileOf(dir, name string) string {
+// The top-level functions of a package directory's test files, each to the
+// file that declares it; the first file in directory order wins.
+func (p *Project) testFuncs(dir string) map[string]string {
+	out := map[string]string{}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return ""
+		return out
 	}
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), "_test.go") {
@@ -580,12 +587,14 @@ func (p *Project) fileOf(dir, name string) string {
 			continue
 		}
 		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Name.Name == name {
-				return path.Join(p.relative(dir), e.Name())
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil {
+				if _, seen := out[fd.Name.Name]; !seen {
+					out[fd.Name.Name] = path.Join(p.relative(dir), e.Name())
+				}
 			}
 		}
 	}
-	return ""
+	return out
 }
 
 // Tests is the suite, as `prepare` found it.

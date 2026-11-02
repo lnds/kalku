@@ -17,6 +17,10 @@ namespace kalku {
 // Each path to replace, and what replaces it, in order.
 using Rewrites = std::vector<std::pair<std::string, std::string>>;
 
+// The text with each rewrite applied in order, each to what the ones before
+// it left: every match, left to right, that does not overlap the one before.
+std::string rewritten(std::string s, const Rewrites& rw);
+
 // The hash a `.ninja_log` of `version` keys a command by: MurmurHash64A up
 // to version 6, rapidhash from version 7. None for a version not known.
 std::optional<std::uint64_t> ninja_hash(int version, const std::string& command);

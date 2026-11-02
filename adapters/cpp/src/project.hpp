@@ -75,6 +75,19 @@ struct Compile {
   bool c = false;
 };
 
+// A build's `compile_commands.json`, read once for every file asked of it:
+// each entry's file resolved, and the entries each rule of `compile_of`
+// would pick.
+struct CompileIndex {
+  Json doc;
+  // The last entry that compiles a path, and the first in each directory.
+  std::map<std::string, std::size_t> exact;
+  std::map<std::string, std::size_t> beside;
+  // The first entry of the project's own code, and the first of the project.
+  std::optional<std::size_t> own;
+  std::optional<std::size_t> any;
+};
+
 // How bringing the base up to date ended: done; `Unshared`, configured
 // for a generator other than make or Ninja, so each worker builds for
 // itself; or stopped at the step named.
@@ -131,6 +144,8 @@ class Project {
   // The command that compiles a file, or, for a header or a file the build
   // does not compile alone, one that compiles a file beside it.
   std::optional<Compile> compile_of(const std::string& file) const;
+  std::optional<Compile> compile_of(const std::string& file, const CompileIndex& index) const;
+  std::optional<CompileIndex> compile_index() const;
   int translation_units() const;
   // Every file of the copy a compile of the build reads, relative to it:
   // each object's source and what it included, as the compiler recorded

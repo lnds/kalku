@@ -284,16 +284,7 @@ class Tracer {
   }
 
   // The reni's paths, as every run names them.
-  std::string named(std::string s) const {
-    for (const auto& n : names_) {
-      std::size_t at = 0;
-      while ((at = s.find(n.first, at)) != std::string::npos) {
-        s.replace(at, n.first.size(), n.second);
-        at += n.second.size();
-      }
-    }
-    return s;
-  }
+  std::string named(std::string s) const { return rewritten(std::move(s), names_); }
 
   std::string real(const std::string& path) {
     auto it = real_.find(path);
@@ -365,7 +356,7 @@ class Tracer {
     }
   }
 
-  std::vector<std::pair<std::string, std::string>> names_;
+  Rewrites names_;
   std::string work_;
   std::string build_;
   std::map<std::string, std::string> real_;
@@ -625,6 +616,45 @@ std::vector<std::string> Project::fingerprints() {
   for (const auto& f : unbuilt) common += "unbuilt " + tr.file_line(f);
   common = sha256_hex(common);
 
+  // What a target leads to: its dependencies, and each artifact its
+  // description names, such as a library it loads by a path compiled into it.
+  std::map<std::string, std::vector<std::string>> leads;
+  auto leads_of = [&](const std::string& id, const Target& t) -> const std::vector<std::string>& {
+    auto at = leads.find(id);
+    if (at != leads.end()) return at->second;
+    std::vector<std::string> out = t.dependencies;
+    for (const auto& p : paths_in(t.text, "<build>")) {
+      auto it = by_artifact.find(tr.real(build_ + p.substr(7)));
+      if (it != by_artifact.end()) out.push_back(it->second);
+    }
+    return leads.emplace(id, std::move(out)).first->second;
+  };
+  // Every target the roots lead to, as lines; none when one of them cannot
+  // be traced. Tests that run the same executable share it.
+  std::map<std::set<std::string>, std::optional<std::string>> closures;
+  auto closure_of = [&](const std::set<std::string>& roots) -> std::optional<std::string> {
+    std::vector<std::string> wanted(roots.begin(), roots.end());
+    std::set<std::string> closure;
+    while (!wanted.empty()) {
+      std::string id = wanted.back();
+      wanted.pop_back();
+      if (!closure.insert(id).second) continue;
+      // A dependency the file API does not describe is an imported or an
+      // interface library: what it adds to a link is in the link command,
+      // and what it adds to a compile is in the compile's inputs.
+      auto t = targets.find(id);
+      if (t == targets.end()) continue;
+      if (own[id].empty()) return std::nullopt;
+      const auto& next = leads_of(id, t->second);
+      wanted.insert(wanted.end(), next.begin(), next.end());
+    }
+    std::string lines;
+    for (const auto& id : closure) {
+      if (targets.count(id)) lines += "target " + id + " " + own[id] + "\n";
+    }
+    return lines;
+  };
+
   // Each CTest test's fingerprint, by its number.
   std::map<int, std::string> by_number;
   for (const auto& test : tests_) {
@@ -676,33 +706,11 @@ std::vector<std::string> Project::fingerprints() {
         if (within(a, wd)) wanted.push_back(kv.first);
       }
     }
-    std::set<std::string> closure;
-    bool traced = true;
-    while (!wanted.empty()) {
-      std::string id = wanted.back();
-      wanted.pop_back();
-      if (!closure.insert(id).second) continue;
-      // A dependency the file API does not describe is an imported or an
-      // interface library: what it adds to a link is in the link command,
-      // and what it adds to a compile is in the compile's inputs.
-      auto t = targets.find(id);
-      if (t == targets.end()) continue;
-      if (own[id].empty()) {
-        traced = false;
-        break;
-      }
-      for (const auto& d : t->second.dependencies) wanted.push_back(d);
-      // An artifact a target's description names, such as a library it
-      // loads by a path compiled into it.
-      for (const auto& p : paths_in(t->second.text, "<build>")) {
-        auto it = by_artifact.find(tr.real(build_ + p.substr(7)));
-        if (it != by_artifact.end()) wanted.push_back(it->second);
-      }
-    }
-    if (!traced) continue;
-    for (const auto& id : closure) {
-      if (targets.count(id)) lines += "target " + id + " " + own[id] + "\n";
-    }
+    std::set<std::string> roots(wanted.begin(), wanted.end());
+    auto closure = closures.find(roots);
+    if (closure == closures.end()) closure = closures.emplace(roots, closure_of(roots)).first;
+    if (!closure->second) continue;
+    lines += *closure->second;
     out = sha256_hex(lines).substr(0, 32);
   }
 
@@ -725,9 +733,13 @@ std::optional<std::set<std::string>> Project::read_by_compiles() const {
   std::string generator = cache_entry(build_, "CMAKE_GENERATOR");
   bool ninja = starts_with(generator, "Ninja");
   if (!ninja && generator != "Unix Makefiles") return std::nullopt;
-  auto real = [](const std::string& path) {
+  // Objects share most of their inputs: each path is resolved once.
+  std::map<std::string, std::string> resolved;
+  auto real = [&resolved](const std::string& path) -> const std::string& {
+    auto at = resolved.find(path);
+    if (at != resolved.end()) return at->second;
     char buf[PATH_MAX];
-    return realpath(path.c_str(), buf) ? std::string(buf) : path;
+    return resolved.emplace(path, realpath(path.c_str(), buf) ? std::string(buf) : path).first->second;
   };
   std::string top_build = real(build_);
   std::map<std::string, std::vector<std::string>> logged;
