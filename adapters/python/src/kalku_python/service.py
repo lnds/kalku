@@ -424,12 +424,13 @@ class Service:
             return
         failing = {f["test"] for f in failures}
         standing: dict[str, str | None] = {}
+        covered: dict[str, frozenset[str]] = {}
         for t in tests:
             file = t["file"]
             if file not in standing:
                 standing[file] = prints.of(file, unexplained)
-            covers = prints.covers(file, unexplained)
-            if t["test"] in failing or not set(per_test.get(t["test"], {})) <= covers:
+                covered[file] = prints.covers(file, unexplained)
+            if t["test"] in failing or not set(per_test.get(t["test"], {})) <= covered[file]:
                 standing[file] = None
         for t in tests:
             given = standing[t["file"]]
@@ -443,26 +444,41 @@ class Service:
         that run it or depend on it by what they import."""
         test_files = {t["file"] for t in tests}
         sources = [f for f in dependency.python_files(work) if not project.is_test_file(f)]
-        by_directory = {f: PurePosixPath(f).parent for f in test_files}
+        # The test files under each directory, at any depth.
+        under: dict[PurePosixPath, set[str]] = {}
+        for f in test_files:
+            parent = PurePosixPath(f).parent
+            for d in (parent, *parent.parents):
+                under.setdefault(d, set()).add(f)
+        counts: dict[str, int] = {}
+        for t in tests:
+            counts[t["file"]] = counts.get(t["file"], 0) + 1
         site_lines: dict[str, set[int]] = {}
+
+        # The test files each importer stands for when it is a conftest.
+        governed: dict[str, set[str]] = {}
 
         def below(importers: set[str]) -> set[str]:
             """The test files that are importers, or sit under a conftest that is."""
             found = importers & test_files
-            for conftest in (f for f in importers if PurePosixPath(f).name == "conftest.py"):
-                here = PurePosixPath(conftest).parent
-                found |= {t for t, d in by_directory.items() if d == here or here in d.parents}
+            for f in importers:
+                if f not in governed:
+                    path = PurePosixPath(f)
+                    governed[f] = (
+                        under.get(path.parent, set()) if path.name == "conftest.py" else set()
+                    )
+                found |= governed[f]
             return found
 
         def depends(file: str) -> set[str]:
             every = below(graph.importers_of(file))
-            if len(test_files_of(every)) <= MAX_DEPENDENTS:
+            if tests_in(every) <= MAX_DEPENDENTS:
                 return every
             direct = below(graph.direct_importers_of(file))
-            return direct if len(test_files_of(direct)) <= MAX_DEPENDENTS else set()
+            return direct if tests_in(direct) <= MAX_DEPENDENTS else set()
 
-        def test_files_of(files: set[str]) -> list[str]:
-            return [t["test"] for t in tests if t["file"] in files]
+        def tests_in(files: set[str]) -> int:
+            return sum(counts.get(f, 0) for f in files)
 
         def wanted(file: str) -> set[int] | None:
             if file not in site_lines:
