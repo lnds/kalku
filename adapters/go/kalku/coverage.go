@@ -50,6 +50,7 @@ func (p *Project) Cover(ctx context.Context, tests []Test, passed map[string]boo
 	if err != nil {
 		return nil, "", err
 	}
+	functions := byLine(regions)
 	dir := filepath.Join(p.reni, "cover", filepath.Base(p.overlay))
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, "", err
@@ -65,6 +66,10 @@ func (p *Project) Cover(ctx context.Context, tests []Test, passed map[string]boo
 		}
 		byPkg[t.Package] = append(byPkg[t.Package], t)
 	}
+	dirOf := map[string]string{}
+	for dir, pkg := range p.pkgOfDir {
+		dirOf[pkg] = filepath.Join(p.work, dir)
+	}
 	for n, pkg := range order {
 		binary := filepath.Join(dir, strconv.Itoa(n)+".test")
 		build := exec.Command("go", "test", "-c", "-cover", "-covermode=set", "-coverpkg=./...", "-vet=off", "-o", binary, pkg)
@@ -74,7 +79,10 @@ func (p *Project) Cover(ctx context.Context, tests []Test, passed map[string]boo
 			}
 			return nil, fmt.Sprintf("the tests of %s did not build for coverage: %s", pkg, firstOf(out, err.Error())), nil
 		}
-		pkgDir := p.dirOf(pkg)
+		pkgDir, ok := dirOf[pkg]
+		if !ok {
+			pkgDir = p.work
+		}
 		for _, t := range byPkg[pkg] {
 			profile := filepath.Join(dir, "profile.out")
 			// A test that fails alone is asked again before anything is
@@ -101,8 +109,8 @@ func (p *Project) Cover(ctx context.Context, tests []Test, passed map[string]boo
 				return nil, fmt.Sprintf("the coverage profile of %s could not be read: %v", t.ID, err), nil
 			}
 			for _, b := range blocks {
-				for _, r := range regions[b.file] {
-					if r.function && r.from <= b.line && b.line <= r.to {
+				if lines := functions[b.file]; b.line >= 0 && b.line < len(lines) {
+					for _, r := range lines[b.line] {
 						r.tests[t.ID] = true
 					}
 				}
@@ -116,9 +124,11 @@ func (p *Project) Cover(ctx context.Context, tests []Test, passed map[string]boo
 			if r.function {
 				continue
 			}
-			for _, t := range tests {
-				if t.Package == r.pkg || p.deps[t.Package][r.pkg] {
-					r.tests[t.ID] = true
+			for _, pkg := range order {
+				if pkg == r.pkg || p.deps[pkg][r.pkg] {
+					for _, t := range byPkg[pkg] {
+						r.tests[t.ID] = true
+					}
 				}
 			}
 		}
@@ -221,13 +231,25 @@ func (p *Project) regions() (map[string][]*region, error) {
 	return out, nil
 }
 
-func (p *Project) dirOf(pkg string) string {
-	for dir, ip := range p.pkgOfDir {
-		if ip == pkg {
-			return filepath.Join(p.work, dir)
+// The function regions of each file by line: every region a line falls in.
+func byLine(regions map[string][]*region) map[string][][]*region {
+	out := map[string][][]*region{}
+	for file, rs := range regions {
+		var lines [][]*region
+		for _, r := range rs {
+			if !r.function {
+				continue
+			}
+			for len(lines) <= r.to {
+				lines = append(lines, nil)
+			}
+			for line := r.from; line <= r.to; line++ {
+				lines[line] = append(lines[line], r)
+			}
 		}
+		out[file] = lines
 	}
-	return p.work
+	return out
 }
 
 type block struct {
