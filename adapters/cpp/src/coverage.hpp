@@ -4,6 +4,7 @@
 // LLVM's own tools reading back the lines it ran.
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -65,13 +66,24 @@ class Reach {
   std::string packed() const;
   // The same entries, one per line, as a JSON array.
   std::string entries() const;
+  // The entries when they take no more than `limit` bytes, else the packed
+  // form, said by `packed`.
+  struct Form {
+    bool packed = false;
+    std::string text;
+  };
+  Form form(std::int64_t limit) const;
 
  private:
+  using Groups = std::map<std::string, std::map<std::set<std::size_t>, std::vector<int>>>;
+  std::string packed_of(const Groups& groups) const;
+  // None once the entries pass `limit` bytes.
+  std::optional<std::string> entries_of(const Groups& groups, std::int64_t limit) const;
   std::vector<std::string> tests_;
   std::map<std::string, std::map<int, std::set<std::size_t>>> by_line_;
   std::set<std::size_t> everywhere_;
   std::map<std::string, std::vector<int>> unreached_;
-  std::map<std::string, std::map<std::set<std::size_t>, std::vector<int>>> groups() const;
+  Groups groups() const;
 };
 
 }  // namespace kalku

@@ -170,10 +170,10 @@ void Reach::close(const std::map<std::string, int>& files) {
 
 // Each file's lines grouped by the tests that reach them, the lines no test
 // was seen to run among them, credited to every test.
-std::map<std::string, std::map<std::set<std::size_t>, std::vector<int>>> Reach::groups() const {
+Reach::Groups Reach::groups() const {
   std::set<std::size_t> all;
   for (std::size_t i = 0; i < tests_.size(); i++) all.insert(i);
-  std::map<std::string, std::map<std::set<std::size_t>, std::vector<int>>> out;
+  Groups out;
   for (const auto& f : by_line_) {
     for (const auto& l : f.second) out[f.first][l.second].push_back(l.first);
   }
@@ -185,12 +185,22 @@ std::map<std::string, std::map<std::set<std::size_t>, std::vector<int>>> Reach::
   return out;
 }
 
-std::string Reach::packed() const {
+std::string Reach::packed() const { return packed_of(groups()); }
+
+std::string Reach::entries() const { return *entries_of(groups(), INT64_MAX); }
+
+Reach::Form Reach::form(std::int64_t limit) const {
+  Groups all = groups();
+  if (auto text = entries_of(all, limit)) return Form{false, std::move(*text)};
+  return Form{true, packed_of(all)};
+}
+
+std::string Reach::packed_of(const Groups& groups) const {
   std::string out = "{\"tests\":[";
   for (std::size_t i = 0; i < tests_.size(); i++) out += (i ? "," : "") + quote(tests_[i]);
   out += "],\"reached\":[";
   bool first = true;
-  for (const auto& f : groups()) {
+  for (const auto& f : groups) {
     for (const auto& g : f.second) {
       if (g.first.empty()) continue;
       out += first ? "" : ",";
@@ -209,10 +219,9 @@ std::string Reach::packed() const {
   return out + "]}";
 }
 
-std::string Reach::entries() const {
+std::optional<std::string> Reach::entries_of(const Groups& groups, std::int64_t limit) const {
   std::map<std::pair<std::string, int>, const std::set<std::size_t>*> lines;
-  auto all = groups();
-  for (const auto& f : all) {
+  for (const auto& f : groups) {
     for (const auto& g : f.second) {
       for (int n : g.second) lines[{f.first, n}] = &g.first;
     }
@@ -230,8 +239,11 @@ std::string Reach::entries() const {
       one = false;
     }
     out += "]}";
+    if (static_cast<std::int64_t>(out.size()) > limit) return std::nullopt;
   }
-  return out + "]";
+  out += "]";
+  if (static_cast<std::int64_t>(out.size()) > limit) return std::nullopt;
+  return out;
 }
 
 }  // namespace kalku

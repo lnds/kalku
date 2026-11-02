@@ -23,7 +23,8 @@ add_library(kalku_cpp STATIC
   src/service.cpp
   src/sha256.cpp
   src/sites.cpp
-  src/source.cpp)
+  src/source.cpp
+  src/spans.cpp)
 target_include_directories(kalku_cpp PUBLIC src)
 target_compile_options(kalku_cpp PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(kalku_cpp PUBLIC ${CMAKE_DL_LIBS})
@@ -45,8 +46,10 @@ add_executable(kalku-cpp-tests
   tests/coverage_test.cpp
   tests/ninja_test.cpp
   tests/fingerprint_test.cpp
+  tests/project_test.cpp
   tests/protocol_test.cpp
   tests/sites_test.cpp
+  tests/spans_test.cpp
   tests/service_test.cpp
   tests/pipe_test.cpp)
 target_compile_options(kalku-cpp-tests PRIVATE -Wall -Wextra -Wpedantic -Werror)

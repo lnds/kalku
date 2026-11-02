@@ -7,6 +7,7 @@
 
 #include "sha256.hpp"
 #include "source.hpp"
+#include "spans.hpp"
 
 // What is never a site, and why:
 //
@@ -378,22 +379,10 @@ class Walker {
 
   // Text inside one macro invocation: a macro wrote it, or it is handed to
   // one, and in either case it is not where the wekufe would go.
-  bool written(long from, long to) const {
-    for (const auto& m : macros_) {
-      if (m.first <= from && to <= m.second) return true;
-    }
-    return false;
-  }
+  bool written(long from, long to) const { return macros_.holds(from, to); }
 
   // A span that begins or ends inside a macro invocation it does not hold.
-  bool crosses(long from, long to) const {
-    for (const auto& m : macros_) {
-      bool overlaps = m.first < to && from < m.second;
-      bool holds = from <= m.first && m.second <= to;
-      if (overlaps && !holds) return true;
-    }
-    return false;
-  }
+  bool crosses(long from, long to) const { return macros_.crosses(from, to); }
 
   std::string slice(long from, long to) const {
     return text_.substr(static_cast<std::size_t>(from), static_cast<std::size_t>(to - from));
@@ -693,7 +682,7 @@ class Walker {
 
   const std::string& text_;
   std::vector<Tok> toks_;
-  std::vector<std::pair<long, long>> macros_;
+  Spans macros_;
   const std::vector<std::string>& exclude_;
   std::set<std::string> wanted_;
   bool c_;

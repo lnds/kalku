@@ -138,6 +138,7 @@ bool sync_tree(const std::string& from, const std::string& to, const std::string
     *why = "cannot make " + to;
     return false;
   }
+  // Sorted, as `entries` gives the names.
   std::vector<std::string> wanted;
   for (const auto& name : entries(from)) {
     std::string src = from + "/" + name;
@@ -189,7 +190,7 @@ bool sync_tree(const std::string& from, const std::string& to, const std::string
     wanted.push_back(name);
   }
   for (const auto& name : entries(to)) {
-    if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+    if (!std::binary_search(wanted.begin(), wanted.end(), name)) {
       remove_all(to + "/" + name);
       *changed = true;
     }
@@ -215,14 +216,7 @@ bool date(const std::string& path, const struct timespec& t) {
 // paths are only for a debugger, and make never reads them.
 std::string rebase(std::string data, const Rewrites& rw) {
   if (data.find('\0') != std::string::npos) return data;
-  for (const auto& r : rw) {
-    std::size_t at = 0;
-    while ((at = data.find(r.first, at)) != std::string::npos) {
-      data.replace(at, r.first.size(), r.second);
-      at += r.second.size();
-    }
-  }
-  return data;
+  return rewritten(std::move(data), rw);
 }
 
 // Makes `to` the tree `from` is, each file dated as it is there, so that
@@ -232,6 +226,7 @@ bool clone_tree(const std::string& from, const std::string& to, const Rewrites& 
     *why = "cannot make " + to;
     return false;
   }
+  // Sorted, as `entries` gives the names.
   std::vector<std::string> wanted;
   for (const auto& name : entries(from)) {
     std::string src = from + "/" + name;
@@ -283,7 +278,7 @@ bool clone_tree(const std::string& from, const std::string& to, const Rewrites& 
     wanted.push_back(name);
   }
   for (const auto& name : entries(to)) {
-    if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) remove_all(to + "/" + name);
+    if (!std::binary_search(wanted.begin(), wanted.end(), name)) remove_all(to + "/" + name);
   }
   return true;
 }
@@ -1288,14 +1283,14 @@ Covered Project::cover(const std::vector<const Test*>& tests) {
   std::map<std::string, int> files;
   source_lines(work_, "", files);
   reach.close(files);
-  std::string entries = reach.entries();
-  if (static_cast<std::int64_t>(entries.size()) <= inline_limit_) {
-    out.entries = entries;
+  Reach::Form form = reach.form(inline_limit_);
+  if (!form.packed) {
+    out.entries = std::move(form.text);
     return out;
   }
   std::string path = reni_ + "/coverage/" + worker_ + ".json";
   make_dirs(dir_of(path));
-  if (!write_file(path, reach.packed())) {
+  if (!write_file(path, form.text)) {
     out.withheld = "the coverage could not be written to " + path;
     return out;
   }
@@ -1393,35 +1388,53 @@ bool Project::write(const std::string& file, const std::string& text) {
   return utimes(path.c_str(), times) == 0;
 }
 
-std::optional<Compile> Project::compile_of(const std::string& file) const {
+std::optional<CompileIndex> Project::compile_index() const {
   bool ok = false;
   std::string text = read_file(build_ + "/compile_commands.json", &ok);
   if (!ok) return std::nullopt;
   auto doc = parse_json(text);
   if (!doc || !doc->is_array()) return std::nullopt;
-  std::string want = work_ + "/" + file;
-  std::string dir = dir_of(want);
-  // The file's own command; else one beside it; else one of the project's
-  // own code; else, for a library of headers alone, one of its tests.
-  const Json* exact = nullptr;
-  const Json* beside = nullptr;
-  const Json* own = nullptr;
-  const Json* any = nullptr;
-  for (const auto& e : doc->items) {
-    const Json* f = e.get("file");
-    const Json* d = e.get("directory");
+  CompileIndex index;
+  index.doc = std::move(*doc);
+  const auto& items = index.doc.items;
+  for (std::size_t i = 0; i < items.size(); i++) {
+    const Json* f = items[i].get("file");
+    const Json* d = items[i].get("directory");
     if (!f || !d) continue;
     std::string path = f->text;
     if (!path.empty() && path[0] != '/') path = d->text + "/" + path;
     path = resolved(path);
     std::string rel = path.rfind(work_ + "/", 0) == 0 ? path.substr(work_.size() + 1) : "";
-    if (path == want) exact = &e;
-    if (!beside && dir_of(path) == dir) beside = &e;
-    if (!own && !rel.empty() && !is_test_file(rel)) own = &e;
-    if (!any && !rel.empty()) any = &e;
+    index.exact[path] = i;
+    index.beside.emplace(dir_of(path), i);
+    if (!index.own && !rel.empty() && !is_test_file(rel)) index.own = i;
+    if (!index.any && !rel.empty()) index.any = i;
   }
-  const Json* chosen = exact ? exact : beside ? beside : own ? own : is_header(file) ? any : nullptr;
-  if (!chosen) return std::nullopt;
+  return index;
+}
+
+std::optional<Compile> Project::compile_of(const std::string& file) const {
+  auto index = compile_index();
+  if (!index) return std::nullopt;
+  return compile_of(file, *index);
+}
+
+std::optional<Compile> Project::compile_of(const std::string& file, const CompileIndex& index) const {
+  std::string want = work_ + "/" + file;
+  // The file's own command; else one beside it; else one of the project's
+  // own code; else, for a library of headers alone, one of its tests.
+  std::optional<std::size_t> at;
+  if (auto e = index.exact.find(want); e != index.exact.end()) {
+    at = e->second;
+  } else if (auto b = index.beside.find(dir_of(want)); b != index.beside.end()) {
+    at = b->second;
+  } else if (index.own) {
+    at = index.own;
+  } else if (is_header(file)) {
+    at = index.any;
+  }
+  if (!at) return std::nullopt;
+  const Json* chosen = &index.doc.items[*at];
   Compile c;
   c.directory = chosen->get("directory")->text;
   std::vector<std::string> args;
@@ -1436,8 +1449,9 @@ std::optional<Compile> Project::compile_of(const std::string& file) const {
   for (std::size_t i = 0; i + 1 < args.size(); i++) {
     if (args[i] == "-x") c.c = args[i + 1] == "c" || args[i + 1] == "c-header";
   }
+  std::string compiled_real = resolved(compiled_abs);
   for (std::size_t i = 0; i < args.size(); i++) {
-    if (i > 0 && (args[i] == compiled || args[i] == compiled_abs || resolved(args[i]) == resolved(compiled_abs))) {
+    if (i > 0 && (args[i] == compiled || args[i] == compiled_abs || resolved(args[i]) == compiled_real)) {
       continue;
     }
     c.args.push_back(args[i]);
@@ -1453,12 +1467,7 @@ int Project::translation_units() const {
 }
 
 std::string Project::named(const std::string& message) const {
-  std::string out = message;
-  for (const std::string& from : {work_ + "/", build_ + "/", base_work_ + "/", base_build_ + "/"}) {
-    std::size_t at = 0;
-    while ((at = out.find(from, at)) != std::string::npos) out.erase(at, from.size());
-  }
-  return out;
+  return rewritten(message, {{work_ + "/", ""}, {build_ + "/", ""}, {base_work_ + "/", ""}, {base_build_ + "/", ""}});
 }
 
 std::vector<std::string> Project::differences() const {
