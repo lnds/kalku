@@ -110,9 +110,32 @@ final class Gradle {
         }
       }
     }
-    // A module is compiled again after the ones it uses, so they come first.
-    reactor.modules.sort((a, b) -> a.uses.contains(b) ? 1 : b.uses.contains(a) ? -1 : 0);
+    reactor.modules = ordered(reactor.modules);
     return reactor;
+  }
+
+  /**
+   * The modules with each one after those it uses, and otherwise in the order given. A cycle,
+   * which a Gradle build refuses, leaves the modules in it in the order given.
+   *
+   * @param modules the modules of one build, each naming the others it uses
+   * @return the same modules, in an order they can be compiled in
+   */
+  static List<Maven.Build> ordered(List<Maven.Build> modules) {
+    List<Maven.Build> left = new ArrayList<>(modules);
+    List<Maven.Build> out = new ArrayList<>();
+    while (!left.isEmpty()) {
+      Maven.Build next = left.get(0);
+      for (Maven.Build module : left) {
+        if (module.uses.stream().noneMatch(left::contains)) {
+          next = module;
+          break;
+        }
+      }
+      left.remove(next);
+      out.add(next);
+    }
+    return out;
   }
 
   // ---- running Gradle --------------------------------------------------------
