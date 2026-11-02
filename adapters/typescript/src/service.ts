@@ -205,9 +205,15 @@ export class Service {
       // Taken again now: the run has said which setup files the runner loads.
       const now = new Prints(root, runner);
       const failing = new Set(failures.map((f) => f.test));
+      const byFile = new Map<string, wire.Timed[]>();
       for (const t of tests) {
-        const print = now.standing(t.file, counted.reached, failing, counted.doubted, tests);
-        if (print !== undefined) t.fingerprint = print;
+        const same = byFile.get(t.file);
+        if (same === undefined) byFile.set(t.file, [t]);
+        else same.push(t);
+      }
+      for (const [file, same] of byFile) {
+        const print = now.standing(file, counted.reached, failing, counted.doubted, same);
+        if (print !== undefined) for (const t of same) t.fingerprint = print;
       }
     }
     return wire.baselineDone(
@@ -392,6 +398,7 @@ class Prints {
   private readonly imports: Imports;
   private readonly common: Shared;
   private readonly cache = new Map<string, { print: string; covers: Set<string> } | undefined>();
+  private readonly contents = new Map<string, Buffer | null>();
 
   constructor(
     private readonly root: string,
@@ -412,7 +419,10 @@ class Prints {
       const declared = declaredTests(file, readFileSync(path.join(this.root, file), "utf8"));
       if (declared !== undefined) {
         const own = new Set([...this.imports.closure(file), ...snapshots(this.root, file)]);
-        found = { print: fingerprint(this.root, this.common, own), covers: new Set([...own, ...this.common.files]) };
+        found = {
+          print: fingerprint(this.root, this.common, own, this.contents),
+          covers: new Set([...own, ...this.common.files]),
+        };
       }
     } catch {
       found = undefined;
@@ -444,9 +454,9 @@ class Prints {
   }
 
   /**
-   * The fingerprint a test of this file is given now: none when any test of
-   * the file failed, is in doubt, or was seen to execute a source the
-   * fingerprint does not cover.
+   * The fingerprint the tests of this file are given now, `tests` being all
+   * of them: none when any failed, is in doubt, or was seen to execute a
+   * source the fingerprint does not cover.
    */
   standing(
     file: string,
@@ -458,7 +468,6 @@ class Prints {
     const known = this.of(file);
     if (known === undefined) return undefined;
     for (const t of tests) {
-      if (t.file !== file) continue;
       if (failing.has(t.test) || doubted.has(t.test)) return undefined;
       for (const f of reached.get(t.test) ?? []) if (!known.covers.has(f)) return undefined;
     }
