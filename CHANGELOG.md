@@ -1,3 +1,19 @@
+## v0.31.3 (2026-11-02)
+
+### Fixed
+
+- **java**: order Gradle modules so each comes after the ones it uses (#576)
+
+### Changed
+
+- **java**: drop the quadratic passes from the Java kalku (#577)
+- **python**: drop the quadratic passes from the Python kalku (#575)
+- **kaikai**: drop the quadratic passes from the kaikai kalku (#574)
+- **cpp**: drop the quadratic passes from the C++ kalku (#573)
+- **go**: drop the quadratic passes from the Go kalku (#571)
+- **typescript**: drop the quadratic passes from the TypeScript kalku (#572)
+- **rust**: drop the quadratic passes from the Rust kalku (#570)
+
 ## v0.31.2 (2026-11-02)
 
 ### Changed
