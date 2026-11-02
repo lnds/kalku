@@ -14,7 +14,7 @@ use crate::protocol::{
 use crate::sites;
 use crate::toolchain::{self, Toolchain};
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -453,6 +453,7 @@ impl Service {
         }
         // Group the tests by the executable that holds them, keeping order.
         let mut groups: Vec<(usize, Vec<(String, String)>)> = Vec::new();
+        let mut group_of: HashMap<usize, usize> = HashMap::new();
         for test in tests {
             let Some((_, target, name)) = self
                 .session
@@ -467,10 +468,11 @@ impl Service {
                     false,
                 ));
             };
-            match groups.iter_mut().find(|(t, _)| t == target) {
-                Some((_, names)) => names.push((test.clone(), name.clone())),
-                None => groups.push((*target, vec![(test.clone(), name.clone())])),
-            }
+            let at = *group_of.entry(*target).or_insert_with(|| {
+                groups.push((*target, Vec::new()));
+                groups.len() - 1
+            });
+            groups[at].1.push((test.clone(), name.clone()));
         }
         let bad = |why: &str| Step::Reply(protocol::error(id, "bad_request", why, false));
         let (Some(file), Some(from), Some(to), Some(replacement)) = (
@@ -640,12 +642,24 @@ fn cast_in(
         let ran = project
             .run(&targets[*target], &names)
             .map_err(Trouble::Io)?;
-        let passed = |name: &str| ran.results.iter().any(|r| r.name == name && r.passed);
-        let failed = |name: &str| ran.results.iter().any(|r| r.name == name && !r.passed);
-        if let Some((id, _)) = tests.iter().find(|(_, name)| failed(name)) {
+        let said = |passing: bool| -> HashSet<&str> {
+            ran.results
+                .iter()
+                .filter(|r| r.passed == passing)
+                .map(|r| r.name.as_str())
+                .collect()
+        };
+        let (passed, failed) = (said(true), said(false));
+        if let Some((id, _)) = tests
+            .iter()
+            .find(|(_, name)| failed.contains(name.as_str()))
+        {
             return Ok(Outcome::Killed { by: id.clone() });
         }
-        if let Some((id, _)) = tests.iter().find(|(_, name)| !passed(name)) {
+        if let Some((id, _)) = tests
+            .iter()
+            .find(|(_, name)| !passed.contains(name.as_str()))
+        {
             if ran.success {
                 return Err(Trouble::Unknown(id.clone()));
             }

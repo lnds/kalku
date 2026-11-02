@@ -360,6 +360,7 @@ impl Project for Cargo {
             .args(["--", "--list", "--ignored"]);
         let out = capture(command, self.stop.as_ref())?;
         let ignored = listing(&String::from_utf8_lossy(&out.stdout));
+        let ignored: HashSet<String> = ignored.into_iter().collect();
         Ok(all.into_iter().filter(|t| !ignored.contains(t)).collect())
     }
 
@@ -803,30 +804,44 @@ pub fn results(stdout: &str) -> Vec<Result_> {
             })
         })
         .collect();
-    for r in out.iter_mut().filter(|r| !r.passed) {
-        r.message = failure_message(stdout, &r.name);
+    if out.iter().any(|r| !r.passed) {
+        let messages = failure_messages(stdout);
+        for r in out.iter_mut().filter(|r| !r.passed) {
+            r.message = match messages.get(&r.name) {
+                Some(text) if !text.is_empty() => text.clone(),
+                _ => "the test failed".to_string(),
+            };
+        }
     }
     out
 }
 
-// The text under `---- name stdout ----`, up to the next section.
-fn failure_message(stdout: &str, name: &str) -> String {
-    let header = format!("---- {name} stdout ----");
-    let mut lines = stdout.lines().skip_while(|l| *l != header).skip(1);
-    let mut message = Vec::new();
-    for l in lines.by_ref() {
-        if l.starts_with("---- ") || l == "failures:" {
-            break;
+// The text under each `---- name stdout ----`, up to the next section, by
+// name, in one pass over the output. A name printed twice keeps its first.
+fn failure_messages(stdout: &str) -> HashMap<String, String> {
+    let mut messages = HashMap::new();
+    let mut open: Option<(&str, Vec<&str>)> = None;
+    let mut close = |open: &mut Option<(&str, Vec<&str>)>| {
+        if let Some((name, lines)) = open.take() {
+            let text = lines.join("\n");
+            messages
+                .entry(name.to_string())
+                .or_insert_with(|| text.trim().to_string());
         }
-        message.push(l);
+    };
+    for l in stdout.lines() {
+        if l.starts_with("---- ") || l == "failures:" {
+            close(&mut open);
+            open = l
+                .strip_prefix("---- ")
+                .and_then(|rest| rest.strip_suffix(" stdout ----"))
+                .map(|name| (name, Vec::new()));
+        } else if let Some((_, lines)) = open.as_mut() {
+            lines.push(l);
+        }
     }
-    let text = message.join("\n");
-    let text = text.trim();
-    if text.is_empty() {
-        "the test failed".to_string()
-    } else {
-        text.to_string()
-    }
+    close(&mut open);
+    messages
 }
 
 #[cfg(test)]
@@ -1238,11 +1253,35 @@ mod tests {
     #[test]
     fn a_failure_message_keeps_its_lines_and_stops_at_the_next_section() {
         let out = "---- a stdout ----\nfirst\nsecond\n\nfailures:\n    a\n";
-        assert_eq!(failure_message(out, "a"), "first\nsecond");
+        assert_eq!(failure_messages(out)["a"], "first\nsecond");
 
         let two = "---- a stdout ----\nfirst\n---- b stdout ----\nother\n";
-        assert_eq!(failure_message(two, "a"), "first");
-        assert_eq!(failure_message(two, "b"), "other");
+        assert_eq!(failure_messages(two)["a"], "first");
+        assert_eq!(failure_messages(two)["b"], "other");
+    }
+
+    // A wekufe in code every test shares fails them all: reading each
+    // failure's message from the top of the output costs the square of it.
+    #[test]
+    fn many_failures_are_read_in_one_pass() {
+        let n = 20_000;
+        let mut out = String::new();
+        for i in 0..n {
+            out.push_str(&format!("test t::case_{i} ... FAILED\n"));
+        }
+        out.push_str("\nfailures:\n\n");
+        for i in 0..n {
+            out.push_str(&format!(
+                "---- t::case_{i} stdout ----\npanicked at {i}\n\n"
+            ));
+        }
+        out.push_str("failures:\n");
+
+        let read = results(&out);
+
+        assert_eq!(read.len(), n);
+        assert_eq!(read[n - 1].message, format!("panicked at {}", n - 1));
+        assert!(read.iter().all(|r| !r.passed));
     }
 
     // Where the project has a link, the copy has the same link, and a new
