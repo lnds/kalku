@@ -219,10 +219,14 @@ def _tokens(text: str, src: Source) -> list[_Token]:
     starts = [0]
     for line in lines:
         starts.append(starts[-1] + len(line.encode("utf-8")))
+    ascii_ = [line.isascii() for line in lines]
 
     def byte(pos: tuple[int, int]) -> int:
         row, col = pos
-        return starts[row - 1] + len(lines[row - 1][:col].encode("utf-8"))
+        line = lines[row - 1]
+        if ascii_[row - 1]:
+            return starts[row - 1] + min(col, len(line))
+        return starts[row - 1] + len(line[:col].encode("utf-8"))
 
     out = []
     try:

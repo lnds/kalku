@@ -137,6 +137,9 @@ def expand(
             grown[file] = added
         out[test] = grown
     if depends is not None:
+        by_file: dict[str, list[Lines]] = defaultdict(list)
+        for test, grown in out.items():
+            by_file[test.partition("::")[0]].append(grown)
         everything = sorted({*files, *(f for lines in per_test.values() for f in lines)})
         for file in everything:
             dependents = depends(file)
@@ -148,8 +151,8 @@ def expand(
                 shared &= narrowed
             if not shared:
                 continue
-            for test, grown in out.items():
-                if test.partition("::")[0] in dependents:
+            for dependent in dependents:
+                for grown in by_file.get(dependent, ()):
                     grown.setdefault(file, set()).update(shared)
     return out
 

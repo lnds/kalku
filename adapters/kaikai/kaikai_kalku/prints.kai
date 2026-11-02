@@ -27,6 +27,8 @@ import crypto.hash
 import kalku.version
 import kalku.wire.kalku_msg.{Reuse}
 import kaikai_kalku.work
+import kalku.core.lookup
+import kalku.core.distinct
 
 #[doc("One test file: the package files its build reads, and the ids of its tests.")]
 #[derive(Eq, Show)]
@@ -56,19 +58,25 @@ of every file of the package by its path, and the modules. A module that
 names a file the package does not hold has none.
 """)]
 pub fn printed(head: String, sums: [(String, String)], modules: [Module]) : [Print] {
-  let built = uniq(sort(flat_map(modules, m => m.sources)))
+  let built = lookup.member_of(flat_map(modules, .sources))
   let shared =
-    digest(join(sums |? (s => not contains(built, s.fst)) | (s => "#{s.fst} #{s.snd}"), "\n"))
-  flat_map(modules, m => print_of(head, shared, sums, m))
+    digest(join(sums |? (s => not built(s.fst)) | (s => "#{s.fst} #{s.snd}"), "\n"))
+  let sums_at = lookup.finder(lookup.grouped(sums, s => s.fst), g => g.fst)
+  flat_map(modules, m => print_of(head, shared, sums_at, m))
 }
 
-fn print_of(head: String, shared: String, sums: [(String, String)], m: Module) : [Print] {
-  let found = flat_map(m.sources, f => (sums |? (s => s.fst == f)))
-  if is_empty(m.ids) or length(found) != length(uniq(m.sources)) {
+fn print_of(
+  head: String,
+  shared: String,
+  sums_at: (String) -> Option[(String, [(String, String)])],
+  m: Module
+) : [Print] {
+  let found = flat_map(m.sources, f => (sums_at(f) |> option.map(.snd)) ?? [])
+  if is_empty(m.ids) or length(found) != length(distinct.distinct(m.sources)) {
     []
   } else {
     let sources = join(found | (s => "#{s.fst} #{s.snd}"), "\n")
-    let ids = join(uniq(sort(m.ids)), "\n")
+    let ids = join(distinct.distinct(sort(m.ids)), "\n")
     [Print { ids: m.ids, print: slice(digest("#{head}\n#{shared}\n#{sources}\n#{ids}"), 0, 24) }]
   }
 }
@@ -81,18 +89,31 @@ with the fingerprint it has now.
 """)]
 pub fn reusable(offered: [Reuse], prints: Option[[Print]]) : [String] = match prints {
   None -> []
-  Some(ps) -> uniq(sort(flat_map(ps, p => if whole(offered, p) { p.ids } else { [] })))
+  Some(ps) -> {
+    let is_offered = lookup.member_of(offered | (o => offer_key(o.test_id, o.fingerprint)))
+    let whole = p => all(p.ids, id => is_offered(offer_key(id, p.print)))
+    distinct.distinct(sort(flat_map(ps, p => if whole(p) { p.ids } else { [] })))
+  }
 }
 
-fn whole(offered: [Reuse], p: Print) : Bool =
-  all(p.ids, id => any(offered, o => o.test_id == id and o.fingerprint == p.print))
+fn offer_key(id: String, print: String) : String = "#{id}\u{0}#{print}"
 
-#[doc("The fingerprint a test gets, when its module has one and none of the module's tests failed.")]
-pub fn print_for(id: String, prints: Option[[Print]], failed: [String]) : Option[String] =
-  match prints |> and_then(ps => find(ps, p => contains(p.ids, id))) {
-    None -> None
-    Some(p) -> if any(p.ids, i => contains(failed, i)) { None } else { Some(p.print) }
-  }
+#[doc("""
+The fingerprint each test gets, by its id: its module's, when it has one
+and none of the module's tests failed. Built once for a whole run.
+""")]
+pub fn fingerprints(prints: Option[[Print]], failed: [String]) : (String) -> Option[String] {
+  let failing = lookup.member_of(failed)
+  let by_id = flat_map(
+    prints ?? [],
+    p => {
+      let print = if any(p.ids, failing) { None } else { Some(p.print) }
+      p.ids | (id => (id, print))
+    }
+  )
+  let at = lookup.finder(by_id, t => t.fst)
+  id => (at(id) |> option.and_then(.snd))
+}
 
 # ---- what kaikai says ---------------------------------------------------
 

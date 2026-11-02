@@ -122,3 +122,56 @@ TEST("a deps log that would still name the base's header is no copy") {
   CHECK(!kalku::rebase_ninja_deps("# ninjadeps\n" + word(3), rw, {}));
   CHECK(!kalku::rebase_ninja_deps("not a deps log", rw, {}));
 }
+
+namespace {
+
+// Each rewrite replaced in place, which is what rewriting means.
+std::string rewritten_in_place(std::string s, const kalku::Rewrites& rw) {
+  for (const auto& r : rw) {
+    std::size_t at = 0;
+    while ((at = s.find(r.first, at)) != std::string::npos) {
+      s.replace(at, r.first.size(), r.second);
+      at += r.second.size();
+    }
+  }
+  return s;
+}
+
+}  // namespace
+
+TEST("each rewrite applies to what the ones before it left, every match left to right") {
+  kalku::Rewrites rw = {{"/r/base", "/r/worker/0"}, {"/r/worker", "/w"}, {"aa", "a"}};
+  CHECK_EQ(kalku::rewritten("/r/base/x /r/basement aaaa", rw), std::string("/w/0/x /w/0ment aa"));
+  CHECK_EQ(kalku::rewritten("nothing here", rw), std::string("nothing here"));
+  CHECK_EQ(kalku::rewritten("", rw), std::string(""));
+  // Texts over a small alphabet, where matches abut and overlap.
+  unsigned seed = 7;
+  auto next = [&seed] {
+    seed = seed * 1103515245u + 12345u;
+    return (seed >> 16) & 0x7fff;
+  };
+  auto word = [&next](unsigned most) {
+    std::string w;
+    for (unsigned n = next() % most; n > 0; n--) w += static_cast<char>('a' + next() % 3);
+    return w;
+  };
+  for (int round = 0; round < 2000; round++) {
+    std::string text = word(40);
+    kalku::Rewrites random;
+    for (unsigned n = 1 + next() % 3; n > 0; n--) {
+      std::string from = word(4);
+      random.emplace_back(from.empty() ? "a" : from, word(5));
+    }
+    CHECK_EQ(kalku::rewritten(text, random), rewritten_in_place(text, random));
+  }
+}
+
+TEST("a build file of megabytes naming the base tens of thousands of times is rewritten whole") {
+  std::string text, want;
+  for (int i = 0; i < 40000; i++) {
+    text += "build /reni/build/base/CMakeFiles/t.dir/f.cpp.o: CXX_COMPILER /reni/work/base/src/f.cpp\n";
+    want += "build /reni/build/7/CMakeFiles/t.dir/f.cpp.o: CXX_COMPILER /reni/work/7/src/f.cpp\n";
+  }
+  kalku::Rewrites rw = {{"/reni/work/base", "/reni/work/7"}, {"/reni/build/base", "/reni/build/7"}};
+  CHECK(kalku::rewritten(text, rw) == want);
+}

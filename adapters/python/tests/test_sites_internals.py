@@ -8,6 +8,19 @@ from kalku_python import sites, spell
 from kalku_python.source import Source
 
 
+def test_the_tokens_of_a_long_line_are_positioned_in_bytes():
+    text = "x = [" + "1, " * 100_000 + "]\ny = 'é' + z\n"
+    tokens = sites._tokens(text, Source(text))
+    assert [t.start for t in tokens if t.text == "1"] == [5 + 3 * n for n in range(100_000)]
+    data = text.encode()
+    quote, plus = data.index(b"'"), data.index(b"+")
+    assert [(t.text, t.start, t.end) for t in tokens if t.start >= quote and t.text] == [
+        ("'é'", quote, quote + 4),
+        ("+", plus, plus + 1),
+        ("z", plus + 2, plus + 3),
+    ]
+
+
 def walker(text):
     src = Source(text)
     return sites._Walker(src, sites._tokens(text, src), frozenset(spell.ALL), ())
