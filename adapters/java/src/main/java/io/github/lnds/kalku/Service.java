@@ -748,6 +748,7 @@ final class Service {
         Executed ran = new Executed();
         reached = coverage(run, ran);
         if (reached != null) {
+          prints.forget();
           fingerprint(run, ran, prints);
         }
       }
@@ -1135,7 +1136,7 @@ final class Service {
                   : ran.byTest.computeIfAbsent(named(module, part[0]), t -> new TreeSet<>());
           into.add(file);
         }
-        List<String> ofModule = new ArrayList<>();
+        Set<String> ofModule = new LinkedHashSet<>();
         for (String id : outcomes(measured.getValue()).keySet()) {
           ofModule.add(named(module, id));
         }
@@ -1382,6 +1383,7 @@ final class Service {
       throws IOException {
     int passed = 0;
     boolean warmed = false;
+    Set<String> selected = new HashSet<>(request.tests);
     for (Map.Entry<Maven.Build, List<String>> each : chosen.entrySet()) {
       Maven.Build tested = each.getKey();
       if (each.getValue().isEmpty()) {
@@ -1413,7 +1415,7 @@ final class Service {
           return Protocol.castDone(
               request.id, request.wekufe, "killed", killer, null, ms(started));
         }
-        if ("passed".equals(event.get("outcome")) && request.tests.contains(id)) {
+        if ("passed".equals(event.get("outcome")) && selected.contains(id)) {
           passed++;
         }
       }

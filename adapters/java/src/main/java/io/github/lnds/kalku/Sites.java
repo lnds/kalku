@@ -765,12 +765,10 @@ final class Sites {
       String compare = COMPARE.get(t.getKind());
       if (compare != null) {
         operator(t, compare, COMPARE_TO.get(compare), Spell.COMPARE);
-      } else if (!bindsPattern(t)) {
-        if (t.getKind() == Tree.Kind.CONDITIONAL_AND) {
-          operator(t, "&&", "||", Spell.CONNECT);
-        } else if (t.getKind() == Tree.Kind.CONDITIONAL_OR) {
-          operator(t, "||", "&&", Spell.CONNECT);
-        }
+      } else if (t.getKind() == Tree.Kind.CONDITIONAL_AND && !bindsPattern(t)) {
+        operator(t, "&&", "||", Spell.CONNECT);
+      } else if (t.getKind() == Tree.Kind.CONDITIONAL_OR && !bindsPattern(t)) {
+        operator(t, "||", "&&", Spell.CONNECT);
       }
       return super.visitBinary(t, p);
     }

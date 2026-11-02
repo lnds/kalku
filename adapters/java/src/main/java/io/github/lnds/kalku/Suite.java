@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -167,7 +169,14 @@ final class Suite {
         && matches(pattern, p + 1, path, at + 1);
   }
 
+  // A pattern is matched against every class file of a module: compiled once.
+  private static final Map<String, Pattern> NAMES = new ConcurrentHashMap<>();
+
   private static Pattern name(String pattern) {
+    return NAMES.computeIfAbsent(pattern, Suite::compiled);
+  }
+
+  private static Pattern compiled(String pattern) {
     StringBuilder regex = new StringBuilder();
     for (int i = 0; i < pattern.length(); i++) {
       char c = pattern.charAt(i);
