@@ -227,17 +227,31 @@ export function snapshots(root: string, testFile: string): string[] {
     .map((n) => path.join(path.dirname(testFile), "__snapshots__", n).split(path.sep).join("/"));
 }
 
-/** One test file's fingerprint, over the shared inputs and the files it covers. */
-export function fingerprint(root: string, common: Shared, own: Set<string>): string {
+/**
+ * One test file's fingerprint, over the shared inputs and the files it
+ * covers. `contents` keeps what each file held when first read, null for one
+ * that could not be, so files every fingerprint covers are read once.
+ */
+export function fingerprint(
+  root: string,
+  common: Shared,
+  own: Set<string>,
+  contents: Map<string, Buffer | null> = new Map(),
+): string {
   const h = createHash("sha256");
   for (const w of common.words) h.update(`${w}\u0000`);
   for (const f of [...new Set([...common.files, ...own])].sort()) {
     h.update(`${f}\u0000`);
-    try {
-      h.update(readFileSync(path.join(root, f)));
-    } catch {
-      h.update("\u0000missing");
+    let held = contents.get(f);
+    if (held === undefined) {
+      try {
+        held = readFileSync(path.join(root, f));
+      } catch {
+        held = null;
+      }
+      contents.set(f, held);
     }
+    h.update(held === null ? "\u0000missing" : held);
     h.update("\u0000");
   }
   return h.digest("hex").slice(0, 16);
