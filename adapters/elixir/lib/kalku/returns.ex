@@ -98,14 +98,24 @@ defmodule Kalku.Returns do
   # The parser does not say where an expression ends on every version the
   # kalku runs on, so the end is found by parsing: the shortest text from
   # the start that parses to the same expression.
+  #
+  # No text that stops short of a token the expression holds parses to it,
+  # so the search starts at the last position its metadata names.
   defp ending(expr, {line, col}, limit, src) do
     want = strip(expr)
+    {last_line, last_col} = max({line, col}, last_named(expr))
 
-    Enum.find_value(line..limit//1, fn l ->
-      first = if l == line, do: col, else: 1
+    Enum.find_value(last_line..limit//1, fn l ->
+      text = Kalku.Source.line(src, l)
 
-      src
-      |> Kalku.Source.line(l)
+      first =
+        cond do
+          l == last_line -> graphemes_before(text, last_col) + 1
+          l == line -> col
+          true -> 1
+        end
+
+      text
       |> cuts(first)
       |> Enum.find_value(fn cut ->
         text = Kalku.Source.slice(src, {line, col}, {l, cut})
@@ -114,18 +124,46 @@ defmodule Kalku.Returns do
     end)
   end
 
+  # Metadata columns count codepoints, and the cuts count graphemes.
+  defp graphemes_before(text, col),
+    do: text |> String.codepoints() |> Enum.take(col - 1) |> Enum.join() |> String.length()
+
   # Columns on a line after which an expression may end: past a character
   # that is not a space, where a space, a comment, or the line's end follows.
   defp cuts(text, first) do
     chars = String.graphemes(text)
-    n = length(chars)
+    after_each = Enum.drop(chars, 1) ++ [nil]
 
-    for {c, i} <- Enum.with_index(chars, 1),
+    for {{c, next}, i} <- Enum.with_index(Enum.zip(chars, after_each), 1),
         i >= first,
         c not in [" ", "\t"],
-        i == n or Enum.at(chars, i) in [" ", "\t", "#", ")", ",", ";", "]", "}"],
+        next in [nil, " ", "\t", "#", ")", ",", ";", "]", "}"],
         do: i + 1
   end
+
+  defp last_named(expr) do
+    {_, last} =
+      Macro.prewalk(expr, {0, 0}, fn
+        {_, meta, _} = node, last when is_list(meta) ->
+          named = [meta, meta[:end], meta[:closing]] |> Enum.map(&position/1)
+          {node, Enum.max([last | named])}
+
+        node, last ->
+          {node, last}
+      end)
+
+    last
+  end
+
+  defp position([_ | _] = meta) do
+    case {meta[:line], meta[:column]} do
+      {line, col} when is_integer(line) and is_integer(col) -> {line, col}
+      {line, _} when is_integer(line) -> {line, 1}
+      _ -> {0, 0}
+    end
+  end
+
+  defp position(_), do: {0, 0}
 
   defp same?(text, want) do
     case Code.string_to_quoted(text,

@@ -119,13 +119,12 @@ defmodule Kalku.Baseline.Calls do
     with {:ok, forms} <- forms_of(module),
          file when is_binary(file) <- source_of(module, forms) do
       written = written_in(forms)
-
-      starts =
-        written |> Enum.map(fn {_, {first, _, _}} -> first end) |> Enum.sort() |> Enum.uniq()
+      until = untils(written)
+      functions = MapSet.new(functions)
 
       for {function, {first, last, _heads}} <- written,
-          function in functions,
-          line <- first..min(last, before_next(starts, first))//1,
+          MapSet.member?(functions, function),
+          line <- first..min(last, Map.fetch!(until, first))//1,
           uniq: true,
           do: {file, line}
     else
@@ -141,15 +140,12 @@ defmodule Kalku.Baseline.Calls do
     with {:ok, forms} <- forms_of(module),
          file when is_binary(file) <- source_of(module, forms) do
       written = written_in(forms)
-
-      starts =
-        written |> Enum.map(fn {_, {first, _, _}} -> first end) |> Enum.sort() |> Enum.uniq()
-
+      until = untils(written)
       counted = counted_in(module)
 
       written
       |> Enum.group_by(fn {function, _} -> function end, fn {_, {first, last, heads}} ->
-        for line <- first..min(last, before_next(starts, first))//1,
+        for line <- first..min(last, Map.fetch!(until, first))//1,
             MapSet.member?(heads, line) or not MapSet.member?(counted, line),
             do: {file, line}
       end)
@@ -161,11 +157,15 @@ defmodule Kalku.Baseline.Calls do
     end
   end
 
-  defp before_next(starts, first) do
-    case Enum.find(starts, &(&1 > first)) do
-      nil -> :infinity
-      next -> next - 1
-    end
+  # The last line each clause may reach, by the line it starts on: the one
+  # before the next clause starts, or no limit for the last one.
+  defp untils(written) do
+    starts =
+      written |> Enum.map(fn {_, {first, _, _}} -> first end) |> Enum.sort() |> Enum.uniq()
+
+    starts
+    |> Enum.zip(Enum.map(Enum.drop(starts, 1), &(&1 - 1)) ++ [:infinity])
+    |> Map.new()
   end
 
   # A function quoted from another file says so in a `file` attribute ahead
