@@ -122,7 +122,7 @@ fn named(a: Attempt) : Bool = a.outcome != Killed or is_some(a.killed_by)
 fn ended(chase: [Attempt]) : Bool = match list.last(chase) {
   None -> false
   Some(a) -> a.outcome == Survived
-    or a.outcome == Killed and list.all(a.tests, t => Some(t) == a.killed_by)
+    or (a.outcome == Killed and list.all(a.tests, t => Some(t) == a.killed_by))
 }
 
 fn first_tests(chase: [Attempt]) : [String] = match chase {

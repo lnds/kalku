@@ -363,8 +363,8 @@ pub fn lingering(slots: [Slot], now: Instant) : [Lingering] = flat_map(
 # or when there is no kalku left to cast with.
 fn over(run: Run) : Bool =
   is_some(run.failure)
-    or waiting_on(run.slots) == 0
-      and (run.cancelled or is_empty(run.queue) and is_empty(run.chasing))
+    or (waiting_on(run.slots) == 0
+      and (run.cancelled or (is_empty(run.queue) and is_empty(run.chasing))))
 
 fn listen(
   run: Run
