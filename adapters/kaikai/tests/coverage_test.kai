@@ -1,0 +1,77 @@
+import kalku.wire.shapes
+import kaikai_kalku.work
+import kaikai_kalku.coverage
+
+fn timing(id: String) : TestTiming =
+  TestTiming { test_id: id, file: "tests/t_test.kai", duration_ms: 0, fingerprint: None }
+
+fn ran(ids: [String], reached: [Reach]) : Ran = Ran {
+  passed: length(ids),
+  failed: 0,
+  first_failure: None,
+  failing: [],
+  mishap: None,
+  tests: ids | timing,
+  reached: reached
+}
+
+fn reach(id: String, file: String, lines: [Int]) : Reach =
+  Reach { test_id: id, file: file, lines: lines }
+
+fn entry(file: String, line: Int, tests: [String]) : CoverageEntry =
+  CoverageEntry { file: file, line: line, tests: tests }
+
+# Files in byte order, a file before any that extends its name, and lines
+# as numbers: 9 before 10.
+test "each line is one entry, by file and then by line" {
+  let r = ran(
+    ["t1", "t2"],
+    [
+      reach("t2", "b.kai", [10, 9]),
+      reach("t1", "a.kai", [3]),
+      reach("t1", "a.kai2", [1]),
+      reach("t1", "b.kai", [9])
+    ]
+  )
+
+  assert coverage.covered(r)
+    == [
+      entry("a.kai", 3, ["t1"]),
+      entry("a.kai2", 1, ["t1"]),
+      entry("b.kai", 9, ["t2", "t1"]),
+      entry("b.kai", 10, ["t2"])
+    ]
+}
+
+test "a line's tests come in the order the run reported them, once a record" {
+  let r = ran(
+    ["t1", "t2", "t3"],
+    [
+      reach("t3", "a.kai", [1]),
+      reach("t1", "a.kai", [1, 1]),
+      reach("t2", "a.kai", [2]),
+      reach("t1", "a.kai", [1])
+    ]
+  )
+
+  assert coverage.covered(r) == [entry("a.kai", 1, ["t3", "t1", "t1"]), entry("a.kai", 2, ["t2"])]
+}
+
+test "a record about a test the run did not report counts for nothing" {
+  let r = ran(["t1"], [reach("ghost", "a.kai", [1, 2]), reach("t1", "a.kai", [2])])
+
+  assert coverage.covered(r) == [entry("a.kai", 2, ["t1"])]
+  assert coverage.covered(ran([], [reach("t1", "a.kai", [1])])) == []
+}
+
+# A thousand tests over the same four hundred lines: grouped in one pass,
+# not looked up line by line.
+test "a large suite over the same lines is grouped in one pass" {
+  let ids = [1..1000] | (i => "t#{i}")
+  let lines = [1..400]
+  let found = coverage.covered(ran(ids, ids | (id => reach(id, "a.kai", lines))))
+
+  assert length(found) == 400
+  assert (found | .line) == lines
+  assert all(found, e => e.tests == ids)
+}
