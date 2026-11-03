@@ -58,6 +58,7 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   left_out: nobody_left_out(),
   withheld: None,
   reused: 0,
+  recalled: 0,
   deferred: 0,
   doubted: None,
   shard: None,
@@ -391,4 +392,6 @@ test "the summary says how many deferred tests never ran, and nothing when none"
 
   assert has(last_line(agent(Report { ...r, deferred: 2 }, lines_of)), "\"baseline_deferred\":2")
   assert not has(last_line(agent(r, lines_of)), "baseline_deferred")
+  assert has(last_line(agent(Report { ...r, recalled: 3 }, lines_of)), "\"outcomes_reused\":3")
+  assert not has(last_line(agent(r, lines_of)), "outcomes_reused")
 }

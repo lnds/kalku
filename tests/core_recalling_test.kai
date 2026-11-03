@@ -1,0 +1,134 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.planner
+import kalku.core.recalling
+
+fn site(id: String, spell: Spell) : Site = Site {
+  site_id: id,
+  file: "lib/a.ex",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 4, col: 3, byte: 40 }, end: None },
+  spell: spell,
+  original: Some(">="),
+  replacement: ">",
+  reload: ModuleOnly
+}
+
+fn cast_of(s: Site, tests: [String]) : Wekufe =
+  Wekufe { site: s, tests: tests, rest: [], timeout_ms: 1000, casts: 1, every_kill: false }
+
+const W : Wekufe = Wekufe {
+  site: Site {
+    site_id: "w1",
+    file: "lib/a.ex",
+    enclosing: None,
+    ordinal: None,
+    span: Span { start: Position { line: 4, col: 3, byte: 40 }, end: None },
+    spell: Compare,
+    original: Some(">="),
+    replacement: ">",
+    reload: ModuleOnly
+  },
+  tests: ["t1", "t2"],
+  rest: [],
+  timeout_ms: 1000,
+  casts: 1,
+  every_kill: false
+}
+
+fn printed(pairs: [(String, String)]) : Prints = prints_of("setting", pairs)
+
+const BOTH : [(String, String)] = [("t1", "p1"), ("t2", "p2")]
+
+# What a run leaves, then what the next one finds in it.
+fn after(
+  w: Wekufe,
+  outcome: Outcome,
+  killer: Option[String],
+  then: [(String, String)],
+  now: Wekufe
+) : Option[Answer] {
+  let kept = kept_from(printed(BOTH), w, outcome, killer)
+  answer_for(kept_in(Recall { setting: "setting", outcomes: kept }, "setting"), printed(then), now)
+}
+
+test "a kill is recalled while the test that killed it is unchanged, whatever the others became" {
+  let again = after(W, Killed, Some("t2"), [("t1", "changed"), ("t2", "p2")], W)
+  assert (again |> option.map(.outcome)) == Some(Killed)
+  assert (again |> option.map(.killed_by)) == Some(Some("t2"))
+}
+
+test "a kill is not recalled once the test that killed it changed" {
+  assert after(W, Killed, Some("t2"), [("t1", "p1"), ("t2", "changed")], W) == None
+}
+
+test "a kill holds when more tests reach the wekufe than did" {
+  let wider = Wekufe { ...W, tests: ["t0", "t1", "t2"] }
+  let again = after(W, Killed, Some("t2"), [("t0", "p0"), ("t1", "p1"), ("t2", "p2")], wider)
+  assert (again |> option.map(.outcome)) == Some(Killed)
+}
+
+test "a survivor is recalled only while the same tests, each unchanged, judge it" {
+  assert (after(W, Survived, None, BOTH, W) |> option.map(.outcome)) == Some(Survived)
+  assert after(W, Survived, None, [("t1", "p1"), ("t2", "changed")], W) == None
+  # A test that now reaches its line could kill it.
+  let wider = Wekufe { ...W, tests: ["t0", "t1", "t2"] }
+  assert after(W, Survived, None, [("t0", "p0"), ...BOTH], wider) == None
+}
+
+test "a survivor judged by the whole suite is kept under the rest too" {
+  let doubted = Wekufe { ...W, tests: ["t1"], rest: ["t2"] }
+  assert (after(doubted, Survived, None, BOTH, doubted) |> option.map(.outcome)) == Some(Survived)
+  assert after(doubted, Survived, None, [("t1", "p1"), ("t2", "changed")], doubted) == None
+}
+
+test "an outcome is about its wekufe: another site, spell or replacement recalls nothing" {
+  assert after(W, Killed, Some("t1"), BOTH, cast_of(site("w2", Compare), ["t1", "t2"])) == None
+  let other = Wekufe { ...W, site: Site { ...W.site, replacement: "<" } }
+  assert after(W, Killed, Some("t1"), BOTH, other) == None
+}
+
+test "a test with no fingerprint keeps and recalls nothing through it" {
+  let half = printed([("t1", "p1")])
+  assert kept_from(half, W, Survived, None) == []
+  assert kept_from(half, W, Killed, Some("t2")) == []
+  assert length(kept_from(half, W, Killed, Some("t1"))) == 1
+}
+
+test "only a kill or a survival is kept, and never of a concurrency wekufe or a chase" {
+  let all = printed(BOTH)
+  assert kept_from(all, W, Timeout, None) == []
+  assert kept_from(all, W, Crashed, None) == []
+  assert kept_from(all, W, CompileError, None) == []
+  assert kept_from(all, W, Equivalent, None) == []
+  assert kept_from(all, W, Killed, None) == []
+  assert kept_from(all, cast_of(site("w3", Await), ["t1"]), Killed, Some("t1")) == []
+  assert kept_from(all, Wekufe { ...W, every_kill: true }, Killed, Some("t1")) == []
+}
+
+test "a recall kept for another setting answers for nothing" {
+  let kept = kept_from(printed(BOTH), W, Killed, Some("t1"))
+  let elsewhere = kept_in(Recall { setting: "setting", outcomes: kept }, "another")
+  assert answer_for(elsewhere, printed(BOTH), W) == None
+}
+
+fn recalled(id: String, file: String) : Recalled =
+  Recalled { key: "k-#{id}", wekufe: id, file: file, outcome: Killed, killed_by: Some("t1") }
+
+test "a renewed recall replaces what was settled again, and forgets what an edit renamed" {
+  let was = Recall {
+    setting: "s",
+    outcomes: [recalled("a", "lib/a.ex"), recalled("b", "lib/a.ex"), recalled("c", "lib/c.ex")]
+  }
+  let now = [Recalled { ...recalled("a", "lib/a.ex"), key: "k-a2" }]
+  let r = renewed(Some(was), "s", ["lib/a.ex"], ["a"], now)
+  # `b` was in a file the run looked at and is not there now; `c` was not looked at.
+  assert (r.outcomes | .key) == ["k-c", "k-a2"]
+}
+
+test "a recall renewed in another setting starts over" {
+  let was = Recall { setting: "old", outcomes: [recalled("c", "lib/c.ex")] }
+  assert renewed(Some(was), "new", [], [], []).outcomes == []
+  assert renewed(None, "new", [], [], [recalled("a", "lib/a.ex")]).setting == "new"
+}

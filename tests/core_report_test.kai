@@ -51,6 +51,7 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     left_out: nobody_left_out(),
     withheld: None,
     reused: 0,
+    recalled: 0,
     deferred: 0,
     doubted: None,
     shard: None,
@@ -618,4 +619,16 @@ test "a run whose deferred tests never ran says how many, and carries the count 
   assert has(json(r, 0), "\"baseline_deferred\":3")
   assert not has(json(plain(), 0), "baseline_deferred")
   assert (read_report(json(r, 0)) |> map(w => w.report.deferred)) == Ok(3)
+}
+
+# A score partly built from earlier casts is a claim about casts that did
+# not run this time, so the report says how many, and a merge reads it back.
+test "a run that recalled outcomes says how many wekufe it did not cast again" {
+  let r = Report { ...plain(), recalled: 4 }
+  assert has(human(r), "4 wekufe were not cast again: an earlier run answered for them")
+  assert not has(human(plain()), "not cast again")
+  assert has(json(r, 0), "\"outcomes_reused\":4")
+  assert not has(json(plain(), 0), "outcomes_reused")
+  assert (read_report(json(r, 0)) |> map(w => w.report.recalled)) == Ok(4)
+  assert (read_report(json(plain(), 0)) |> map(w => w.report.recalled)) == Ok(0)
 }

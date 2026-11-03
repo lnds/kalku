@@ -1,0 +1,174 @@
+#[doc("""
+The outcomes a run recalls instead of casting, and keeps for the next run.
+
+Kept beside the baseline, under the setting it is measured in, and only for
+a kalku that fingerprints its tests: an outcome is recalled through the
+fingerprints of the tests it is about, so a kalku that gives none recalls
+nothing. A run over the whole project recalls nothing, and casts everything
+it plans, but still keeps what it found.
+
+A run whose baseline left tests for later settles only its kills before
+those tests run: a wekufe the tests that ran first did not kill is still
+open, and is recalled, if at all, once the plan is made again with every
+test.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.wire.kalku_msg
+import kalku.core.planner
+import kalku.core.recalling
+import kalku.core.reusing
+import kalku.core.lookup
+import kalku.keeping
+import kalku.orchestrator.reuse
+import kalku.orchestrator.scheduler
+import kalku.orchestrator.telling
+
+#[doc("Where a run keeps its outcomes, the setting and fingerprints it recalls by, and what was kept there before.")]
+pub type Recalling = {
+  path: String,
+  setting: String,
+  prints: [(String, String)],
+  kept: Option[Recall]
+}
+
+#[doc("""
+How a run recalls, when its baseline is kept: what was kept is read only
+when the run may reuse it.
+""")]
+pub fn recalling_of(
+  keeping: Option[Keeping],
+  reuse: Bool,
+  prints: [(String, String)]
+) : Option[Recalling] / File + Telling = keeping
+  |> option.map(
+    k => {
+      let path = recall_path(k.path)
+      Recalling {
+        path: path,
+        setting: k.setting,
+        prints: prints,
+        kept: if reuse { read_kept(path) } else { None }
+      }
+    }
+  )
+
+fn read_kept(path: String) : Option[Recall] / File + Telling = match load_recall(path) {
+  Ok(r) -> r
+  Err(why) -> {
+    Telling.tell_of(why)
+    None
+  }
+}
+
+#[doc("The fingerprints a baseline gave its tests, and those of the tests it reused, as they were kept.")]
+pub fn prints_from(reply: KalkuReply, kept: [Kept]) : [(String, String)] {
+  let ran = match reply {
+    BaselineDone(m) -> flat_map(
+      m.tests,
+      t => match t.fingerprint {
+        Some(p) -> [(t.test_id, p)]
+        None -> []
+      }
+    )
+    _ -> []
+  }
+  ran ++ (kept | (k => (k.test_id, k.fingerprint)))
+}
+
+#[doc("A recalling that knows these fingerprints too.")]
+pub fn with_prints(r: Option[Recalling], more: [(String, String)]) : Option[Recalling] =
+  r |> option.map(it => Recalling { ...it, prints: it.prints ++ more })
+
+#[doc("""
+What earlier runs answer for, of the wekufe a plan would cast: every one,
+or only the kills while some tests are still to run. None in a chase for
+every killer, which recalls nothing.
+""")]
+pub fn recalled_in(r: Option[Recalling], ready: Plan, kills_only: Bool, chase: Bool) : [Answer] =
+  match (r, chase) {
+    (Some(it), false) -> answered(it, ready) |? (a => (not kills_only) or a.outcome == Killed)
+    _ -> []
+  }
+
+fn answered(it: Recalling, ready: Plan) : [Answer] = match it.kept {
+  Some(recall) -> {
+    let kept = kept_in(recall, it.setting)
+    let prints = prints_of(it.setting, it.prints)
+    flat_map(ready.to_cast, w => option_list(answer_for(kept, prints, w)))
+  }
+  None -> []
+}
+
+fn option_list(a: Option[Answer]) : [Answer] = match a {
+  Some(x) -> [x]
+  None -> []
+}
+
+#[doc("""
+A casting with what was recalled in it, and how many recalled answers it
+took. A wekufe the casting settled itself keeps its own verdict; one it left
+open — not killed, or reached by no test that ran — takes the recalled one.
+""")]
+pub fn with_answers(casting: Casting, answers: [Answer]) : (Casting, [Answer]) {
+  let settled = member_of(casting.verdicts |? (v => not is_open(v.outcome)) | .wekufe)
+  let taken = answers |? (a => not settled(a.wekufe.site.site_id))
+  let replaced = member_of(taken | (a => a.wekufe.site.site_id))
+  (
+    Casting {
+      ...casting,
+      verdicts: (casting.verdicts |? (v => not replaced(v.wekufe))) ++ (taken | verdict_of)
+    },
+    taken
+  )
+}
+
+fn is_open(o: Outcome) : Bool = o == Survived or o == NoCoverage
+
+fn verdict_of(a: Answer) : Verdict = Verdict {
+  wekufe: a.wekufe.site.site_id,
+  outcome: a.outcome,
+  tests: a.wekufe.tests,
+  said: None,
+  killed_by: a.killed_by,
+  again: false
+}
+
+#[doc("""
+Keep what a casting settled for the next run, with what was kept before
+that it did not settle again. A kept outcome that cannot be written is
+said, and the run goes on: it measured what it measured.
+""")]
+pub fn keep_after(
+  r: Option[Recalling],
+  ready: Plan,
+  casting: Casting,
+  found: [Site],
+  kills_only: Bool,
+  chase: Bool
+) : Unit / File + Telling = match (r, chase) {
+  (Some(it), false) -> {
+    let now = settled_in(it, ready, casting) |? (k => (not kills_only) or k.outcome == Killed)
+    let before = if is_some(it.kept) { it.kept } else { read_kept(it.path) }
+    match save_recall(it.path, renewed(before, it.setting, found | .file, found | .site_id, now)) {
+      Ok(_) -> ()
+      Err(why) -> Telling.tell_of("the outcomes could not be kept for the next run: #{why}")
+    }
+  }
+  _ -> ()
+}
+
+# What each verdict of a casting leaves to recall, through the wekufe the
+# plan cast with every test that judges it.
+fn settled_in(it: Recalling, ready: Plan, casting: Casting) : [Recalled] {
+  let planned = finder(ready.to_cast, w => w.site.site_id)
+  let prints = prints_of(it.setting, it.prints)
+  flat_map(
+    casting.verdicts,
+    v => match planned(v.wekufe) {
+      Some(w) -> kept_from(prints, w, v.outcome, v.killed_by)
+      None -> []
+    }
+  )
+}

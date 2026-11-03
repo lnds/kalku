@@ -157,6 +157,7 @@ fn summary_line(r: Report) : String = json_encode(
       ...withheld_field(r.withheld),
       ...doubted_field(r.doubted),
       ...reused_field(r.reused),
+      ...recalled_field(r.recalled),
       ...deferred_field(r.deferred),
       ...costly_field(r.costs),
       ...weighed_field(r.weighed, r.costs),
@@ -198,6 +199,9 @@ fn doubted_field(why: Option[String]) : [(String, JsonValue)] = match why {
 # what it runs and is told it passed should know which run said so.
 fn deferred_field(deferred: Int) : [(String, JsonValue)] =
   if deferred == 0 { [] } else { [("baseline_deferred", JNum(deferred))] }
+
+fn recalled_field(recalled: Int) : [(String, JsonValue)] =
+  if recalled == 0 { [] } else { [("outcomes_reused", JNum(recalled))] }
 
 fn reused_field(reused: Int) : [(String, JsonValue)] =
   if reused == 0 { [] } else { [("baseline_reused", JNum(reused))] }
