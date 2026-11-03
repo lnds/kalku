@@ -1,0 +1,70 @@
+import fs.file
+import os.process as proc
+import kalku.core.setting_up
+
+# A `mix` that only says which build it was given, so the summoning can be
+# run for real without a project or an Elixir to compile it with.
+const FAKE_MIX : String = """
+#!/bin/sh
+if [ "$1" = kalku.serve ]; then echo "$MIX_BUILD_PATH"; fi
+"""
+
+fn place() : String / Env + Process {
+  let base = Env.get("TMPDIR") |> unwrap_or("/tmp")
+  let dir = if ends_with(base, "/") { slice(base, 0, length(base) - 1) } else { base }
+  "#{dir}/kalku_summoning_#{own_pid()}"
+}
+
+fn own_pid() : String / Process = match proc.pipe_errs("/bin/sh", ["-c", "echo $PPID"]) {
+  Err(_) -> "0"
+  Ok(child) -> {
+    let out = drained(child, "")
+    let _ = proc.wait(child)
+    trim(out)
+  }
+}
+
+fn drained(child: Child, so_far: String) : String / Process = match proc.read_stdout(child) {
+  Err(_) -> so_far
+  Ok(chunk) -> if is_empty(chunk) { so_far } else { drained(child, so_far ++ chunk) }
+}
+
+# The build a summoning hands the kalku when it is told it is this worker.
+fn build_for(dir: String, worker: Int) : String / Process {
+  let line = "cd '#{dir}' && PATH='#{dir}/bin':$PATH KALKU_WORKER=#{worker} sh summon '#{dir}/reni'"
+  match proc.pipe_errs("/bin/sh", ["-c", line]) {
+    Err(e) -> e
+    Ok(child) -> {
+      let out = drained(child, "")
+      let _ = proc.wait(child)
+      trim(out)
+    }
+  }
+}
+
+# Runs a setup step in the shell; the setup is not what is tested.
+fn sh(line: String) : Unit / Process = match proc.pipe_errs("/bin/sh", ["-c", line]) {
+  Err(_) -> ()
+  Ok(child) -> {
+    let _ = proc.wait(child)
+    ()
+  }
+}
+
+test "each worker a summoning is told of compiles into a build of its own" {
+  let dir = place()
+  let elixir = find(catalogue(), k => k.language == "elixir")
+  let script = (elixir |> option.map(k => plan_for(k, "#{dir}/reni").summoner)) ?? ""
+  sh("mkdir -p '#{dir}/bin' '#{dir}/reni'")
+  let _ = file.write("#{dir}/summon", script)
+  let _ = file.write("#{dir}/bin/mix", trim_left(FAKE_MIX))
+  sh("chmod +x '#{dir}/bin/mix'")
+
+  let first = build_for(dir, 0)
+  let third = build_for(dir, 2)
+  sh("rm -rf '#{dir}'")
+
+  assert script != ""
+  assert ends_with(first, "/reni/build")
+  assert ends_with(third, "/reni/build-2")
+}

@@ -396,3 +396,22 @@ test "a kalku's progress and its stderr are told, and a reply is not" {
   )
     == ["worker 2: 120 of 480", "2 wrote compiling\n"]
 }
+
+# A summoning picks its own build path or database before it can be told
+# anything, so its worker reaches it in the environment.
+test "a summoning is told its worker in KALKU_WORKER" {
+  let told = KalkuSpec {
+    life: Life { worker: 3, summons: 1 },
+    command: "/bin/sh",
+    args: ["-c", "echo \"worker=$KALKU_WORKER args=$*\"", "sh", "a", "b"]
+  }
+  let said = match summon(told) {
+    Err(e) -> e
+    Ok(k) -> {
+      let out = ok(proc.read_stdout(k.child)) ?? ""
+      let _ = proc.wait(k.child)
+      trim(out)
+    }
+  }
+  assert said == "worker=3 args=a b"
+}

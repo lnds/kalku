@@ -366,7 +366,9 @@ summon = "#{SUMMONER_PATH}"
 # a path from one machine means nothing on another.
 
 [run]
-# One worker while a kalku has a single build path to give.
+# How many kalku cast at once. Each is a runtime of its own, with its own
+# build and, for a project that partitions its test database, its own
+# database.
 workers = 1
 
 # A cast that runs longer than this is a `timeout`, not a slow test.
@@ -735,7 +737,15 @@ fn build_in_reni() : String = """
 RENI="${1:?this script is summoned by kalku, which passes the reni as the first argument}"
 
 MIX_ENV=test
-MIX_BUILD_PATH="$RENI/build"
+
+# Each worker compiles a build of its own, since a cast compiles into it:
+# the first keeps `build`, and worker N has `build-N`.
+WORKER="${KALKU_WORKER:-0}"
+if [ "$WORKER" = 0 ]; then
+  MIX_BUILD_PATH="$RENI/build"
+else
+  MIX_BUILD_PATH="$RENI/build-$WORKER"
+fi
 export MIX_ENV MIX_BUILD_PATH
 
 mkdir -p "$MIX_BUILD_PATH"

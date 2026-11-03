@@ -356,7 +356,7 @@ The project is compiled into the reni with the language's own tooling, redirecte
 
 ### 4. Summon the kalku
 
-N kalku are summoned (default: CPU cores). Each loads the compiled project and starts the test environment once. Kalku that need exclusive external resources get their own: for Elixir with a database, each kalku runs with a distinct `MIX_TEST_PARTITION` and therefore its own test database.
+N kalku are summoned (`workers` in `.kalku.toml`). Each loads the compiled project and starts the test environment once. Every summoning is told its worker in `KALKU_WORKER`, before it starts, so a kalku that needs exclusive resources picks them then: for Elixir, worker 0 compiles into `$RENI/build` and worker N into `$RENI/build-N`, since a cast compiles into its build; and every worker but the first runs with a `MIX_TEST_PARTITION` of its own — its number, after any partition the run was started with — and therefore its own test database. A worker that took a partition makes that database as `mix test` would, by running the steps of the project's `test` alias that come before `test` (an Ecto project's `ecto.create` and `ecto.migrate`), with their output on stderr. A worker other than 0 summoned with worker 0's build, by a summoning written before workers had builds of their own, refuses `prepare` rather than compile over it, and says to remove the summoning and run `kalku init` to write it again: `init` keeps a summoning that claims the current contract.
 
 ### 5. Baseline
 
@@ -659,7 +659,7 @@ The kept baseline is saved between builds with `actions/cache` on `~/.cache/kalk
 
 ### External resources
 
-Kalku run in parallel, so each needs its own external state. For Elixir with Postgres, `prepare` creates one test database per kalku through `MIX_TEST_PARTITION`; the CI job provides the server as a service container.
+Kalku run in parallel, so each needs its own external state. For Elixir with Postgres, `prepare` makes one test database per kalku through `MIX_TEST_PARTITION` and the project's `test` alias; the CI job provides the server as a service container.
 
 ```yaml
 - uses: actions/cache@v4

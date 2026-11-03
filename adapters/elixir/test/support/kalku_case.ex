@@ -43,6 +43,15 @@ defmodule Kalku.KalkuCase do
     drive(reni, project(fixture), lines)
   end
 
+  @doc """
+  Summons the kalku for one worker of a pool, with the build this worker
+  was given (`build` under the reni) and the worker it is told it is.
+  """
+  def summon_as(reni, fixture, worker, build, requests) do
+    lines = [hello(reni, ".", worker) | requests] ++ [request("shutdown", 99)]
+    drive(reni, project(fixture), lines, build, worker)
+  end
+
   @doc "Where the summoner lives, for a test that runs it by hand."
   def summoner, do: @summoner
 
@@ -67,14 +76,14 @@ defmodule Kalku.KalkuCase do
   end
 
   @doc "A `hello` naming this reni."
-  def hello(reni, root \\ ".") do
+  def hello(reni, root \\ ".", worker \\ 0) do
     Kalku.Json.encode(%{
       "type" => "hello",
       "id" => 1,
       "protocol" => 1,
       "root" => root,
       "reni" => reni,
-      "worker" => 0,
+      "worker" => worker,
       "inline_limit_bytes" => 65_536,
       "env" => %{}
     })
@@ -85,14 +94,18 @@ defmodule Kalku.KalkuCase do
 
   # ---- the pipe -----------------------------------------------------
 
-  defp drive(reni, cwd, lines) do
+  defp drive(reni, cwd, lines, build \\ "build", worker \\ 0) do
     input = write_temp(Enum.map_join(lines, "", &(&1 <> "\n")))
     errors = write_temp("")
 
     {out, status} =
       System.cmd("sh", ["-c", "#{@summoner} < #{input} 2> #{errors}"],
         cd: cwd,
-        env: [{"MIX_BUILD_PATH", Path.join(reni, "build")}]
+        env: [
+          {"MIX_BUILD_PATH", Path.join(reni, build)},
+          {"KALKU_WORKER", "#{worker}"},
+          {"MIX_TEST_PARTITION", nil}
+        ]
       )
 
     Process.put(:last_stderr, File.read!(errors))

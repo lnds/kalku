@@ -20,6 +20,7 @@ defmodule Kalku.Loop do
   defstruct root: nil,
             reni: nil,
             env: %{},
+            worker: 0,
             inline_limit: 65_536,
             prepared: false,
             reader: nil,
@@ -168,6 +169,7 @@ defmodule Kalku.Loop do
        | root: root,
          reni: body["reni"],
          env: body["env"] || %{},
+         worker: body["worker"] || 0,
          inline_limit: body["inline_limit_bytes"] || 65_536
      }}
   end
@@ -179,7 +181,7 @@ defmodule Kalku.Loop do
   end
 
   defp dispatch("prepare", id, _body, %{root: root, reni: reni, env: env} = state) do
-    case Prepare.run(root, reni, env) do
+    case Prepare.run(root, reni, env, state.worker) do
       {:ok, %{duration_ms: ms, modules: modules}} ->
         {:reply, reply("prepared", id, %{"duration_ms" => ms, "modules" => modules}),
          %{state | prepared: true}}

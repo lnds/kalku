@@ -84,12 +84,24 @@ A kalku leaves the terminal's foreground group by leading its own, so
 Ctrl-C no longer reaches it. That is why an interrupt is trapped and
 turned into `Cancel`: the ward is the one thing that decides when a kalku
 dies.
+
+Every summoning is told its worker in `KALKU_WORKER`, before it starts:
+a toolchain that has to be given a place of its own — a build path, a
+database — chooses it then, which is too early for `hello` to say.
 """)]
 pub fn summon(spec: KalkuSpec) : Result[Kalku, String] / Process =
-  match proc.start_in_group(spec.command, spec.args, true, true, true) {
+  match proc.start_in_group(ENV, told_worker(spec), true, true, true) {
     Err(e) -> Err("cannot summon worker #{spec.life.worker}: #{e}")
     Ok(child) -> Ok(Kalku { life: spec.life, child: child })
   }
+
+# `env` execs the command it is given, so the kalku is the same process
+# and leads the same group, with one variable more.
+const ENV : String = "/usr/bin/env"
+
+#[doc("The arguments that start a kalku's command with its worker in `KALKU_WORKER`.")]
+pub fn told_worker(spec: KalkuSpec) : [String] =
+  ["KALKU_WORKER=#{spec.life.worker}", spec.command, ...spec.args]
 
 #[doc("""
 Pass on what a kalku says of itself while a request runs: what it wrote
