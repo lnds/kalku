@@ -384,7 +384,7 @@ A kalku reports the sites in the files within scope (`--since <ref>` narrows to 
 
 - drops sites listed in `.kalku/equivalent` (see *Equivalent wekufe*), and fails the run if an entry matches no site;
 - marks sites on lines no test covers as `no_coverage` and does not run them;
-- reuses cached outcomes whose key is unchanged;
+- recalls the outcomes earlier runs kept for wekufe whose key is unchanged, and does not cast them (see *Caching*);
 - orders the rest so that cheap, high-signal wekufe run first (fewest and fastest covering tests).
 
 ### 7. Cast
@@ -589,13 +589,13 @@ A table named after the project's `language` is that kalku's, not kalku's: the k
 
 ## Caching
 
-Cache entries live in the reni. A wekufe outcome's key is:
+A wekufe's outcome is kept for the next run beside the kept baseline, per repository and outside the project, under the setting the kalku runs in: its language, version and runtime, and what the run hands it. It is kept only for a kalku that fingerprints its tests, because an outcome is a fact about the tests that judged it, and a fingerprint is the kalku's word that a run of a test would be the same (see the protocol's `partial_baseline`). Each key also names the wekufe: its site, whose id is named by the text it was cut from, its spell, its span and its replacement. Keys are SHA-256 digests and never use timestamps.
 
-`hash(adapter version, spell, site span, source file hash, hashes of the covering tests' files, hashes of the files those tests load)`
+- **A kill** is kept under the fingerprint of the test that killed it, alone. That test, unchanged, still fails on the wekufe, so the kill is recalled whatever else the suite has become, and however many more tests now reach the line.
+- **A survivor** is kept under the fingerprints of every test that judged it: those that reach its line, and the rest of the suite where coverage was doubted. It is recalled only while exactly those tests, each unchanged, are the ones that judge it. A test that now reaches the line could kill it, and a test that changed could too.
+- **Nothing else is kept.** A timeout or a crash is about the machine as much as the code, a concurrency wekufe is about how things were scheduled, and a compile error or an equivalence is cheaper to find again than to trust. A test with no fingerprint keeps and recalls nothing through it, and a chase for every killer (`--every-kill`) recalls and keeps nothing.
 
-Outcomes are also indexed by the compiled wekufe's hash, so identical programs reached from different sites share one cast.
-
-Any change to a key component invalidates it. Keys never use timestamps.
+A run over the whole project (`--all`) recalls nothing and casts everything it plans, then keeps what it found. A run whose baseline left tests for later recalls only kills before those tests run: a wekufe the first tests did not kill is still open, and is recalled, if at all, from the plan made once every test has run. A wekufe the run cast itself keeps its own verdict; one it left open takes the recalled one. What a run keeps replaces what was kept of the wekufe it settled, and of those in the files it looked at that it no longer finds, which an edit renamed. The report says how many outcomes were recalled (`outcomes_reused`), because a score partly built from earlier casts is a claim about casts that did not run this time; a recalled wekufe is not written into the ledger, which records casts.
 
 ## Running in CI
 
@@ -722,7 +722,7 @@ One JSON object per survivor, complete enough to act on without opening other fi
 
 `covering_tests` lists the first five tests that cover the line and `covering_count` how many there are. A line that a whole suite reaches is covered by every test in it, and listing a thousand of them per survivor made a run too large to fit in a tool result; the full list is what `kalku show <wekufe>` (and the `kalku_show` tool) answers.
 
-Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score. A kalku that reports coverage it doubts has each wekufe cast against the tests credited with its line and then, when none notices, against every other test: its survivors are judged by the whole suite too, and the summary carries why in `coverage_doubted`. When a kept baseline answered for some of the tests, the summary carries how many in `baseline_reused`, and the human report says it above the score. When a run over a few files never needed the tests its baseline deferred, the summary carries how many in `baseline_deferred`, and the human report says it above the score.
+Where per-test coverage was not measured — a kalku without it, or a run in which it could not be stood behind — both are absent and `judged_by_whole_suite` carries the size of the suite instead. The whole suite ran against the wekufe; which of its tests reach the line is not known, and a few of them listed as covering it would be an attribution nobody made. The human report says the same in words, and the JSON report carries an empty `covering_tests` beside the same field. When the kalku measured it and would not stand behind it, the summary carries why in `coverage_withheld`, in the kalku's own words, and the human report says it once above the score. A kalku that reports coverage it doubts has each wekufe cast against the tests credited with its line and then, when none notices, against every other test: its survivors are judged by the whole suite too, and the summary carries why in `coverage_doubted`. When a kept baseline answered for some of the tests, the summary carries how many in `baseline_reused`, and the human report says it above the score. When earlier runs answered for some of the wekufe, the summary carries how many in `outcomes_reused`, and the human report says that too. When a run over a few files never needed the tests its baseline deferred, the summary carries how many in `baseline_deferred`, and the human report says it above the score.
 
 Every test that judged a wekufe is listed with what it cost the casting: its duration at the baseline once for every wekufe it judged. A test costs twice in mutation testing, in the suite and again for each wekufe whose line it reaches, so the list is ranked by that product, not by duration: a two-second test that judges three hundred wekufe is ten minutes of casting. The JSON report carries all of them in `test_costs`, the agent summary the five dearest in `dearest_tests`, and the human report the ten dearest above the score when the casting came to a second or more. It is a report, never a decision: no test is skipped or reordered because of it.
 

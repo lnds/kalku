@@ -47,6 +47,8 @@ import kalku.orchestrator.reuse
 import kalku.orchestrator.baselining
 import kalku.orchestrator.hearing
 import kalku.orchestrator.deferring
+import kalku.orchestrator.recalls
+import kalku.core.recalling
 import kalku.core.reusing
 import kalku.core.distinct
 import kalku.core.lookup
@@ -86,7 +88,8 @@ pub type Known = {
   withheld: Option[String],
   doubted: Option[String],
   reused: Int,
-  deferred: [String]
+  deferred: [String],
+  recalling: Option[Recalling]
 }
 
 #[doc("What a run found, or why it could not look.")]
@@ -316,6 +319,7 @@ pub fn read_by(
   keep(keeping, baseline, reported, kept ++ unanswered(keeping, scope, baseline))
   let narrowed =
     reported |> map(entries => told.without(entries ++ coverage_of(kept), failing | .test_id))
+  let recalling = recalling_of(keeping, asking.reuse, prints_from(baseline, kept))
   Ok(
     Known {
       sites: sites,
@@ -329,7 +333,8 @@ pub fn read_by(
       withheld: withheld_of(baseline),
       doubted: doubted_of(baseline),
       reused: length(kept),
-      deferred: deferred
+      deferred: deferred,
+      recalling: recalling
     }
   )
 }
@@ -362,7 +367,7 @@ fn casting_them(
 ) : Found / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Ward + Telling {
   let p = planned(asking, read.snd)
   if is_empty(read.snd.deferred) {
-    found_after(
+    concluded(
       asking,
       p,
       match warm {
@@ -379,7 +384,7 @@ fn casting_them(
     let first = cast_over(spec, slots, p.casts, 1)
     let open = left_open(p.ready, agreed(first.fst).verdicts)
     if nothing_open(open) or is_some(first.fst.failure) or first.fst.cancelled {
-      found_after(asking, p, wound_up(first.fst, first.snd))
+      concluded(asking, p, wound_up(first.fst, first.snd))
     } else {
       judged_by_the_rest(Asking { ...asking, spec: spec }, read.fst, p, first, open)
     }
@@ -414,7 +419,7 @@ fn judged_by_the_rest(
         "casting #{length(distinct(again | .site.site_id))} wekufe again, against the tests that ran later"
       )
       let second = cast_over(asking.spec, first.snd, again, first.trd)
-      found_after(
+      concluded(
         asking,
         Planned { ...p2, casts: joined_casts(p.casts, again) },
         wound_up(joined(first.fst, again, second.fst), second.snd)
@@ -479,12 +484,13 @@ fn added(
     withheld: known.withheld |> or_else(() => withheld_of(baseline)),
     doubted: known.doubted |> or_else(() => doubted_of(baseline)),
     reused: known.reused + length(kept),
-    deferred: []
+    deferred: [],
+    recalling: with_prints(known.recalling, prints_from(baseline, kept))
   }
 }
 
 #[doc("What a run is about to cast: the plan, every cast in it, and what the plan was made from.")]
-pub type Planned = { ready: Plan, casts: [Wekufe], known: Known, whole: Plan }
+pub type Planned = { ready: Plan, casts: [Wekufe], known: Known, whole: Plan, recalled: [Answer] }
 
 #[doc("The plan for what a kalku read, said aloud with what it will cost.")]
 pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
@@ -493,6 +499,7 @@ pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
   Telling.tell_of(
     "#{length(p.known.sites)} site(s) found; casting #{length(p.casts)} with #{asking.spec.workers} worker(s)"
   )
+  if is_empty(p.recalled) { () } else { Telling.tell_of(recalled_line(length(p.recalled))) }
   let workers = asking.spec.workers
   Telling.will_cost(
     length(p.casts),
@@ -507,17 +514,45 @@ pub fn plan_for(asking: Asking, all_known: Known) : Planned {
   let known = wanted_only(asking, all_known)
   let whole = plan(inputs_for(asking, known), _id => None)
   let ready = doubting(part_of(whole, asking.shard), known)
+  let recalled =
+    recalled_in(known.recalling, ready, not is_empty(known.deferred), asking.every_kill)
+  let answered = member_of(recalled | (a => a.wekufe.site.site_id))
   let casts =
-    repeated(limited(ready.to_cast, asking.limit))
+    repeated(limited(ready.to_cast |? (w => not answered(w.site.site_id)), asking.limit))
       | (c => Wekufe { ...c, every_kill: asking.every_kill })
-  Planned { ready: ready, casts: casts, known: known, whole: whole }
+  Planned { ready: ready, casts: casts, known: known, whole: whole, recalled: recalled }
+}
+
+fn recalled_line(n: Int) : String =
+  "#{n} wekufe not cast again: an earlier run answered for them, and the tests that judged them have not changed"
+
+#[doc("""
+What a run found, once its plan has been cast, with what it settled kept
+for the next run.
+""")]
+pub fn concluded(asking: Asking, p: Planned, cast: Casting) : Found / Telling + File {
+  keep_after(
+    p.known.recalling,
+    p.ready,
+    agreed(cast),
+    if is_empty(asking.only) { p.known.sites } else { [] },
+    not is_empty(p.known.deferred),
+    asking.every_kill
+  )
+  found_after(asking, p, cast)
 }
 
 #[doc("What a run found, once its plan has been cast.")]
 pub fn found_after(asking: Asking, p: Planned, cast: Casting) : Found / Telling {
-  let casting = agreed(cast)
+  let fresh = agreed(cast)
+  let (casting, taken) = with_answers(fresh, p.recalled)
   Telling.entered(PhaseReporting)
-  let whole_report = report_after(p.ready, p.casts, casting, p.known)
+  let measured = report_after(p.ready, p.casts ++ (taken | .wekufe), casting, p.known)
+  let whole_report = Report {
+    ...measured,
+    costs: test_costs(p.casts, p.known.durations),
+    recalled: length(taken)
+  }
   Found {
     report: 
     # One that cast nothing has nothing to report but why it stopped.
@@ -538,7 +573,7 @@ pub fn found_after(asking: Asking, p: Planned, cast: Casting) : Found / Telling 
       )
     },
     failure: whole_report.stopped,
-    cast: written_down(casting, p.known)
+    cast: written_down(fresh, p.known)
   }
 }
 
@@ -715,6 +750,7 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     withheld: known.withheld,
     doubted: known.doubted,
     reused: known.reused,
+    recalled: 0,
     deferred: length(known.deferred),
     shard: None,
     stopped: None,

@@ -1,0 +1,136 @@
+import actor
+import fs.file
+import os.process as proc
+import path as paths
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.report
+import kalku.core.reusing
+import kalku.core.recalling
+import kalku.keeping
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.pool
+import kalku.orchestrator.attending
+import kalku.orchestrator.telling
+import kalku.orchestrator.measure
+
+const FAKE : String = "./tests/fake_kalku/fake_kalku"
+
+fn asking_of(script: String, store: String) : Asking = Asking {
+  spec: PoolSpec {
+    command: FAKE,
+    args: ["tests/fixtures/scripts/#{script}"],
+    workers: 1,
+    root: ".",
+    reni: ".kalku",
+    inline_limit_bytes: 65536,
+    env: StrMap { entries: [] },
+    options: None,
+    greeting_ms: 5000,
+    summons_allowed: 1,
+    memory_mb: 0
+  },
+  files: ["lib/a.ex"],
+  only: [],
+  spells: [],
+  exclude_calls: [],
+  exclude: [],
+  equivalents: [],
+  limit: 0,
+  timeout_floor_ms: 5000,
+  touched: None,
+  shard: None,
+  store: Some(store),
+  reuse: true,
+  every_kill: false,
+  whole: false
+}
+
+fn measured(script: String, store: String) : Found / Process + Spawn + Clock + File + Stderr =
+  with_mailbox { alone(() => untold(() => measuring(asking_of(script, store)))) }
+
+fn store_at(name: String) : String / Env =
+  "#{Env.get("TMPDIR") |> unwrap_or("/tmp")}/kalku-recall-test/#{name}/fake.json"
+
+fn gone(store: String) : Unit / Process {
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", paths.dirname(store)]) |> map(c => proc.wait(c))
+  ()
+}
+
+fn outcome_of(found: Found, wekufe: String) : Option[Outcome] = match found.report {
+  Some(r) ->
+    if any(r.survivors, s => s.site.site_id == wekufe) { Some(Survived) } else { Some(Killed) }
+  None -> None
+}
+
+fn counted(found: Found) : (Int, Int, Int) = match found.report {
+  Some(r) -> (r.counts.killed, r.counts.survived, r.recalled)
+  None -> (-1, -1, -1)
+}
+
+fn whole_of(script: String, store: String) : Found / Process + Spawn + Clock + File + Stderr =
+  with_mailbox {
+    alone(
+      () => untold(
+        () => measuring(Asking { ...asking_of(script, store), reuse: false, whole: true })
+      )
+    )
+  }
+
+# The first run casts both wekufe and keeps what came of them. The second
+# finds every test unchanged: it casts nothing — the script has no cast to
+# answer — and reports both outcomes, saying they were recalled.
+test "an outcome is recalled while the tests that judged it are unchanged" {
+  let store = store_at("unchanged")
+  gone(store)
+
+  let first = measured("recall_first.ndjson", store)
+  assert first.failure == None
+  assert counted(first) == ((1, 1, 0))
+  match load_recall(recall_path(store)) {
+    Ok(Some(kept)) -> {
+      assert (kept.outcomes | (r => (r.wekufe, r.outcome))) == [("s3", Killed), ("s7", Survived)]
+    }
+    _ -> {
+      assert false
+    }
+  }
+
+  let second = measured("recall_unchanged.ndjson", store)
+  assert second.failure == None
+  assert counted(second) == ((1, 1, 2))
+  assert outcome_of(second, "s7") == Some(Survived)
+  # Nothing was cast, so nothing is written down as cast.
+  assert second.cast == []
+
+  gone(store)
+}
+
+# The test that judged the survivor changed: it is cast again, and this
+# time it is killed. The kill, whose test did not change, is still recalled.
+test "a wekufe is cast again once a test that judged it has changed" {
+  let store = store_at("changed")
+  gone(store)
+
+  let _first = measured("recall_first.ndjson", store)
+  let second = measured("recall_changed.ndjson", store)
+  assert second.failure == None
+  assert counted(second) == ((2, 0, 1))
+  assert (second.cast | .wekufe) == ["s7"]
+
+  gone(store)
+}
+
+# A run over the whole project measures everything it plans, so it recalls
+# nothing; what it found is still kept for the runs after it.
+test "a run over the whole project recalls nothing, and keeps what it found" {
+  let store = store_at("whole")
+  gone(store)
+
+  let _first = measured("recall_first.ndjson", store)
+  let again = whole_of("recall_first.ndjson", store)
+  assert counted(again) == ((1, 1, 0))
+  assert map(ok(load_recall(recall_path(store))) ?? None, r => length(r.outcomes)) == Some(2)
+
+  gone(store)
+}

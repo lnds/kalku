@@ -1,0 +1,195 @@
+#[doc("""
+What earlier runs found out about a wekufe, kept so a later run need not
+cast it again.
+
+A wekufe's outcome is a fact about the tests that judged it, and a test's
+fingerprint is its kalku's word that a run of it would be the same: two
+fingerprints are the same only when nothing the test could observe has
+changed. So an outcome is kept under the fingerprints of the tests it is
+about, and answers again only where those fingerprints have not moved.
+
+A kill is about one test: that test, run against the wekufe, failed. It is
+kept under the killing test's fingerprint alone, and holds whatever else
+the suite has become. A survivor is about every test that judged it: it is
+kept under all of their fingerprints, and holds only while the same tests,
+each unchanged, are the ones that judge it — a test that now reaches its
+line could kill it.
+
+Nothing else is kept. A timeout or a crash is about the machine as much as
+the code, a concurrency wekufe is about how things were scheduled, and a
+compile error or an equivalence is cheaper to find again than to trust.
+
+The key is about the wekufe as well: the kalku's setting, the site — whose
+id is named by the text it was cut from — and what replaces it.
+""")]
+
+import crypto.hash
+import encoding.hex
+import encoding.json_bind
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.cache
+import kalku.core.distinct
+import kalku.core.lookup
+import kalku.core.planner
+
+#[doc("One outcome as it is kept: under which key, for which wekufe, and what it was.")]
+#[derive(Json, Eq, Show)]
+pub type Recalled = {
+  key: String,
+  wekufe: String,
+  file: String,
+  outcome: Outcome,
+  killed_by: Option[String]
+}
+
+#[doc("The outcomes kept for one setting.")]
+#[derive(Json, Eq, Show)]
+pub type Recall = { setting: String, outcomes: [Recalled] }
+
+#[doc("A planned wekufe an earlier run already answered for, and what it answered.")]
+#[derive(Eq, Show)]
+pub type Answer = { wekufe: Wekufe, outcome: Outcome, killed_by: Option[String] }
+
+#[doc("""
+What a run knows to recall by: the setting its kalku runs in, and the
+fingerprint each test has in this run. A test with none here is one whose
+kalku would not stand behind a fingerprint, and nothing is recalled through
+it.
+""")]
+pub type Prints = { setting: String, print_of: (String) -> Option[String] }
+
+#[doc("The prints of a run from its tests' fingerprints.")]
+pub fn prints_of(setting: String, prints: [(String, String)]) : Prints {
+  let found = finder(prints, p => p.fst)
+  Prints {
+    setting: setting,
+    print_of: t => (found(t) |> option.map((p: (String, String)) => p.snd))
+  }
+}
+
+#[doc("The key a kill by this test is kept under.")]
+pub fn kill_key(prints: Prints, site: Site, killer: String) : Option[String] =
+  prints.print_of(killer) |> option.map(p => keyed(prints.setting, site, "killed", [(killer, p)]))
+
+#[doc("""
+The key a survivor judged by these tests is kept under; none when one of
+them has no fingerprint, or there are none.
+""")]
+pub fn survivor_key(prints: Prints, site: Site, tests: [String]) : Option[String] {
+  let printed = flat_map(
+    distinct_sorted(tests),
+    t => match prints.print_of(t) {
+      Some(p) -> [(t, p)]
+      None -> []
+    }
+  )
+  if is_empty(tests) or length(printed) != length(distinct_sorted(tests)) {
+    None
+  } else {
+    Some(keyed(prints.setting, site, "survived", printed))
+  }
+}
+
+fn keyed(setting: String, site: Site, kind: String, prints: [(String, String)]) : String {
+  let parts =
+    [setting, kind, site.site_id, spell_name(site.spell), where_of(site)]
+      ++ (prints | (p => "#{p.fst}=#{p.snd}"))
+  hex.encode(sha256(bytes(join(parts, "\u{1f}")) | byte_to_int))
+}
+
+fn distinct_sorted(xs: [String]) : [String] = sort(distinct(xs))
+
+#[doc("Every test a wekufe faces: the ones that reach it, then the rest when its coverage is in doubt.")]
+pub fn judges(w: Wekufe) : [String] = w.tests ++ w.rest
+
+#[doc("True when a wekufe's outcome may be recalled or kept at all.")]
+pub fn recallable(w: Wekufe) : Bool = (not concurrent(w.site.spell)) and (not w.every_kill)
+
+#[doc("""
+What a kept recall answers for a planned wekufe: a kill by any test that
+judges it and has the fingerprint it was killed with, or a survival under
+exactly the tests that judge it now.
+""")]
+pub fn answer_for(kept: (String) -> Option[Recalled], prints: Prints, w: Wekufe) : Option[Answer] =
+  if not recallable(w) {
+    None
+  } else {
+    match find_map(judges(w), t => (kill_key(prints, w.site, t) |> and_then(kept))) {
+      Some(r) -> Some(Answer { wekufe: w, outcome: Killed, killed_by: r.killed_by })
+      None -> survivor_key(prints, w.site, judges(w))
+        |> and_then(kept)
+        |> option.map(_r => Answer { wekufe: w, outcome: Survived, killed_by: None })
+    }
+  }
+
+fn find_map(xs: [String], f: (String) -> Option[Recalled]) : Option[Recalled] = match xs {
+  [] -> None
+  [x, ...rest] -> match f(x) {
+    Some(r) -> Some(r)
+    None -> find_map(rest, f)
+  }
+}
+
+#[doc("A recall indexed by key, for the planned wekufe of one run.")]
+pub fn kept_in(recall: Recall, setting: String) : (String) -> Option[Recalled] =
+  if recall.setting == setting { finder(recall.outcomes, .key) } else { _k => None }
+
+#[doc("""
+What a cast that settled a wekufe leaves to recall: its kill under the
+test that killed it, or its survival under every test that judged it.
+""")]
+pub fn kept_from(
+  prints: Prints,
+  w: Wekufe,
+  outcome: Outcome,
+  killed_by: Option[String]
+) : [Recalled] =
+  if not recallable(w) {
+    []
+  } else {
+    let key = match (outcome, killed_by) {
+      (Killed, Some(t)) -> kill_key(prints, w.site, t)
+      (Survived, _) -> survivor_key(prints, w.site, judges(w))
+      _ -> None
+    }
+    match key {
+      Some(k) -> [
+        Recalled {
+          key: k,
+          wekufe: w.site.site_id,
+          file: w.site.file,
+          outcome: outcome,
+          killed_by: if outcome == Killed { killed_by } else { None }
+        }
+      ]
+      None -> []
+    }
+  }
+
+#[doc("""
+The recall a run leaves: what it settled, and what was kept before that the
+run did not settle again.
+
+Kept outcomes of a wekufe the run settled are replaced, and so are those
+of a wekufe in a file the run looked at that it no longer found there,
+which an edit renamed: kept, they would only ever grow. A recall for
+another setting is replaced whole.
+""")]
+pub fn renewed(
+  was: Option[Recall],
+  setting: String,
+  looked_at: [String],
+  found: [String],
+  now: [Recalled]
+) : Recall {
+  let settled = member_of(now | .wekufe)
+  let looked = member_of(looked_at)
+  let still = member_of(found)
+  let before = match was {
+    Some(r) -> if r.setting == setting { r.outcomes } else { [] }
+    None -> []
+  }
+  let kept = before |? (r => (not settled(r.wekufe)) and ((not looked(r.file)) or still(r.wekufe)))
+  Recall { setting: setting, outcomes: kept ++ now }
+}

@@ -38,11 +38,9 @@ pub fn json(r: Report, exit: Int) : String {
         ...left_out(r),
         ...optional("coverage_withheld", r.withheld |> map(JStr)),
         ...optional("coverage_doubted", r.doubted |> map(JStr)),
-        ...optional("baseline_reused", if r.reused > 0 { Some(JNum(r.reused)) } else { None }),
-        ...optional(
-          "baseline_deferred",
-          if r.deferred > 0 { Some(JNum(r.deferred)) } else { None }
-        ),
+        ...counted("baseline_reused", r.reused),
+        ...counted("outcomes_reused", r.recalled),
+        ...counted("baseline_deferred", r.deferred),
         ...optional(
           "shard",
           r.shard |> map(s => JObj([("index", JNum(s.index)), ("count", JNum(s.count))]))
@@ -240,17 +238,9 @@ fn written_from(v: JsonValue) : Result[Written, String] {
           |> map_err(
             said
           ))!,
-        reused: ((json_bind_opt_int(json_bind_field(v, "baseline_reused"), "baseline_reused")
-          |> map_err(said))!)
-          |> unwrap_or(
-            0
-          ),
-        deferred: ((json_bind_opt_int(
-          json_bind_field(v, "baseline_deferred"),
-          "baseline_deferred"
-        )
-          |> map_err(said))!)
-          |> unwrap_or(0),
+        reused: count_in(v, "baseline_reused")!,
+        recalled: count_in(v, "outcomes_reused")!,
+        deferred: count_in(v, "baseline_deferred")!,
         shard: (json_bind_opt(json_bind_field(v, "shard"), "shard", shard_of_json)
           |> map_err(said))!,
         stopped: (json_bind_opt_string(json_bind_field(v, "stopped"), "stopped") |> map_err(said))!,
@@ -346,3 +336,12 @@ fn each[a](
 }
 
 fn said(e: JsonError) : String = json_error_show(e)
+
+# A count the report carries only when it is not zero.
+fn counted(name: String, n: Int) : [(String, JsonValue)] =
+  if n > 0 { [(name, JNum(n))] } else { [] }
+
+fn count_in(v: JsonValue, name: String) : Result[Int, String] =
+  json_bind_opt_int(json_bind_field(v, name), name)
+    |> map_err(said)
+    |> result.map(n => n ?? 0)

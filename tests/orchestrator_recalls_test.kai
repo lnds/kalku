@@ -1,0 +1,65 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.planner
+import kalku.core.recalling
+import kalku.orchestrator.scheduler
+import kalku.orchestrator.recalls
+
+fn site(id: String) : Site = Site {
+  site_id: id,
+  file: "lib/a.ex",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 4, col: 3, byte: 40 }, end: None },
+  spell: Compare,
+  original: Some(">="),
+  replacement: ">",
+  reload: ModuleOnly
+}
+
+fn cast_of(id: String) : Wekufe =
+  Wekufe { site: site(id), tests: ["t1"], rest: [], timeout_ms: 1000, casts: 1, every_kill: false }
+
+const PRINTS : [(String, String)] = [("t1", "p1")]
+
+fn recalling(kept: [Recalled]) : Option[Recalling] = Some(
+  Recalling {
+    path: "",
+    setting: "s",
+    prints: PRINTS,
+    kept: Some(Recall { setting: "s", outcomes: kept })
+  }
+)
+
+fn plan_of(casts: [Wekufe]) : Plan =
+  Plan { to_cast: casts, no_coverage: [], suppressed: [], cached: [] }
+
+fn kept(w: Wekufe, o: Outcome, killer: Option[String]) : [Recalled] =
+  kept_from(prints_of("s", PRINTS), w, o, killer)
+
+test "while some tests are still to run, only kills are recalled" {
+  let r = recalling(kept(cast_of("a"), Killed, Some("t1")) ++ kept(cast_of("b"), Survived, None))
+  let ready = plan_of([cast_of("a"), cast_of("b")])
+  assert (recalled_in(r, ready, false, false) | (a => a.wekufe.site.site_id)) == ["a", "b"]
+  assert (recalled_in(r, ready, true, false) | (a => a.wekufe.site.site_id)) == ["a"]
+  assert recalled_in(r, ready, false, true) == []
+}
+
+fn verdict(id: String, o: Outcome) : Verdict =
+  Verdict { wekufe: id, outcome: o, tests: ["t1"], said: None, killed_by: None, again: false }
+
+fn answer(id: String, o: Outcome) : Answer =
+  Answer { wekufe: cast_of(id), outcome: o, killed_by: None }
+
+test "a wekufe the run settled keeps its own verdict; one it left open takes the recalled one" {
+  let casting = Casting {
+    verdicts: [verdict("a", Killed), verdict("b", Survived)],
+    failure: None,
+    cancelled: false
+  }
+  let (joined, taken) =
+    with_answers(casting, [answer("a", Killed), answer("b", Survived), answer("c", Killed)])
+  assert (taken | (a => a.wekufe.site.site_id)) == ["b", "c"]
+  assert (joined.verdicts | (v => (v.wekufe, v.outcome)))
+    == [("a", Killed), ("b", Survived), ("c", Killed)]
+}

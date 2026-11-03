@@ -241,10 +241,10 @@ fn cast_kept(
   known: Known,
   slots: [Slot],
   w: Warm
-) : (Found, Option[Warm]) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Telling + Ward {
+) : (Found, Option[Warm]) / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Ward {
   let p = planned(asking, known)
   let done = cast_over(asking.spec, slots, p.casts, w.next_id)
-  (found_after(asking, p, done.fst), Some(Warm { ...w, slots: done.snd, next_id: done.trd }))
+  (concluded(asking, p, done.fst), Some(Warm { ...w, slots: done.snd, next_id: done.trd }))
 }
 
 fn capabilities_of(hello: KalkuReply) : [Capability] = match hello {

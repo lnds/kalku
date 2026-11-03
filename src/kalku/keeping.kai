@@ -24,6 +24,7 @@ import kalku.diffing
 import kalku.settling
 import kalku.sources
 import kalku.core.reusing
+import kalku.core.recalling
 import kalku.core.setting_up
 
 #[doc("""
@@ -97,13 +98,47 @@ another writes sees one store or the other and never half of each. The name
 written to is the content's own, so two runs writing at once never write
 into the same file unless they are writing the same thing.
 """)]
-pub fn save(path: String, store: Store) : Result[Unit, String] / File {
-  let text = json_encode(to_json(store))
+pub fn save(path: String, store: Store) : Result[Unit, String] / File =
+  written(path, json_encode(to_json(store)))
+
+fn written(path: String, text: String) : Result[Unit, String] / File {
   made(paths.dirname(path))
   let beside = "#{path}.#{setting_of("", "", "", text)}"
   file.write(beside, text)!
   file.rename(beside, path)
 }
+
+#[doc("Where the outcomes a run recalls are kept, beside the baseline kept at this path.")]
+pub fn recall_path(store: String) : String =
+  if ends_with(store, ".json") {
+    "#{slice(store, 0, length(store) - 5)}.outcomes.json"
+  } else {
+    "#{store}.outcomes.json"
+  }
+
+#[doc("""
+The outcomes kept at this path: none when there are none, and an error that
+says why when they cannot be read — which a run tells, and then casts as if
+there were none.
+""")]
+pub fn load_recall(path: String) : Result[Option[Recall], String] / File = if file.exists(path) {
+  match json_decode((file.read(path) |> map_err(why => unrecalled(path, why)))!) {
+    None -> Err(unrecalled(path, "it is not JSON"))
+    Some(v) -> match recall_of_json(v, "") {
+      Ok(r) -> Ok(Some(r))
+      Err(e) -> Err(unrecalled(path, json_error_show(e)))
+    }
+  }
+} else {
+  Ok(None)
+}
+
+#[doc("Keep these outcomes at this path, whole or not at all, as a baseline is kept.")]
+pub fn save_recall(path: String, recall: Recall) : Result[Unit, String] / File =
+  written(path, json_encode(to_json(recall)))
+
+fn unrecalled(path: String, why: String) : String =
+  "the outcomes kept in #{path} could not be read, so every wekufe is cast: #{why}"
 
 fn unreadable(path: String, why: String) : String =
   "the kept baseline #{path} could not be read, so the whole suite runs: #{why}"
