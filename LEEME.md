@@ -143,6 +143,16 @@ proyecto que fija su entorno con direnv lo recibe desde una shell donde
 direnv está cargado, o con `direnv exec . kalku run lib/thing.ex`; una
 corrida iniciada sin él lo avisa.
 
+`workers` en `.kalku.toml` fija cuántos kalku castean a la vez. En un
+proyecto Elixir cada worker compila su propio build en la reni, y todos los
+workers salvo el primero corren con un `MIX_TEST_PARTITION` propio: un
+proyecto cuyo `config/test.exs` nombra su base de datos según la partición,
+como el de Phoenix, obtiene una base por worker, creada por los pasos de su
+alias `test` anteriores a `test`. Un `.kalku/summon` escrito por un `init`
+anterior les da a todos los workers el mismo build, y un worker que no
+sea el primero se niega a arrancar con él: bórralo y corre `kalku init`
+para escribirlo de nuevo antes de subir `workers`.
+
 ## Qué te dice una corrida
 
 ```sh
@@ -330,7 +340,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **Cobertura por test usada por una corrida** — un wekufe se lanza contra los tests que lo alcanzan | hecho: Elixir, Rust, Python, Java, Go, TypeScript, kaikai |
 | **Un baseline que corre solo lo que cambió**: los tests que su kalku identifica, por su huella, como sin cambios se reusan de un almacén que se guarda por repositorio, fuera del proyecto | hecho: Go, Elixir, TypeScript, Python, Rust, kaikai, Java, C y C++ |
 | **Un baseline acotado a los archivos de la corrida**: primero corren los tests que pueden alcanzarlos, y el resto de la suite solo cuando queda un wekufe sin matar o un site sin alcanzar | hecho: Elixir |
-| Workers en paralelo en un proyecto Elixir (una sola ruta de build, así que un solo worker) | todavía no |
+| **Workers en paralelo en un proyecto Elixir**: cada uno con su propio build, y con su propia base de datos de test mediante `MIX_TEST_PARTITION` y el alias `test` del proyecto | hecho |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
 | **`--watch`** — vuelve a correr en cada guardado, hasta que se interrumpe; los kalku siguen calientes entre corridas y recargan lo que cambió cada guardado, y el baseline incremental reduce la suite a lo que el cambio puede alcanzar | hecho |
 | **`[score] ratchet`** — el score del proyecto completo no puede bajar de la línea base guardada con `--store-baseline` | listo |

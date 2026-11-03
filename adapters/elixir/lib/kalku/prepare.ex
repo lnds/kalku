@@ -21,14 +21,16 @@ defmodule Kalku.Prepare do
   Returns `{:ok, %{duration_ms: ms, modules: n}}`, or `{:error, code,
   message}` naming what made it impossible.
   """
-  def run(root, reni, env \\ %{}) do
+  def run(root, reni, env \\ %{}, worker \\ 0) do
     started = System.monotonic_time(:millisecond)
 
     with :ok <- test_env(),
          :ok <- inside_reni(reni),
-         :ok <- partition(env),
+         :ok <- own_build(reni, worker),
+         partitioned <- partition(env, worker),
          {:ok, modules} <- compile(),
          :ok <- own_needs(),
+         :ok <- Kalku.Prepare.Database.set_up(partitioned),
          :ok <- start_apps(),
          :ok <- suite(root),
          :ok <- Kalku.Runtime.mark(Mix.Project.config()[:app]) do
@@ -129,15 +131,54 @@ defmodule Kalku.Prepare do
     end
   end
 
-  # Each kalku needs its own test database when the project partitions,
-  # which is why `hello` carries an environment at all.
-  defp partition(env) do
+  # Two workers compiling into one build overwrite each other's casts. A
+  # summoning written before each worker had a build of its own gives them
+  # all the first one's.
+  defp own_build(reni, worker) when is_integer(worker) and worker > 0 and is_binary(reni) do
+    if resolved(build_path()) == resolved(Path.join(reni, "build")) do
+      {:error, "prepare_failed",
+       "worker #{worker} was summoned with the build of worker 0, #{build_path()}; " <>
+         "the summoning predates parallel workers: remove .kalku/summon and " <>
+         "run `kalku init` to write it again, or set `workers = 1` in .kalku.toml"}
+    else
+      :ok
+    end
+  end
+
+  defp own_build(_reni, _worker), do: :ok
+
+  # Each kalku needs its own test database when the project partitions.
+  # `hello` may name the partition; otherwise every worker but the first
+  # takes one after its number, beside any the run was started with, and
+  # is then the one that has to make that database. True when it did.
+  defp partition(env, worker) do
     case Map.fetch(env, "MIX_TEST_PARTITION") do
-      {:ok, value} when is_binary(value) -> System.put_env("MIX_TEST_PARTITION", value)
-      _ -> :ok
+      {:ok, value} when is_binary(value) ->
+        System.put_env("MIX_TEST_PARTITION", value)
+        false
+
+      _ when is_integer(worker) and worker > 0 ->
+        System.put_env("MIX_TEST_PARTITION", own_partition(worker))
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  # The partition the run was started with is read once: a second
+  # `prepare` in the same runtime finds this worker's own already set.
+  defp own_partition(worker) do
+    key = {__MODULE__, :started_with}
+
+    unless :persistent_term.get(key, nil) do
+      :persistent_term.put(key, {System.get_env("MIX_TEST_PARTITION", "")})
     end
 
-    :ok
+    case :persistent_term.get(key) do
+      {""} -> "#{worker}"
+      {given} -> "#{given}_#{worker}"
+    end
   end
 
   # A project that does not compile must not take the kalku with it: the

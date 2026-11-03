@@ -148,7 +148,7 @@ Opaque to the kaikai side, meaningful to the kalku, stable across runs for an un
 
 ### `hello` → `ready`
 
-First message after summoning.
+First message after summoning. The summoning itself is told the kalku's `worker` earlier, in the environment variable `KALKU_WORKER`, for whatever must be chosen before the kalku starts — a build path, say.
 
 | `hello` | Type | Meaning |
 |---|---|---|

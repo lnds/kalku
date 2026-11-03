@@ -139,6 +139,16 @@ else. A project that sets its environment with direnv gets it from a shell
 where direnv is loaded, or with `direnv exec . kalku run lib/thing.ex`; a
 run started without it says so.
 
+`workers` in `.kalku.toml` sets how many kalku cast at once. In an Elixir
+project each worker compiles a build of its own in the reni, and every
+worker but the first runs with a `MIX_TEST_PARTITION` of its own: a
+project whose `config/test.exs` names its database after the partition, as
+Phoenix's does, gets a database per worker, made by the steps of its
+`test` alias before `test`. A `.kalku/summon` written by an older `init`
+gives every worker the same build, and a worker other than the first
+refuses to start on it: remove it and run `kalku init` to write it again
+before raising `workers`.
+
 ## What a run tells you
 
 ```sh
@@ -326,7 +336,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **Per-test coverage used by a run** — a wekufe is cast against the tests that reach it | done: Elixir, Rust, Python, Java, Go, TypeScript, kaikai |
 | **A baseline that runs only what changed** — tests whose kalku fingerprints them as unchanged are reused from a store kept per repository, outside the project | done: Go, Elixir, TypeScript, Python, Rust, kaikai, Java, C and C++ |
 | **A baseline scoped to the files a run is about** — the tests that may reach them run first, and the rest of the suite only when a wekufe is left unkilled or a site unreached | done: Elixir |
-| Parallel workers in an Elixir project (one build path, so one worker) | not yet |
+| **Parallel workers in an Elixir project** — a build of its own for each, and a test database of its own through `MIX_TEST_PARTITION` and the project's `test` alias | done |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | **`--watch`** — run again on every save, until interrupted; the kalku stay warm between runs and reload what each save changed, and the incremental baseline keeps the suite to what the change can reach | done |
 | **`[score] ratchet`** — the score of the whole project may not drop below the baseline stored with `--store-baseline` | done |
