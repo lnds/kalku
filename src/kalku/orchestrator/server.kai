@@ -282,5 +282,9 @@ pub fn streamed[a, e](say: (ServerEvent) -> Unit / e, body: () -> a / Telling + 
       say(LogEv(LogMsg { path: path }))
       resume(())
     }
+    # A client hears every outcome with the report; a survivor alone is not
+    # an event.
+    cast_survived(_w, resume) -> resume(())
+    found_survivor(_s, resume) -> resume(())
     return(x) -> x
   }

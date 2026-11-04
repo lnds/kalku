@@ -624,6 +624,9 @@ fn record(run: Run, slot: Slot, r: Reaction) : Run / Telling = match (r.outcome,
   (Some(o), Working(job)) -> {
     let done = length(run.verdicts) + 1
     Telling.tell_of("worker #{slot.worker}: #{job.wekufe} #{outcome_name(o)}")
+    # A chase casts a wekufe already killed, to find its other killers: what
+    # survives there is a test that missed it, not a hole.
+    if o == Survived and (not job.again) { Telling.cast_survived(job.cast) } else { () }
     # How far the run has got is its own note: one line per wekufe says
     # what happened to that wekufe, and this says where the run is. A
     # client hears the second one and needs no count of its own.

@@ -436,6 +436,8 @@ Outcomes stream to the client as they arrive and are written to the cache. At th
 
 The human report leads with **survivors** — file, line, spell, diff, covering tests — because a survivor is something a reader can act on. The score follows as context and trend, never as the headline.
 
+A reader need not wait for the end to act on one. On a terminal, with the human report, each survivor is shown on stderr as it is found, as the report shows it, above the progress line. Only a survivor nothing left in the run can change: not one of a wekufe cast several times, until all its casts are in, and not one a test the baseline left for later also judges, until that test has run against it. One shown and then killed would be a hole someone began closing for nothing. A survivor recalled from an earlier run is shown when the plan is made. A log, the JSON, agent and GitHub formats, and a client of `kalku serve` get the survivors with the rest of the run.
+
 ### 9. Stay warm
 
 After the run the session stays in `ready`. On the next run, the server hashes the source files, tells each kalku to reload only what changed, reuses coverage for untouched tests, and re-casts only the wekufe whose cache key changed.

@@ -48,6 +48,8 @@ fn heard_through(reni: String, body: () -> Unit / Telling) : [String] / File + C
   kalku_wrote(worker, chunk, resume) -> resume((), state ++ ["#{worker} wrote #{chunk}"])
   kalku_at(worker, done, total, resume) -> resume((), state ++ [so_far(worker, done, total)])
   logging_to(path, resume) -> resume((), state ++ [logged_at(path)])
+  cast_survived(_w, resume) -> resume((), state)
+  found_survivor(_s, resume) -> resume((), state)
   return(_x) -> state
 }
 

@@ -128,6 +128,7 @@ fn run_here(
     # ends it is the watch's.
     voiced(
       voice_of(wanted),
+      wanted.shape == AsHuman,
       () => warded(() => {
         var held := None
         let code = keeping_watch(
@@ -252,7 +253,7 @@ fn measured[e](
   measure_it: (Asking) -> Found / Telling + e
 ) : Int / Stdout + Stderr + Env + File + Process + Clock + e {
   let shape = wanted.shape
-  let found = voiced(voice_of(wanted), () => measure_it(asking))
+  let found = voiced(voice_of(wanted), shape == AsHuman, () => measure_it(asking))
   match remember(found.cast) {
     Err(why) -> Stderr.eprint("kalku: what this run cast is not written down: #{why}")
     Ok(_) -> ()
@@ -619,6 +620,7 @@ fn serving_here() : Int / Stdout + Stderr + Env + File + Process + Spawn + Clock
   # belongs on stderr with everything else it says about itself. A run's own
   # notes still go to its client, through `streamed`.
   let ending = told(
+    false,
     () => with_mailbox {
       warded(() => serve_at(path, mine, (p, asked, say) => run_for(p, asked, say)))
     }

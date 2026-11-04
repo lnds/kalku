@@ -48,6 +48,7 @@ import kalku.orchestrator.baselining
 import kalku.orchestrator.hearing
 import kalku.orchestrator.deferring
 import kalku.orchestrator.recalls
+import kalku.orchestrator.surviving
 import kalku.core.recalling
 import kalku.core.reusing
 import kalku.core.distinct
@@ -370,10 +371,13 @@ fn casting_them(
     concluded(
       asking,
       p,
-      match warm {
-        Some(first) -> cast_beside(asking.spec, first, p.casts)
-        None -> cast_all(asking.spec, p.casts)
-      }
+      as_found(
+        survivors_by(p.known),
+        () => match warm {
+          Some(first) -> cast_beside(asking.spec, first, p.casts)
+          None -> cast_all(asking.spec, p.casts)
+        }
+      )
     )
   } else {
     let spec = with_ceiling(asking.spec)
@@ -381,7 +385,7 @@ fn casting_them(
       Some(first) -> fill_around(spec, first)
       None -> fill(spec)
     }
-    let first = cast_over(spec, slots, p.casts, 1)
+    let first = as_found(survivors_by(p.known), () => cast_over(spec, slots, p.casts, 1))
     let open = left_open(p.ready, agreed(first.fst).verdicts)
     if nothing_open(open) or is_some(first.fst.failure) or first.fst.cancelled {
       concluded(asking, p, wound_up(first.fst, first.snd))
@@ -418,7 +422,10 @@ fn judged_by_the_rest(
       Telling.tell_of(
         "casting #{length(distinct(again | .site.site_id))} wekufe again, against the tests that ran later"
       )
-      let second = cast_over(asking.spec, first.snd, again, first.trd)
+      let second = as_found(
+        Judging { ...survivors_by(p2.known), pending: [] },
+        () => cast_over(asking.spec, first.snd, again, first.trd)
+      )
       concluded(
         asking,
         Planned { ...p2, casts: joined_casts(p.casts, again) },
@@ -500,6 +507,7 @@ pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
     "#{length(p.known.sites)} site(s) found; casting #{length(p.casts)} with #{asking.spec.workers} worker(s)"
   )
   if is_empty(p.recalled) { () } else { Telling.tell_of(recalled_line(length(p.recalled))) }
+  recalled_survivors(survivors_by(p.known), p.recalled)
   let workers = asking.spec.workers
   Telling.will_cost(
     length(p.casts),
@@ -521,6 +529,13 @@ pub fn plan_for(asking: Asking, all_known: Known) : Planned {
     repeated(limited(ready.to_cast |? (w => not answered(w.site.site_id)), asking.limit))
       | (c => Wekufe { ...c, every_kill: asking.every_kill })
   Planned { ready: ready, casts: casts, known: known, whole: whole, recalled: recalled }
+}
+
+#[doc("How a run that knows this says its survivors as they are found.")]
+pub fn survivors_by(known: Known) : Judging = Judging {
+  pending: known.deferred,
+  suite: known.tests,
+  chosen: is_some(known.coverage) and is_none(known.doubted)
 }
 
 fn recalled_line(n: Int) : String =
