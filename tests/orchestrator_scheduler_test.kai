@@ -57,6 +57,30 @@ fn how_far(
     kalku_wrote(_worker, _chunk, resume) -> resume((), state)
     kalku_at(_worker, _done, _total, resume) -> resume((), state)
     logging_to(_path, resume) -> resume((), state)
+    cast_survived(_w, resume) -> resume((), state)
+    found_survivor(_s, resume) -> resume((), state)
+    return(_x) -> state
+  }
+)
+
+# The wekufe each cast that came to `survived` was said for.
+fn survived_said(
+  spec: PoolSpec,
+  cs: [Wekufe]
+) : [String] / Process + Spawn + Clock + Actor[OrchMsg] = alone(
+  () => handle {
+    cast_all(spec, cs)
+  } with Telling([]) {
+    tell_of(_line, resume) -> resume((), state)
+    entered(_phase, resume) -> resume((), state)
+    got_through(_done, _total, resume) -> resume((), state)
+    will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
+    still_on(_worker, _site, _ms, resume) -> resume((), state)
+    kalku_wrote(_worker, _chunk, resume) -> resume((), state)
+    kalku_at(_worker, _done, _total, resume) -> resume((), state)
+    logging_to(_path, resume) -> resume((), state)
+    cast_survived(w, resume) -> resume((), state ++ [w.site.site_id])
+    found_survivor(_s, resume) -> resume((), state)
     return(_x) -> state
   }
 )
@@ -429,4 +453,18 @@ test "a cast that has gone on for STALL_MS is named, and a younger one is not" {
   let idle = Slot { ...working_since(3, 0), doing: Idle }
   assert lingering([working_since(1, 40), working_since(2, 95), idle], now)
     == [Lingering { worker: 1, site: site_named("w1"), ms: 60000 }]
+}
+
+test "each cast that comes to survived is said as it ends" {
+  let said =
+    with_mailbox { survived_said(pool_of("pool_dirty_reset.ndjson", 1, 1), casts(3, 5000)) }
+  assert said == ["w1", "w2"]
+}
+
+# The casts a chase makes are of a wekufe already killed.
+test "a chase that ends in survived says no survivor" {
+  let said = with_mailbox {
+    survived_said(pool_of("pool_every_kill.ndjson", 1, 1), [chased_cast(["t1", "t2", "t3"], true)])
+  }
+  assert said == []
 }

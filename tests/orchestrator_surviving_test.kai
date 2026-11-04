@@ -1,0 +1,84 @@
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.planner
+import kalku.core.recalling
+import kalku.core.report
+import kalku.orchestrator.telling
+import kalku.orchestrator.surviving
+
+fn site(id: String) : Site = Site {
+  site_id: id,
+  file: "lib/a.ex",
+  enclosing: None,
+  ordinal: None,
+  span: Span { start: Position { line: 4, col: 3, byte: 40 }, end: None },
+  spell: Compare,
+  original: Some(">="),
+  replacement: ">",
+  reload: ModuleOnly
+}
+
+fn cast_of(id: String, tests: [String], rest: [String]) : Wekufe =
+  Wekufe { site: site(id), tests: tests, rest: rest, timeout_ms: 1000, casts: 1, every_kill: false }
+
+const BY_COVERAGE : Judging = Judging { pending: [], suite: ["t1", "t2", "t3"], chosen: true }
+
+test "a survivor nothing later in the run judges is settled, with the tests that judged it" {
+  assert settled_survivor(BY_COVERAGE, cast_of("w1", ["t1"], ["t2"]))
+    == Some(Survivor { site: site("w1"), tests: ["t1", "t2"], chosen: true })
+}
+
+test "a survivor judged by no test is told with the whole suite" {
+  let doubted = Judging { ...BY_COVERAGE, chosen: false }
+  assert settled_survivor(doubted, cast_of("w1", [], []))
+    == Some(Survivor { site: site("w1"), tests: ["t1", "t2", "t3"], chosen: false })
+}
+
+test "a survivor a test still to run judges is not settled yet" {
+  let later = Judging { ...BY_COVERAGE, pending: ["t2"] }
+  assert settled_survivor(later, cast_of("w1", ["t1"], ["t2"])) == None
+  assert settled_survivor(later, cast_of("w1", ["t2"], [])) == None
+  assert settled_survivor(later, cast_of("w1", ["t1"], [])) |> is_some
+}
+
+test "a survivor of one of several casts is not settled until they all are" {
+  assert settled_survivor(BY_COVERAGE, Wekufe { ...cast_of("w1", ["t1"], []), casts: 3 }) == None
+}
+
+# What a casting says, with each survivor named by its site.
+fn heard(body: () -> Unit / Telling) : [String] = handle {
+  body()
+} with Telling([]) {
+  tell_of(_line, resume) -> resume((), state)
+  entered(_phase, resume) -> resume((), state)
+  got_through(_done, _total, resume) -> resume((), state)
+  will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
+  still_on(_worker, _site, _ms, resume) -> resume((), state)
+  kalku_wrote(_worker, _chunk, resume) -> resume((), state)
+  kalku_at(_worker, _done, _total, resume) -> resume((), state)
+  logging_to(_path, resume) -> resume((), state)
+  cast_survived(w, resume) -> resume((), state ++ ["cast #{w.site.site_id}"])
+  found_survivor(s, resume) -> resume((), state ++ ["found #{s.site.site_id}"])
+  return(_x) -> state
+}
+
+test "a casting says a survivor as found only when it is settled" {
+  let later = Judging { ...BY_COVERAGE, pending: ["t9"] }
+  let said = heard(
+    () => as_found(later, () => {
+      Telling.cast_survived(cast_of("w1", ["t1"], []))
+      Telling.cast_survived(cast_of("w2", ["t9"], []))
+    })
+  )
+  assert said == ["cast w1", "found w1", "cast w2"]
+}
+
+fn answer(id: String, outcome: Outcome) : Answer =
+  Answer { wekufe: cast_of(id, ["t1"], []), outcome: outcome, killed_by: None }
+
+test "the survivors an earlier run answered for are said before the casting" {
+  let said = heard(
+    () => recalled_survivors(BY_COVERAGE, [answer("w1", Killed), answer("w2", Survived)])
+  )
+  assert said == ["found w2"]
+}

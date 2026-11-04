@@ -16,6 +16,8 @@ import time
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.costing
+import kalku.core.planner
+import kalku.core.report
 
 #[doc("""
 A running account of what the orchestrator is doing.
@@ -23,6 +25,11 @@ A running account of what the orchestrator is doing.
 Three kinds of note, because two kinds of listener want different
 things. A person reads sentences; a client of the protocol reads the
 stage a run entered and how far along it is, and can render either.
+
+A survivor is said twice. `cast_survived` is a cast that came to
+`survived`, which a later cast or a test that has not run yet may still
+change; `found_survivor` is one that nothing in the run will change, and
+is what a person can act on before the run ends.
 """)]
 pub effect Telling {
   tell_of(line: String) : Unit
@@ -33,6 +40,8 @@ pub effect Telling {
   kalku_wrote(worker: Int, chunk: String) : Unit
   kalku_at(worker: Int, done: Int, total: Int) : Unit
   logging_to(path: String) : Unit
+  cast_survived(w: Wekufe) : Unit
+  found_survivor(s: Survivor) : Unit
 }
 
 #[doc("""
@@ -74,8 +83,11 @@ pub fn worth_saying(done: Int, total: Int) : Bool = if total <= 0 or done <= 0 {
   done * 100 / total != (done - 1) * 100 / total
 }
 
-#[doc("Run with every note on stderr.")]
-pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
+#[doc("""
+Run with every note on stderr, and each survivor as it is found when
+`survivors` asks for them and stderr is a terminal.
+""")]
+pub fn told[a, e](survivors: Bool, body: () -> a / Telling + e) : a / Stderr + e = handle {
   body()
 } with Telling {
   tell_of(line, resume) -> {
@@ -110,6 +122,11 @@ pub fn told[a, e](body: () -> a / Telling + e) : a / Stderr + e = handle {
     Stderr.eprint("kalku: #{logged_at(path)}")
     resume(())
   }
+  cast_survived(_w, resume) -> resume(())
+  found_survivor(s, resume) -> {
+    noted_if(survivors and Stderr.is_tty(), "", s)
+    resume(())
+  }
   return(x) -> x
 }
 
@@ -125,16 +142,24 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   kalku_wrote(_worker, _chunk, resume) -> resume(())
   kalku_at(_worker, _done, _total, resume) -> resume(())
   logging_to(_path, resume) -> resume(())
+  cast_survived(_w, resume) -> resume(())
+  found_survivor(_s, resume) -> resume(())
   return(x) -> x
 }
 
-#[doc("Run in the voice asked for, so a caller decides without three call sites.")]
-pub fn voiced[a, e](voice: Voice, body: () -> a / Telling + e) : a / Stderr + Clock + e =
-  match voice {
-    Quiet -> untold(body)
-    Shown -> shown(body)
-    Aloud -> told(body)
-  }
+#[doc("""
+Run in the voice asked for, so a caller decides without three call sites;
+`survivors` is whether a survivor is said as it is found.
+""")]
+pub fn voiced[a, e](
+  voice: Voice,
+  survivors: Bool,
+  body: () -> a / Telling + e
+) : a / Stderr + Clock + e = match voice {
+  Quiet -> untold(body)
+  Shown -> shown(survivors, body)
+  Aloud -> told(survivors, body)
+}
 
 # Moves up to the line last drawn and clears it, so what is printed next
 # takes its place.
@@ -152,8 +177,13 @@ the report; a cast taking long is a line of its own above it, so it stays
 on screen. Elsewhere, a CI log, it is a line per phase and a count every
 `PLAIN_EVERY_MS`, so a log shows a run that is still alive and nothing it
 would have to scroll past.
+
+A survivor found while the casting goes on is drawn above the progress
+line, as the report will show it, when `survivors` asks for it: on a
+terminal only, because a log is read once the run is over and the report
+is at its end.
 """)]
-pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
+pub fn shown[a, e](survivors: Bool, body: () -> a / Telling + e) : a / Stderr + Clock + e {
   let live = Stderr.is_tty()
   var last := ""
   var began := monotonic()
@@ -206,6 +236,11 @@ pub fn shown[a, e](body: () -> a / Telling + e) : a / Stderr + Clock + e {
     }
     logging_to(path, resume) -> {
       above(live, last, "kalku: #{logged_at(path)}")
+      resume(())
+    }
+    cast_survived(_w, resume) -> resume(())
+    found_survivor(s, resume) -> {
+      noted_if(survivors and live, last, s)
       resume(())
     }
     return(x) -> {
@@ -293,3 +328,11 @@ pub fn so_far(worker: Int, done: Int, total: Int) : String = "worker #{worker}: 
 #[doc("A site as a person looks for it: the file, the line, and the spell.")]
 pub fn about_site(site: Site) : String =
   "#{site.file}:#{site.span.start.line} #{spell_name(site.spell)}"
+
+# A survivor on screen, above the progress line when one is drawn.
+fn noted_if(on: Bool, last: String, s: Survivor) : Unit / Stderr =
+  if on { above(true, last, survivor_note(s)) } else { () }
+
+#[doc("A survivor as the report shows it, under a line that says it was found.")]
+pub fn survivor_note(s: Survivor) : String =
+  join(["kalku: found a survivor", ...survivor_lines(s)], "\n")

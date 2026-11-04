@@ -27,6 +27,7 @@ import kalku.orchestrator.ward
 import kalku.orchestrator.scheduler
 import kalku.orchestrator.telling
 import kalku.orchestrator.measure
+import kalku.orchestrator.surviving
 import kalku.orchestrator.hearing
 import kalku.orchestrator.reuse
 
@@ -243,7 +244,8 @@ fn cast_kept(
   w: Warm
 ) : (Found, Option[Warm]) / Process + Spawn + Clock + File + Attending + Actor[OrchMsg] + Telling + Ward {
   let p = planned(asking, known)
-  let done = cast_over(asking.spec, slots, p.casts, w.next_id)
+  let done =
+    as_found(survivors_by(p.known), () => cast_over(asking.spec, slots, p.casts, w.next_id))
   (concluded(asking, p, done.fst), Some(Warm { ...w, slots: done.snd, next_id: done.trd }))
 }
 

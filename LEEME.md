@@ -184,6 +184,14 @@ lib/green.ex:4 compare after 95 s`), y eso es lo que distingue una suite
 lenta de una colgada. `--verbose` muestra cada nota, una línea por wekufe;
 `--quiet` no dice nada hasta el reporte. stdout lleva solo el reporte.
 
+En una terminal, con el reporte para personas, cada sobreviviente se muestra
+apenas nada de lo que queda de la corrida puede cambiarlo (dónde está, su
+diff, los tests que lo juzgaron), encima de la línea de progreso, así que
+el primer test se puede escribir mientras la corrida sigue. Un
+sobreviviente del que respondió una corrida anterior se muestra antes de
+empezar a castear. El reporte del final los vuelve a listar todos, con el
+puntaje.
+
 Cada corrida, además, guarda un log en la reni, nunca en el proyecto: cada
 nota con el momento de la corrida en que se hizo, y cada línea que cada
 kalku escribió en stderr. Su ruta es lo primero que dice una corrida; un
@@ -342,6 +350,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **Resultados que se conservan entre corridas**: un kill se recuerda mientras el test que lo mató no cambie, y un sobreviviente mientras lo juzguen los mismos tests sin cambios, así que una segunda corrida castea solo lo que un cambio puede afectar | hecho: donde el baseline corre solo lo que cambió |
 | **Un baseline acotado a los archivos de la corrida**: primero corren los tests que pueden alcanzarlos, y el resto de la suite solo cuando queda un wekufe sin matar o un site sin alcanzar | hecho: Elixir |
 | **Workers en paralelo en un proyecto Elixir**: cada uno con su propio build, y con su propia base de datos de test mediante `MIX_TEST_PARTITION` y el alias `test` del proyecto | hecho |
+| **Sobrevivientes mostrados apenas se encuentran**: en una terminal, cada uno como lo mostrará el reporte, una vez que nada de lo que queda de la corrida puede cambiarlo | hecho |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
 | **`--watch`** — vuelve a correr en cada guardado, hasta que se interrumpe; los kalku siguen calientes entre corridas y recargan lo que cambió cada guardado, y el baseline incremental reduce la suite a lo que el cambio puede alcanzar | hecho |
 | **`[score] ratchet`** — el score del proyecto completo no puede bajar de la línea base guardada con `--store-baseline` | listo |

@@ -372,12 +372,17 @@ fn partial(r: Report) : [String] {
 # ---- blocks ------------------------------------------------------------
 
 fn survivor_blocks(r: Report) : [String] =
-  if is_empty(r.survivors) { [] } else { flat_map(r.survivors, block) ++ [""] }
+  if is_empty(r.survivors) { [] } else { flat_map(r.survivors, survivor_lines) ++ [""] }
 
-# The hint goes with the survivor rather than in a legend at the end: a
-# reader acts on one hole at a time, and the sentence belongs where the
-# hole is.
-fn block(s: Survivor) : [String] =
+#[doc("""
+One survivor as the report shows it: where it is, its diff, what judged
+it, and the hint for its spell.
+
+The hint goes with the survivor rather than in a legend at the end: a
+reader acts on one hole at a time, and the sentence belongs where the
+hole is.
+""")]
+pub fn survivor_lines(s: Survivor) : [String] =
   [
     location(s),
     ...diff_of(s.site) | (line => "  #{line}"),

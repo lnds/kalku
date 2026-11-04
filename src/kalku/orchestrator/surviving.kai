@@ -1,0 +1,105 @@
+#[doc("""
+Survivors said as they are found, while the run goes on.
+
+A cast that comes to `survived` is not yet a survivor of the run. A
+wekufe cast more than once is settled by all its casts together, and one
+that a test the baseline left for later also judges is cast again once
+that test has run. Only a survivor nothing else in the run can change is
+said before the report: one said early and then killed would be a hole
+someone started closing for nothing.
+""")]
+
+import kalku.wire.enums
+import kalku.wire.shapes
+import kalku.core.planner
+import kalku.core.recalling
+import kalku.core.report
+import kalku.core.lookup
+import kalku.orchestrator.telling
+
+#[doc("""
+What a run knows to say a survivor by: the tests still to run, the whole
+suite for a wekufe judged without coverage, and whether the coverage chose
+the tests that judged it.
+""")]
+pub type Judging = { pending: [String], suite: [String], chosen: Bool }
+
+#[doc("""
+The survivor a cast that came to `survived` is, when nothing later in the
+run can change it.
+""")]
+pub fn settled_survivor(j: Judging, w: Wekufe) : Option[Survivor] {
+  let later = member_of(j.pending)
+  let tests = judges(w)
+  if w.casts > 1 or any(tests, later) {
+    None
+  } else {
+    Some(Survivor {
+      site: w.site,
+      tests: if is_empty(tests) { j.suite } else { tests },
+      chosen: j.chosen
+    })
+  }
+}
+
+#[doc("Run a casting, saying each survivor it settles as it is found.")]
+pub fn as_found[a, e](j: Judging, body: () -> a / Telling + e) : a / Telling + e = handle {
+  body()
+} with Telling {
+  tell_of(line, resume) -> {
+    Telling.tell_of(line)
+    resume(())
+  }
+  entered(phase, resume) -> {
+    Telling.entered(phase)
+    resume(())
+  }
+  got_through(done, total, resume) -> {
+    Telling.got_through(done, total)
+    resume(())
+  }
+  will_cost(casts, estimate_ms, most_ms, resume) -> {
+    Telling.will_cost(casts, estimate_ms, most_ms)
+    resume(())
+  }
+  still_on(worker, site, ms, resume) -> {
+    Telling.still_on(worker, site, ms)
+    resume(())
+  }
+  kalku_wrote(worker, chunk, resume) -> {
+    Telling.kalku_wrote(worker, chunk)
+    resume(())
+  }
+  kalku_at(worker, done, total, resume) -> {
+    Telling.kalku_at(worker, done, total)
+    resume(())
+  }
+  logging_to(path, resume) -> {
+    Telling.logging_to(path)
+    resume(())
+  }
+  cast_survived(w, resume) -> {
+    Telling.cast_survived(w)
+    said(settled_survivor(j, w))
+    resume(())
+  }
+  found_survivor(s, resume) -> {
+    Telling.found_survivor(s)
+    resume(())
+  }
+  return(x) -> x
+}
+
+#[doc("""
+Say the survivors an earlier run answered for, before the casting starts:
+they are not cast, and nothing in this run will change them.
+""")]
+pub fn recalled_survivors(j: Judging, answers: [Answer]) : Unit / Telling = each(
+  answers |? (a => a.outcome == Survived),
+  a => said(settled_survivor(Judging { ...j, pending: [] }, a.wekufe))
+)
+
+fn said(s: Option[Survivor]) : Unit / Telling = match s {
+  Some(found) -> Telling.found_survivor(found)
+  None -> ()
+}

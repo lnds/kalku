@@ -181,6 +181,13 @@ still on lib/green.ex:4 compare after 95 s` — which is what tells a slow
 suite from a hung one. `--verbose` says every note, a line per wekufe;
 `--quiet` says nothing until the report. stdout carries the report alone.
 
+On a terminal, with the human report, each survivor is shown as soon as
+nothing left in the run can change it — where it is, its diff, the tests
+that judged it — above the progress line, so the first test can be
+written while the run goes on. A survivor an earlier run answered for is
+shown before the casting starts. The report at the end lists them all
+again, with the score.
+
 Every run also keeps a log in the reni, never in the project: each note
 with how far into the run it was made, and every line each kalku wrote on
 stderr. Its path is the first thing a run says; `tail -f` on it is how to
@@ -338,6 +345,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **Outcomes kept between runs** — a kill is recalled while the test that killed it is unchanged, a survivor while the same unchanged tests judge it, so a second run casts only what a change can affect | done: wherever the baseline runs only what changed |
 | **A baseline scoped to the files a run is about** — the tests that may reach them run first, and the rest of the suite only when a wekufe is left unkilled or a site unreached | done: Elixir |
 | **Parallel workers in an Elixir project** — a build of its own for each, and a test database of its own through `MIX_TEST_PARTITION` and the project's `test` alias | done |
+| **Survivors shown as they are found** — on a terminal, each one as the report will show it, once nothing left in the run can change it | done |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
 | **`--watch`** — run again on every save, until interrupted; the kalku stay warm between runs and reload what each save changed, and the incremental baseline keeps the suite to what the change can reach | done |
 | **`[score] ratchet`** — the score of the whole project may not drop below the baseline stored with `--store-baseline` | done |

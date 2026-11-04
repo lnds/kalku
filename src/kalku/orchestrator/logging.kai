@@ -97,6 +97,14 @@ fn written_to[a, e](
     Telling.logging_to(other)
     resume(())
   }
+  cast_survived(w, resume) -> {
+    Telling.cast_survived(w)
+    resume(())
+  }
+  found_survivor(found, resume) -> {
+    Telling.found_survivor(found)
+    resume(())
+  }
   return(x) -> x
 }
 
