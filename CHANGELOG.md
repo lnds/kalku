@@ -1,3 +1,11 @@
+## v0.32.0 (2026-11-03)
+
+### Added
+
+- show each survivor as it is found, while the run goes on (#587)
+- recall a wekufe's outcome while the tests that judged it are unchanged (#586)
+- **elixir**: run several workers, each with its own build and test database (#583)
+
 ## v0.31.4 (2026-11-03)
 
 ## v0.31.3 (2026-11-02)
