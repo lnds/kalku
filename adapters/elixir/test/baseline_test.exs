@@ -87,6 +87,26 @@ defmodule Kalku.BaselineTest do
       assert Enum.all?(done["coverage"], &String.starts_with?(&1["file"], "lib/"))
     end
 
+    # A mocking library may compile the mock it puts under a module's name in
+    # a file of its own, while `:cover` keeps counting the replaced module's
+    # lines under that name, and the copy it keeps of that module names its
+    # file relative to where it was compiled. Each line has to be the same
+    # line whichever way it was counted: read one way for the suite and
+    # another for each test, the suite seemed to reach lines no test did,
+    # and the coverage was doubted for the whole run.
+    test "a suite whose mock names a file of its own is attributed, and not doubted", %{
+      reni: reni
+    } do
+      done = reply(run(reni, "mocked_early", ["baseline"]), "baseline_done")
+
+      assert done["status"] == "green"
+      refute Map.has_key?(done, "coverage_doubted")
+
+      by_line = Map.new(done["coverage"], &{{&1["file"], &1["line"]}, &1["tests"]})
+      assert by_line[{"lib/mocked_early.ex", 16}] == ["test/mocked_early_test.exs:5"]
+      assert Enum.all?(done["coverage"], &String.starts_with?(&1["file"], "lib/"))
+    end
+
     # Replacing a module under `:cover` makes the mocking library export its
     # counters to a file in the project's root, which it removes in the same
     # `after_suite` callback the kalku leaves out.

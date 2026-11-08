@@ -13,19 +13,30 @@ defmodule Kalku.Baseline.Cover do
   suite. Speed is the product, and this is where most of it comes from.
   """
 
+  # Where each instrumented module was written, by name.
+  @sources {__MODULE__, :sources}
+
   @doc """
   Instruments the project's own modules, and only those.
 
   Dependencies and the kalku itself are left alone: nobody mutates them,
   so counting their lines would cost time and say nothing.
+
+  Where each module was written is noted now, while every name is still
+  the module that was instrumented.
   """
   def start(app) when is_atom(app) do
     with {:ok, _} <- ensure_started(),
          ebin <- ebin_of(app),
          true <- File.dir?(ebin) do
       case :cover.compile_beam_directory(String.to_charlist(ebin)) do
-        results when is_list(results) -> {:ok, Enum.count(results, &match?({:ok, _}, &1))}
-        error -> {:error, "coverage could not instrument #{ebin}: #{inspect(error)}"}
+        results when is_list(results) ->
+          instrumented = for {:ok, module} <- results, do: module
+          note_sources(instrumented)
+          {:ok, length(instrumented)}
+
+        error ->
+          {:error, "coverage could not instrument #{ebin}: #{inspect(error)}"}
       end
     else
       false -> {:error, "no compiled modules to measure in #{ebin_of(app)}"}
@@ -167,8 +178,25 @@ defmodule Kalku.Baseline.Cover do
 
   defp ebin_of(app), do: Path.join([Mix.Project.build_path(), "lib", to_string(app), "ebin"])
 
-  @doc "The file a module was compiled from, which is what a site is reported against."
+  @doc """
+  The file a module was compiled from, which is what a site is reported
+  against.
+
+  For an instrumented module, the file it was instrumented from. What a
+  name is now is not always what it was then: a mocking library puts a
+  module of its own under the name of the one it replaces, and `:cover`
+  keeps counting the replaced module's lines under that name. Credited to
+  the mock's file, they match no site, and the suite seems to have reached
+  lines no test did.
+  """
   def source(module) do
+    case :persistent_term.get(@sources, %{}) do
+      %{^module => file} -> file
+      _ -> compiled_from(module)
+    end
+  end
+
+  defp compiled_from(module) do
     case module.module_info(:compile)[:source] do
       nil -> written_in(module)
       source -> to_string(source)
@@ -177,9 +205,15 @@ defmodule Kalku.Baseline.Cover do
     _ -> "unknown"
   end
 
+  defp note_sources(modules) do
+    :persistent_term.put(@sources, Map.new(modules, &{&1, compiled_from(&1)}))
+  end
+
   # A module made from another one's code, not from a file, names no source:
   # the copy a mocking library keeps of a module it replaced is one. `:cover`
-  # holds the code it instrumented, and the code says where it was written.
+  # holds the code it instrumented, and the code says where it was written,
+  # relative to where it was compiled: expanded, so a line run through the
+  # copy is the same line as one run through the module it was made from.
   # Asked once per module: a baseline reads the counters after every test.
   defp written_in(module) do
     case Process.get({__MODULE__, module}) do
@@ -198,7 +232,7 @@ defmodule Kalku.Baseline.Cover do
          {:ok, {_, [abstract_code: {_, forms}]}} <- :beam_lib.chunks(beam, [:abstract_code]),
          {:attribute, _, :file, {file, _}} <-
            Enum.find(forms, &match?({:attribute, _, :file, _}, &1)) do
-      to_string(file)
+      Path.expand(to_string(file))
     else
       _ -> "unknown"
     end
