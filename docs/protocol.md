@@ -288,6 +288,8 @@ A **fingerprint** says what a test runs: an opaque string that changes whenever 
 
 A file the kalku cannot parse is reported in `skipped`, not as a request `error`.
 
+The kaikai side asks for a run's sites a batch of files at a time, one `sites` after another under the same id, and joins the replies. The sites of a file weigh several times its source, so the sites of a whole project would pass the line ceiling long before the project is large; a batch holds at most 128 KiB of source, which keeps each reply far under it. A kalku answers each request on its own, as if it were the only one: the same file is never in two batches, and nothing about one batch carries over to the next.
+
 `by_design: true` marks a file the kalku leaves out because it is not the project's code to measure — a test file, a tool's config, a generated file — rather than one it could not read or parse. Such a file is kept in the report for the record, but the gate does not hear of it, since no run could ever measure it. An entry without `by_design` is one the kalku could not search.
 
 ```json

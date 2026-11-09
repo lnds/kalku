@@ -1,0 +1,34 @@
+import kalku.orchestrator.searching
+
+fn files(sizes: [Int]) : [(String, Int)] = enumerate(sizes) | (p => ("f#{p.fst}", p.snd))
+
+test "files that fit the budget together are asked for in one batch" {
+  assert batches(files([10, 20, 30]), 100) == [["f0", "f1", "f2"]]
+}
+
+test "a file that would take a batch past the budget starts the next one" {
+  assert batches(files([60, 30, 20, 90]), 100) == [["f0", "f1"], ["f2"], ["f3"]]
+}
+
+# Nothing smaller than one file can be asked for.
+test "a file larger than the budget is a batch of its own" {
+  assert batches(files([10, 500, 10]), 100) == [["f0"], ["f1"], ["f2"]]
+}
+
+test "no files are no batches" {
+  assert batches([], 100) == []
+}
+
+fn sizes_from(n: Int) : [Int] =
+  enumerate(repeat(0, abs(n) % 60)) | (p => (p.fst * 37 + abs(n)) % 150)
+
+# Every file is asked for exactly once, in the order the run gave them,
+# and a batch over the budget is one file that is over it alone.
+check "batches hold every file once, in order, each within the budget or alone" with n: Int {
+  let given = files(sizes_from(n))
+  let cut = batches(given, 100)
+  let size_of = (name: String) => (find(given, f => f.fst == name) |> map(.snd)) ?? 0
+  flat_map(cut, b => b) == (given | .fst)
+    and all(cut, b => not is_empty(b))
+    and all(cut, b => list.length(b) == 1 or sum(b | size_of) <= 100)
+}
