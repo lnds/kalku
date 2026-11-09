@@ -123,16 +123,19 @@ equivalentes que se argumentan y se registran, un control en CI—,
 configúralo:
 
 ```sh
-kalku init                    # detects Elixir, writes .kalku.toml and .kalku/summon
+kalku init                    # detects Elixir, writes .kalku.toml, .kalku/summon and the kalku_elixir dependency
 mix deps.get
 ```
 
 `init` lee los marcadores propios del proyecto —`mix.exs`, `kai.toml`—, dice
-lo que encontró, y escribe `.kalku.toml` más un script `.kalku/summon` con lo
-que el toolchain necesite para iniciar el kalku con un canal de protocolo
-limpio. Nunca escribe sobre un archivo que ya existe, y nunca edita el
-archivo de build que decide de qué depende un proyecto: imprime la línea que
-hay que agregar y explica por qué.
+lo que encontró y lo que va a escribir, y pregunta antes (`-y` se salta la
+pregunta). Escribe `.kalku.toml` más un script `.kalku/summon` con lo que el
+toolchain necesite para iniciar el kalku con un canal de protocolo limpio.
+Nunca escribe sobre un archivo que ya existe. El kalku de Elixir corre dentro
+del proyecto, así que `init` además agrega una línea a `deps` en `mix.exs`,
+`{:kalku_elixir, "~> <versión>"}`, y no toca nada más en él. Si no reconoce
+los `deps` de un `mix.exs`, lo deja tal cual: imprime la línea que hay que
+agregar y explica por qué.
 
 Empieza con un archivo y un límite. La primera corrida sobre un proyecto
 completo, en una base de código real, es larga, y no enseña nada que un solo

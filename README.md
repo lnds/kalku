@@ -119,16 +119,19 @@ To keep kalku in a project — a configuration the team shares, equivalents
 that are argued and recorded, a gate in CI — set it up:
 
 ```sh
-kalku init                    # detects Elixir, writes .kalku.toml and .kalku/summon
+kalku init                    # detects Elixir, writes .kalku.toml, .kalku/summon and the kalku_elixir dependency
 mix deps.get
 ```
 
 `init` reads the project's own markers — `mix.exs`, `kai.toml` — says what
-it found, and writes `.kalku.toml` plus a `.kalku/summon` script holding
-whatever the toolchain needs to start the kalku with a clean protocol
-channel. It never writes over a file that is there, and it never edits the
-build file that decides what a project depends on: it prints the line to
-add and says why.
+it found and what it will write, and asks first (`-y` skips the question).
+It writes `.kalku.toml` plus a `.kalku/summon` script holding whatever the
+toolchain needs to start the kalku with a clean protocol channel. It never
+writes over a file that is there. The Elixir kalku runs inside the project,
+so `init` also adds one line to `deps` in `mix.exs`,
+`{:kalku_elixir, "~> <version>"}`, and touches nothing else in it. A
+`mix.exs` whose `deps` it does not recognise is left alone: `init` prints
+the line to add and says why.
 
 Start with one file and a limit. A first whole-project run on a real
 codebase is long, and there is nothing to learn from it that a single
