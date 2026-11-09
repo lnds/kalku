@@ -12,6 +12,8 @@ defmodule Kalku.Runtime do
   watched. Anonymous tables belong to whoever holds them and vanish with
   it, and processes come and go under a supervisor without anything being
   wrong; watching those would call a healthy runtime dirty on every cast.
+  A table named after its owner's pid is one of those: the process that
+  takes the owner's place names another, as an HTTP client profile does.
 
   ExUnit is watched because it judges every cast after this one: a wekufe
   that changes its configuration, or a run that stopped halfway and left
@@ -115,7 +117,12 @@ defmodule Kalku.Runtime do
         restore_env(clean.runner, :ex_unit, @per_run)
         runner = start_runner_again()
         restarted = restart(app)
-        {:ok, runner == :ok and restarted == :ok and snapshot(app) == clean}
+        now = snapshot(app)
+
+        if now != clean,
+          do: IO.puts(:stderr, "kalku: still dirty after a reset: " <> moved(clean, now))
+
+        {:ok, runner == :ok and restarted == :ok and now == clean}
     end
   end
 
@@ -128,12 +135,29 @@ defmodule Kalku.Runtime do
     }
   end
 
+  # What differs from the mark, so the log says what a reset could not put back.
+  defp moved(clean, now) do
+    [
+      tables_added: MapSet.difference(now.tables, clean.tables) |> Enum.sort(),
+      tables_gone: MapSet.difference(clean.tables, now.tables) |> Enum.sort(),
+      env_changed: Keyword.keys(now.env -- clean.env) ++ Keyword.keys(clean.env -- now.env),
+      ex_unit_changed:
+        Keyword.keys(now.runner -- clean.runner) ++ Keyword.keys(clean.runner -- now.runner)
+    ]
+    |> Enum.reject(fn {_, found} -> found == [] end)
+    |> inspect(limit: 20)
+  end
+
   # A named table is a deliberate one: something asked for that name and
-  # expects to find it again.
-  defp named_tables, do: for(table <- :ets.all(), is_atom(table), into: MapSet.new(), do: table)
+  # expects to find it again. One named after a pid is found again only by
+  # the process it names.
+  defp named_tables, do: for(table <- :ets.all(), watched?(table), into: MapSet.new(), do: table)
+
+  defp watched?(table),
+    do: is_atom(table) and not Regex.match?(~r/<\d+\.\d+\.\d+>/, Atom.to_string(table))
 
   defp drop_new_tables(clean, _app) do
-    for table <- :ets.all(), is_atom(table), not MapSet.member?(clean, table) do
+    for table <- :ets.all(), watched?(table), not MapSet.member?(clean, table) do
       safely(fn -> :ets.delete(table) end)
     end
   end

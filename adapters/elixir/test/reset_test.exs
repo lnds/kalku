@@ -65,6 +65,24 @@ defmodule Kalku.ResetTest do
     assert after_reset["outcome"] == "survived"
   end
 
+  # A table named after the process that owns it goes with that process,
+  # and the one that takes its place names another. Watched, every cast
+  # that restarts it is dirty, and no reset matches the mark again.
+  test "a table named after its owner's pid is not the project's state", %{reni: reni} do
+    lines =
+      summon(reni, "instanced", [
+        request("prepare", 2),
+        request("baseline", 3),
+        cast("restarter", 4, {147, 148}, "1", ["test/instanced_test.exs:4"], "lib/instanced.ex"),
+        request("reset", 5)
+      ])
+
+    done = reply(lines, "cast_done")
+    assert done["outcome"] == "killed"
+    assert done["dirty"] == false
+    assert reply(lines, "reset_done")["clean"] == true
+  end
+
   test "a cast that touches nothing is not called dirty", %{reni: reni} do
     done =
       reply(
