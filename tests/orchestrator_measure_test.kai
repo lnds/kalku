@@ -110,6 +110,24 @@ test "a run that stops short reports what it cast, and that it stopped" {
   }
 }
 
+# The same stop in a sample of both wekufe: one was answered for, and the
+# report says the sample stopped short rather than estimating from one.
+test "a sample that stops short reports what it drew, and no estimate" {
+  let found =
+    measured_with(Asking { ...asking_of("reads_and_leaves.ndjson"), whole: true, sample: Some(2) })
+
+  match found.report {
+    None -> {
+      assert false
+    }
+    Some(r) -> {
+      assert r.sample == Some(Sampled { drawn: 2, of: 2 })
+      assert is_some(index_of(human(r), "SAMPLE: 1 of 2 drawn wekufe cast, of 2"))
+      assert not is_some(index_of(human(r), "likely"))
+    }
+  }
+}
+
 # With more workers than one, the kalku that read the project keeps the
 # first slot and the rest are summoned beside it: greeted, prepared, and
 # never asked for a baseline.

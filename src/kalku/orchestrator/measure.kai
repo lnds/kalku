@@ -609,7 +609,7 @@ pub fn found_after(asking: Asking, p: Planned, cast: Casting) : Found / Telling 
           ...whole_report,
           shard: asking.shard,
           plan: Some(marked(p.known.sites)),
-          sample: p.sampled,
+          sample: p.sampled |> option.map(s => seen_in(s, whole_report.planned)),
           weighed: if asking.every_kill {
             Some(weighed(attempts(cast, casting), unreaching_in(p.whole, p.known)))
           } else {

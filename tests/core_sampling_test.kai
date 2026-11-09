@@ -67,7 +67,7 @@ test "the more of the plan a sample holds, the narrower the range, down to the s
 check "the range lies within 0 and 1 and holds the sample's score" with n: Int {
   let killed = abs(n) % 200
   let survived = abs(n / 7) % 200
-  let drawn_ = killed + survived + 1
+  let drawn_ = killed + survived
   match margin(counts(killed, survived), Sampled { drawn: drawn_, of: drawn_ * 3 }) {
     None -> killed + survived == 0
     Some(r) -> {
@@ -80,5 +80,20 @@ check "the range lies within 0 and 1 and holds the sample's score" with n: Int {
 test "a sample says what it cast of what, and where the whole project's score lies" {
   assert sample_line(counts(70, 30), Sampled { drawn: 100, of: 1000 })
     == "SAMPLE: 100 of 1000 wekufe, the whole project's score likely 60.9% to 77.7%"
-  assert sample_line(counts(0, 0), Sampled { drawn: 3, of: 1000 }) == "SAMPLE: 3 of 1000 wekufe"
+}
+
+# A run that stopped cast the drawn wekufe in the order of the plan, so what
+# it reached is the start of the plan again: no range is drawn from it.
+test "a sample that stopped short says so, and gives no range" {
+  let part = Sampled { drawn: 50, of: 12718 }
+  assert stopped_short(counts(0, 2), part)
+  assert margin(counts(0, 2), part) == None
+  assert sample_line(counts(0, 2), part)
+    == "SAMPLE: 2 of 50 drawn wekufe cast, of 12718: a sample that stopped short says nothing of the whole project"
+  assert not stopped_short(counts(30, 20), part)
+}
+
+test "a drawn wekufe no test runs leaves the sample as it leaves the plan" {
+  assert seen_in(Sampled { drawn: 50, of: 1000 }, 997) == Sampled { drawn: 47, of: 997 }
+  assert seen_in(Sampled { drawn: 50, of: 1000 }, 1000) == Sampled { drawn: 50, of: 1000 }
 }
