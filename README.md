@@ -194,6 +194,12 @@ still on lib/green.ex:4 compare after 95 s` — which is what tells a slow
 suite from a hung one. `--verbose` says every note, a line per wekufe;
 `--quiet` says nothing until the report. stdout carries the report alone.
 
+A casting estimated at ten minutes or more names a shorter way before it
+starts: over the whole project, `--sample 200`, a file, or `--since main`;
+over some files, `--limit` or `--since main`. It is advice, and the run
+goes on as asked. A run over a change is given none, since a gate that
+cast part of a change would pass lines nobody looked at.
+
 On a terminal, with the human report, each survivor is shown as soon as
 nothing left in the run can change it — where it is, its diff, the tests
 that judged it — above the progress line, so the first test can be

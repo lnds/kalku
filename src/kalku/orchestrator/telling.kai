@@ -30,6 +30,9 @@ A survivor is said twice. `cast_survived` is a cast that came to
 `survived`, which a later cast or a test that has not run yet may still
 change; `found_survivor` is one that nothing in the run will change, and
 is what a person can act on before the run ends.
+
+`advised` is a shorter way to what was asked, said to a person before a
+long casting starts; the run goes on as asked.
 """)]
 pub effect Telling {
   tell_of(line: String) : Unit
@@ -42,6 +45,7 @@ pub effect Telling {
   logging_to(path: String) : Unit
   cast_survived(w: Wekufe) : Unit
   found_survivor(s: Survivor) : Unit
+  advised(line: String) : Unit
 }
 
 #[doc("""
@@ -127,6 +131,10 @@ pub fn told[a, e](survivors: Bool, body: () -> a / Telling + e) : a / Stderr + e
     noted_if(survivors and Stderr.is_tty(), "", s)
     resume(())
   }
+  advised(line, resume) -> {
+    Stderr.eprint("kalku: #{line}")
+    resume(())
+  }
   return(x) -> x
 }
 
@@ -144,6 +152,7 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   logging_to(_path, resume) -> resume(())
   cast_survived(_w, resume) -> resume(())
   found_survivor(_s, resume) -> resume(())
+  advised(_line, resume) -> resume(())
   return(x) -> x
 }
 
@@ -241,6 +250,10 @@ pub fn shown[a, e](survivors: Bool, body: () -> a / Telling + e) : a / Stderr + 
     cast_survived(_w, resume) -> resume(())
     found_survivor(s, resume) -> {
       noted_if(survivors and live, last, s)
+      resume(())
+    }
+    advised(line, resume) -> {
+      above(live, last, "kalku: #{line}")
       resume(())
     }
     return(x) -> {

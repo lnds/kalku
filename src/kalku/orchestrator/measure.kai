@@ -521,12 +521,23 @@ pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
   if is_empty(p.recalled) { () } else { Telling.tell_of(recalled_line(length(p.recalled))) }
   recalled_survivors(survivors_by(p.known), p.recalled)
   let workers = asking.spec.workers
-  Telling.will_cost(
-    length(p.casts),
-    estimate_ms(p.casts, p.known.durations, workers),
-    most_ms(p.casts, p.known.durations, workers)
-  )
+  let estimate = estimate_ms(p.casts, p.known.durations, workers)
+  Telling.will_cost(length(p.casts), estimate, most_ms(p.casts, p.known.durations, workers))
+  match shorter_way(estimate, breadth_of(asking)) {
+    Some(line) -> Telling.advised(line)
+    None -> ()
+  }
   p
+}
+
+fn breadth_of(asking: Asking) : Breadth = if is_some(asking.touched) {
+  ChangeOf
+} else if is_some(asking.sample) {
+  SampleOf
+} else if asking.whole {
+  WholeOf
+} else {
+  FilesOf
 }
 
 #[doc("The plan for what a kalku read.")]

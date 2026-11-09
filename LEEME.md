@@ -197,6 +197,13 @@ lib/green.ex:4 compare after 95 s`), y eso es lo que distingue una suite
 lenta de una colgada. `--verbose` muestra cada nota, una línea por wekufe;
 `--quiet` no dice nada hasta el reporte. stdout lleva solo el reporte.
 
+Un lanzamiento estimado en diez minutos o más sugiere un camino más corto
+antes de empezar: sobre el proyecto completo, `--sample 200`, un archivo o
+`--since main`; sobre algunos archivos, `--limit` o `--since main`. Es un
+consejo, y la corrida sigue como se pidió. Una corrida sobre un cambio no
+recibe ninguno, porque un gate que lanzara parte de un cambio aprobaría
+líneas que nadie miró.
+
 En una terminal, con el reporte para personas, cada sobreviviente se muestra
 apenas nada de lo que queda de la corrida puede cambiarlo (dónde está, su
 diff, los tests que lo juzgaron), encima de la línea de progreso, así que

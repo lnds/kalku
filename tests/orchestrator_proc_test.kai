@@ -383,6 +383,7 @@ fn noted_from(whats: [FromKalku]) : [String] = handle {
   logging_to(_path, resume) -> resume((), state)
   cast_survived(_w, resume) -> resume((), state)
   found_survivor(_s, resume) -> resume((), state)
+  advised(_line, resume) -> resume((), state)
   return(_x) -> state
 }
 

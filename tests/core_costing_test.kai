@@ -181,3 +181,24 @@ test "the costs of shards add up per test" {
       TestCost { test_id: "t2", duration_ms: 30, judges: 1 }
     ]
 }
+
+# A first run on a big project is announced as hours, and most people stop
+# there: past ten minutes the run names a shorter way to what it was asked.
+test "a long run over the whole project points at a sample and at what you are working on" {
+  let said = shorter_way(LONG_RUN_MS, WholeOf) ?? ""
+  assert is_some(index_of(said, "`kalku run --all --sample 200`"))
+  assert is_some(index_of(said, "`--since main`"))
+  assert is_some(index_of(shorter_way(LONG_RUN_MS, FilesOf) ?? "", "`--limit 20`"))
+}
+
+test "a run that is not long is given no advice" {
+  assert shorter_way(LONG_RUN_MS - 1, WholeOf) == None
+  assert shorter_way(0, FilesOf) == None
+}
+
+# A gate that cast part of a change would pass lines nobody looked at, and
+# a sample is already the short way.
+test "a change and a sample are given no shorter way" {
+  assert shorter_way(LONG_RUN_MS * 10, ChangeOf) == None
+  assert shorter_way(LONG_RUN_MS * 10, SampleOf) == None
+}
