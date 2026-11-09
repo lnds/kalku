@@ -1,0 +1,99 @@
+#[doc("""
+A score of the whole project from part of its wekufe.
+
+A sample is drawn by each wekufe's id, as a shard is, never by its place
+in the plan: a plan runs file by file, and its first hundred wekufe are
+the first files, not the project. Two runs at one commit draw the same
+wekufe on any machine, so their estimates can be set side by side.
+
+A sample's score is an estimate, and is said as one: with how many wekufe
+were cast of how many there were, and the range the whole project's score
+lies in.
+""")]
+
+import math.real as real
+import kalku.wire.shapes
+import kalku.core.shard
+import kalku.core.lookup
+
+#[doc("How many wekufe a sample cast, of how many the plan held.")]
+#[derive(Eq, Show)]
+pub type Sampled = { drawn: Int, of: Int }
+
+#[doc("The range the whole plan's score lies in, at 95% confidence.")]
+#[derive(Eq, Show)]
+pub type Margin = { low: Real, high: Real }
+
+# The normal quantile of a two-sided 95% interval.
+const Z : Real = 1.96
+
+#[doc("""
+The `n` of these the sample casts, in the order they came: those whose
+ids hash lowest, the id itself settling a tie.
+""")]
+pub fn drawn[a](xs: [a], id: (a) -> String, n: Int) : [a] {
+  let ranked = sort_by(xs | id, (p, q) => before(p, q))
+  let chosen = member_of(take(ranked, n))
+  xs |? (x => chosen(id(x)))
+}
+
+fn before(p: String, q: String) : Int {
+  let hp = site_hash(p)
+  let hq = site_hash(q)
+  if hp != hq { hp - hq } else if p < q { 0 - 1 } else if p > q { 1 } else { 0 }
+}
+
+#[doc("""
+Where the whole plan's score lies, from what a sample of it came to:
+`None` when nothing in the sample was killed or survived.
+
+A Wilson interval, which stays inside 0 and 1 and does not shrink to a
+point when every wekufe of a sample was killed. The sample is drawn
+without putting anything back, so the more of the plan it holds, the
+narrower the range, down to the score itself when it holds all of it.
+""")]
+pub fn margin(c: Counts, s: Sampled) : Option[Margin] {
+  let asked = c.killed + c.survived
+  if asked == 0 {
+    None
+  } else {
+    let p = int_to_real(c.killed) / int_to_real(asked)
+    let left = if s.of <= 0 { 0.0 } else { 1.0 - int_to_real(s.drawn) / int_to_real(s.of) }
+    if left <= 0.0 {
+      Some(Margin { low: p, high: p })
+    } else {
+      Some(wilson(p, int_to_real(asked) / left))
+    }
+  }
+}
+
+fn wilson(p: Real, n: Real) : Margin {
+  let z2 = Z * Z
+  let d = 1.0 + z2 / n
+  let centre = (p + z2 / (2.0 * n)) / d
+  let half = Z * real_sqrt(p * (1.0 - p) / n + z2 / (4.0 * n * n)) / d
+  # Rounding can leave a bound a hair inside the score it was drawn around.
+  Margin {
+    low: at_least(0.0, at_most(p, centre - half)),
+    high: at_most(1.0, at_least(p, centre + half))
+  }
+}
+
+fn at_least(floor: Real, x: Real) : Real = if x < floor { floor } else { x }
+
+fn at_most(ceiling: Real, x: Real) : Real = if x > ceiling { ceiling } else { x }
+
+#[doc("""
+What a sample says above its score: what was cast of what, and where the
+whole project's score lies.
+""")]
+pub fn sample_line(c: Counts, s: Sampled) : String {
+  let head = "SAMPLE: #{s.drawn} of #{s.of} wekufe"
+  match margin(c, s) {
+    None -> head
+    Some(m) -> "#{head}, the whole project's score likely #{percent(m.low)} to #{percent(m.high)}"
+  }
+}
+
+#[doc("A share as a percentage to one decimal, as the score is said.")]
+pub fn percent(x: Real) : String = "#{real_to_string(real.round_to(x * 100.0, 1))}%"

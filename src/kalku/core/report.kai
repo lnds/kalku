@@ -24,6 +24,7 @@ import kalku.core.blaming
 import kalku.core.costing
 import kalku.core.kills
 import kalku.core.lookup
+import kalku.core.sampling
 
 # Enough test ids to recognise the guard that ran, before the list stops
 # being something a reader reads.
@@ -100,6 +101,7 @@ pub type Report = {
   whole: Bool,
   costs: [TestCost],
   weighed: Option[Weighed],
+  sample: Option[Sampled],
   log: Option[String]
 }
 
@@ -359,13 +361,17 @@ fn part(shard: Option[Shard]) : [String] = match shard {
 # A run that cast part of what it planned reports a score over that part,
 # and says so first. A number that answers a question nobody asked is the
 # dishonesty this whole tool exists to avoid, and a reader who takes a
-# limited run's score for the file's score has been misled by silence.
+# limited run's score for the file's score has been misled by silence. A
+# sample was cast to estimate the whole, and says how well it does.
 fn partial(r: Report) : [String] {
   let cast = answered(r.counts)
-  if r.planned <= 0 or cast >= r.planned {
-    []
-  } else {
-    ["PARTIAL: #{cast} of #{r.planned} planned wekufe"]
+  match r.sample {
+    Some(s) -> [sample_line(r.counts, s)]
+    None -> if r.planned <= 0 or cast >= r.planned {
+      []
+    } else {
+      ["PARTIAL: #{cast} of #{r.planned} planned wekufe"]
+    }
   }
 }
 

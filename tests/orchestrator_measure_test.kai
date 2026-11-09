@@ -3,6 +3,7 @@ import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.report
 import kalku.core.gate
+import kalku.core.sampling
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.attending
@@ -38,7 +39,8 @@ fn asking_of(script: String) : Asking = Asking {
   store: None,
   reuse: false,
   every_kill: false,
-  whole: false
+  whole: false,
+  sample: None
 }
 
 fn measured(script: String) : Found / Process + Spawn + Clock + File + Stderr =
@@ -141,4 +143,28 @@ test "one name a kalku gives two different wekufe ends the run before anything i
 
   assert found.cast == []
   assert is_some(index_of(found.failure |> unwrap_or(""), "named two different wekufe `s3`"))
+}
+
+# The script answers one cast and then expects `shutdown`, so a second cast
+# would end the run: a sample of one casts one wekufe of the two planned,
+# and says so. Its score is an estimate, never held to a floor.
+test "a sample casts the wekufe it draws, and reports what it drew of what" {
+  let found =
+    measured_with(Asking { ...asking_of("casts_one.ndjson"), whole: true, sample: Some(1) })
+
+  assert found.failure == None
+  assert list.length(found.cast) == 1
+  match found.report {
+    None -> {
+      assert false
+    }
+    Some(r) -> {
+      assert r.sample == Some(Sampled { drawn: 1, of: 2 })
+      assert r.counts.killed == 1
+      assert r.planned == 2
+      assert exit_code(judged_by(r, no_policy(), None).blockers) == 0
+      let floor = Policy { threshold: Some(0.5), baseline: None }
+      assert exit_code(judged_by(r, floor, None).blockers) == 2
+    }
+  }
 }

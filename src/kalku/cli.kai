@@ -44,7 +44,8 @@ pub type Wanted = {
   shard: Option[Shard],
   store: Bool,
   watch: Bool,
-  every_kill: Bool
+  every_kill: Bool,
+  sample: Option[Int]
 }
 
 #[doc("How a run prints what it found.")]
@@ -145,7 +146,8 @@ pub fn nothing_wanted() : Wanted = Wanted {
   shard: None,
   store: false,
   watch: false,
-  every_kill: false
+  every_kill: false,
+  sample: None
 }
 
 fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
@@ -163,6 +165,11 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
   ["--limit", n, ...rest] -> match to_int(n) {
     None -> Misused("`--limit` takes a number, not `#{n}`")
     Some(limit) -> read_wanted(rest, Wanted { ...so_far, limit: Some(limit) })
+  }
+  ["--sample"] -> Misused("`--sample` needs a number of wekufe")
+  ["--sample", n, ...rest] -> match to_int(n) |> option.filter(size => size >= 1) {
+    Some(size) -> read_wanted(rest, Wanted { ...so_far, sample: Some(size) })
+    None -> Misused("`--sample` takes a number of wekufe, at least 1, not `#{n}`")
   }
   ["--format"] -> Misused("`--format` needs a name: human, agent, json or github")
   ["--format", name, ...rest] -> match shape_of(name) {
@@ -189,7 +196,9 @@ fn read_wanted(args: [String], so_far: Wanted) : Command = match args {
 # `--all` is the whole project, and files beside it would be a second
 # answer to the same question. A change has its own files too.
 fn whole_or_named(w: Wanted) : Command =
-  match first_some([whole_refusal(w), store_refusal(w), every_kill_refusal(w), watch_refusal(w)]) {
+  match first_some(
+    [whole_refusal(w), sample_refusal(w), store_refusal(w), every_kill_refusal(w), watch_refusal(w)]
+  ) {
     Some(why) -> Misused(why)
     None -> Measure(w)
   }
@@ -202,10 +211,26 @@ fn whole_refusal(w: Wanted) : Option[String] = if w.all and (not is_empty(w.file
   None
 }
 
+# A sample estimates the score of the whole project, so it is drawn from
+# all of it, and every wekufe it draws is cast: a sample cut short, split,
+# or chased for more killers is no longer the sample the estimate is of.
+fn sample_refusal(w: Wanted) : Option[String] = if is_none(w.sample) {
+  None
+} else if not w.all {
+  Some("`--sample` estimates the score of the whole project: it goes with `--all`")
+} else if is_some(w.limit) or is_some(w.shard) or w.every_kill {
+  Some(
+    "`--sample` casts every wekufe it draws: it goes with neither `--limit`, `--shard` nor `--every-kill`"
+  )
+} else {
+  None
+}
+
 fn store_refusal(w: Wanted) : Option[String] =
-  if w.store and ((not w.all) or is_some(w.shard) or unwrap_or(w.limit, 0) != 0) {
+  if w.store
+    and ((not w.all) or is_some(w.shard) or unwrap_or(w.limit, 0) != 0 or is_some(w.sample)) {
     Some(
-      "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
+      "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard`, `--limit` nor `--sample`"
     )
   } else {
     None
@@ -408,6 +433,7 @@ options:
   --since <ref>    measure only the lines changed since that ref, and block
                    when a wekufe survives on one of them
   --all            measure every source file of the project, all of its wekufe
+  --sample <n>     with --all: estimate the whole project's score from n wekufe
   --shard <i/n>    cast only part i of n: the same part on every machine, so
                    n jobs cover a project between them
   --store-baseline store this run's score, or a merge's, as the baseline

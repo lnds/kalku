@@ -67,7 +67,8 @@ fn report_of(survivors: [Survivor], counts: Counts) : Report = Report {
   commit: None,
   whole: false,
   costs: [],
-  weighed: None
+  weighed: None,
+  sample: None
 }
 
 fn one() : Counts = tally([Cast(Killed), Cast(Survived)])

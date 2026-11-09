@@ -20,6 +20,7 @@ import kalku.core.shard
 import kalku.core.blaming
 import kalku.core.costing
 import kalku.core.kills
+import kalku.core.sampling
 
 #[doc("The whole report as one canonical JSON object.")]
 pub fn json(r: Report, exit: Int) : String {
@@ -52,6 +53,7 @@ pub fn json(r: Report, exit: Int) : String {
         ...optional("plan", r.plan |> map(p => to_json(p))),
         ...optional("commit", r.commit |> map(JStr)),
         ...optional("whole", if r.whole { Some(JBool(true)) } else { None }),
+        ...optional("sample", r.sample |> map(s => sample_json(r.counts, s))),
         ("uncovered", JArr(r.uncovered | (s => to_json(s)))),
         ("troubles", JArr(r.troubles | (t => to_json(t)))),
         ...optional("suite", suite |> map(strings)),
@@ -65,6 +67,19 @@ pub fn json(r: Report, exit: Int) : String {
     )
   )
 }
+
+# How much of the plan a sample cast, and the range it puts the whole
+# project's score in; the range is read again from the counts, never back.
+fn sample_json(c: Counts, s: Sampled) : JsonValue = JObj(
+  [
+    ("drawn", JNum(s.drawn)),
+    ("of", JNum(s.of)),
+    ...match margin(c, s) {
+      None -> []
+      Some(m) -> [("low", JReal(m.low)), ("high", JReal(m.high))]
+    }
+  ]
+)
 
 # Present only when a run went on without some tests, so a run in which
 # every test judged writes the bytes it always wrote.
@@ -257,6 +272,10 @@ fn written_from(v: JsonValue) : Result[Written, String] {
         weighed: match json_bind_field(v, "test_weights") {
           JNull -> None
           w -> Some(weights_from(w, "test_weights")!)
+        },
+        sample: match json_bind_field(v, "sample") {
+          JNull -> None
+          s -> Some(Sampled { drawn: int_at(s, "drawn")!, of: int_at(s, "of")! })
         }
       },
       exit: int_at(v, "exit")!,
