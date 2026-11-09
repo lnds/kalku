@@ -1,3 +1,17 @@
+## v0.33.0 (2026-11-09)
+
+### Added
+
+- name a shorter way before a long casting starts (#595)
+- estimate the whole project's score from a sample (#594)
+
+### Fixed
+
+- **elixir**: leave tables named after a pid out of what a reset watches (#599)
+- a sample that stopped short says so, and estimates nothing (#598)
+- ask for a run's sites a batch of files at a time (#597)
+- **elixir**: credit a mocked module's lines to its own file (#592)
+
 ## v0.32.0 (2026-11-03)
 
 ### Added
