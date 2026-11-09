@@ -105,6 +105,11 @@ fn written_to[a, e](
     Telling.found_survivor(found)
     resume(())
   }
+  advised(line, resume) -> {
+    noted(path, began, line)
+    Telling.advised(line)
+    resume(())
+  }
   return(x) -> x
 }
 

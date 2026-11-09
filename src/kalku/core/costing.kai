@@ -99,6 +99,40 @@ pub fn what_it_costs(ms: Int, most: Int) : String = if most < 1000 {
   "#{at_least(ms)}up to #{how_long(most)} at the rate the baseline ran, plus loading each wekufe: the coverage is doubted, so a wekufe its own tests do not kill faces the rest of the suite too"
 }
 
+#[doc("How much of a project a run was asked about, which decides what a shorter way to it is.")]
+#[derive(Eq, Show)]
+pub type Breadth = WholeOf | SampleOf | FilesOf | ChangeOf
+
+#[doc("""
+How long a run is estimated to take before it is worth pointing at a
+shorter one: past this, most people stop the run rather than wait.
+""")]
+pub const LONG_RUN_MS : Int = 600000
+
+#[doc("""
+A shorter way to what a run was asked, when it is estimated to take long:
+`None` when it is not, or when there is none worth naming.
+
+Advice and nothing more: the run goes on as asked. A change is not given
+any, because a gate that cast part of a change would pass lines nobody
+looked at; nor is a sample, which is already the short way.
+""")]
+pub fn shorter_way(estimate_ms: Int, breadth: Breadth) : Option[String] =
+  if estimate_ms < LONG_RUN_MS {
+    None
+  } else {
+    match breadth {
+      WholeOf -> Some(
+        "that is long for a first look: `kalku run --all --sample 200` estimates the whole project's score from 200 wekufe, and `kalku run <file>` or `--since main` measures what you are working on"
+      )
+      FilesOf -> Some(
+        "that is long: `--limit 20` casts fewer of these wekufe, and `--since main` only those on lines a change touched"
+      )
+      SampleOf -> None
+      ChangeOf -> None
+    }
+  }
+
 # A floor under a minute says nothing anyone would wait differently for.
 fn at_least(ms: Int) : String = if ms < 60000 { "" } else { "at least #{how_long(ms)} and " }
 

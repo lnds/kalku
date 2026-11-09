@@ -190,6 +190,8 @@ fn told_to_host[a, e](progress: Option[String], body: () -> a / Telling + e) : a
       } with Telling {
         cast_survived(_w, resume) -> resume(())
         found_survivor(_s, resume) -> resume(())
+        # Advice names the command line's flags; a host passes its own.
+        advised(_line, resume) -> resume(())
         tell_of(line, resume) -> {
           count := count + 1
           Stdout.print(progress_note(token, count, line))

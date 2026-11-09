@@ -59,6 +59,7 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
   logging_to(_path, resume) -> resume((), state)
   cast_survived(w, resume) -> resume((), state ++ ["cast #{w.site.site_id}"])
   found_survivor(s, resume) -> resume((), state ++ ["found #{s.site.site_id}"])
+  advised(_line, resume) -> resume((), state)
   return(_x) -> state
 }
 
