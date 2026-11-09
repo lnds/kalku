@@ -15,6 +15,7 @@ import math.real as real
 import kalku.wire.shapes
 import kalku.core.shard
 import kalku.core.lookup
+import kalku.core.verdict
 
 #[doc("How many wekufe a sample cast, of how many the plan held.")]
 #[derive(Eq, Show)]
@@ -54,7 +55,7 @@ narrower the range, down to the score itself when it holds all of it.
 """)]
 pub fn margin(c: Counts, s: Sampled) : Option[Margin] {
   let asked = c.killed + c.survived
-  if asked == 0 {
+  if asked == 0 or stopped_short(c, s) {
     None
   } else {
     let p = int_to_real(c.killed) / int_to_real(asked)
@@ -66,6 +67,21 @@ pub fn margin(c: Counts, s: Sampled) : Option[Margin] {
     }
   }
 }
+
+#[doc("""
+A sample counted as the plan it was drawn from is counted once cast, of
+the plan of `planned` wekufe: a drawn wekufe a kalku found no test runs is
+planned no more, in a sample as anywhere else.
+""")]
+pub fn seen_in(s: Sampled, planned: Int) : Sampled =
+  Sampled { drawn: s.drawn - (s.of - planned), of: planned }
+
+#[doc("""
+True when a sample has fewer answers than it drew: a run that stopped cast
+the drawn wekufe in the order of the plan, so what it reached is the start
+of the plan again, and no estimate of the whole.
+""")]
+pub fn stopped_short(c: Counts, s: Sampled) : Bool = answered(c) < s.drawn
 
 fn wilson(p: Real, n: Real) : Margin {
   let z2 = Z * Z
@@ -89,9 +105,13 @@ whole project's score lies.
 """)]
 pub fn sample_line(c: Counts, s: Sampled) : String {
   let head = "SAMPLE: #{s.drawn} of #{s.of} wekufe"
-  match margin(c, s) {
-    None -> head
-    Some(m) -> "#{head}, the whole project's score likely #{percent(m.low)} to #{percent(m.high)}"
+  if stopped_short(c, s) {
+    "SAMPLE: #{answered(c)} of #{s.drawn} drawn wekufe cast, of #{s.of}: a sample that stopped short says nothing of the whole project"
+  } else {
+    match margin(c, s) {
+      None -> head
+      Some(m) -> "#{head}, the whole project's score likely #{percent(m.low)} to #{percent(m.high)}"
+    }
   }
 }
 
