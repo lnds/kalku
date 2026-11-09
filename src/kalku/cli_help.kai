@@ -94,6 +94,8 @@ options:
   --since <ref>    measure only the lines changed since that ref, and block
                    when a wekufe survives on one of them
   --all            measure every source file of the project, all of its wekufe
+  --sample <n>     with --all: cast n wekufe drawn from the whole project, the
+                   same on every machine, and say the range its score lies in
   --shard <i/n>    cast only part i of n: the same part on every machine
   --store-baseline store this run's score as the baseline `ratchet = true`
                    holds later runs of the whole project to

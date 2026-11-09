@@ -134,6 +134,19 @@ Start with one file and a limit. A first whole-project run on a real
 codebase is long, and there is nothing to learn from it that a single
 file does not already show.
 
+For a first look at the whole project, cast a sample:
+
+```sh
+kalku run --all --sample 200
+```
+
+A sample draws its wekufe from every file, by their ids rather than by
+where they sit in the plan, so two runs at one commit draw the same ones on
+any machine. It says what it cast of how many there were, and the range
+the whole project's score likely lies in, at 95% confidence. It is an
+estimate and says so: it stores no baseline, and a project held to a
+threshold or a ratchet gets `could not measure` (exit `2`), not a pass.
+
 The kalku runs with the environment kalku was started in, and nothing
 else. A project that sets its environment with direnv gets it from a shell
 where direnv is loaded, or with `direnv exec . kalku run lib/thing.ex`; a
@@ -347,6 +360,7 @@ Reports use plain words (`killed`, `survived`, `timeout`) so a CI log reads with
 | **Parallel workers in an Elixir project** — a build of its own for each, and a test database of its own through `MIX_TEST_PARTITION` and the project's `test` alias | done |
 | **Survivors shown as they are found** — on a terminal, each one as the report will show it, once nothing left in the run can change it | done |
 | **`--since <ref>`** — measure what a change touched, and block on holes it introduced | done |
+| **`--sample <n>`** — a score of the whole project from part of it, with the range it lies in | done |
 | **`--watch`** — run again on every save, until interrupted; the kalku stay warm between runs and reload what each save changed, and the incremental baseline keeps the suite to what the change can reach | done |
 | **`[score] ratchet`** — the score of the whole project may not drop below the baseline stored with `--store-baseline` | done |
 | **`kalku merge`** — the reports of `--shard` jobs combined into the whole project's, held to the threshold and the ratchet, refused unless they are every part of one plan | done |

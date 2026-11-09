@@ -138,6 +138,19 @@ Empieza con un archivo y un límite. La primera corrida sobre un proyecto
 completo, en una base de código real, es larga, y no enseña nada que un solo
 archivo no muestre ya.
 
+Para una primera mirada al proyecto completo, lanza una muestra:
+
+```sh
+kalku run --all --sample 200
+```
+
+Una muestra saca sus wekufe de todos los archivos, por sus ids y no por el
+lugar que ocupan en el plan, así que dos corridas sobre un mismo commit sacan
+los mismos en cualquier máquina. Dice cuántos lanzó de cuántos había, y el
+rango en que probablemente está el puntaje del proyecto completo, con 95% de
+confianza. Es una estimación y lo dice: no guarda baseline, y un proyecto con
+umbral o ratchet recibe `could not measure` (salida `2`), no un aprobado.
+
 El kalku corre con el entorno con el que se inició kalku, y nada más. Un
 proyecto que fija su entorno con direnv lo recibe desde una shell donde
 direnv está cargado, o con `direnv exec . kalku run lib/thing.ex`; una
@@ -352,6 +365,7 @@ Los reportes usan palabras simples (`killed`, `survived`, `timeout`) para que un
 | **Workers en paralelo en un proyecto Elixir**: cada uno con su propio build, y con su propia base de datos de test mediante `MIX_TEST_PARTITION` y el alias `test` del proyecto | hecho |
 | **Sobrevivientes mostrados apenas se encuentran**: en una terminal, cada uno como lo mostrará el reporte, una vez que nada de lo que queda de la corrida puede cambiarlo | hecho |
 | **`--since <ref>`** — mide lo que tocó un cambio, y bloquea por los hoyos que introdujo | hecho |
+| **`--sample <n>`** — un puntaje del proyecto completo a partir de una parte, con el rango en que está | hecho |
 | **`--watch`** — vuelve a correr en cada guardado, hasta que se interrumpe; los kalku siguen calientes entre corridas y recargan lo que cambió cada guardado, y el baseline incremental reduce la suite a lo que el cambio puede alcanzar | hecho |
 | **`[score] ratchet`** — el score del proyecto completo no puede bajar de la línea base guardada con `--store-baseline` | listo |
 | **`kalku merge`** — los reportes de los jobs con `--shard` combinados en el del proyecto completo, sujeto al umbral y al ratchet, y rechazado si no son todas las partes de un mismo plan | hecho |

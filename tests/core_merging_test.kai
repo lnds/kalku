@@ -68,7 +68,8 @@ fn shard_report(i: Int, n: Int, killed: Int) : Report {
     commit: Some("c0ffee"),
     whole: true,
     costs: [],
-    weighed: None
+    weighed: None,
+    sample: None
   }
 }
 

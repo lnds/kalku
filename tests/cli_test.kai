@@ -110,7 +110,8 @@ test "run takes the files to measure, and how much of them" {
         shard: None,
         store: false,
         watch: false,
-        every_kill: false
+        every_kill: false,
+        sample: None
       }
     )
   assert cli.parse_args(["run", "--limit", "6", "-v", "lib/a.ex"])
@@ -125,7 +126,8 @@ test "run takes the files to measure, and how much of them" {
       shard: None,
       store: false,
       watch: false,
-      every_kill: false
+      every_kill: false,
+      sample: None
     })
 }
 
@@ -150,7 +152,8 @@ test "run with nothing named is still a run" {
       shard: None,
       store: false,
       watch: false,
-      every_kill: false
+      every_kill: false,
+      sample: None
     })
 }
 
@@ -180,7 +183,8 @@ test "run takes the shape it should print in" {
       shard: None,
       store: false,
       watch: false,
-      every_kill: false
+      every_kill: false,
+      sample: None
     })
   assert cli.parse_args(["run", "--format", "github", "lib/a.ex"])
     == Measure(Wanted {
@@ -194,7 +198,8 @@ test "run takes the shape it should print in" {
       shard: None,
       store: false,
       watch: false,
-      every_kill: false
+      every_kill: false,
+      sample: None
     })
   assert cli.parse_args(["run", "--format"])
     == Misused("`--format` needs a name: human, agent, json or github")
@@ -218,7 +223,8 @@ test "cast names wekufe, show names one, and both need a name" {
         shard: None,
         store: false,
         watch: false,
-        every_kill: false
+        every_kill: false,
+        sample: None
       }
     )
   assert cli.parse_args(["cast"]) == Misused("`kalku cast` needs a wekufe to re-cast")
@@ -254,7 +260,8 @@ test "run takes the ref a change started from" {
         shard: None,
         store: false,
         watch: false,
-        every_kill: false
+        every_kill: false,
+        sample: None
       }
     )
   assert cli.parse_args(["run", "lib/a.ex", "--since", "main", "--format", "github"])
@@ -270,7 +277,8 @@ test "run takes the ref a change started from" {
         shard: None,
         store: false,
         watch: false,
-        every_kill: false
+        every_kill: false,
+        sample: None
       }
     )
 }
@@ -333,7 +341,7 @@ test "a baseline is stored by a run of the whole project and no other" {
   assert parse_args(["run", "--all", "--store-baseline"])
     == Measure(Wanted { ...nothing_wanted(), all: true, store: true })
   let part =
-    "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard` nor `--limit`"
+    "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard`, `--limit` nor `--sample`"
   assert parse_args(["run", "lib/a.ex", "--store-baseline"]) == Misused(part)
   assert parse_args(["run", "--all", "--shard", "1/2", "--store-baseline"]) == Misused(part)
   assert parse_args(["run", "--all", "--limit", "10", "--store-baseline"]) == Misused(part)
@@ -348,7 +356,8 @@ test "run --watch is a run that goes on" {
       since: Some("origin/main"),
       shape: AsAgent,
       watch: true,
-      every_kill: false
+      every_kill: false,
+      sample: None
     })
 }
 
@@ -375,5 +384,32 @@ test "run --every-kill weighs the tests of the whole project" {
   assert parse_args(["run", "lib/a.ex", "--every-kill"])
     == Misused(
       "`--every-kill` weighs the tests of the whole project: it goes with `--all`, since a test that kills nothing in one file may be the only one that kills in another"
+    )
+}
+
+# A sample estimates the score of the whole project, so it is drawn from
+# all of it and every wekufe it draws is cast.
+test "run --sample estimates the whole project from part of it" {
+  assert parse_args(["run", "--all", "--sample", "200"])
+    == Measure(Wanted { ...nothing_wanted(), all: true, sample: Some(200) })
+  assert parse_args(["run", "--sample"]) == Misused("`--sample` needs a number of wekufe")
+  assert parse_args(["run", "--all", "--sample", "some"])
+    == Misused("`--sample` takes a number of wekufe, at least 1, not `some`")
+  assert parse_args(["run", "--all", "--sample", "0"])
+    == Misused("`--sample` takes a number of wekufe, at least 1, not `0`")
+  assert parse_args(["run", "lib/a.ex", "--sample", "50"])
+    == Misused("`--sample` estimates the score of the whole project: it goes with `--all`")
+  let whole =
+    "`--sample` casts every wekufe it draws: it goes with neither `--limit`, `--shard` nor `--every-kill`"
+  assert parse_args(["run", "--all", "--sample", "50", "--limit", "10"]) == Misused(whole)
+  assert parse_args(["run", "--all", "--sample", "50", "--shard", "1/2"]) == Misused(whole)
+  assert parse_args(["run", "--all", "--sample", "50", "--every-kill"]) == Misused(whole)
+}
+
+# A sample's score is an estimate, never the score a ratchet holds runs to.
+test "a sample stores no baseline" {
+  assert parse_args(["run", "--all", "--sample", "50", "--store-baseline"])
+    == Misused(
+      "`--store-baseline` stores the score of the whole project: it goes with `--all`, and with neither `--shard`, `--limit` nor `--sample`"
     )
 }

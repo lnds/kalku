@@ -53,6 +53,7 @@ import kalku.core.recalling
 import kalku.core.reusing
 import kalku.core.distinct
 import kalku.core.lookup
+import kalku.core.sampling
 
 #[doc("What to measure, and with what.")]
 #[derive(Eq, Show)]
@@ -71,7 +72,8 @@ pub type Asking = {
   store: Option[String],
   reuse: Bool,
   every_kill: Bool,
-  whole: Bool
+  whole: Bool,
+  sample: Option[Int]
 }
 
 # `durations` holds pairs, which have no `Eq`, so this record derives
@@ -496,8 +498,18 @@ fn added(
   }
 }
 
-#[doc("What a run is about to cast: the plan, every cast in it, and what the plan was made from.")]
-pub type Planned = { ready: Plan, casts: [Wekufe], known: Known, whole: Plan, recalled: [Answer] }
+#[doc("""
+What a run is about to cast: the plan, every cast in it, what the plan was
+made from, and how much of it a sample drew.
+""")]
+pub type Planned = {
+  ready: Plan,
+  casts: [Wekufe],
+  known: Known,
+  whole: Plan,
+  recalled: [Answer],
+  sampled: Option[Sampled]
+}
 
 #[doc("The plan for what a kalku read, said aloud with what it will cost.")]
 pub fn planned(asking: Asking, all_known: Known) : Planned / Telling {
@@ -522,13 +534,28 @@ pub fn plan_for(asking: Asking, all_known: Known) : Planned {
   let known = wanted_only(asking, all_known)
   let whole = plan(inputs_for(asking, known), _id => None)
   let ready = doubting(part_of(whole, asking.shard), known)
+  # A sample is drawn from the plan before anything is recalled, so what an
+  # earlier run answered for counts only where the sample would have cast it.
+  let pool = match asking.sample {
+    Some(n) -> drawn(ready.to_cast, .site.site_id, n)
+    None -> ready.to_cast
+  }
+  let in_pool = member_of(pool | .site.site_id)
   let recalled =
     recalled_in(known.recalling, ready, not is_empty(known.deferred), asking.every_kill)
+      |? (a => in_pool(a.wekufe.site.site_id))
   let answered = member_of(recalled | (a => a.wekufe.site.site_id))
-  let casts =
-    repeated(limited(ready.to_cast |? (w => not answered(w.site.site_id)), asking.limit))
-      | (c => Wekufe { ...c, every_kill: asking.every_kill })
-  Planned { ready: ready, casts: casts, known: known, whole: whole, recalled: recalled }
+  let casts = repeated(limited(pool |? (w => not answered(w.site.site_id)), asking.limit))
+    | (c => Wekufe { ...c, every_kill: asking.every_kill })
+  Planned {
+    ready: ready,
+    casts: casts,
+    known: known,
+    whole: whole,
+    recalled: recalled,
+    sampled: asking.sample
+      |> option.map(_n => Sampled { drawn: length(pool), of: length(ready.to_cast) })
+  }
 }
 
 #[doc("How a run that knows this says its survivors as they are found.")]
@@ -579,6 +606,7 @@ pub fn found_after(asking: Asking, p: Planned, cast: Casting) : Found / Telling 
           ...whole_report,
           shard: asking.shard,
           plan: Some(marked(p.known.sites)),
+          sample: p.sampled,
           weighed: if asking.every_kill {
             Some(weighed(attempts(cast, casting), unreaching_in(p.whole, p.known)))
           } else {
@@ -773,7 +801,8 @@ pub fn report_of(ready: Plan, casting: Casting, known: Known) : Report {
     commit: None,
     whole: false,
     costs: [],
-    weighed: None
+    weighed: None,
+    sample: None
   }
 }
 

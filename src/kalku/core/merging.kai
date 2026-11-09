@@ -230,6 +230,7 @@ pub fn combined(first: Report, rest: [Report]) : Report {
     plan: first.plan,
     commit: first.commit,
     whole: true,
+    sample: None,
     costs: added_costs(parts | .costs),
     weighed: match parts
       || (p => match p.weighed {

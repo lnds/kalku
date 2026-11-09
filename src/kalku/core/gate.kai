@@ -93,7 +93,7 @@ fn judged(got: Option[Real], policy: Policy, partial: Bool) : [Blocker] =
     [
       CouldNotMeasure(
         "the run was partial, and a score over part of a plan cannot be held"
-          ++ " to a floor. Measure all of it with `--limit 0`"
+          ++ " to a floor. Measure all of it with `--limit 0` and no `--sample`"
       )
     ]
   } else {

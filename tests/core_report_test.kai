@@ -9,6 +9,7 @@ import kalku.core.report_json
 import kalku.core.report_github
 import kalku.core.costing
 import kalku.core.kills
+import kalku.core.sampling
 
 fn site_of(
   file: String,
@@ -60,7 +61,8 @@ fn report_of(survivors: [Survivor], counts: Counts, blockers: [Blocker]) : Repor
     commit: None,
     whole: false,
     costs: [],
-    weighed: None
+    weighed: None,
+    sample: None
   }
 
 fn plain() : Report =
@@ -631,4 +633,30 @@ test "a run that recalled outcomes says how many wekufe it did not cast again" {
   assert not has(json(plain(), 0), "outcomes_reused")
   assert (read_report(json(r, 0)) |> map(w => w.report.recalled)) == Ok(4)
   assert (read_report(json(plain(), 0)) |> map(w => w.report.recalled)) == Ok(0)
+}
+
+# A sample was cast to estimate the whole, so where a cut-short run says
+# PARTIAL it says what it drew of what, and the range the whole lies in.
+test "a sample says so before its score, with the range of the whole project's" {
+  let counts = tally([Cast(Killed), Cast(Killed), Cast(Killed), Cast(Survived)])
+  let r = Report {
+    ...report_of([], counts, []),
+    planned: 400,
+    sample: Some(Sampled { drawn: 4, of: 400 })
+  }
+  let said = human(r)
+  assert has(said, "SAMPLE: 4 of 400 wekufe, the whole project's score likely")
+  assert not has(said, "PARTIAL")
+  assert index_of(said, "SAMPLE") < index_of(said, "score 75%")
+}
+
+test "a sample's JSON carries what it drew, of what, and the range, and reads back" {
+  let counts = tally([Cast(Killed), Cast(Killed), Cast(Killed), Cast(Survived)])
+  let r =
+    Report { ...plain(), counts: counts, planned: 400, sample: Some(Sampled { drawn: 4, of: 400 }) }
+  assert has(json(r, 0), "\"sample\":{\"drawn\":4,\"of\":400,\"low\":")
+  assert not has(json(plain(), 0), "\"sample\"")
+  assert (read_report(json(r, 0)) |> map(w => w.report.sample))
+    == Ok(Some(Sampled { drawn: 4, of: 400 }))
+  assert (read_report(json(plain(), 0)) |> map(w => w.report.sample)) == Ok(None)
 }

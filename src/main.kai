@@ -263,7 +263,12 @@ fn measured[e](
     Some(measured_only) -> {
       # Which commit was measured, and whether it was the whole project, is
       # what a merge of shards checks before it adds them up.
-      let whole = Report { ...measured_only, commit: diffing.commit_of("."), whole: wanted.all }
+      # A sample is drawn from the whole project and is not a measure of it.
+      let whole = Report {
+        ...measured_only,
+        commit: diffing.commit_of("."),
+        whole: wanted.all and is_none(wanted.sample)
+      }
       # The report is what was measured; the blockers are what the
       # project asked to be held to. Judging here rather than in the run
       # keeps the same measurement answerable to a different policy in
@@ -361,7 +366,8 @@ fn asking_for(
   wanted.limit |> unwrap_or(if is_some(touched) or wanted.all { 0 } else { DEFAULT_LIMIT }),
   touched: touched,
   shard: wanted.shard,
-  every_kill: wanted.every_kill
+  every_kill: wanted.every_kill,
+  sample: wanted.sample
 }
 
 # What every run is asked, whoever asks it: the project's spells and
@@ -402,7 +408,8 @@ fn asking_of(
   store: None,
   reuse: false,
   every_kill: false,
-  whole: false
+  whole: false,
+  sample: None
 }
 
 fn kept_at(asking: Asking, c: Config, root: String, whole: Bool) : Asking / Env + Process {

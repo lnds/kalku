@@ -41,7 +41,8 @@ fn asking_of(script: String) : Asking = Asking {
   store: None,
   reuse: false,
   every_kill: false,
-  whole: false
+  whole: false,
+  sample: None
 }
 
 fn learnt(script: String) : Result[measure.Known, String] / Process + Spawn + Clock + File =
