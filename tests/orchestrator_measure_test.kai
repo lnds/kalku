@@ -1,4 +1,6 @@
 import actor
+import fs.file
+import os.process as proc
 import kalku.wire.enums
 import kalku.wire.shapes
 import kalku.core.report
@@ -167,4 +169,23 @@ test "a sample casts the wekufe it draws, and reports what it drew of what" {
       assert exit_code(judged_by(r, floor, None).blockers) == 2
     }
   }
+}
+
+# Two files of 100 kB are more source than one batch holds, so their sites
+# are asked for in two requests. The script answers `sites` twice and then
+# expects casts: a run that asked once would hand it a cast too early.
+test "the sites of more source than a batch holds are asked for a batch at a time" {
+  let root = "#{Env.get("TMPDIR") |> unwrap_or("/tmp")}/kalku-search-test"
+  let _ = proc.pipe_errs("/bin/mkdir", ["-p", "#{root}/lib"]) |> map(c => proc.wait(c))
+  let big = string.repeat("x", 100000)
+  file.write("#{root}/lib/a.ex", big) |> ignore
+  file.write("#{root}/lib/b.ex", big) |> ignore
+  let one = asking_of("sites_in_two.ndjson")
+  let found = measured_with(
+    Asking { ...one, spec: PoolSpec { ...one.spec, root: root }, files: ["lib/a.ex", "lib/b.ex"] }
+  )
+  let _ = proc.pipe_errs("/bin/rm", ["-rf", root]) |> map(c => proc.wait(c))
+
+  assert found.failure == None
+  assert (found.cast | (c => (c.wekufe, c.outcome))) == [("s3", Killed), ("s7", Killed)]
 }

@@ -49,6 +49,7 @@ import kalku.orchestrator.hearing
 import kalku.orchestrator.deferring
 import kalku.orchestrator.recalls
 import kalku.orchestrator.surviving
+import kalku.orchestrator.searching
 import kalku.core.recalling
 import kalku.core.reusing
 import kalku.core.distinct
@@ -296,16 +297,12 @@ pub fn read_by(
   if is_empty(kept) { () } else { Telling.tell_of(reused_line(length(kept), length(suite))) }
   let deferred = deferred_of(baseline)
   if is_empty(deferred) { () } else { Telling.tell_of(deferred_line(length(deferred))) }
-  tell(
+  let found = sites_in(
     k,
-    4,
-    Sites(SitesMsg {
-      files: asking.files,
-      spells: asking.spells,
-      exclude_calls: asking.exclude_calls
-    })
+    asking.spec.root,
+    SitesMsg { files: asking.files, spells: asking.spells, exclude_calls: asking.exclude_calls },
+    4
   )!
-  let found = sites_found_of(await_kind(k, "sites_found")!)!
   let sites = one_each(found.sites)!
   each(found.skipped, s => Telling.tell_of("skipped #{skipped_line(s)}"))
   (match nothing_usable(length(sites), found.skipped) {
@@ -340,11 +337,6 @@ pub fn read_by(
       recalling: recalling
     }
   )
-}
-
-fn sites_found_of(reply: KalkuReply) : Result[SitesFoundMsg, String] = match reply {
-  SitesFound(m) -> Ok(m)
-  other -> Err("expected the sites, got #{other}")
 }
 
 fn greet(k: Kalku, asking: Asking) : Result[Unit, String] / Process =

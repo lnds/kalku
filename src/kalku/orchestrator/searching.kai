@@ -1,0 +1,107 @@
+#[doc("""
+The sites of a run's files, asked of a kalku a few files at a time.
+
+A reply is one line, and a line has a ceiling (`MAX_LINE_BYTES`). The
+sites of a project weigh several times its source, so a project of a few
+thousand lines of code passes the ceiling long before anyone would call it
+large, and a run over all of it ends before it could say anything. Every
+kalku searches file by file, so asking for a few files at a time costs a
+round trip per batch and nothing else, whichever kalku answers.
+
+A batch holds files up to `BATCH_SOURCE_BYTES` of source. A file larger
+than that goes in a batch of its own: nothing smaller can be asked for.
+""")]
+
+import fs.file as file
+import kalku.wire.kalku_msg
+import kalku.orchestrator.kalku_proc
+import kalku.orchestrator.attending
+import kalku.orchestrator.hearing
+import kalku.orchestrator.telling
+
+#[doc("""
+How much source a batch of files holds at most.
+
+The sites of a file have weighed up to twelve times its source, which puts
+a batch near 1.5 MB of reply: well under the ceiling of a line, with room
+for a language that spells its sites out at greater length.
+""")]
+pub const BATCH_SOURCE_BYTES : Int = 131072
+
+#[doc("""
+Files cut into batches of at most `budget` bytes of source, in the order
+they came. Each file is in exactly one batch, and none is empty.
+""")]
+pub fn batches(files: [(String, Int)], budget: Int) : [[String]] {
+  let cut = foldl(files, ([], [], 0), (acc, f) => added(acc, f, budget))
+  (if is_empty(cut.snd) { cut.fst } else { cut.fst ++ [cut.snd] }) | (b => (b | .fst))
+}
+
+# A file that would take the batch past the budget starts the next one;
+# the first file of a batch is taken whatever its size.
+fn added(
+  acc: ([[(String, Int)]], [(String, Int)], Int),
+  f: (String, Int),
+  budget: Int
+) : ([[(String, Int)]], [(String, Int)], Int) {
+  let (done, open, size) = acc
+  if is_empty(open) or size + f.snd <= budget {
+    (done, open ++ [f], size + f.snd)
+  } else {
+    (done ++ [open], [f], f.snd)
+  }
+}
+
+#[doc("""
+The sites of these files as one answer: each batch asked of `k` in turn,
+under one request id, and the replies joined in the order they came.
+""")]
+pub fn sites_in(
+  k: Kalku,
+  root: String,
+  asked: SitesMsg,
+  id: Int
+) : Result[SitesFoundMsg, String] / Process + File + Clock + Attending + Actor[OrchMsg] + Telling {
+  let sized = asked.files | (f => (f, source_bytes(root, f)))
+  found_in(k, asked, id, batches(sized, BATCH_SOURCE_BYTES), SitesFoundMsg {
+    sites: [],
+    skipped: []
+  })
+}
+
+fn found_in(
+  k: Kalku,
+  asked: SitesMsg,
+  id: Int,
+  left: [[String]],
+  so_far: SitesFoundMsg
+) : Result[SitesFoundMsg, String] / Process + Clock + Attending + Actor[OrchMsg] + Telling =
+  match left {
+    [] -> Ok(so_far)
+    [files, ...rest] -> {
+      ask(k, id, Sites(SitesMsg { ...asked, files: files }))!
+      let got = sites_found_of(await_kind(k, "sites_found")!)!
+      found_in(
+        k,
+        asked,
+        id,
+        rest,
+        SitesFoundMsg { sites: so_far.sites ++ got.sites, skipped: so_far.skipped ++ got.skipped }
+      )
+    }
+  }
+
+fn sites_found_of(reply: KalkuReply) : Result[SitesFoundMsg, String] = match reply {
+  SitesFound(m) -> Ok(m)
+  other -> Err("expected the sites, got #{other}")
+}
+
+# A file that cannot be read weighs nothing here: the kalku is the one to
+# say why it could not search it.
+fn source_bytes(root: String, f: String) : Int {
+  let path = if starts_with(f, "/") { f } else { "#{root}/#{f}" }
+  match file.metadata(path) {
+    Ok(m) -> m.size
+    Err(_) -> 0
+  }
+}
