@@ -117,19 +117,7 @@ pub fn cast_over(
   from_id: Int
 ) : (Casting, [Slot], Int) / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
   let held = with_ceiling(spec)
-  let done = turn(Run {
-    spec: held,
-    slots: slots,
-    queue: casts,
-    chasing: [],
-    chased: [],
-    verdicts: [],
-    next_id: from_id,
-    failure: no_kalku(slots, casts),
-    cancelled: false,
-    weigh_at: monotonic(),
-    stall_at: stall_from(monotonic())
-  })
+  let done = turn(started(held, slots, casts, from_id))
   (
     Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled },
     done.slots,
@@ -156,19 +144,7 @@ fn run_plan(
   slots: [Slot],
   casts: [Wekufe]
 ) : Casting / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
-  let done = turn(Run {
-    spec: spec,
-    slots: slots,
-    queue: casts,
-    chasing: [],
-    chased: [],
-    verdicts: [],
-    next_id: 1,
-    failure: no_kalku(slots, casts),
-    cancelled: false,
-    weigh_at: monotonic(),
-    stall_at: stall_from(monotonic())
-  })
+  let done = turn(started(spec, slots, casts, 1))
   wound_up(
     Casting { verdicts: done.verdicts, failure: done.failure, cancelled: done.cancelled },
     done.slots
@@ -315,7 +291,23 @@ type Run = {
   failure: Option[String],
   cancelled: Bool,
   weigh_at: Instant,
-  stall_at: Instant
+  stall_at: Instant,
+  replaced_for: [String]
+}
+
+fn started(spec: PoolSpec, slots: [Slot], casts: [Wekufe], from_id: Int) : Run / Clock = Run {
+  spec: spec,
+  slots: slots,
+  queue: casts,
+  chasing: [],
+  chased: [],
+  verdicts: [],
+  next_id: from_id,
+  failure: no_kalku(slots, casts),
+  cancelled: false,
+  weigh_at: monotonic(),
+  stall_at: stall_from(monotonic()),
+  replaced_for: []
 }
 
 fn turn(run: Run) : Run / Process + Spawn + Clock + Attending + Actor[OrchMsg] + Ward + Telling {
@@ -616,7 +608,7 @@ fn react(
     AskAbort -> chase(recorded, slot, Abort(AbortMsg { cast: job_id(slot) }), AwaitingAbort)
     AskReset -> chase(recorded, slot, Reset, AwaitingReset)
     Recycle(why) -> recycle(recorded, slot, why)
-    Replace(_) -> replace(recorded, slot)
+    Replace(why) -> replace(recorded, slot, why)
   }
 }
 
@@ -729,11 +721,25 @@ fn recycle(
 
 fn replace(
   run: Run,
-  slot: Slot
+  slot: Slot,
+  why: String
 ) : Run / Process + Spawn + Clock + Actor[OrchMsg] + Ward + Telling {
   banish(slot)
-  renewed(run, put(run.slots, replace_slot(run.spec, slot)))
+  Telling.tell_of("worker #{slot.worker} #{why}: a new kalku takes its place")
+  renewed(told_once(run, slot, why), put(run.slots, replace_slot(run.spec, slot)))
 }
+
+# A kalku replaced for one reason is usually replaced for it again, cast
+# after cast: a person hears it the first time, and the log every time.
+fn told_once(run: Run, slot: Slot, why: String) : Run / Telling =
+  if contains(run.replaced_for, why) {
+    run
+  } else {
+    Telling.advised(
+      "worker #{slot.worker} #{why}, so a new kalku takes its place each time that happens: the run goes on, slower, and what each kalku wrote on stderr is in the run log"
+    )
+    Run { ...run, replaced_for: run.replaced_for ++ [why] }
+  }
 
 fn renewed(run: Run, slots: [Slot]) : Run =
   if all_gone(slots) {

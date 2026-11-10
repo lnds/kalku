@@ -182,7 +182,7 @@ First message after summoning. The summoning itself is told the kalku's `worker`
 | `hot_load` | a wekufe loads into the running runtime | each cast rebuilds |
 | `recompile_dependents` | sites may carry `reload: "dependents"` | — |
 | `abort` | a running cast can be stopped in place | a timeout kills the process |
-| `reset` | global state can be reset in place | a dirty kalku is recycled |
+| `reset` | global state can be reset in place | a dirty kalku is replaced by a new one |
 | `code_hash` | `cast_done` carries `code_hash` and may prove `equivalent` | no trivial compiler equivalence |
 | `cast_after_baseline` | the kalku that answered `baseline` can go on to `cast`, and judges a wekufe as a kalku that was only prepared would | it is banished once it has answered `sites`, and another is summoned and prepared in its place |
 | `partial_baseline` | `baseline_done` gives each test a `fingerprint`, and `baseline` takes `reuse`: a test whose fingerprint has not changed is not run again | every baseline runs the whole suite |
@@ -327,7 +327,7 @@ Cast one wekufe: splice the site, load it, run the listed tests, restore.
 
 `rest` is sent only to a kalku whose baseline said `coverage_doubted`. The outcome is of both lists: `killed` when a test of either fails, `survived` when every test of both ran and none did.
 
-`dirty: true` makes the kaikai side send `reset` before the next cast, and recycle the kalku only if that fails.
+`dirty: true` makes the kaikai side send `reset` before the next cast, and replace the kalku with a new one only if that fails.
 
 ```json
 {"type":"cast","id":5,"wekufe":"c1f37a90e2b4","site":{"site_id":"c1f37a90e2b4","file":"lib/my_app/parser.ex","enclosing":"MyApp.Parser.next_token/2","ordinal":1,"span":{"start":{"line":42,"col":7,"byte":1180},"end":{"line":42,"col":9,"byte":1182}},"spell":"compare","original":">=","replacement":">","reload":"module"},"tests":["test/my_app/parser_test.exs:18"]}
@@ -361,7 +361,7 @@ Sent after a `cast_done` with `dirty: true`. The kalku resets global state in pl
 
 | `reset_done` | Type | Meaning |
 |---|---|---|
-| `clean` | bool | `false`: the reset did not reach a known state; the kaikai side recycles the kalku |
+| `clean` | bool | `false`: the reset did not reach a known state; the kaikai side replaces the kalku with a new one |
 | `duration_ms` | int | |
 
 ```json

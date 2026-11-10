@@ -54,7 +54,7 @@ pub fn on_reply(reply: KalkuReply, caps: [Capability]) : Reaction {
   case ResetDone(m), _ -> if m.clean {
     carry_on(Free)
   } else {
-    carry_on(Recycle("could not reset its global state"))
+    carry_on(Replace("could not reset its global state"))
   }
   case KalkuError(e), _ -> if e.fatal {
     stopped(Crashed, Recycle("reported a fatal error: #{e.message}"))
@@ -145,13 +145,16 @@ pub fn recycling(r: Reaction) : Option[String] = match r.next {
 }
 
 # A cast that dirtied global state is not trusted to run the next one:
-# state left behind by one wekufe is a result attributed to another.
+# state left behind by one wekufe is a result attributed to another. A
+# kalku that cannot clean up after it is replaced, not counted against the
+# summons a run allows: it started and answered, and each replacement
+# comes with the verdict of the cast before it, so a run cannot loop on it.
 fn after_cast(m: CastDoneMsg, caps: [Capability]) : Reaction = if not m.dirty {
   explained(m.outcome, m.message, Free)
 } else if can_reset(caps) {
   explained(m.outcome, m.message, AskReset)
 } else {
-  explained(m.outcome, m.message, Recycle("left global state behind and cannot reset"))
+  explained(m.outcome, m.message, Replace("left global state behind and cannot reset"))
 }
 
 fn stopped(o: Outcome, next: Next) : Reaction =
