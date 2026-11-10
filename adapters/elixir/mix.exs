@@ -1,7 +1,7 @@
 defmodule Kalku.MixProject do
   use Mix.Project
 
-  @version "0.33.1"
+  @version "0.34.0"
   @source_url "https://github.com/lnds/kalku"
 
   def project do
