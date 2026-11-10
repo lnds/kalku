@@ -1,3 +1,9 @@
+## v0.34.0 (2026-11-10)
+
+### Added
+
+- say a long prepare or baseline every 30 s, with the kalku's last line (#607)
+
 ## v0.33.1 (2026-11-10)
 
 ### Fixed
