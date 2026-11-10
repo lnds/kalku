@@ -58,11 +58,14 @@ test "a dirty cast is reset in place before the kalku serves again" {
     == Reaction { outcome: None, said: None, next: Free }
 }
 
-test "a reset that is not clean recycles the kalku, and so does having no reset at all" {
-  assert recycling(on_reply(ResetDone(ResetDoneMsg { clean: false, duration_ms: 4 }), warm()))
-    == Some("could not reset its global state")
-  assert recycling(reacting(cast_done(Killed, true), [CastCap]))
-    == Some("left global state behind and cannot reset")
+# Not counted against the summons a run allows: the kalku started and
+# answered, and the verdict of its cast is already in.
+test "a reset that is not clean replaces the kalku, and so does having no reset at all" {
+  assert on_reply(ResetDone(ResetDoneMsg { clean: false, duration_ms: 4 }), warm()).next
+    == Replace("could not reset its global state")
+  assert reacting(cast_done(Killed, true), [CastCap]).next
+    == Replace("left global state behind and cannot reset")
+  assert recycling(reacting(cast_done(Killed, true), [CastCap])) == None
 }
 
 # A hole nobody hears about is worse than a hole with a name.

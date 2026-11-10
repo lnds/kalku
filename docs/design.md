@@ -408,7 +408,7 @@ A timeout escalates in three steps:
 2. The kalku stops the cast inside its runtime — for Elixir, `Process.exit(pid, :kill)` on the test processes, since a looping wekufe hangs a process, not the VM — restores the original modules, and answers `aborted`. The outcome is `timeout`; the kalku stays warm.
 3. Only if `aborted` does not arrive within a grace period (a NIF that never returns, a blocked scheduler) is the OS process killed and a fresh kalku summoned.
 
-A cast may leave global state behind (ETS tables, registered processes, application env). The kalku reports `dirty: true`, and the kaikai side escalates the same way: first `reset` — for Elixir, restart the project's applications and clear its ETS tables — and only if the reset fails, recycle the kalku.
+A cast may leave global state behind (ETS tables, registered processes, application env). The kalku reports `dirty: true`, and the kaikai side escalates the same way: first `reset` — for Elixir, restart the project's applications and clear its ETS tables — and only if the reset fails, replace the kalku with a new one. That replacement is not counted against the summons a run allows, which are for a kalku that dies on startup: this one started and answered, and its cast's verdict is already in, so a run cannot loop on it. A project whose every cast leaves state no reset puts back is measured all the same, one kalku per cast: slower, never stopped. The first time it happens for a reason the run says so, and the log has every time.
 
 #### Memory
 

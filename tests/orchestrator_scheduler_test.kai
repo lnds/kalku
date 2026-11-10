@@ -38,54 +38,41 @@ fn pool_of(script: String, workers: Int, summons: Int) : PoolSpec = PoolSpec {
 fn casting(spec: PoolSpec, cs: [Wekufe]) : Casting / Process + Spawn + Clock + Actor[OrchMsg] =
   alone(() => untold(() => cast_all(spec, cs)))
 
-# Only the progress notes, so what is asserted is how far a run says it
-# has got and not the sentences around it. A real run through a real pool,
+# What a run said, apart: how far it says it has got, the wekufe each
+# `survived` was said for, and its advice. A real run through a real pool,
 # because the link worth testing is the one between the loop that records
 # a verdict and the note a client hears.
-fn how_far(
-  spec: PoolSpec,
-  cs: [Wekufe]
-) : [(Int, Int)] / Process + Spawn + Clock + Actor[OrchMsg] = alone(
+type Notes = { far: [(Int, Int)], survived: [String], advice: [String] }
+
+fn noted(spec: PoolSpec, cs: [Wekufe]) : Notes / Process + Spawn + Clock + Actor[OrchMsg] = alone(
   () => handle {
     cast_all(spec, cs)
-  } with Telling([]) {
+  } with Telling(Notes { far: [], survived: [], advice: [] }) {
     tell_of(_line, resume) -> resume((), state)
     entered(_phase, resume) -> resume((), state)
-    got_through(done, total, resume) -> resume((), state ++ [(done, total)])
+    got_through(done, total, resume) ->
+      resume((), Notes { ...state, far: state.far ++ [(done, total)] })
     will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
     still_on(_worker, _site, _ms, resume) -> resume((), state)
     kalku_wrote(_worker, _chunk, resume) -> resume((), state)
     kalku_at(_worker, _done, _total, resume) -> resume((), state)
     logging_to(_path, resume) -> resume((), state)
-    cast_survived(_w, resume) -> resume((), state)
+    cast_survived(w, resume) ->
+      resume((), Notes { ...state, survived: state.survived ++ [w.site.site_id] })
     found_survivor(_s, resume) -> resume((), state)
-    advised(_line, resume) -> resume((), state)
+    advised(line, resume) -> resume((), Notes { ...state, advice: state.advice ++ [line] })
     return(_x) -> state
   }
 )
 
-# The wekufe each cast that came to `survived` was said for.
+fn how_far(spec: PoolSpec, cs: [Wekufe]) : [(Int, Int)] / Process + Spawn + Clock + Actor[OrchMsg] =
+  noted(spec, cs).far
+
 fn survived_said(
   spec: PoolSpec,
   cs: [Wekufe]
-) : [String] / Process + Spawn + Clock + Actor[OrchMsg] = alone(
-  () => handle {
-    cast_all(spec, cs)
-  } with Telling([]) {
-    tell_of(_line, resume) -> resume((), state)
-    entered(_phase, resume) -> resume((), state)
-    got_through(_done, _total, resume) -> resume((), state)
-    will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
-    still_on(_worker, _site, _ms, resume) -> resume((), state)
-    kalku_wrote(_worker, _chunk, resume) -> resume((), state)
-    kalku_at(_worker, _done, _total, resume) -> resume((), state)
-    logging_to(_path, resume) -> resume((), state)
-    cast_survived(w, resume) -> resume((), state ++ [w.site.site_id])
-    found_survivor(_s, resume) -> resume((), state)
-    advised(_line, resume) -> resume((), state)
-    return(_x) -> state
-  }
-)
+) : [String] / Process + Spawn + Clock + Actor[OrchMsg] =
+  noted(spec, cs).survived
 
 fn casts(n: Int, timeout_ms: Int) : [Wekufe] =
   enumerate(repeat(0, n))
@@ -163,12 +150,29 @@ test "a dirty cast is reset in place, and the kalku keeps working" {
   assert done.failure == None
 }
 
-test "a kalku whose reset is not clean is recycled" {
+test "a kalku whose reset is not clean is replaced" {
   let done = with_mailbox {
     casting(pool_of("pool_dirty_unclean.ndjson", 1, 2), casts(1, 5000))
   }
   assert tally(done) == [("killed", 1)]
   assert done.failure == None
+}
+
+# Every kalku of this project leaves state its reset cannot put back. Each
+# one started and answered, so the run goes on with a new one, as many
+# times as it takes, on a run that allows one summons in a row.
+test "a reset that fails after every cast does not stop the run" {
+  let done = with_mailbox {
+    casting(pool_of("pool_dirty_unclean.ndjson", 1, 1), casts(3, 5000))
+  }
+  assert tally(done) == [("killed", 3)]
+  assert done.failure == None
+}
+
+test "a kalku replaced for the same reason, cast after cast, is said once" {
+  let heard = with_mailbox { noted(pool_of("pool_dirty_unclean.ndjson", 1, 1), casts(3, 5000)) }
+  assert list.length(heard.advice) == 1
+  assert all(heard.advice, a => contains(a, "could not reset its global state"))
 }
 
 # A wekufe that takes the test runner down is said by the kalku that
