@@ -6,7 +6,6 @@ rust-version = "1.85"
 description = "The Rust kalku: finds the places where a defect can be cast in a Rust project, and casts them"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/lnds/kalku"
-publish = false
 
 [[bin]]
 name = "kalku-rust"
