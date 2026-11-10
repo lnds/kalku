@@ -61,6 +61,7 @@ fn noted(spec: PoolSpec, cs: [Wekufe]) : Notes / Process + Spawn + Clock + Actor
       resume((), Notes { ...state, survived: state.survived ++ [w.site.site_id] })
     found_survivor(_s, resume) -> resume((), state)
     advised(line, resume) -> resume((), Notes { ...state, advice: state.advice ++ [line] })
+    waiting_on(_worker, _kind, _ms, _last, resume) -> resume((), state)
     return(_x) -> state
   }
 )

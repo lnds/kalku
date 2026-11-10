@@ -60,6 +60,7 @@ fn heard(body: () -> Unit / Telling) : [String] = handle {
   cast_survived(w, resume) -> resume((), state ++ ["cast #{w.site.site_id}"])
   found_survivor(s, resume) -> resume((), state ++ ["found #{s.site.site_id}"])
   advised(_line, resume) -> resume((), state)
+  waiting_on(_worker, _kind, _ms, _last, resume) -> resume((), state)
   return(_x) -> state
 }
 

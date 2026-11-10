@@ -197,7 +197,10 @@ con una estimación de lo que falta: en una terminal, una sola línea que se
 redibuja en su lugar; en un log de CI, una línea por fase y un conteo cada
 30 s. Un lanzamiento que lleva 30 s o más se nombra (`worker 2 is still on
 lib/green.ex:4 compare after 95 s`), y eso es lo que distingue una suite
-lenta de una colgada. `--verbose` muestra cada nota, una línea por wekufe;
+lenta de una colgada. Antes del lanzamiento, una primera compilación o una
+primera baseline que el kalku no ha respondido en 30 s se dice igual, cada
+30 s, con la última línea que el kalku escribió: ``worker 0 is still waiting
+for `prepared` after 90 s; it last wrote: Compiling 412 files (.ex)``. `--verbose` muestra cada nota, una línea por wekufe;
 `--quiet` no dice nada hasta el reporte. stdout lleva solo el reporte.
 
 Un lanzamiento estimado en diez minutos o más sugiere un camino más corto

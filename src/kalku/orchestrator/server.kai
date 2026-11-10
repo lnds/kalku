@@ -278,6 +278,7 @@ pub fn streamed[a, e](say: (ServerEvent) -> Unit / e, body: () -> a / Telling + 
     }
     kalku_wrote(_worker, _chunk, resume) -> resume(())
     kalku_at(_worker, _done, _total, resume) -> resume(())
+    waiting_on(_worker, _kind, _ms, _last, resume) -> resume(())
     logging_to(path, resume) -> {
       say(LogEv(LogMsg { path: path }))
       resume(())
