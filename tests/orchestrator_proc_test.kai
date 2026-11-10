@@ -384,6 +384,7 @@ fn noted_from(whats: [FromKalku]) : [String] = handle {
   cast_survived(_w, resume) -> resume((), state)
   found_survivor(_s, resume) -> resume((), state)
   advised(_line, resume) -> resume((), state)
+  waiting_on(_worker, _kind, _ms, _last, resume) -> resume((), state)
   return(_x) -> state
 }
 

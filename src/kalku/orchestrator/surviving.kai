@@ -91,6 +91,10 @@ pub fn as_found[a, e](j: Judging, body: () -> a / Telling + e) : a / Telling + e
     Telling.advised(line)
     resume(())
   }
+  waiting_on(worker, kind, ms, last, resume) -> {
+    Telling.waiting_on(worker, kind, ms, last)
+    resume(())
+  }
   return(x) -> x
 }
 

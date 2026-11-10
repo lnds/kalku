@@ -1,5 +1,8 @@
 import actor
+import time
+import os.process
 import kalku.wire.shapes
+import kalku.wire.kalku_msg
 import kalku.orchestrator.kalku_proc
 import kalku.orchestrator.pool
 import kalku.orchestrator.attending
@@ -112,29 +115,105 @@ test "a line on stdout that is not a message is quoted, and said to be from stdo
   }
 }
 
-# `prepare` can honestly take minutes, and a run that says so once and
-# then goes quiet for ten of them cannot be told from one that has hung.
-# Saying how long it has been waiting turns a hang into a wait.
+# `prepare` can honestly take minutes, and a run that names the phase and
+# then shows nothing for ten of them cannot be told from one that has hung.
 test "a long wait says what it is waiting for and for how long" {
-  let said = still_waiting("prepared", 60000, [])
+  let said = still_waiting(0, "prepared", 60000, None)
 
-  assert is_some(index_of(said, "still waiting for `prepared`"))
-  assert is_some(index_of(said, "60s"))
+  assert is_some(index_of(said, "worker 0 is still waiting for `prepared` after 60 s"))
   assert is_some(index_of(said, "slow one"))
 }
 
-# The commonest cause of the silence is a build lock held by a runtime
-# nobody killed, and the runtime announces that on its own channel. This
-# side already has the line; holding it until the kalku dies is holding it
-# forever, because a wait on a lock does not end.
-test "the kalku's own last word is quoted, which is where a lock shows up" {
-  let said = still_waiting(
-    "prepared",
-    120000,
-    ["Compiling 4 files", "Waiting for lock on the build directory"]
-  )
+# The commonest cause of a wait that does not end is a build lock held by a
+# runtime nobody killed, and the runtime announces that on its own channel.
+test "the kalku's own last line is quoted, which is where a lock shows up" {
+  let said = still_waiting(0, "prepared", 120000, Some("Waiting for lock on the build directory"))
 
-  assert is_some(index_of(said, "Waiting for lock on the build directory"))
-  assert is_none(index_of(said, "Compiling 4 files"))
-  assert is_some(index_of(said, "120s"))
+  assert is_some(index_of(said, "it last wrote: Waiting for lock on the build directory"))
+  assert is_some(index_of(said, "after 120 s"))
+}
+
+fn a_kalku() : Kalku = Kalku { life: Life { worker: 0, summons: 1 }, child: Child { pid: 1 } }
+
+# A wait of more than a minute, in no time: each read of the clock is ten
+# seconds after the one before, and each receive is the next line of the
+# script, `None` for one that timed out. What is kept is what the wait
+# said while it went on.
+fn waited_through(
+  script: [Option[OrchMsg]]
+) : ([String], Result[KalkuReply, String]) / Clock {
+  let start = monotonic()
+  handle {
+    alone(
+      () => handle {
+        handle {
+          await_kind(a_kalku(), "prepared")
+        } with Actor[OrchMsg](script) {
+          receive_timeout(_ns, resume) -> match state {
+            [] -> resume(None, [])
+            [next, ...rest] -> resume(next, rest)
+          }
+          receive(_resume) -> panic("receive is not scripted")
+          send(_pid, _msg, resume) -> resume((), state)
+          self(_resume) -> panic("a scripted mailbox has no Pid")
+          return(x) -> x
+        }
+      } with Clock(0) {
+        monotonic_now(resume) ->
+          resume(instant_add_duration(start, millis(state * 10000)), state + 1)
+        wall_now(resume) -> resume(Clock.wall_now(), state)
+        sleep_ns(_ns, resume) -> resume((), state)
+        return(x) -> x
+      }
+    )
+  } with Telling([]) {
+    tell_of(_line, resume) -> resume((), state)
+    entered(_phase, resume) -> resume((), state)
+    got_through(_done, _total, resume) -> resume((), state)
+    will_cost(_casts, _estimate_ms, _most_ms, resume) -> resume((), state)
+    still_on(_worker, _site, _ms, resume) -> resume((), state)
+    kalku_wrote(_worker, _chunk, resume) -> resume((), state)
+    kalku_at(_worker, _done, _total, resume) -> resume((), state)
+    logging_to(_path, resume) -> resume((), state)
+    cast_survived(_w, resume) -> resume((), state)
+    found_survivor(_s, resume) -> resume((), state)
+    advised(_line, resume) -> resume((), state)
+    waiting_on(worker, kind, ms, last, resume) ->
+      resume((), state ++ [still_waiting(worker, kind, ms, last)])
+    return(x) -> (state, x)
+  }
+}
+
+# A build that writes is no more visible to a person than one that is
+# silent: the wait is said every thirty seconds either way, with the last
+# line the kalku wrote, until the answer comes.
+test "a wait is said every thirty seconds it goes on, with the kalku's last line" {
+  let life = a_kalku().life
+  let (notes, answer) = waited_through([
+    Some(Wire(life, Wrote("Compiling 12 files (.ex)\n"))),
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(Wire(life, Said("{\"type\":\"prepared\",\"id\":2,\"duration_ms\":1,\"modules\":1}")))
+  ])
+
+  assert is_ok(answer)
+  assert notes
+    == [
+      "worker 0 is still waiting for `prepared` after 30 s; it last wrote: Compiling 12 files (.ex)",
+      "worker 0 is still waiting for `prepared` after 60 s; it last wrote: Compiling 12 files (.ex)"
+    ]
+}
+
+test "a wait that ends before thirty seconds says nothing" {
+  let life = a_kalku().life
+  let (notes, answer) = waited_through([
+    None,
+    Some(Wire(life, Said("{\"type\":\"prepared\",\"id\":2,\"duration_ms\":1,\"modules\":1}")))
+  ])
+
+  assert is_ok(answer)
+  assert notes == []
 }

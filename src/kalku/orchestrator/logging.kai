@@ -110,6 +110,11 @@ fn written_to[a, e](
     Telling.advised(line)
     resume(())
   }
+  waiting_on(worker, kind, ms, last, resume) -> {
+    noted(path, began, still_waiting(worker, kind, ms, last))
+    Telling.waiting_on(worker, kind, ms, last)
+    resume(())
+  }
   return(x) -> x
 }
 

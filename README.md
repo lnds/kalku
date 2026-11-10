@@ -194,7 +194,10 @@ casting has got, with an estimate of what is left: on a terminal as one
 line drawn in place, in a CI log as a line per phase and a count every
 30 s. A cast that has gone on for 30 s or more is named — `worker 2 is
 still on lib/green.ex:4 compare after 95 s` — which is what tells a slow
-suite from a hung one. `--verbose` says every note, a line per wekufe;
+suite from a hung one. Before the casting, a first build or a first
+baseline that a kalku has not answered after 30 s is said the same way,
+every 30 s, with the last line the kalku wrote: ``worker 0 is still waiting
+for `prepared` after 90 s; it last wrote: Compiling 412 files (.ex)``. `--verbose` says every note, a line per wekufe;
 `--quiet` says nothing until the report. stdout carries the report alone.
 
 A casting estimated at ten minutes or more names a shorter way before it

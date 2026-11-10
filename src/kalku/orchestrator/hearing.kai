@@ -34,82 +34,87 @@ pub fn await_kind(
 # those lines leaves `the kalku closed its pipe` and nothing to act on,
 # and the only way back to the reason is editing the summon script by
 # hand. They are kept as they arrive and quoted with whatever went wrong.
-#[doc("""
-How long a wait may go quiet before the run says it is still waiting.
-
-`prepare` can honestly take minutes, and a run that says so once and then
-goes silent for ten of them is indistinguishable from one that has hung.
-The commonest cause of the silence is a build lock held by a runtime
-nobody killed — a wait at 0% CPU with nothing on the channel — and that
-one is not a slow compile, it is a wait for something that will never
-happen. The run cannot tell them apart, but it can stop the person having
-to guess, and the kalku's own last words usually name the lock.
-""")]
-const QUIET_MS : Int = 20000
-
-#[doc("How long a kalku is given to answer before the run gives up on it.")]
+#[doc("How long a kalku is given to answer, from the last thing it sent, before the run gives up on it.")]
 const PATIENCE_MS : Int = 600000
 
 fn await_with(
   k: Kalku,
   kind: String,
   said: [String]
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling =
-  waiting_for(k, kind, said, PATIENCE_MS)
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling {
+  let now = monotonic()
+  waiting_for(k, Wait { kind: kind, said: said, began: now, heard_at: now, noted: 0 })
+}
 
+# A wait: what it is for, what the kalku has written so far, when it began,
+# when the kalku last sent anything, and how many times it has been said.
+type Wait = { kind: String, said: [String], began: Instant, heard_at: Instant, noted: Int }
+
+# `prepare` and `baseline` can honestly take minutes, and a run that names
+# the phase and then shows nothing for ten of them is indistinguishable
+# from one that has hung. So a wait is said every `STALL_MS`, with the
+# kalku's own last line, whether or not the kalku is writing: a build that
+# talks is no more visible to a person than one that is silent.
 fn waiting_for(
   k: Kalku,
-  kind: String,
-  said: [String],
-  left: Int
-) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling =
-  match receive_timeout(
-    millis(min(QUIET_MS, left))
-  ) {
-    None -> if left > QUIET_MS {
-      {
-        Telling.tell_of(still_waiting(kind, PATIENCE_MS - left + QUIET_MS, said))
-        waiting_for(k, kind, said, left - QUIET_MS)
-      }
-    } else {
-      Err(with_last_words("the kalku said nothing while we waited for `#{kind}`", said))
+  w: Wait
+) : Result[KalkuReply, String] / Clock + Attending + Actor[OrchMsg] + Telling {
+  let now = monotonic()
+  let quiet = ms_between(w.heard_at, now)
+  if quiet >= PATIENCE_MS {
+    Err(with_last_words("the kalku said nothing while we waited for `#{w.kind}`", w.said))
+  } else {
+    let waited = ms_between(w.began, now)
+    let due = said_if_due(k, w, waited)
+    let next_note = (due.noted + 1) * STALL_MS - waited
+    match step(k, due, receive_timeout(millis(max(1, min(PATIENCE_MS - quiet, next_note))))) {
+      Answered(answer) -> answer
+      Again(next) -> waiting_for(k, next)
     }
-    Some(Cancel) -> Err("the run was cancelled")
-    Some(Wire(life, what)) -> if life == k.life {
-      told_if_written(life, what)
-      match from_ours(kind, what, said) {
-        Over(answer) -> answer
-        Longer(heard) -> waiting_for(k, kind, heard, PATIENCE_MS)
-      }
-    } else {
-      # Another kalku of this project's own pool, greeting a mailbox this
-      # run shares with it. Its own business, and never anybody else's.
-      waiting_for(k, kind, said, left)
-    }
-    Some(stray) -> {
-      # A line from whoever is hosting the run, which this side does not
-      # read. Dropping it leaves a client waiting on an answer that will
-      # never come, and on a command line there is nobody to hand it to.
-      Attending.not_mine(stray)
-      waiting_for(k, kind, said, left)
-    }
-  }
-
-#[doc("""
-What a run says while a wait is still going.
-
-The kalku's own last line is quoted because that is where a build lock
-announces itself — a runtime waiting on one says so — and this side would
-otherwise hold that line until the kalku died, which for a lock is never.
-""")]
-pub fn still_waiting(kind: String, waited_ms: Int, said: [String]) : String {
-  let so_far = "still waiting for `#{kind}`; nothing heard for #{waited_ms / 1000}s"
-  let tail = filter(enumerate(said), i => i.fst == length(said) - 1) | .snd
-  match tail {
-    [line, ..._] -> "#{so_far}. The kalku last said: #{trim(line)}"
-    [] -> "#{so_far}. If this is a build, it is a slow one"
   }
 }
+
+# What one receive means for a wait: its answer, or the wait as it goes on.
+type Step = Answered(Result[KalkuReply, String]) | Again(Wait)
+
+fn step(k: Kalku, w: Wait, got: Option[OrchMsg]) : Step / Clock + Attending + Telling = match got {
+  None -> Again(w)
+  Some(Cancel) -> Answered(Err("the run was cancelled"))
+  Some(Wire(life, what)) -> if life == k.life {
+    told_if_written(life, what)
+    match from_ours(w.kind, what, w.said) {
+      Over(answer) -> Answered(answer)
+      Longer(heard) -> Again(Wait { ...w, said: heard, heard_at: monotonic() })
+    }
+  } else {
+    # Another kalku of this project's own pool, greeting a mailbox this
+    # run shares with it. Its own business, and never anybody else's.
+    Again(w)
+  }
+  Some(stray) -> {
+    # A line from whoever is hosting the run, which this side does not
+    # read. Dropping it leaves a client waiting on an answer that will
+    # never come, and on a command line there is nobody to hand it to.
+    Attending.not_mine(stray)
+    Again(w)
+  }
+}
+
+fn said_if_due(k: Kalku, w: Wait, waited: Int) : Wait / Telling =
+  if waited >= (w.noted + 1) * STALL_MS {
+    Telling.waiting_on(k.life.worker, w.kind, waited, last_of(w.said))
+    Wait { ...w, noted: waited / STALL_MS }
+  } else {
+    w
+  }
+
+fn last_of(said: [String]) : Option[String] = match drop(said, length(said) - 1) {
+  [line, ..._] -> Some(trim(line))
+  [] -> None
+}
+
+fn ms_between(from: Instant, to: Instant) : Int =
+  duration_to_nanos(elapsed_since(from, to)) / 1000000
 
 #[doc("How many of a dying kalku's last lines are worth quoting.")]
 const LAST_LINES : Int = 12

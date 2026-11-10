@@ -33,6 +33,10 @@ is what a person can act on before the run ends.
 
 `advised` is a shorter way to what was asked, said to a person before a
 long casting starts; the run goes on as asked.
+
+`waiting_on` is a request a kalku has not answered yet — a first build, a
+first baseline — said every `STALL_MS` it goes on, with the last line the
+kalku wrote, if it wrote any.
 """)]
 pub effect Telling {
   tell_of(line: String) : Unit
@@ -46,6 +50,7 @@ pub effect Telling {
   cast_survived(w: Wekufe) : Unit
   found_survivor(s: Survivor) : Unit
   advised(line: String) : Unit
+  waiting_on(worker: Int, kind: String, ms: Int, last: Option[String]) : Unit
 }
 
 #[doc("""
@@ -131,6 +136,10 @@ pub fn told[a, e](survivors: Bool, body: () -> a / Telling + e) : a / Stderr + e
     noted_if(survivors and Stderr.is_tty(), "", s)
     resume(())
   }
+  waiting_on(worker, kind, ms, last, resume) -> {
+    Stderr.eprint("kalku: #{still_waiting(worker, kind, ms, last)}")
+    resume(())
+  }
   advised(line, resume) -> {
     Stderr.eprint("kalku: #{line}")
     resume(())
@@ -153,6 +162,7 @@ pub fn untold[a, e](body: () -> a / Telling + e) : a / e = handle {
   cast_survived(_w, resume) -> resume(())
   found_survivor(_s, resume) -> resume(())
   advised(_line, resume) -> resume(())
+  waiting_on(_worker, _kind, _ms, _last, resume) -> resume(())
   return(x) -> x
 }
 
@@ -256,6 +266,10 @@ pub fn shown[a, e](survivors: Bool, body: () -> a / Telling + e) : a / Stderr + 
       above(live, last, "kalku: #{line}")
       resume(())
     }
+    waiting_on(worker, kind, ms, said, resume) -> {
+      above(live, last, "kalku: #{still_waiting(worker, kind, ms, said)}")
+      resume(())
+    }
     return(x) -> {
       if live and last != "" { Stderr.eprint(CLEARED) } else { () }
       x
@@ -337,6 +351,26 @@ How far one kalku has got with a long request, as it says itself:
 `worker 1: 1200 of 5000`.
 """)]
 pub fn so_far(worker: Int, done: Int, total: Int) : String = "worker #{worker}: #{done} of #{total}"
+
+#[doc("""
+What a run says of a request a kalku has not answered yet: how long it
+has been, and the kalku's own last line.
+
+That line is quoted because it is where a build says what it is on, and
+where a build lock announces itself: a runtime waiting on one says so,
+and this side would otherwise hold that line until the kalku died, which
+for a lock is never.
+""")]
+pub fn still_waiting(worker: Int, kind: String, ms: Int, last: Option[String]) : String {
+  let so_far = "worker #{worker} is still waiting for `#{kind}` after #{ms / 1000} s"
+  match last {
+    Some(line) -> "#{so_far}; it last wrote: #{char_slice(line, 0, LAST_LINE)}"
+    None -> "#{so_far}; it has written nothing. If this is a build, it is a slow one"
+  }
+}
+
+# A build's line can be long; the start of it says what it is on.
+const LAST_LINE : Int = 160
 
 #[doc("A site as a person looks for it: the file, the line, and the spell.")]
 pub fn about_site(site: Site) : String =
