@@ -398,6 +398,7 @@ fn asking_of(
   files: files,
   only: [],
   spells: c.spells,
+  spells_named: c.spells_named,
   exclude_calls: c.exclude_calls,
   exclude: c.exclude,
   equivalents: declared,

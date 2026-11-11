@@ -369,6 +369,25 @@ test "a run asking for a spell its kalku does not cast is refused, naming the sp
   assert is_some(index_of(why, "`[run] spells`"))
 }
 
+test "a spell a person named is asked for as named, or the run stops" {
+  let hello = Ready(ready_casting([Arm, Compare]))
+  assert spells_for(hello, [Arm], true) == Ok(([Arm], None))
+  assert is_err(spells_for(hello, [Arm, Call], true))
+}
+
+test "the default spells are narrowed to the ones the kalku casts, and the rest said" {
+  match spells_for(Ready(ready_casting([Arm, Compare])), [Arm, Compare, Call], false) {
+    Ok((asked, Some(line))) -> {
+      assert asked == [Arm, Compare]
+      assert is_some(index_of(line, "python kalku 0.26.1 does not cast `call`"))
+    }
+    _ -> {
+      assert false
+    }
+  }
+  assert spells_for(Ready(ready_casting([Arm])), [Arm], false) == Ok(([Arm], None))
+}
+
 # What a kalku says of itself on the way, as notes in the order it said them.
 fn noted_from(whats: [FromKalku]) : [String] = handle {
   each(whats, w => told_if_written(Life { worker: 2, summons: 1 }, w))

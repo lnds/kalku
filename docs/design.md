@@ -495,7 +495,7 @@ The shared catalog, in order of diagnostic value:
 | `call` | a step that silently does nothing | drop a pipe stage (`\|> f()`), `f(x)` → `x` |
 | `return` | a function whose result nobody checks | a `def`/`defp` clause's last expression → `nil`, except a literal `literal` perturbs, a `raise`, or an `@impl` callback, whose result is the behaviour's protocol; other languages: a returned value → their neutral one |
 
-`return` is cast only where `[run] spells` names it. A spell outside the default set moves every project's score the day it is added, so it waits there until it has been measured on real projects in each language and a release says it joins the default. A run that names a spell its kalku does not cast stops and says which, rather than reporting a score over less than was asked for.
+`return` is cast only where `[run] spells` names it. A spell outside the default set moves every project's score the day it is added, so it waits there until it has been measured on real projects in each language and a release says it joins the default. A run that names a spell its kalku does not cast stops and says which, rather than reporting a score over less than was asked for. A run that names none asks each kalku for the default spells it casts, and says which defaults that kalku leaves out.
 
 A language may add spells; each new spell gets a shared name in the protocol and fixtures in its adapter. Sites are never proposed inside tests, comments, docs, or string contents.
 

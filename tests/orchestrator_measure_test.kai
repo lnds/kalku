@@ -31,6 +31,7 @@ fn asking_of(script: String) : Asking = Asking {
   files: ["lib/a.ex"],
   only: [],
   spells: [],
+  spells_named: true,
   exclude_calls: [],
   exclude: [],
   equivalents: [],
@@ -206,4 +207,28 @@ test "the sites of more source than a batch holds are asked for a batch at a tim
 
   assert found.failure == None
   assert (found.cast | (c => (c.wekufe, c.outcome))) == [("s3", Killed), ("s7", Killed)]
+}
+
+# The kalku of this script casts `compare` alone. A run nobody told which
+# spells to use asks it for the defaults it casts, and casts; a run that
+# named one it does not cast stops before anything is cast.
+fn asking_spells(named: Bool) : Asking =
+  Asking {
+    ...asking_of("casts_part_of_the_defaults.ndjson"),
+    spells: [Compare, Call],
+    spells_named: named
+  }
+
+test "a run that names no spells casts the defaults its kalku casts" {
+  let found = measured_with(asking_spells(false))
+
+  assert found.failure == None
+  assert (found.cast | (c => (c.wekufe, c.outcome))) == [("s3", Killed), ("s7", Killed)]
+}
+
+test "a run that names a spell its kalku does not cast stops, naming it" {
+  let found = measured_with(asking_spells(true))
+
+  assert found.report == None
+  assert is_some(index_of(found.failure |> unwrap_or(""), "does not cast `call`"))
 }
