@@ -63,6 +63,7 @@ pub type Asking = {
   files: [String],
   only: [String],
   spells: [Spell],
+  spells_named: Bool,
   exclude_calls: [String],
   exclude: [String],
   equivalents: [equivalent.Entry],
@@ -276,7 +277,11 @@ pub fn read_by(
   scope: BaselineScope
 ) : Result[Known, String] / Process + Clock + File + Attending + Actor[OrchMsg] + Telling {
   let caps = able(hello)!
-  castable(hello, asking.spells)!
+  let spells = spells_for(hello, asking.spells, asking.spells_named)!
+  match spells.snd {
+    Some(line) -> Telling.tell_of(line)
+    None -> ()
+  }
   let keeping = keeping_of(asking.store, asking.reuse, caps, hello, asking.spec)
   let offer = offer_of(keeping)
   Telling.entered(PhaseBaselining)
@@ -300,7 +305,7 @@ pub fn read_by(
   let found = sites_in(
     k,
     asking.spec.root,
-    SitesMsg { files: asking.files, spells: asking.spells, exclude_calls: asking.exclude_calls },
+    SitesMsg { files: asking.files, spells: spells.fst, exclude_calls: asking.exclude_calls },
     4
   )!
   let sites = one_each(found.sites)!

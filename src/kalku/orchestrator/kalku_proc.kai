@@ -208,13 +208,42 @@ pub fn spells_refused(m: ReadyMsg, asked: [Spell]) : Option[String] =
     )
   }
 
-#[doc("A run's spells checked against what the kalku said of itself when greeted.")]
-pub fn castable(reply: KalkuReply, asked: [Spell]) : Result[Unit, String] = match reply {
-  Ready(m) -> match spells_refused(m, asked) {
-    Some(why) -> Err(why)
-    None -> Ok(())
+#[doc("""
+The spells to ask a greeted kalku for, and a line saying which defaults it leaves out.
+
+Spells a person named are asked for as named, and a kalku that does not
+cast one of them stops the run. The default set is the run's own choice,
+so a kalku is asked for the part of it that it casts, and the run says
+what that leaves out.
+""")]
+pub fn spells_for(reply: KalkuReply, asked: [Spell], named: Bool) : Result[
+  ([Spell], Option[String]),
+  String
+] =
+  match reply {
+    Ready(m) -> if named {
+      match spells_refused(m, asked) {
+        Some(why) -> Err(why)
+        None -> Ok((asked, None))
+      }
+    } else {
+      Ok(defaults_cast(m, asked))
+    }
+    _ -> Ok((asked, None))
   }
-  _ -> Ok(())
+
+fn defaults_cast(m: ReadyMsg, asked: [Spell]) : ([Spell], Option[String]) {
+  let split = partition(asked, s => contains(m.spells, s))
+  (
+    split.fst,
+    match split.snd {
+      [] -> None
+      left -> Some(
+        "the #{m.language} kalku #{m.adapter} does not cast #{join(left | (s => "`#{spell_name(s)}`"), ", ")},"
+          ++ " so this run leaves it out of the default spells"
+      )
+    }
+  )
 }
 
 #[doc("""

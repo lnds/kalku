@@ -36,6 +36,7 @@ fn asking_of(spec: PoolSpec) : Asking = Asking {
   files: [],
   only: [],
   spells: [],
+  spells_named: true,
   exclude_calls: [],
   exclude: [],
   equivalents: [],

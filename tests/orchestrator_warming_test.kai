@@ -29,6 +29,7 @@ fn asking_of(script: String) : Asking = Asking {
   files: ["lib/a.ex"],
   only: [],
   spells: [],
+  spells_named: true,
   exclude_calls: [],
   exclude: [],
   equivalents: [],
