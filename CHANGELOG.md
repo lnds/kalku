@@ -1,3 +1,9 @@
+## v0.34.1 (2026-11-11)
+
+### Fixed
+
+- ask a kalku for the default spells it casts when the config names none (#609)
+
 ## v0.34.0 (2026-11-10)
 
 ### Added
